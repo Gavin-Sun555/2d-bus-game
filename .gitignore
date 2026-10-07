@@ -1,0 +1,8 @@
+# Binaries
+2d-bus-game
+busgame
+*.exe
+*.wasm
+
+# OS
+.DS_Store
