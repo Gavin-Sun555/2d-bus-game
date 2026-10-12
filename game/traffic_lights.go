@@ -79,16 +79,16 @@ func NewTrafficLightSystem() *TrafficLightSystem {
 	tls := &TrafficLightSystem{
 		Intersections: make([]*TrafficIntersection, 0),
 		RoadCameras: []*RoadCamera{
-			{ID: 0, Pos: Vec2{X: 450, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0},
-			{ID: 1, Pos: Vec2{X: -450, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0},
+			{ID: 0, Pos: Vec2{X: 1950, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0},
+			{ID: 1, Pos: Vec2{X: -1950, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0},
 			{ID: 2, Pos: Vec2{X: 0, Y: -300}, RoadName: "城市中轴大道 (北段)", IsEW: false, RoadCoord: 0},
 			{ID: 3, Pos: Vec2{X: 0, Y: 300}, RoadName: "城市中轴大道 (南段)", IsEW: false, RoadCoord: 0},
-			{ID: 4, Pos: Vec2{X: 450, Y: -1200}, RoadName: "北环快速路", IsEW: true, RoadCoord: -1200},
-			{ID: 5, Pos: Vec2{X: -450, Y: 1200}, RoadName: "南环快速路", IsEW: true, RoadCoord: 1200},
+			{ID: 4, Pos: Vec2{X: 650, Y: -1200}, RoadName: "北环快速路", IsEW: true, RoadCoord: -1200},
+			{ID: 5, Pos: Vec2{X: -650, Y: 1200}, RoadName: "南环快速路", IsEW: true, RoadCoord: 1200},
 		},
 	}
 
-	xs := []float64{-1800, -900, 0, 900, 1800}
+	xs := []float64{-2600, -1300, 0, 1300, 2600}
 	ys := []float64{-1200, -600, 0, 600, 1200}
 
 	id := 0
@@ -163,6 +163,206 @@ func NewTrafficLightSystem() *TrafficLightSystem {
 	}
 
 	return tls
+}
+
+// BuildForWorld adapts traffic lights and speed cameras to the active city map's road topology
+func (tls *TrafficLightSystem) BuildForWorld(w *World) {
+	if w == nil {
+		return
+	}
+	tls.Intersections = make([]*TrafficIntersection, 0)
+	tls.RoadCameras = make([]*RoadCamera, 0)
+
+	if w.Theme == MapThemeMetropolis {
+		tls.RoadCameras = []*RoadCamera{
+			{ID: 0, Pos: Vec2{X: 1950, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0},
+			{ID: 1, Pos: Vec2{X: -1950, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0},
+			{ID: 2, Pos: Vec2{X: 0, Y: -300}, RoadName: "城市中轴大道 (北段)", IsEW: false, RoadCoord: 0},
+			{ID: 3, Pos: Vec2{X: 0, Y: 300}, RoadName: "城市中轴大道 (南段)", IsEW: false, RoadCoord: 0},
+			{ID: 4, Pos: Vec2{X: 650, Y: -1200}, RoadName: "北环快速路", IsEW: true, RoadCoord: -1200},
+			{ID: 5, Pos: Vec2{X: -650, Y: 1200}, RoadName: "南环快速路", IsEW: true, RoadCoord: 1200},
+		}
+
+		xs := []float64{-2600, -1300, 0, 1300, 2600}
+		ys := []float64{-1200, -600, 0, 600, 1200}
+		id := 0
+		for iy, y := range ys {
+			for ix, x := range xs {
+				pt := Vec2{X: x, Y: y}
+				// Roundabouts do NOT have traditional traffic lights; they are unsignalized circular junctions
+				if w.IsAtRoundabout(pt) {
+					continue
+				}
+
+				isMajor := (y == -1200 || y == 0 || y == 1200 || x == 0)
+				inter := &TrafficIntersection{
+					ID:                id,
+					Center:            pt,
+					IsMajor:           isMajor,
+					GreenDuration:     8.0,
+					YellowDuration:    2.5,
+					LeftGreenDuration: 5.5,
+					Cooldown:          0,
+				}
+				if isMajor {
+					offsetTimer := math.Mod(float64(ix*6+iy*7), 37.0)
+					t := offsetTimer
+					switch {
+					case t < 8.0:
+						inter.Phase = PhaseEWGreen
+						inter.Timer = t
+					case t < 10.5:
+						inter.Phase = PhaseEWYellow
+						inter.Timer = t - 8.0
+					case t < 16.0:
+						inter.Phase = PhaseEWLeftGreen
+						inter.Timer = t - 10.5
+					case t < 18.5:
+						inter.Phase = PhaseEWLeftYellow
+						inter.Timer = t - 16.0
+					case t < 26.5:
+						inter.Phase = PhaseNSGreen
+						inter.Timer = t - 18.5
+					case t < 29.0:
+						inter.Phase = PhaseNSYellow
+						inter.Timer = t - 26.5
+					case t < 34.5:
+						inter.Phase = PhaseNSLeftGreen
+						inter.Timer = t - 29.0
+					default:
+						inter.Phase = PhaseNSLeftYellow
+						inter.Timer = t - 34.5
+					}
+				} else {
+					offsetTimer := math.Mod(float64(ix*5+iy*7), 26.0)
+					t := offsetTimer
+					switch {
+					case t < 10.0:
+						inter.Phase = PhaseEWGreen
+						inter.Timer = t
+					case t < 13.0:
+						inter.Phase = PhaseEWYellow
+						inter.Timer = t - 10.0
+					case t < 23.0:
+						inter.Phase = PhaseNSGreen
+						inter.Timer = t - 13.0
+					default:
+						inter.Phase = PhaseNSYellow
+						inter.Timer = t - 23.0
+					}
+				}
+				tls.Intersections = append(tls.Intersections, inter)
+				id++
+			}
+		}
+		return
+	}
+
+	// For maps 2-6: build dynamically from w.Intersections
+	for id, pt := range w.Intersections {
+		// Roundabouts do NOT have traditional traffic lights; they are unsignalized circular junctions
+		if w.IsAtRoundabout(pt) {
+			continue
+		}
+
+		isMajor := false
+		for _, r := range w.Roads {
+			if r.Lanes == 4 {
+				if (math.Abs(r.P1.Y-pt.Y) < 5 && pt.X >= math.Min(r.P1.X, r.P2.X)-10 && pt.X <= math.Max(r.P1.X, r.P2.X)+10) ||
+					(math.Abs(r.P1.X-pt.X) < 5 && pt.Y >= math.Min(r.P1.Y, r.P2.Y)-10 && pt.Y <= math.Max(r.P1.Y, r.P2.Y)+10) {
+					isMajor = true
+					break
+				}
+			}
+		}
+
+		inter := &TrafficIntersection{
+			ID:                id,
+			Center:            pt,
+			IsMajor:           isMajor,
+			GreenDuration:     8.0,
+			YellowDuration:    2.5,
+			LeftGreenDuration: 5.5,
+			Cooldown:          0,
+		}
+
+		offsetTimer := math.Mod(float64(id*7), 37.0)
+		t := offsetTimer
+		if isMajor {
+			switch {
+			case t < 8.0:
+				inter.Phase = PhaseEWGreen
+				inter.Timer = t
+			case t < 10.5:
+				inter.Phase = PhaseEWYellow
+				inter.Timer = t - 8.0
+			case t < 16.0:
+				inter.Phase = PhaseEWLeftGreen
+				inter.Timer = t - 10.5
+			case t < 18.5:
+				inter.Phase = PhaseEWLeftYellow
+				inter.Timer = t - 16.0
+			case t < 26.5:
+				inter.Phase = PhaseNSGreen
+				inter.Timer = t - 18.5
+			case t < 29.0:
+				inter.Phase = PhaseNSYellow
+				inter.Timer = t - 26.5
+			case t < 34.5:
+				inter.Phase = PhaseNSLeftGreen
+				inter.Timer = t - 29.0
+			default:
+				inter.Phase = PhaseNSLeftYellow
+				inter.Timer = t - 34.5
+			}
+		} else {
+			tSub := math.Mod(float64(id*7), 21.0)
+			switch {
+			case tSub < 8.0:
+				inter.Phase = PhaseEWGreen
+				inter.Timer = tSub
+			case tSub < 10.5:
+				inter.Phase = PhaseEWYellow
+				inter.Timer = tSub - 8.0
+			case tSub < 18.5:
+				inter.Phase = PhaseNSGreen
+				inter.Timer = tSub - 10.5
+			default:
+				inter.Phase = PhaseNSYellow
+				inter.Timer = tSub - 18.5
+			}
+		}
+		tls.Intersections = append(tls.Intersections, inter)
+	}
+
+	camID := 0
+	for _, r := range w.Roads {
+		if r.Lanes == 4 {
+			mid := r.P1.Add(r.P2).Mul(0.5)
+			tooClose := false
+			for _, ipt := range w.Intersections {
+				if mid.Distance(ipt) < 250 {
+					tooClose = true
+					break
+				}
+			}
+			if !tooClose && camID < 6 {
+				isEW := math.Abs(r.P1.Y-r.P2.Y) < 1.0
+				coord := mid.Y
+				if !isEW {
+					coord = mid.X
+				}
+				tls.RoadCameras = append(tls.RoadCameras, &RoadCamera{
+					ID:        camID,
+					Pos:       mid,
+					RoadName:  r.Name,
+					IsEW:      isEW,
+					RoadCoord: coord,
+				})
+				camID++
+			}
+		}
+	}
 }
 
 func (tls *TrafficLightSystem) Update(dt float64) {
@@ -304,13 +504,48 @@ func (inter *TrafficIntersection) GetSignals() (ew LightSignal, ns LightSignal) 
 	return ewThru, nsThru
 }
 
+// ApproachHasDedicatedLanes returns whether the approach the vehicle is entering from
+// has dedicated left-turn lanes and dedicated left-turn signal phases.
+// Single-lane approaches (2-lane roads with 1 lane each direction) do NOT have dedicated lanes!
+func (inter *TrafficIntersection) ApproachHasDedicatedLanes(isEW bool) bool {
+	if !inter.IsMajor {
+		return false
+	}
+	if isEW {
+		// EW 4-lane avenues are at Y = -1200, 0, 1200.
+		// EW 2-lane streets are at Y = -600, 600.
+		if math.Abs(inter.Center.Y-(-600)) < 15.0 || math.Abs(inter.Center.Y-600) < 15.0 {
+			return false
+		}
+		return true
+	} else {
+		// NS 4-lane avenue is at X = 0.
+		// NS 2-lane streets are at X = -2600, -1300, 1300, 2600.
+		if math.Abs(inter.Center.X-(-2600)) < 15.0 ||
+			math.Abs(inter.Center.X-(-1300)) < 15.0 ||
+			math.Abs(inter.Center.X-1300) < 15.0 ||
+			math.Abs(inter.Center.X-2600) < 15.0 {
+			return false
+		}
+		return true
+	}
+}
+
 // GetSignalForApproach returns the appropriate through and left-turn signals for vehicle's heading
 func (inter *TrafficIntersection) GetSignalForApproach(heading float64) (throughSig LightSignal, leftSig LightSignal) {
 	ewThru, ewL, nsThru, nsL := inter.GetDetailedSignals()
 	cosH := math.Abs(math.Cos(heading))
 	sinH := math.Abs(math.Sin(heading))
 	if cosH > sinH {
+		if !inter.ApproachHasDedicatedLanes(true) {
+			// Single-lane approach: permissive left turn shares through signal!
+			return ewThru, ewThru
+		}
 		return ewThru, ewL
+	}
+	if !inter.ApproachHasDedicatedLanes(false) {
+		// Single-lane approach: permissive left turn shares through signal!
+		return nsThru, nsThru
 	}
 	return nsThru, nsL
 }
@@ -449,20 +684,22 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				}
 				inter.PlayerEntryIsEW = isEW
 
-				// Determine entry lane on multi-lane avenues:
+				// Determine entry lane:
+				// Single-lane roads (2-lane roads with 1 lane in each direction) do NOT have dedicated lanes.
+				// On multi-lane avenues:
 				// 0 = inner (dedicated left-turn lane), 1 = outer (straight/right lane)
-				// Lenient detection: Bus is large. If vehicle is in left lane, slightly straddling
-				// the straight lane (distFromCenter < lw*1.45), cutting corners near the centerline,
-				// or actively steering left at entry (SteeringAngle < -0.015), treat as left-turn lane (0)!
+				hasDedicatedLanes := inter.ApproachHasDedicatedLanes(isEW)
 				inter.PlayerEntryLane = 1
-				if inter.IsMajor {
+				if hasDedicatedLanes {
 					distFromCenter := 0.0
 					if isEW {
 						distFromCenter = math.Abs(bus.Pos.Y - inter.Center.Y)
 					} else {
 						distFromCenter = math.Abs(bus.Pos.X - inter.Center.X)
 					}
-					if distFromCenter < lw*1.45 || bus.SteeringAngle < -0.015 {
+					// Lane 0 is inner lane: distFromCenter in [0, 0.95*lw).
+					// If vehicle is in Lane 1 or already steering/turning right, never mark as Lane 0!
+					if distFromCenter < lw*0.95 && bus.SteeringAngle <= 0.01 {
 						inter.PlayerEntryLane = 0
 					}
 				}
@@ -485,7 +722,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				}
 
 				movementSig := thruSig
-				if (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) && inter.IsMajor {
+				if hasDedicatedLanes && (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) {
 					movementSig = leftSig
 				}
 
@@ -496,10 +733,10 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				if inter.PlayerTurnedRight || movementSig == SignalGreen || movementSig == SignalYellow {
 					inter.PlayerCrossedBeforeYellow = true
 					inter.PlayerCrossedOnRed = false
-				} else if inter.IsMajor && (leftSig == SignalGreen || leftSig == SignalYellow) && (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) {
+				} else if hasDedicatedLanes && (leftSig == SignalGreen || leftSig == SignalYellow) && (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) {
 					inter.PlayerCrossedBeforeYellow = true
 					inter.PlayerCrossedOnRed = false
-				} else if !inter.IsMajor && (thruSig == SignalGreen || thruSig == SignalYellow) {
+				} else if !hasDedicatedLanes && (thruSig == SignalGreen || thruSig == SignalYellow) {
 					inter.PlayerCrossedBeforeYellow = true
 					inter.PlayerCrossedOnRed = false
 				} else {
@@ -540,11 +777,11 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 		if bus.SteeringAngle < -0.015 || dHead < -0.05 || (latLeft > 5.0 && dHead < 0.05) {
 			inter.PlayerTurnedLeft = true
 			turnSig := thruSig
-			if inter.IsMajor {
+			if inter.ApproachHasDedicatedLanes(inter.PlayerEntryIsEW) {
 				turnSig = leftSig
 			}
-			// If the left turn signal is Green or Yellow, the vehicle has lawful right-of-way!
-			if turnSig == SignalGreen || turnSig == SignalYellow || (!inter.IsMajor && (thruSig == SignalGreen || thruSig == SignalYellow)) {
+			// If the signal is Green or Yellow, the vehicle has lawful right-of-way!
+			if turnSig == SignalGreen || turnSig == SignalYellow || (!inter.ApproachHasDedicatedLanes(inter.PlayerEntryIsEW) && (thruSig == SignalGreen || thruSig == SignalYellow)) {
 				inter.PlayerCrossedOnRed = false
 				inter.PlayerCrossedBeforeYellow = true
 			}
@@ -557,16 +794,17 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 		// - 绿灯左右转弯在路口清空或出路口时绝不误判为闯红灯 (PassageCompleted).
 		// - 只有当对应进道方向为红灯、非合法转向、且后轮越过停止线 (sTrail >= -stopLineDist) 时才抓拍。
 		if inter.PlayerInside && inter.PlayerCrossedOnRed && !inter.PlayerTurnedRight && !inter.PassageCompleted && !inter.FinedThisPassage {
+			hasDedicatedLanes := inter.ApproachHasDedicatedLanes(inter.PlayerEntryIsEW)
 			reqSig := thruSig
-			if (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) && inter.IsMajor {
+			if (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) && hasDedicatedLanes {
 				reqSig = leftSig
 			}
 
 			// Left turn immunity if left signal is currently Green or Yellow:
-			if inter.PlayerTurnedLeft && (leftSig == SignalGreen || leftSig == SignalYellow || (!inter.IsMajor && (thruSig == SignalGreen || thruSig == SignalYellow))) {
+			if inter.PlayerTurnedLeft && ((hasDedicatedLanes && (leftSig == SignalGreen || leftSig == SignalYellow)) || (!hasDedicatedLanes && (thruSig == SignalGreen || thruSig == SignalYellow))) {
 				inter.PlayerCrossedOnRed = false
 				inter.PlayerCrossedBeforeYellow = true
-			} else if reqSig == SignalGreen || reqSig == SignalYellow || (!inter.IsMajor && (thruSig == SignalGreen || thruSig == SignalYellow)) {
+			} else if reqSig == SignalGreen || reqSig == SignalYellow || (!hasDedicatedLanes && (thruSig == SignalGreen || thruSig == SignalYellow)) {
 				// If signal turned Green/Yellow before rear wheels crossed, forgive!
 				inter.PlayerCrossedOnRed = false
 				inter.PlayerCrossedBeforeYellow = true
@@ -581,8 +819,12 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 		}
 
 		// 2. Lane Discipline Violation Check (不按导向车道行驶抓拍 - 到达对侧正式判定):
-		// Core rule: 路口内部绝不误判罚款。必须等车辆到达对侧线时，才能确定是否没有左转或直行或右转再行罚款！
-		if inter.PlayerInside && inter.IsMajor && !inter.FinedThisPassage && inter.Cooldown <= 0 {
+		// Core rules:
+		// - 只有具备多车道导向体系（专门左转车道）的大道入口才存在导向车道违章！
+		// - 单车道道路（2车道道路，各方向仅1车道）为混行车道，直行、左转、右转皆完全合法，绝不进行导向车道判定！
+		// - 右转永远合法：在单车道道路或右侧车道右转，绝不得判定为违规！
+		hasDedicatedLanes := inter.ApproachHasDedicatedLanes(inter.PlayerEntryIsEW)
+		if inter.PlayerInside && hasDedicatedLanes && !inter.FinedThisPassage && inter.Cooldown <= 0 {
 			vLeft := Vec2{X: math.Sin(inter.PlayerEntryHeading), Y: -math.Cos(inter.PlayerEntryHeading)}
 			sLeft := rLead.X*vLeft.X + rLead.Y*vLeft.Y
 			sRight := rLead.X*vRight.X + rLead.Y*vRight.Y
@@ -653,9 +895,16 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 
 // CheckStopForVehicle checks whether an approaching vehicle should stop for a red/yellow light,
 // and returns signed distance to the stop line along the vehicle's heading.
-// If distToStopLine <= -12 (vehicle already past stop line into intersection), it will NOT stop,
-// ensuring the vehicle clears the intersection and does not get stuck in the middle of the road.
-func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lookAhead float64, laneWidth float64, isTurningLeft ...bool) (shouldStop bool, distToStopLine float64) {
+// If vehicle is inside the intersection or turning right, it will NOT stop.
+func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lookAhead float64, laneWidth float64, turnOptions ...bool) (shouldStop bool, distToStopLine float64) {
+	wantLeft := len(turnOptions) > 0 && turnOptions[0]
+	wantRight := len(turnOptions) > 1 && turnOptions[1]
+
+	// Vehicles making a right turn may legally turn on red (红灯允许右转)
+	if wantRight {
+		return false, 999.0
+	}
+
 	stopLineDist := laneWidth*1.6 + 18.0
 	cosH := math.Cos(heading)
 	sinH := math.Sin(heading)
@@ -676,19 +925,19 @@ func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lo
 			}
 
 			// Determine which signal to respect (Left-turn vs Through):
-			wantLeft := len(isTurningLeft) > 0 && isTurningLeft[0]
-			if !wantLeft && inter.IsMajor {
+			hasDedicatedLanes := inter.ApproachHasDedicatedLanes(math.Abs(cosH) > math.Abs(sinH))
+			if !wantLeft && hasDedicatedLanes {
 				// Check if vehicle is in the inner lane (dedicated left-turn lane)
 				if math.Abs(cosH) > math.Abs(sinH) {
 					// EW avenue
 					dy := math.Abs(pos.Y - inter.Center.Y)
-					if dy < laneWidth*1.0 {
+					if dy < laneWidth*0.95 {
 						wantLeft = true
 					}
 				} else {
 					// NS avenue
 					dx := math.Abs(pos.X - inter.Center.X)
-					if dx < laneWidth*1.0 {
+					if dx < laneWidth*0.95 {
 						wantLeft = true
 					}
 				}
@@ -738,7 +987,8 @@ func (tls *TrafficLightSystem) GetApproachingSignalInfo(pos Vec2, heading float6
 			case PhaseEWLeftYellow, PhaseNSLeftYellow:
 				rem = math.Max(0, inter.YellowDuration-inter.Timer)
 			}
-			return true, th, lf, inter.IsMajor, rem, dist
+			hasDedicated := inter.ApproachHasDedicatedLanes(math.Abs(cosH) > math.Abs(sinH))
+			return true, th, lf, hasDedicated, rem, dist
 		}
 	}
 	return false, SignalGreen, SignalRed, false, 0, 999.0

@@ -2,6 +2,8 @@ package game
 
 import (
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -278,21 +280,33 @@ func TestGetRoadPathBetweenStops(t *testing.T) {
 	if len(path) < 2 {
 		t.Fatalf("Path should contain multiple waypoints, got %d", len(path))
 	}
-
-	// Verify the path segments along the road grid are orthogonal
-	// and drawn on the driving lane side rather than in the road center
+	// Verify the path segments along the road grid are orthogonal outside roundabouts,
+	// curve smoothly around roundabouts, and are drawn on the driving lane side rather than in the road center
 	for i := 1; i < len(path)-2; i++ {
 		pA := path[i]
 		pB := path[i+1]
 		dx := math.Abs(pA.X - pB.X)
 		dy := math.Abs(pA.Y - pB.Y)
-		// At least one dimension should be zero or negligible along orthogonal grid
-		if dx > 1.0 && dy > 1.0 {
+
+		isRoundaboutSeg := false
+		for _, rb := range world.Roundabouts {
+			if pA.Distance(rb.Center) <= rb.Radius+30 || pB.Distance(rb.Center) <= rb.Radius+30 {
+				isRoundaboutSeg = true
+				if pA.Distance(rb.Center) < rb.InnerRadius-5.0 {
+					t.Errorf("Path waypoint %v penetrates roundabout inner island (dist: %.1f < %.1f)",
+						pA, pA.Distance(rb.Center), rb.InnerRadius)
+				}
+				break
+			}
+		}
+
+		// At least one dimension should be zero or negligible along orthogonal grid (outside roundabouts)
+		if !isRoundaboutSeg && dx > 1.0 && dy > 1.0 {
 			t.Errorf("Path segment from %v to %v is diagonal, expected orthogonal grid line", pA, pB)
 		}
 
 		// Verify the segment is offset to the side of Central Blvd (Y=0), not on the centerline Y=0
-		if dx > 50 { // Longitudinal road segment
+		if !isRoundaboutSeg && dx > 50 { // Longitudinal road segment
 			distFromRoadCenter := math.Abs(pA.Y - 0)
 			if distFromRoadCenter < 20.0 {
 				t.Errorf("Navigation line at Y=%.2f is in the middle of the road, expected side of road", pA.Y)
@@ -407,23 +421,35 @@ func TestBuildingsClearFromRoads(t *testing.T) {
 					roadClearance := roadHalfW + ShoulderWidth
 
 					isEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
+					isNS := math.Abs(r.P2.X-r.P1.X) < 1.0
 					if isEW {
 						// Horizontal road
-						if pt.X >= r.P1.X-20 && pt.X <= r.P2.X+20 {
+						minX := math.Min(r.P1.X, r.P2.X)
+						maxX := math.Max(r.P1.X, r.P2.X)
+						if pt.X >= minX-20 && pt.X <= maxX+20 {
 							dist := math.Abs(pt.Y - r.P1.Y)
 							if dist <= roadClearance {
 								t.Fatalf("Building #%d at %v intersects horizontal road %s (Y=%.0f, clearance=%.1f, dist=%.1f)",
 									i, b.Pos, r.Name, r.P1.Y, roadClearance, dist)
 							}
 						}
-					} else {
+					} else if isNS {
 						// Vertical road
-						if pt.Y >= r.P1.Y-20 && pt.Y <= r.P2.Y+20 {
+						minY := math.Min(r.P1.Y, r.P2.Y)
+						maxY := math.Max(r.P1.Y, r.P2.Y)
+						if pt.Y >= minY-20 && pt.Y <= maxY+20 {
 							dist := math.Abs(pt.X - r.P1.X)
 							if dist <= roadClearance {
 								t.Fatalf("Building #%d at %v intersects vertical road %s (X=%.0f, clearance=%.1f, dist=%.1f)",
 									i, b.Pos, r.Name, r.P1.X, roadClearance, dist)
 							}
+						}
+					} else {
+						// Curved or diagonal road segment
+						d, _ := distToSegment(pt, r.P1, r.P2)
+						if d <= roadClearance {
+							t.Fatalf("Building #%d at %v intersects curved road %s (clearance=%.1f, dist=%.1f)",
+								i, b.Pos, r.Name, roadClearance, d)
 						}
 					}
 				}
@@ -658,15 +684,15 @@ func TestInitialCarSpawnsClearOfIntersectionsAndRoadCenter(t *testing.T) {
 	}
 
 	interCenters := []Vec2{
-		{X: -1800, Y: -1200}, {X: -900, Y: -1200}, {X: 0, Y: -1200}, {X: 900, Y: -1200}, {X: 1800, Y: -1200},
-		{X: -1800, Y: -600}, {X: -900, Y: -600}, {X: 0, Y: -600}, {X: 900, Y: -600}, {X: 1800, Y: -600},
-		{X: -1800, Y: 0}, {X: -900, Y: 0}, {X: 0, Y: 0}, {X: 900, Y: 0}, {X: 1800, Y: 0},
-		{X: -1800, Y: 600}, {X: -900, Y: 600}, {X: 0, Y: 600}, {X: 900, Y: 600}, {X: 1800, Y: 600},
-		{X: -1800, Y: 1200}, {X: -900, Y: 1200}, {X: 0, Y: 1200}, {X: 900, Y: 1200}, {X: 1800, Y: 1200},
+		{X: -2600, Y: -1200}, {X: -1300, Y: -1200}, {X: 0, Y: -1200}, {X: 1300, Y: -1200}, {X: 2600, Y: -1200},
+		{X: -2600, Y: -600}, {X: -1300, Y: -600}, {X: 0, Y: -600}, {X: 1300, Y: -600}, {X: 2600, Y: -600},
+		{X: -2600, Y: 0}, {X: -1300, Y: 0}, {X: 0, Y: 0}, {X: 1300, Y: 0}, {X: 2600, Y: 0},
+		{X: -2600, Y: 600}, {X: -1300, Y: 600}, {X: 0, Y: 600}, {X: 1300, Y: 600}, {X: 2600, Y: 600},
+		{X: -2600, Y: 1200}, {X: -1300, Y: 1200}, {X: 0, Y: 1200}, {X: 1300, Y: 1200}, {X: 2600, Y: 1200},
 	}
 
 	// Central Terminal bay position
-	centralTerminal := Vec2{X: -350, Y: 0}
+	centralTerminal := Vec2{X: -650, Y: 0}
 
 	for i, car := range tm.Cars {
 		// Verify no car spawns inside or within 220px of ANY intersection center
@@ -792,22 +818,22 @@ func TestEnlargedIntersectionTurningClearance(t *testing.T) {
 	world := NewWorld(52.0)
 	laneW := 52.0
 
-	// Smallest 2-lane intersection: X = -900, Y = -600 (West Park Blvd & North 2nd St)
-	// Right turn corner apron: X = -955, Y = -655 (dist to center = sqrt(55^2+55^2) = 77.8px)
-	cornerPos := Vec2{X: -955, Y: -655}
+	// Smallest 2-lane intersection: X = -1300, Y = -600 (West Park Blvd & North 2nd St)
+	// Right turn corner apron: X = -1355, Y = -655 (dist to center = sqrt(55^2+55^2) = 77.8px)
+	cornerPos := Vec2{X: -1355, Y: -655}
 	res := world.CheckBoundaries(cornerPos, 18.0, laneW)
 	if res.Zone != ZoneRoad {
 		t.Fatalf("Expected enlarged intersection corner to be ZoneRoad for comfortable turning, got %v", res.Zone)
 	}
 
 	// Wide turning trajectory (dist = 120px and 160px from center) must also remain safely inside ZoneRoad
-	wideTurnPos := Vec2{X: -900 + 85.0, Y: -600 + 85.0} // dist ~120px
+	wideTurnPos := Vec2{X: -1300 + 85.0, Y: -600 + 85.0} // dist ~120px
 	resWide := world.CheckBoundaries(wideTurnPos, 18.0, laneW)
 	if resWide.Zone != ZoneRoad {
 		t.Fatalf("Expected wide turn trajectory at intersection to be ZoneRoad, got %v", resWide.Zone)
 	}
 
-	extraWideTurnPos := Vec2{X: -900 + 115.0, Y: -600 + 115.0} // dist ~162px
+	extraWideTurnPos := Vec2{X: -1300 + 115.0, Y: -600 + 115.0} // dist ~162px
 	resExtraWide := world.CheckBoundaries(extraWideTurnPos, 18.0, laneW)
 	if resExtraWide.Zone != ZoneRoad {
 		t.Fatalf("Expected extra wide turn trajectory at intersection to be ZoneRoad, got %v", resExtraWide.Zone)
@@ -1028,10 +1054,10 @@ func TestRoadCameraWrongWayViolations(t *testing.T) {
 		t.Fatalf("Expected surveillance cameras on straight roads")
 	}
 
-	// 1. Camera on Central Boulevard East (X = 450, Y = 0, EW road)
+	// 1. Camera on Central Boulevard East (X = 1950, Y = 0, EW road)
 	// Normal traffic on South side (Y = 30) flows EAST (heading = 0)
 	// Bus driving WEST (heading = Pi) on the South side is WRONG-WAY (逆行)!
-	busWrongWay := NewBus(450, 30.0, math.Pi) // Facing West on South side
+	busWrongWay := NewBus(1950, 30.0, math.Pi) // Facing West on South side
 	busWrongWay.Speed = 35.0
 
 	violated, notice := tls.CheckRoadCameraViolation(busWrongWay)
@@ -1043,7 +1069,7 @@ func TestRoadCameraWrongWayViolations(t *testing.T) {
 	}
 
 	// 2. Normal lawful driving on the same road section (Facing East on South side)
-	busLegal := NewBus(-450, 30.0, 0) // Facing East on South side near Camera 1
+	busLegal := NewBus(-1950, 30.0, 0) // Facing East on South side near Camera 1
 	busLegal.Speed = 35.0
 	vLegal, _ := tls.CheckRoadCameraViolation(busLegal)
 	if vLegal {
@@ -1753,6 +1779,1842 @@ func TestBusCarCollisionSeparationAndNoOverlap(t *testing.T) {
 	}
 	if g.Bus.Speed >= 80.0 {
 		t.Fatalf("Expected bus speed to be clamped/braked on impact, got %f", g.Bus.Speed)
+	}
+}
+
+func TestAICarsAvoidStoppedBusAndNoUnfairFine(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.Settings.TrafficFinesEnabled = true
+
+	// 1. Social vehicle smoothly stopping behind stationary bus in normal traffic flow
+	// Bus stopped in eastbound lane (Y=63) on EW avenue (road center Y=0)
+	g.Bus.Pos = Vec2{X: 500, Y: 63.0}
+	g.Bus.Heading = 0
+	g.Bus.Speed = 0
+	g.Bus.Length = 96.0
+	g.Bus.Width = 36.0
+
+	if IsBusFacingWrongWay(g.Bus) {
+		t.Fatalf("Bus on South side (Y=63) facing East must NOT be considered wrong-way")
+	}
+
+	approachingCar := &TrafficCar{
+		Pos:         Vec2{X: 250, Y: 63.0}, // 250px away
+		Heading:     0,
+		Speed:       120.0,
+		TargetSpeed: 120.0,
+		Length:      48.0,
+		Width:       22.0,
+		IsEW:        true,
+		RoadCenter:  0,
+		LaneIndex:   1,
+	}
+	g.TrafficMgr.Cars = []*TrafficCar{approachingCar}
+
+	dt := 1.0 / 60.0
+	// Simulate 4.0 seconds (240 frames) of traffic AI
+	for frame := 0; frame < 240; frame++ {
+		g.TrafficMgr.updateSingleCar(dt, approachingCar, 0, g.Bus, g.TrafficLights, 1, 42.0, g.World)
+	}
+
+	carFrontBumperX := approachingCar.Pos.X + approachingCar.Length/2
+	busRearBumperX := g.Bus.Pos.X - g.Bus.Length/2
+	bumperGap := busRearBumperX - carFrontBumperX
+
+	if approachingCar.Speed > 0.1 {
+		t.Fatalf("AI car must completely stop behind stationary bus, but has speed: %.2f", approachingCar.Speed)
+	}
+	if bumperGap < 20.0 {
+		t.Fatalf("AI car must maintain safe buffer gap (>= 20px) behind stopped bus, but got gap: %.2f px", bumperGap)
+	}
+	if carFrontBumperX > busRearBumperX {
+		t.Fatalf("AI car must NEVER ram into stationary bus! Penetration: %.2f px", carFrontBumperX-busRearBumperX)
+	}
+
+	// 2. Stationary bus struck by social vehicle must NOT be fined (Zero Fine Protection)
+	initialCash := g.Cash
+	g.Bus.CrashCooldown = 0
+	g.Bus.Pos = Vec2{X: 500, Y: 63.0}
+	g.Bus.Speed = 0
+
+	// Force car into collision contact from behind
+	approachingCar.Pos = Vec2{X: 435, Y: 63.0} // overlapping
+	approachingCar.Speed = 40.0
+	g.checkBusCarCollisions()
+
+	if g.Cash != initialCash {
+		t.Fatalf("Stationary bus struck by social vehicle must NOT be fined! Expected cash %d, got %d",
+			initialCash, g.Cash)
+	}
+	if approachingCar.Speed > 0 {
+		t.Fatalf("Social vehicle striking bus from behind must have speed zeroed, got %f", approachingCar.Speed)
+	}
+
+	// 3. Bus driving wrong-way (逆行) and colliding with car MUST be penalized
+	// Bus facing East on North side of road (Y = -63) -> WRONG WAY!
+	g.Bus.Pos = Vec2{X: 500, Y: -63.0}
+	g.Bus.Heading = 0
+	g.Bus.Speed = 30.0
+	g.Bus.CrashCooldown = 0
+
+	if !IsBusFacingWrongWay(g.Bus) {
+		t.Fatalf("Bus facing East on North side (Y=-63) MUST be identified as wrong-way (逆行)")
+	}
+
+	oncomingCar := &TrafficCar{
+		Pos:     Vec2{X: 540, Y: -63.0},
+		Heading: math.Pi,
+		Speed:   40.0,
+		Length:  48.0,
+		Width:   22.0,
+		IsEW:    true,
+	}
+	g.TrafficMgr.Cars = []*TrafficCar{oncomingCar}
+	cashBeforeWrongWay := g.Cash
+
+	g.checkBusCarCollisions()
+
+	if g.Cash != cashBeforeWrongWay-50 {
+		t.Fatalf("Wrong-way collision must deduct $50 fine! Expected %d, got %d",
+			cashBeforeWrongWay-50, g.Cash)
+	}
+
+	// 4. Bus actively front-ramming stationary car at speed MUST be penalized
+	g.Bus.Pos = Vec2{X: 200, Y: 63.0}
+	g.Bus.Heading = 0
+	g.Bus.Speed = 45.0 // High speed front impact
+	g.Bus.CrashCooldown = 0
+
+	victimCar := &TrafficCar{
+		Pos:     Vec2{X: 260, Y: 63.0},
+		Heading: 0,
+		Speed:   0.0,
+		Length:  48.0,
+		Width:   22.0,
+		IsEW:    true,
+	}
+	g.TrafficMgr.Cars = []*TrafficCar{victimCar}
+	cashBeforeFrontRam := g.Cash
+
+	g.checkBusCarCollisions()
+
+	if g.Cash != cashBeforeFrontRam-50 {
+		t.Fatalf("Active front-ramming by bus must deduct $50 fine! Expected %d, got %d",
+			cashBeforeFrontRam-50, g.Cash)
+	}
+}
+
+func TestSingleLaneRoadRightTurnNoViolation(t *testing.T) {
+	tls := NewTrafficLightSystem()
+	laneW := 42.0
+
+	// 1. Single-lane North-South street (X = 1300, 东市民大道, 2-lane street) crossing 4-lane avenue (Y = 0, 中央主干大道)
+	// Approach from South towards North (Heading = -Pi/2), turning RIGHT onto Eastbound avenue (Heading = 0)
+	bus1 := NewBus(1300, 110.0, -math.Pi/2)
+	bus1.Speed = 35.0
+	bus1.SteeringAngle = 0.05 // steering right
+
+	// Entry before stop line
+	violated, notice := tls.CheckPlayerViolation(bus1, laneW)
+	if violated {
+		t.Fatalf("Entering right turn from single-lane road must not violate: %s", notice)
+	}
+
+	// Inside the intersection turning right
+	bus1.Pos = Vec2{X: 1315.0, Y: 20.0}
+	bus1.Heading = -math.Pi / 4
+	bus1.SteeringAngle = 0.15
+	violated, notice = tls.CheckPlayerViolation(bus1, laneW)
+	if violated {
+		t.Fatalf("Maneuvering right turn inside intersection must not violate: %s", notice)
+	}
+
+	// Clearing the right exit onto Eastbound avenue (Heading = 0, X = 1380 > stopLineDist)
+	bus1.Pos = Vec2{X: 1390.0, Y: 21.0}
+	bus1.Heading = 0
+	bus1.SteeringAngle = 0
+	violated, notice = tls.CheckPlayerViolation(bus1, laneW)
+	if violated {
+		t.Fatalf("Clearing right turn on single-lane road must NEVER be fined as lane discipline violation! Got: %s", notice)
+	}
+
+	// 2. Approach from North (X = 1300, Y = -110 heading South Pi/2), turning RIGHT onto Westbound avenue (Heading = Pi)
+	bus2 := NewBus(1300, -110.0, math.Pi/2)
+	bus2.Speed = 30.0
+	bus2.SteeringAngle = 0.08
+
+	tls.CheckPlayerViolation(bus2, laneW) // entry
+	bus2.Pos = Vec2{X: 1285.0, Y: -20.0}
+	bus2.Heading = 3 * math.Pi / 4
+	tls.CheckPlayerViolation(bus2, laneW) // inside
+
+	// Clearing west exit
+	bus2.Pos = Vec2{X: 1210.0, Y: -21.0}
+	bus2.Heading = math.Pi
+	violated2, notice2 := tls.CheckPlayerViolation(bus2, laneW)
+	if violated2 {
+		t.Fatalf("Clearing right turn from North approach on single-lane road must NOT violate! Got: %s", notice2)
+	}
+
+	// 3. East-West single-lane street (Y = -600, 北二路, 2-lane street) crossing 4-lane avenue (X = 0, 城市中轴大道)
+	// Approach from West (X = -110, Y = -600, heading East 0), turning RIGHT onto Southbound avenue (Heading = Pi/2)
+	bus3 := NewBus(-110.0, -600.0, 0)
+	bus3.Speed = 32.0
+	bus3.SteeringAngle = 0.06
+
+	tls.CheckPlayerViolation(bus3, laneW) // entry
+	bus3.Pos = Vec2{X: -20.0, Y: -585.0}
+	bus3.Heading = math.Pi / 4
+	tls.CheckPlayerViolation(bus3, laneW) // inside
+
+	// Clearing south exit
+	bus3.Pos = Vec2{X: -21.0, Y: -510.0}
+	bus3.Heading = math.Pi / 2
+	violated3, notice3 := tls.CheckPlayerViolation(bus3, laneW)
+	if violated3 {
+		t.Fatalf("Clearing right turn from EW 2-lane street must NOT violate! Got: %s", notice3)
+	}
+
+	// 4. Minor-to-minor 2-lane intersection (X = 1300, Y = 600)
+	// Both streets are single-lane in each direction!
+	bus4 := NewBus(1300, 710.0, -math.Pi/2)
+	bus4.Speed = 28.0
+	tls.CheckPlayerViolation(bus4, laneW) // entry
+	bus4.Pos = Vec2{X: 1390.0, Y: 620.0}
+	bus4.Heading = 0
+	violated4, notice4 := tls.CheckPlayerViolation(bus4, laneW)
+	if violated4 {
+		t.Fatalf("Turning right at minor 2-lane intersection must NOT violate! Got: %s", notice4)
+	}
+}
+
+func TestSingleLaneRoadPermissiveTurnsNoLaneViolation(t *testing.T) {
+	tls := NewTrafficLightSystem()
+	laneW := 42.0
+
+	// Find intersection at (1300, 0)
+	var inter *TrafficIntersection
+	for _, it := range tls.Intersections {
+		if math.Abs(it.Center.X-1300) < 5.0 && math.Abs(it.Center.Y) < 5.0 {
+			inter = it
+			break
+		}
+	}
+	if inter == nil {
+		t.Fatalf("Intersection at (1300, 0) not found")
+	}
+
+	// Set NS phase to Green
+	inter.Phase = PhaseNSGreen
+	inter.Timer = 1.0
+
+	// 1. Permissive Left Turn on Green from single-lane street (X = 1300, Northbound towards -Pi/2)
+	// Turns LEFT onto Westbound Y = 0 (Heading = Pi)
+	busLeft := NewBus(1300, 110.0, -math.Pi/2)
+	busLeft.Speed = 30.0
+	busLeft.SteeringAngle = -0.05 // steering left
+
+	// Entry
+	tls.CheckPlayerViolation(busLeft, laneW)
+	// Inside turning left
+	busLeft.Pos = Vec2{X: 1290.0, Y: 10.0}
+	busLeft.Heading = -3 * math.Pi / 4
+	tls.CheckPlayerViolation(busLeft, laneW)
+	// Exit onto Westbound avenue (Heading = Pi, X = 1210 < 1300 - stopLineDist)
+	busLeft.Pos = Vec2{X: 1210.0, Y: -21.0}
+	busLeft.Heading = math.Pi
+	violated, notice := tls.CheckPlayerViolation(busLeft, laneW)
+	if violated {
+		t.Fatalf("Permissive left turn on green from single-lane road must NEVER be fined! Got: %s", notice)
+	}
+
+	// 2. Straight through on Green from single-lane street (X = 1300, Northbound)
+	inter.Phase = PhaseNSGreen
+	inter.Timer = 2.0
+	busThru := NewBus(1300, 110.0, -math.Pi/2)
+	busThru.Speed = 40.0
+	tls.CheckPlayerViolation(busThru, laneW) // entry
+	busThru.Pos = Vec2{X: 1300, Y: -110.0}   // opposite exit
+	violatedThru, noticeThru := tls.CheckPlayerViolation(busThru, laneW)
+	if violatedThru {
+		t.Fatalf("Driving straight on green from single-lane road must NEVER be fined as lane discipline! Got: %s", noticeThru)
+	}
+}
+
+func TestMultiLaneAvenueRightTurnFromOuterLaneNoViolation(t *testing.T) {
+	tls := NewTrafficLightSystem()
+	laneW := 42.0
+
+	// 4-lane avenue intersection (0, 0)
+	// Bus in Lane 1 (outer straight/right lane, Y = 63.0) heading East (0)
+	bus := NewBus(-110.0, 63.0, 0)
+	bus.Speed = 35.0
+	bus.SteeringAngle = 0.08 // steering right
+
+	// Entry
+	tls.CheckPlayerViolation(bus, laneW)
+	// Inside turning right
+	bus.Pos = Vec2{X: 15.0, Y: 60.0}
+	bus.Heading = math.Pi / 4
+	tls.CheckPlayerViolation(bus, laneW)
+	// Exit onto Southbound avenue (Heading = Pi/2, Y = 110)
+	bus.Pos = Vec2{X: -21.0, Y: 110.0}
+	bus.Heading = math.Pi / 2
+	violated, notice := tls.CheckPlayerViolation(bus, laneW)
+	if violated {
+		t.Fatalf("Turning right from Lane 1 on 4-lane avenue must NEVER be fined as lane discipline! Got: %s", notice)
+	}
+}
+
+func TestBlockWidthExtendedAndBusStopsDistancedFromIntersections(t *testing.T) {
+	world := NewWorld(42.0)
+	tls := NewTrafficLightSystem()
+
+	// 1. Verify block width is extended to 1300px across all East-West intervals
+	expectedXs := []float64{-2600, -1300, 0, 1300, 2600}
+	for i := 0; i < len(expectedXs)-1; i++ {
+		width := expectedXs[i+1] - expectedXs[i]
+		if math.Abs(width-1300.0) > 1.0 {
+			t.Fatalf("Expected block width of 1300px, got %.1f between X=%.1f and X=%.1f", width, expectedXs[i], expectedXs[i+1])
+		}
+	}
+
+	// Verify all 25 intersections reflect the extended 1300px block width
+	if len(tls.Intersections) != 25 {
+		t.Fatalf("Expected 25 intersections, got %d", len(tls.Intersections))
+	}
+	foundInter := false
+	for _, it := range tls.Intersections {
+		if it.Center.X == 2600 && it.Center.Y == 0 {
+			foundInter = true
+			break
+		}
+	}
+	if !foundInter {
+		t.Fatalf("Expected outer boulevard intersection at X=2600, Y=0")
+	}
+
+	// 2. Verify all bus stops are located away from intersections
+	// Bus stops on 4-lane avenues must have >= 500px runway to the next intersection stop line
+	// so the bus has plenty of room to change lanes.
+	stopLineBuffer := 42.0*1.6 + 18.0 // approx 85.2px
+	for _, stop := range world.Stops {
+		isEW := math.Abs(math.Cos(stop.Heading)) > math.Abs(math.Sin(stop.Heading))
+		minDistToCenter := math.MaxFloat64
+		distToUpcomingStopLine := math.MaxFloat64
+
+		for _, it := range tls.Intersections {
+			dCenter := stop.RoadCenter.Distance(it.Center)
+			if dCenter < minDistToCenter {
+				minDistToCenter = dCenter
+			}
+
+			// Along direction of travel:
+			if isEW {
+				cosH := math.Cos(stop.Heading)
+				// If heading East (+X), next intersection has it.Center.X > stop.RoadCenter.X
+				if cosH > 0 && it.Center.X > stop.RoadCenter.X && math.Abs(it.Center.Y-stop.RoadCenter.Y) < 10.0 {
+					dLine := (it.Center.X - stop.RoadCenter.X) - stopLineBuffer
+					if dLine < distToUpcomingStopLine {
+						distToUpcomingStopLine = dLine
+					}
+				} else if cosH < 0 && it.Center.X < stop.RoadCenter.X && math.Abs(it.Center.Y-stop.RoadCenter.Y) < 10.0 {
+					dLine := (stop.RoadCenter.X - it.Center.X) - stopLineBuffer
+					if dLine < distToUpcomingStopLine {
+						distToUpcomingStopLine = dLine
+					}
+				}
+			} else {
+				sinH := math.Sin(stop.Heading)
+				if sinH > 0 && it.Center.Y > stop.RoadCenter.Y && math.Abs(it.Center.X-stop.RoadCenter.X) < 10.0 {
+					dLine := (it.Center.Y - stop.RoadCenter.Y) - stopLineBuffer
+					if dLine < distToUpcomingStopLine {
+						distToUpcomingStopLine = dLine
+					}
+				} else if sinH < 0 && it.Center.Y < stop.RoadCenter.Y && math.Abs(it.Center.X-stop.RoadCenter.X) < 10.0 {
+					dLine := (stop.RoadCenter.Y - it.Center.Y) - stopLineBuffer
+					if dLine < distToUpcomingStopLine {
+						distToUpcomingStopLine = dLine
+					}
+				}
+			}
+		}
+
+		// Distance to any intersection center should be at least 280px
+		if minDistToCenter < 280.0 {
+			t.Fatalf("Stop %d (%s) at %v is too close to an intersection center (minDist=%.1f < 280px)",
+				stop.ID, stop.Name, stop.Pos, minDistToCenter)
+		}
+
+		// On 4-lane avenues, distance to upcoming stop line must be >= 500px for comfortable lane change
+		if isEW && distToUpcomingStopLine < 500.0 {
+			t.Fatalf("Stop %d (%s) at %v has insufficient lane-change runway to next stop line (dist=%.1f < 500px)",
+				stop.ID, stop.Name, stop.Pos, distToUpcomingStopLine)
+		}
+	}
+}
+
+func TestPlanModePerformanceOptimizations(t *testing.T) {
+	world := NewWorld(42.0)
+	cam := NewCamera(1280, 720)
+	cam.Pos = Vec2{X: 0, Y: 0}
+	cam.Zoom = 0.22
+
+	// 1. Verify Camera Frustum Culling
+	// Center is visible
+	if !cam.IsPointVisible(Vec2{X: 0, Y: 0}, 50) {
+		t.Fatal("Origin point must be visible on camera centered at origin")
+	}
+	// Far off-screen point (X=10000) must NOT be visible
+	if cam.IsPointVisible(Vec2{X: 10000, Y: 10000}, 50) {
+		t.Fatal("Far away point (10000, 10000) must be culled by camera frustum")
+	}
+	// Far off-screen bounding box must NOT be visible
+	if cam.IsBoxVisible(8000, 8000, 9000, 9000) {
+		t.Fatal("Far away box (8000..9000) must be culled by camera frustum")
+	}
+
+	// 2. Verify Dijkstra Route Path Cache Memoization
+	s1 := world.Stops[0]
+	s2 := world.Stops[1]
+	p1 := GetRoadPathBetweenStops(s1, s2, 42.0)
+	if len(p1) < 2 {
+		t.Fatalf("Path between stop 0 and 1 must contain at least 2 points, got %d", len(p1))
+	}
+
+	// Second call must return the cached slice (same length and points) instantly
+	p2 := GetRoadPathBetweenStops(s1, s2, 42.0)
+	if len(p2) != len(p1) {
+		t.Fatalf("Cached path length mismatch: expected %d, got %d", len(p1), len(p2))
+	}
+	for i := range p1 {
+		if p1[i] != p2[i] {
+			t.Fatalf("Point %d mismatch in cached path: %v vs %v", i, p1[i], p2[i])
+		}
+	}
+
+	// 3. Verify Route Description Cache
+	route := NewRoute()
+	route.AddStop(0)
+	route.AddStop(1)
+	desc1 := route.GetRouteDescription(world)
+	if desc1 == "" {
+		t.Fatal("Route description must not be empty")
+	}
+	// Calling again should return cached description string
+	desc2 := route.GetRouteDescription(world)
+	if desc1 != desc2 {
+		t.Fatalf("Cached description mismatch: %q vs %q", desc1, desc2)
+	}
+
+	// Mutating route should invalidate cache and update correctly
+	route.AddStop(2)
+	desc3 := route.GetRouteDescription(world)
+	if desc3 == desc1 {
+		t.Fatal("Description cache should invalidate when a new stop is added")
+	}
+
+	// Clear should reset cache
+	route.Clear()
+	descEmpty := route.GetRouteDescription(world)
+	if descEmpty != "未规划站点 (点击站点图标添加)" {
+		t.Fatalf("Unexpected empty route description: %q", descEmpty)
+	}
+}
+
+func TestMapThemesRoundaboutsAndBridges(t *testing.T) {
+	// 1. Test MapTheme enum, cycling across all 5 distinct maps and names
+	m := MapThemeMetropolis
+	if m.DisplayName() != "现代都会 (Metropolis)" || m.ShortName() != "现代都会" {
+		t.Fatalf("Unexpected display/short name for Metropolis: %s, %s", m.DisplayName(), m.ShortName())
+	}
+	c := m.Next()
+	if c != MapThemeCoastalBay || c.ShortName() != "海滨港湾" {
+		t.Fatalf("Expected next theme to be Coastal Bay, got %v (%s)", c, c.ShortName())
+	}
+	rv := c.Next()
+	if rv != MapThemeRiverValley || rv.ShortName() != "溪谷江城" {
+		t.Fatalf("Expected next theme to be River Valley, got %v (%s)", rv, rv.ShortName())
+	}
+	l := rv.Next()
+	if l != MapThemeEmeraldLake || l.ShortName() != "湖畔水乡" {
+		t.Fatalf("Expected next theme to be Emerald Lake, got %v (%s)", l, l.ShortName())
+	}
+	tc := l.Next()
+	if tc != MapThemeTwinCities || tc.ShortName() != "高新双城" {
+		t.Fatalf("Expected next theme to be Twin Cities, got %v (%s)", tc, tc.ShortName())
+	}
+	cust := tc.Next()
+	if cust != MapThemeCustom || cust.ShortName() != "自定义" {
+		t.Fatalf("Expected next theme to be Custom Map, got %v (%s)", cust, cust.ShortName())
+	}
+	if cust.Next() != MapThemeMetropolis {
+		t.Fatalf("Expected cycle back to Metropolis, got %v", cust.Next())
+	}
+
+	laneW := 42.0
+
+	// 2. Test Metropolis Map (5x5 grid with canal twin bridges)
+	wm := NewWorld(laneW, MapThemeMetropolis)
+	if wm.Theme != MapThemeMetropolis {
+		t.Fatalf("World theme mismatch: expected Metropolis, got %v", wm.Theme)
+	}
+	if len(wm.Roundabouts) == 0 {
+		t.Fatal("Metropolis map should have at least 1 roundabout")
+	}
+	if len(wm.Bridges) < 2 {
+		t.Fatalf("Metropolis map should have twin canal bridges, got %d", len(wm.Bridges))
+	}
+	if len(wm.Waters) == 0 {
+		t.Fatal("Metropolis map should have water bodies (canal)")
+	}
+	if len(wm.Stops) != 12 {
+		t.Fatalf("Metropolis map should have 12 stops, got %d", len(wm.Stops))
+	}
+
+	// 3. Test Coastal Bay Map (coastal boulevard & 1200m sea suspension bridge)
+	wc := NewWorld(laneW, MapThemeCoastalBay)
+	if wc.Theme != MapThemeCoastalBay {
+		t.Fatalf("World theme mismatch: expected Coastal Bay, got %v", wc.Theme)
+	}
+	if len(wc.Roundabouts) == 0 {
+		t.Fatal("Coastal Bay map should have at least 1 roundabout")
+	}
+	if len(wc.Bridges) == 0 {
+		t.Fatal("Coastal Bay map should have ocean bridge")
+	}
+	hasBeach := false
+	for _, wb := range wc.Waters {
+		if wb.HasBeach {
+			hasBeach = true
+			break
+		}
+	}
+	if !hasBeach {
+		t.Fatal("Coastal Bay map should have water body with sandy beach")
+	}
+
+	// 4. Test River Valley Map (Yangtze River gorge & twin cable-stayed bridges)
+	wrv := NewWorld(laneW, MapThemeRiverValley)
+	if wrv.Theme != MapThemeRiverValley {
+		t.Fatalf("World theme mismatch: expected River Valley, got %v", wrv.Theme)
+	}
+	if len(wrv.Bridges) < 2 {
+		t.Fatalf("River Valley map should have twin grand bridges, got %d", len(wrv.Bridges))
+	}
+	if len(wrv.Waters) == 0 {
+		t.Fatal("River Valley map should feature Yangtze water body")
+	}
+	if len(wrv.Stops) < 6 {
+		t.Fatalf("River Valley map should have stops, got %d", len(wrv.Stops))
+	}
+
+	// 5. Test Emerald Lake Map (giant emerald lake, lake island & 4 stone arch bridges)
+	wl := NewWorld(laneW, MapThemeEmeraldLake)
+	if wl.Theme != MapThemeEmeraldLake {
+		t.Fatalf("World theme mismatch: expected Emerald Lake, got %v", wl.Theme)
+	}
+	if len(wl.Roundabouts) == 0 {
+		t.Fatal("Emerald Lake map should have lake island roundabout")
+	}
+	if len(wl.Bridges) < 2 {
+		t.Fatalf("Emerald Lake map should have stone arch bridges, got %d", len(wl.Bridges))
+	}
+	hasStoneArch := false
+	for _, br := range wl.Bridges {
+		if br.Style() == BridgeStyleStoneArch {
+			hasStoneArch = true
+			break
+		}
+	}
+	if !hasStoneArch {
+		t.Fatal("Emerald Lake map should feature stone arch bridges")
+	}
+
+	// 6. Test Twin Cities Map (Central expressway viaduct overpass & grade-separated interchange)
+	wtc := NewWorld(laneW, MapThemeTwinCities)
+	if wtc.Theme != MapThemeTwinCities {
+		t.Fatalf("World theme mismatch: expected Twin Cities, got %v", wtc.Theme)
+	}
+	hasOverpass := false
+	for _, br := range wtc.Bridges {
+		if br.IsOverpass && br.Style() == BridgeStyleOverpass {
+			hasOverpass = true
+			break
+		}
+	}
+	if !hasOverpass {
+		t.Fatal("Twin Cities map must feature a grade-separated highway overpass viaduct")
+	}
+	if len(wtc.Stops) < 6 {
+		t.Fatalf("Twin Cities map should have stops, got %d", len(wtc.Stops))
+	}
+
+	// 7. Test Custom Map
+	wcm := NewWorld(laneW, MapThemeCustom)
+	if wcm.Theme != MapThemeCustom {
+		t.Fatalf("World theme mismatch: expected Custom, got %v", wcm.Theme)
+	}
+	if len(wcm.Stops) < 6 {
+		t.Fatalf("Custom map should have at least 6 stops, got %d", len(wcm.Stops))
+	}
+	if len(wcm.Roads) < 8 {
+		t.Fatalf("Custom map should have roads, got %d", len(wcm.Roads))
+	}
+
+	// 8. Test Roundabout roadway boundary detection vs center island barrier
+	rb := wm.Roundabouts[0]
+	roadwayRadius := (rb.InnerRadius + rb.Radius) / 2.0
+	posOnRing := Vec2{X: rb.Center.X + roadwayRadius, Y: rb.Center.Y}
+	resRing := wm.CheckBoundaries(posOnRing, 1.5, laneW)
+	if resRing.Zone == ZoneHardBarrier {
+		t.Fatalf("Bus on roundabout driving ring should not be in barrier! Res: %+v", resRing)
+	}
+
+	posInIsland := rb.Center
+	resIsland := wm.CheckBoundaries(posInIsland, 1.5, laneW)
+	if resIsland.Zone != ZoneHardBarrier {
+		t.Fatalf("Bus inside central island should hit barrier/boundary! Res: %+v", resIsland)
+	}
+
+	// 8. Test Bridge bounds (bus on bridge roadway is safe)
+	br := wm.Bridges[0]
+	posOnBridge := br.Pos
+	resBridge := wm.CheckBoundaries(posOnBridge, 1.5, laneW)
+	if resBridge.Zone == ZoneHardBarrier {
+		t.Fatalf("Bus on bridge roadway should be safe! Res: %+v", resBridge)
+	}
+
+	// 9. Test Overpass Viaduct bounds on Map 5
+	overpassBr := wtc.Bridges[0]
+	resOverpass := wtc.CheckBoundaries(overpassBr.Pos, 1.5, laneW)
+	if resOverpass.Zone == ZoneHardBarrier {
+		t.Fatalf("Bus on highway overpass viaduct should be safe! Res: %+v", resOverpass)
+	}
+
+	// 10. Test Theme switching & Main Menu State
+	g := NewGame(1280, 720)
+	if g.State != StateMainMenu {
+		t.Fatalf("Expected new game to start in StateMainMenu, got %v", g.State)
+	}
+
+	// Enter City
+	g.EnterCity(MapThemeCoastalBay)
+	if g.State != StatePlaying {
+		t.Fatalf("Expected state to be StatePlaying after EnterCity, got %v", g.State)
+	}
+	if g.World.Theme != MapThemeCoastalBay || g.Settings.MapTheme != MapThemeCoastalBay {
+		t.Fatalf("Game map theme switch to Coastal Bay failed")
+	}
+
+	// Enter River Valley
+	g.EnterCity(MapThemeRiverValley)
+	if g.World.Theme != MapThemeRiverValley || g.Settings.MapTheme != MapThemeRiverValley {
+		t.Fatalf("Game map theme switch to River Valley failed")
+	}
+
+	// Enter Twin Cities
+	g.EnterCity(MapThemeTwinCities)
+	if g.World.Theme != MapThemeTwinCities || g.Settings.MapTheme != MapThemeTwinCities {
+		t.Fatalf("Game map theme switch to Twin Cities failed")
+	}
+
+	// 11. Test HUD Menu button click returning to Main Menu
+	hud := g.HUD
+	hud.MenuBtnBounds = Rect{X: 10, Y: 10, W: 120, H: 30}
+	hud.MapThemeBtnBounds = hud.MenuBtnBounds
+	clicked := hud.HandleMenuBtnClick(Vec2{X: 20, Y: 20})
+	if !clicked || !hud.ReturnToMenuRequested {
+		t.Fatal("Expected HUD Menu button click to request return to menu")
+	}
+
+	// Update game should transition state back to StateMainMenu
+	err := g.Update()
+	if err != nil {
+		t.Fatalf("Unexpected error from g.Update(): %v", err)
+	}
+	if g.State != StateMainMenu {
+		t.Fatalf("Expected game state to return to StateMainMenu, got %v", g.State)
+	}
+}
+
+func TestFiveDistinctCityMapsAndMainMenu(t *testing.T) {
+	laneW := 52.0
+
+	// 1. Verify 5 completely distinct maps with unique road topologies, stops, and geography
+	type mapSpec struct {
+		theme       MapTheme
+		expectedMinRoads int
+		expectedMinStops int
+		expectedBridges  int
+		expectedWaters   int
+	}
+
+	specs := []mapSpec{
+		{theme: MapThemeMetropolis, expectedMinRoads: 10, expectedMinStops: 12, expectedBridges: 3, expectedWaters: 1},
+		{theme: MapThemeCoastalBay, expectedMinRoads: 9, expectedMinStops: 8, expectedBridges: 1, expectedWaters: 1},
+		{theme: MapThemeRiverValley, expectedMinRoads: 12, expectedMinStops: 8, expectedBridges: 2, expectedWaters: 1},
+		{theme: MapThemeEmeraldLake, expectedMinRoads: 10, expectedMinStops: 8, expectedBridges: 4, expectedWaters: 1},
+		{theme: MapThemeTwinCities, expectedMinRoads: 11, expectedMinStops: 8, expectedBridges: 1, expectedWaters: 1},
+	}
+
+	for _, sp := range specs {
+		w := NewWorld(laneW, sp.theme)
+		if w.Theme != sp.theme {
+			t.Fatalf("Theme mismatch for %v", sp.theme)
+		}
+		if len(w.Roads) < sp.expectedMinRoads {
+			t.Fatalf("Map %s has insufficient roads: %d (expected >= %d)", sp.theme.DisplayName(), len(w.Roads), sp.expectedMinRoads)
+		}
+		if len(w.Stops) < sp.expectedMinStops {
+			t.Fatalf("Map %s has insufficient stops: %d (expected >= %d)", sp.theme.DisplayName(), len(w.Stops), sp.expectedMinStops)
+		}
+		if len(w.Bridges) != sp.expectedBridges {
+			t.Fatalf("Map %s bridge count mismatch: %d (expected %d)", sp.theme.DisplayName(), len(w.Bridges), sp.expectedBridges)
+		}
+		if len(w.Waters) < sp.expectedWaters {
+			t.Fatalf("Map %s water bodies mismatch: %d (expected >= %d)", sp.theme.DisplayName(), len(w.Waters), sp.expectedWaters)
+		}
+		if len(w.Intersections) == 0 {
+			t.Fatalf("Map %s should dynamically compute intersections", sp.theme.DisplayName())
+		}
+
+		// Verify every road segment in the map is strictly orthogonal and clean (no unnatural jagged piecewise lines)
+		for _, r := range w.Roads {
+			isEW := math.Abs(r.P1.Y-r.P2.Y) < 1.0
+			isNS := math.Abs(r.P1.X-r.P2.X) < 1.0
+			if !isEW && !isNS {
+				t.Fatalf("Map %s has non-orthogonal unnatural road: %s (%+v -> %+v)", sp.theme.DisplayName(), r.Name, r.P1, r.P2)
+			}
+		}
+	}
+
+	// 2. Verify Map 5 Grade-Separated Highway Overpass Viaduct
+	wTwin := NewWorld(laneW, MapThemeTwinCities)
+	foundOverpass := false
+	for _, br := range wTwin.Bridges {
+		if br.IsOverpass && br.Style() == BridgeStyleOverpass {
+			foundOverpass = true
+			if br.Length < 300 || br.Width < 100 {
+				t.Fatalf("Overpass dimensions too small: length %f, width %f", br.Length, br.Width)
+			}
+		}
+	}
+	if !foundOverpass {
+		t.Fatal("Map 5 must include a grade-separated highway overpass viaduct")
+	}
+
+	// 3. Main Menu System State Flow
+	g := NewGame(1280, 720)
+	if g.State != StateMainMenu {
+		t.Fatalf("Game must boot directly into Main Menu State")
+	}
+
+	// Simulate selecting Map 4 (Emerald Lake) in Main Menu
+	g.SelectedMapTheme = MapThemeEmeraldLake
+	g.EnterCity(g.SelectedMapTheme)
+	if g.State != StatePlaying {
+		t.Fatalf("Entering city must switch game state to StatePlaying")
+	}
+	if g.World.Theme != MapThemeEmeraldLake {
+		t.Fatalf("World theme must be Emerald Lake")
+	}
+	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+		t.Fatalf("Bus must spawn inside Station Bay 0")
+	}
+	if g.Bus.Speed != 0 || !g.Bus.DoorsOpen {
+		t.Fatalf("Bus at starting bay must be stopped with doors open")
+	}
+
+	// Simulate returning to Main Menu via in-game Settings
+	g.Settings.IsOpen = true
+	g.Settings.ReturnToMenuRequested = true
+	err := g.Update()
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if g.State != StateMainMenu {
+		t.Fatalf("Settings ReturnToMenuRequested must return to StateMainMenu")
+	}
+
+	// Simulate selecting Map 5 (Twin Cities) and entering
+	g.SelectedMapTheme = MapThemeTwinCities
+	g.EnterCity(g.SelectedMapTheme)
+	if g.State != StatePlaying || g.World.Theme != MapThemeTwinCities {
+		t.Fatalf("Entering Twin Cities map failed")
+	}
+	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+		t.Fatalf("Bus must reposition to Stop 0 of the new city")
+	}
+
+	// Simulate returning to Main Menu via HUD top-bar button
+	g.HUD.ReturnToMenuRequested = true
+	err = g.Update()
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if g.State != StateMainMenu {
+		t.Fatalf("HUD ReturnToMenuRequested must return to StateMainMenu")
+	}
+}
+
+func TestCustomMapLoadingValidationAndReloading(t *testing.T) {
+	// 1. Verify default preset map data integrity
+	defaultMap := GetDefaultCustomMapData()
+	if defaultMap == nil {
+		t.Fatal("GetDefaultCustomMapData returned nil")
+	}
+	if err := ValidateCustomMapData(defaultMap); err != nil {
+		t.Fatalf("Default custom map failed validation: %v", err)
+	}
+	if len(defaultMap.Stops) != 12 {
+		t.Fatalf("Default custom map should have 12 stops, got %d", len(defaultMap.Stops))
+	}
+	if len(defaultMap.Roads) < 10 {
+		t.Fatalf("Default custom map should have >= 10 roads, got %d", len(defaultMap.Roads))
+	}
+	if len(defaultMap.Roundabouts) == 0 {
+		t.Fatal("Default custom map should have at least 1 roundabout")
+	}
+	if len(defaultMap.Bridges) == 0 {
+		t.Fatal("Default custom map should have at least 1 bridge")
+	}
+
+	// 2. Verify all presets pass validation
+	presets := GetCustomMapPresets()
+	if len(presets) < 3 {
+		t.Fatalf("Expected at least 3 custom map presets, got %d", len(presets))
+	}
+	for i, preset := range presets {
+		if err := ValidateCustomMapData(preset); err != nil {
+			t.Fatalf("Preset #%d (%s) failed validation: %v", i, preset.Name, err)
+		}
+		if len(preset.Stops) < 6 {
+			t.Fatalf("Preset #%d (%s) should have >= 6 stops, got %d", i, preset.Name, len(preset.Stops))
+		}
+	}
+
+	// 3. Verify validation error rejection
+	// 3a. Empty name
+	invalidMap := *defaultMap
+	invalidMap.Name = ""
+	if err := ValidateCustomMapData(&invalidMap); err == nil {
+		t.Fatal("Expected error for empty map name")
+	}
+
+	// 3b. Insufficient roads
+	invalidMap = *defaultMap
+	invalidMap.Roads = nil
+	if err := ValidateCustomMapData(&invalidMap); err == nil {
+		t.Fatal("Expected error for missing roads")
+	}
+
+	// 3c. Non-orthogonal road
+	invalidMap = *defaultMap
+	invalidMap.Roads = []CustomRoadData{
+		{P1: [2]float64{0, 0}, P2: [2]float64{500, 0}, Lanes: 2, Name: "Road 1"},
+		{P1: [2]float64{0, 0}, P2: [2]float64{500, 500}, Lanes: 2, Name: "Diagonal Road"},
+	}
+	if err := ValidateCustomMapData(&invalidMap); err == nil || !strings.Contains(err.Error(), "orthogonal") {
+		t.Fatalf("Expected non-orthogonal error, got %v", err)
+	}
+
+	// 3d. Duplicate stop ID
+	invalidMap = *defaultMap
+	invalidMap.Stops = []CustomStopData{
+		{ID: 1, Name: "Stop A", Pos: [2]float64{0, 0}, Lanes: 2},
+		{ID: 1, Name: "Stop B", Pos: [2]float64{100, 0}, Lanes: 2},
+	}
+	if err := ValidateCustomMapData(&invalidMap); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("Expected duplicate stop ID error, got %v", err)
+	}
+
+	// 4. Test file serialization roundtrip
+	tmpDir, err := os.MkdirTemp("", "custom_map_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	tmpFile := filepath.Join(tmpDir, "custom_map.json")
+	if err := SaveCustomMapToFile(tmpFile, defaultMap); err != nil {
+		t.Fatalf("Failed to save custom map to file: %v", err)
+	}
+
+	loadedMap, err := LoadCustomMapFromFile(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to load custom map from file: %v", err)
+	}
+	if loadedMap.Name != defaultMap.Name {
+		t.Fatalf("Loaded map name mismatch: expected %s, got %s", defaultMap.Name, loadedMap.Name)
+	}
+	if len(loadedMap.Roads) != len(defaultMap.Roads) {
+		t.Fatalf("Loaded road count mismatch: expected %d, got %d", len(defaultMap.Roads), len(loadedMap.Roads))
+	}
+	if len(loadedMap.Stops) != len(defaultMap.Stops) {
+		t.Fatalf("Loaded stop count mismatch: expected %d, got %d", len(defaultMap.Stops), len(loadedMap.Stops))
+	}
+
+	// 5. Test World instantiation with custom map
+	w := NewWorld(48.0, MapThemeCustom)
+	if w.Theme != MapThemeCustom {
+		t.Fatalf("Expected world theme Custom, got %v", w.Theme)
+	}
+	if len(w.Stops) == 0 {
+		t.Fatal("Custom world should have populated stops")
+	}
+	if len(w.Intersections) == 0 {
+		t.Fatal("Custom world should have computed road intersections")
+	}
+
+	// 6. Test In-Game Custom Map Lifecycle & Reload
+	g := NewGame(1280, 720)
+	g.SelectedMapTheme = MapThemeCustom
+	g.EnterCity(g.SelectedMapTheme)
+	if g.World.Theme != MapThemeCustom {
+		t.Fatalf("Expected Game to be on Custom Map theme")
+	}
+	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+		t.Fatalf("Bus should spawn at stop 0 in custom map")
+	}
+
+	// Hot reload custom map
+	err = g.ReloadCustomMap()
+	if err != nil {
+		t.Fatalf("ReloadCustomMap failed: %v", err)
+	}
+	if len(g.HUD.Toasts) == 0 {
+		t.Fatal("ReloadCustomMap should issue HUD toast feedback")
+	}
+}
+
+func TestAllMapsBusStopsDistancedFromIntersections(t *testing.T) {
+	laneW := 52.0
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+		MapThemeCustom,
+	}
+
+	for _, theme := range themes {
+		w := NewWorld(laneW, theme)
+		if len(w.Stops) == 0 {
+			t.Fatalf("Map theme %s has no stops", theme.DisplayName())
+		}
+		if len(w.Intersections) == 0 {
+			t.Fatalf("Map theme %s has no intersections", theme.DisplayName())
+		}
+
+		for _, stop := range w.Stops {
+			minDist := math.MaxFloat64
+			var nearestInter Vec2
+			for _, inter := range w.Intersections {
+				d := stop.RoadCenter.Distance(inter)
+				if d < minDist {
+					minDist = d
+					nearestInter = inter
+				}
+			}
+
+			// Bus stop road center must be at least 240px away from any intersection
+			if minDist < 240.0 {
+				t.Fatalf("Map %s Stop '%s' (id=%d) at %v is too close to intersection at %v (dist=%.1f < 240px)",
+					theme.DisplayName(), stop.Name, stop.ID, stop.RoadCenter, nearestInter, minDist)
+			}
+		}
+	}
+}
+
+func TestCustomMapStopTooCloseToIntersectionValidation(t *testing.T) {
+	customMap := GetDefaultCustomMapData()
+	if err := ValidateCustomMapData(customMap); err != nil {
+		t.Fatalf("Default custom map failed validation: %v", err)
+	}
+
+	// Deliberately place a stop right on an intersection (0, 0)
+	invalidMap := *customMap
+	invalidStops := make([]CustomStopData, len(customMap.Stops))
+	copy(invalidStops, customMap.Stops)
+	invalidStops[0].Pos = [2]float64{0, 0}
+	invalidMap.Stops = invalidStops
+
+	err := ValidateCustomMapData(&invalidMap)
+	if err == nil {
+		t.Fatalf("Expected validation error for stop at intersection (0, 0), got nil")
+	}
+	if !strings.Contains(err.Error(), "距离路口过近") {
+		t.Fatalf("Expected error message about being too close to intersection, got: %v", err)
+	}
+}
+
+func TestRoundaboutsHaveNoTrafficLights(t *testing.T) {
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeEmeraldLake,
+		MapThemeCustom,
+	}
+
+	for _, theme := range themes {
+		w := NewWorld(52.0, theme)
+		if len(w.Roundabouts) == 0 {
+			t.Fatalf("Theme %s was expected to have at least one roundabout", theme.DisplayName())
+		}
+
+		tls := NewTrafficLightSystem()
+		tls.BuildForWorld(w)
+
+		for _, rb := range w.Roundabouts {
+			// 1. Verify w.IsAtRoundabout returns true for roundabout center and perimeter
+			if !w.IsAtRoundabout(rb.Center) {
+				t.Fatalf("Theme %s: w.IsAtRoundabout(%v) must be true", theme.DisplayName(), rb.Center)
+			}
+			perimeterPt := rb.Center.Add(Vec2{X: rb.Radius - 10.0, Y: 0})
+			if !w.IsAtRoundabout(perimeterPt) {
+				t.Fatalf("Theme %s: w.IsAtRoundabout perimeter point (%v) must be true", theme.DisplayName(), perimeterPt)
+			}
+
+			// 2. Verify tls.Intersections does NOT contain any intersection inside the roundabout
+			for _, inter := range tls.Intersections {
+				if inter.Center.Distance(rb.Center) < rb.Radius {
+					t.Fatalf("Theme %s: Roundabout at %v must NOT have a traffic light intersection in tls (found inter at %v)",
+						theme.DisplayName(), rb.Center, inter.Center)
+				}
+			}
+
+			// 3. Verify vehicle driving in or through roundabout is NEVER fined for running a red light
+			testPositions := []Vec2{
+				rb.Center,
+				rb.Center.Add(Vec2{X: (rb.InnerRadius + rb.Radius) * 0.5, Y: 0}),
+				rb.Center.Add(Vec2{X: 0, Y: (rb.InnerRadius + rb.Radius) * 0.5}),
+				rb.Center.Add(Vec2{X: -rb.Radius + 10.0, Y: 0}),
+				rb.Center.Add(Vec2{X: rb.Radius - 10.0, Y: 0}),
+			}
+
+			for _, pos := range testPositions {
+				bus := NewBus(pos.X, pos.Y, 0)
+				bus.Speed = 65.0 // driving at full speed
+				violated, notice := tls.CheckPlayerViolation(bus, 52.0)
+				if violated {
+					t.Fatalf("Theme %s: Bus driving in roundabout at %v must NEVER be fined for red light: %s",
+						theme.DisplayName(), pos, notice)
+				}
+
+				// 4. Verify AI vehicles are never told to stop for red lights at roundabout
+				shouldStop, _ := tls.CheckStopForVehicle(pos, 0, 100.0, 52.0, false)
+				if shouldStop {
+					t.Fatalf("Theme %s: AI vehicle at %v approaching roundabout must NOT be instructed to stop for red light",
+						theme.DisplayName(), pos)
+				}
+			}
+		}
+	}
+}
+
+// TestNoUnreasonablyCloseParallelRoadsOnAnyMap verifies that across all maps,
+// no two parallel two-way roads are unreasonably close to each other (must maintain >= 400px spacing).
+func TestNoUnreasonablyCloseParallelRoadsOnAnyMap(t *testing.T) {
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+		MapThemeCustom,
+	}
+
+	const minParallelDistance = 400.0
+
+	for _, theme := range themes {
+		t.Run(theme.DisplayName(), func(t *testing.T) {
+			w := NewWorld(52.0, theme)
+			for i := 0; i < len(w.Roads); i++ {
+				for j := i + 1; j < len(w.Roads); j++ {
+					r1 := w.Roads[i]
+					r2 := w.Roads[j]
+
+					isR1EW := math.Abs(r1.P1.Y-r1.P2.Y) < 1.0
+					isR2EW := math.Abs(r2.P1.Y-r2.P2.Y) < 1.0
+					isR1NS := math.Abs(r1.P1.X-r1.P2.X) < 1.0
+					isR2NS := math.Abs(r2.P1.X-r2.P2.X) < 1.0
+
+					// Check parallel EW roads
+					if isR1EW && isR2EW {
+						y1 := (r1.P1.Y + r1.P2.Y) / 2.0
+						y2 := (r2.P1.Y + r2.P2.Y) / 2.0
+						dist := math.Abs(y1 - y2)
+
+						minX1 := math.Min(r1.P1.X, r1.P2.X)
+						maxX1 := math.Max(r1.P1.X, r1.P2.X)
+						minX2 := math.Min(r2.P1.X, r2.P2.X)
+						maxX2 := math.Max(r2.P1.X, r2.P2.X)
+						overlap := math.Min(maxX1, maxX2) - math.Max(minX1, minX2)
+
+						if overlap > 30.0 && dist > 1.0 && dist < minParallelDistance {
+							t.Fatalf("[%s] Parallel EW roads '%s' (Y=%.1f) and '%s' (Y=%.1f) are too close: %.1f px < %.0f px",
+								theme.DisplayName(), r1.Name, y1, r2.Name, y2, dist, minParallelDistance)
+						}
+					}
+
+					// Check parallel NS roads
+					if isR1NS && isR2NS {
+						x1 := (r1.P1.X + r1.P2.X) / 2.0
+						x2 := (r2.P1.X + r2.P2.X) / 2.0
+						dist := math.Abs(x1 - x2)
+
+						minY1 := math.Min(r1.P1.Y, r1.P2.Y)
+						maxY1 := math.Max(r1.P1.Y, r1.P2.Y)
+						minY2 := math.Min(r2.P1.Y, r2.P2.Y)
+						maxY2 := math.Max(r2.P1.Y, r2.P2.Y)
+						overlap := math.Min(maxY1, maxY2) - math.Max(minY1, minY2)
+
+						if overlap > 30.0 && dist > 1.0 && dist < minParallelDistance {
+							t.Fatalf("[%s] Parallel NS roads '%s' (X=%.1f) and '%s' (X=%.1f) are too close: %.1f px < %.0f px",
+								theme.DisplayName(), r1.Name, x1, r2.Name, x2, dist, minParallelDistance)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestCustomMapParallelRoadSpacingValidation verifies that ValidateCustomMapData
+// rejects maps containing parallel roads with distance < 400px and accepts well-spaced maps.
+func TestCustomMapParallelRoadSpacingValidation(t *testing.T) {
+	// Base valid map
+	base := GetDefaultCustomMapData()
+	if err := ValidateCustomMapData(base); err != nil {
+		t.Fatalf("Default custom map must pass validation: %v", err)
+	}
+
+	// 1. Add parallel EW road 200px away (too close)
+	badEW := GetDefaultCustomMapData()
+	badEW.Roads = append(badEW.Roads, CustomRoadData{
+		P1:    [2]float64{-1000, -1000},
+		P2:    [2]float64{1000, -1000},
+		Lanes: 2,
+		Name:  "平行过近加塞路 (200px away from Y=-1200)",
+	})
+	if err := ValidateCustomMapData(badEW); err == nil {
+		t.Fatalf("Expected validation error for parallel EW roads 200px apart, got nil")
+	}
+
+	// 2. Add parallel NS road 300px away (too close)
+	badNS := GetDefaultCustomMapData()
+	badNS.Roads = append(badNS.Roads, CustomRoadData{
+		P1:    [2]float64{300, -1000},
+		P2:    [2]float64{300, 1000},
+		Lanes: 2,
+		Name:  "垂直平行过近加塞路 (300px away from X=0)",
+	})
+	if err := ValidateCustomMapData(badNS); err == nil {
+		t.Fatalf("Expected validation error for parallel NS roads 300px apart, got nil")
+	}
+
+	// 3. Add parallel EW road 500px away (well spaced)
+	goodEW := GetDefaultCustomMapData()
+	goodEW.Roads = append(goodEW.Roads, CustomRoadData{
+		P1:    [2]float64{-1000, -1700},
+		P2:    [2]float64{1000, -1700},
+		Lanes: 2,
+		Name:  "安全间距平行外环路 (500px away from Y=-1200)",
+	})
+	if err := ValidateCustomMapData(goodEW); err != nil {
+		t.Fatalf("Expected valid custom map with 500px parallel spacing, got error: %v", err)
+	}
+}
+
+// TestBuiltinMapsBusStopsSafeDistanceFromIntersections ensures that all bus stops in built-in maps
+// maintain a safe, realistic distance (>= 250px) from all intersection centers and traffic roundabouts,
+// preventing bus stops from crowding junctions or obstructing turns.
+// (Per requirement: Custom maps MapThemeCustom are explicitly excluded from this constraint).
+func TestBuiltinMapsBusStopsSafeDistanceFromIntersections(t *testing.T) {
+	builtinThemes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+	}
+
+	const minSafeDistance = 250.0 // Minimum clearance required from intersection center
+
+	for _, theme := range builtinThemes {
+		t.Run(theme.DisplayName(), func(t *testing.T) {
+			w := NewWorld(42.0, theme)
+			if len(w.Stops) == 0 {
+				t.Fatalf("[%s] Map must have bus stops defined", theme.DisplayName())
+			}
+			if len(w.Intersections) == 0 {
+				t.Fatalf("[%s] Map must have intersections computed", theme.DisplayName())
+			}
+
+			for _, stop := range w.Stops {
+				// 1. Check distance to all intersections
+				for _, inter := range w.Intersections {
+					dist := stop.Pos.Distance(inter)
+					if dist < minSafeDistance {
+						t.Fatalf("[%s] Bus stop #%d '%s' at (%.1f, %.1f) is too close to intersection at (%.1f, %.1f): distance %.1fpx < required %.1fpx",
+							theme.DisplayName(), stop.ID, stop.Name, stop.Pos.X, stop.Pos.Y, inter.X, inter.Y, dist, minSafeDistance)
+					}
+
+					// Also check road center clearance
+					rcDist := stop.RoadCenter.Distance(inter)
+					if rcDist < minSafeDistance {
+						t.Fatalf("[%s] Bus stop #%d '%s' RoadCenter at (%.1f, %.1f) is too close to intersection at (%.1f, %.1f): distance %.1fpx < required %.1fpx",
+							theme.DisplayName(), stop.ID, stop.Name, stop.RoadCenter.X, stop.RoadCenter.Y, inter.X, inter.Y, rcDist, minSafeDistance)
+					}
+				}
+
+				// 2. Check clearance from roundabouts
+				for _, rb := range w.Roundabouts {
+					distToCenter := stop.Pos.Distance(rb.Center)
+					minRBClearance := rb.Radius + 40.0
+					if distToCenter < minRBClearance {
+						t.Fatalf("[%s] Bus stop #%d '%s' at (%.1f, %.1f) is inside roundabout '%s' (radius %.1f): dist %.1fpx < %.1fpx",
+							theme.DisplayName(), stop.ID, stop.Name, stop.Pos.X, stop.Pos.Y, rb.Name, rb.Radius, distToCenter, minRBClearance)
+					}
+					if w.IsAtRoundabout(stop.Pos) {
+						t.Fatalf("[%s] Bus stop #%d '%s' at (%.1f, %.1f) is flagged inside roundabout by IsAtRoundabout",
+							theme.DisplayName(), stop.ID, stop.Name, stop.Pos.X, stop.Pos.Y)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestNavigationToNextStopOnAllMaps tests that the navigation system to the next stop
+// functions properly across all built-in maps and custom maps.
+// It verifies:
+// 1. Route target stop identification and advancement.
+// 2. Generation of valid multi-point road paths along driving lanes.
+// 3. Traversal strictly along valid roads without jumping across water or missing bridges.
+// 4. Approach heading aligns with the target stop's docking direction.
+// 5. Lookahead navigation arrow pointing correctly along road corridors.
+func TestNavigationToNextStopOnAllMaps(t *testing.T) {
+	allThemes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+		MapThemeCustom,
+	}
+
+	for _, theme := range allThemes {
+		t.Run(theme.DisplayName(), func(t *testing.T) {
+			w := NewWorld(42.0, theme)
+			if len(w.Stops) < 2 {
+				t.Fatalf("[%s] Map should have at least 2 stops for navigation test", theme.DisplayName())
+			}
+
+			// Test with multiple consecutive stop sequences
+			route := NewRoute()
+			numStopsToTest := 6
+			if numStopsToTest > len(w.Stops) {
+				numStopsToTest = len(w.Stops)
+			}
+			for i := 0; i < numStopsToTest; i++ {
+				route.AddStop(i)
+			}
+			// Close the loop
+			route.AddStop(0)
+
+			// In transit loop: bus starts departing from Stop 0 towards Stop 1
+			route.CurrentIndex = 1
+			initialTrips := route.TotalTrips
+
+			for leg := 0; leg < len(route.StopIDs)-1; leg++ {
+				targetID := route.GetCurrentTargetStopID()
+				if targetID < 0 || targetID >= len(w.Stops) {
+					t.Fatalf("[%s] Leg %d: Invalid target stop ID %d", theme.DisplayName(), leg, targetID)
+				}
+				targetStop := w.Stops[targetID]
+
+				prevIdx := (route.CurrentIndex - 1 + len(route.StopIDs)) % len(route.StopIDs)
+				prevStopID := route.StopIDs[prevIdx]
+				prevStop := w.Stops[prevStopID]
+
+				// 1. Calculate road path between stops
+				path := GetRoadPathBetweenStopsInWorld(w, prevStop, targetStop, 42.0)
+				if len(path) < 2 {
+					t.Fatalf("[%s] Path between Stop %d ('%s') and Stop %d ('%s') has fewer than 2 waypoints: len=%d",
+						theme.DisplayName(), prevStop.ID, prevStop.Name, targetStop.ID, targetStop.Name, len(path))
+				}
+
+				// 2. Validate waypoint coordinates and continuity
+				for i := 0; i < len(path)-1; i++ {
+					p1 := path[i]
+					p2 := path[i+1]
+					segLen := p1.Distance(p2)
+					if segLen < 1.0 {
+						t.Fatalf("[%s] Consecutive waypoints %d and %d are degenerate: dist=%.2f",
+							theme.DisplayName(), i, i+1, segLen)
+					}
+				}
+
+				// 3. In River Valley, verify path does NOT cross the river Y=0 without using a bridge
+				if theme == MapThemeRiverValley {
+					for i := 0; i < len(path)-1; i++ {
+						p1 := path[i]
+						p2 := path[i+1]
+						// Crossing river Y=0
+						if (p1.Y < -50 && p2.Y > 50) || (p1.Y > 50 && p2.Y < -50) {
+							// Must be along one of the two bridge X coordinates (-1300 or 1300)
+							midX := (p1.X + p2.X) * 0.5
+							isBridge1 := math.Abs(midX - (-1300)) < 90
+							isBridge2 := math.Abs(midX - 1300) < 90
+							if !isBridge1 && !isBridge2 {
+								t.Fatalf("[%s] Path crossed the river without using a bridge: from (%.1f, %.1f) to (%.1f, %.1f) at X=%.1f",
+									theme.DisplayName(), p1.X, p1.Y, p2.X, p2.Y, midX)
+							}
+						}
+					}
+				}
+
+				// 4. In Coastal Bay, verify path does NOT jump across the open bay (between mainland X <= 0 and harbor X >= 1800)
+				if theme == MapThemeCoastalBay {
+					for i := 0; i < len(path)-1; i++ {
+						p1 := path[i]
+						p2 := path[i+1]
+						// Crossing open water between mainland (X <= 150) and harbor (X >= 1750)
+						if math.Abs(p1.Y-p2.Y) < 10 {
+							minX := math.Min(p1.X, p2.X)
+							maxX := math.Max(p1.X, p2.X)
+							if minX < 1600 && maxX > 250 && (maxX-minX) > 100 {
+								// Any segment traversing this open bay must be Causeway Bridge (Y=0) or South Cape Boardwalk (Y=1200)
+								y := (p1.Y + p2.Y) * 0.5
+								isCauseway := math.Abs(y) < 90
+								isSouthCape := math.Abs(y-1200) < 90
+								if !isCauseway && !isSouthCape {
+									t.Fatalf("[%s] Path traversed offshore open water without a bridge/causeway: (%.1f, %.1f) to (%.1f, %.1f)",
+										theme.DisplayName(), p1.X, p1.Y, p2.X, p2.Y)
+								}
+							}
+						}
+					}
+				}
+
+				// 5. Verify final arrival vector enters stop smoothly along stop heading
+				if len(path) >= 2 {
+					lastSeg := path[len(path)-1].Sub(path[len(path)-2])
+					if lastSeg.Length() > 2 {
+						stopDir := Vec2{X: math.Cos(targetStop.Heading), Y: math.Sin(targetStop.Heading)}
+						dot := lastSeg.Normalize().Dot(stopDir)
+						if dot < -0.1 {
+							t.Fatalf("[%s] Final approach vector opposes stop heading: dot=%.2f (heading=%.2f)",
+								theme.DisplayName(), dot, targetStop.Heading)
+						}
+					}
+				}
+
+				// 6. Test forward lookahead navigation arrow
+				bus := NewBus(prevStop.Pos.X, prevStop.Pos.Y, prevStop.Heading)
+				lookaheadFound := false
+				for _, pt := range path {
+					if bus.Pos.Distance(pt) > 70 {
+						lookaheadFound = true
+						break
+					}
+				}
+				if len(path) >= 3 && !lookaheadFound {
+					t.Fatalf("[%s] Multi-segment path failed to find forward lookahead waypoint", theme.DisplayName())
+				}
+
+				// 7. Advance route to next stop
+				route.AdvanceToNextStop()
+			}
+
+			// Ensure loop completes
+			if route.TotalTrips != initialTrips+1 {
+				t.Fatalf("[%s] Expected route to complete a full transit loop (trips=%d, expected=%d)",
+					theme.DisplayName(), route.TotalTrips, initialTrips+1)
+			}
+		})
+	}
+}
+
+func TestRoundaboutCarriagewayLaneWidth(t *testing.T) {
+	// Verify all built-in maps with roundabouts have ample carriageway lane width (>= 100px)
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeEmeraldLake,
+	}
+
+	for _, theme := range themes {
+		w := NewWorld(42.0, theme)
+		if len(w.Roundabouts) == 0 {
+			continue
+		}
+		for idx, rb := range w.Roundabouts {
+			carriagewayWidth := rb.Radius - rb.InnerRadius
+			if carriagewayWidth < 100.0 {
+				t.Errorf("[%s] Roundabout #%d (%s) carriageway width is too narrow: %.1f px (must be >= 100.0 px)",
+					theme.DisplayName(), idx, rb.Name, carriagewayWidth)
+			}
+			if rb.InnerRadius < 80.0 {
+				t.Errorf("[%s] Roundabout #%d (%s) inner island is too small: %.1f px (must be >= 80.0 px)",
+					theme.DisplayName(), idx, rb.Name, rb.InnerRadius)
+			}
+		}
+	}
+
+	// Also verify custom map validation rejects narrow roundabout carriageways (< 80px)
+	narrowCustomMap := CustomMapData{
+		Name:  "Test Narrow Roundabout",
+		Style: "lake",
+		Roads: []CustomRoadData{
+			{P1: [2]float64{-1000, 0}, P2: [2]float64{1000, 0}, Lanes: 2},
+		},
+		Stops: []CustomStopData{
+			{ID: 0, Name: "A", Pos: [2]float64{-600, 40}, Heading: 0},
+			{ID: 1, Name: "B", Pos: [2]float64{600, 40}, Heading: 0},
+		},
+		Roundabouts: []CustomRoundaboutData{
+			{Name: "Narrow Island", Center: [2]float64{0, 0}, Radius: 150.0, InnerRadius: 85.0, Type: "civic"}, // width = 65 < 80
+		},
+	}
+	err := ValidateCustomMapData(&narrowCustomMap)
+	if err == nil {
+		t.Fatalf("Expected ValidateCustomMapData to reject narrow roundabout carriageway (width = 65px < 80px), but validation passed")
+	}
+}
+
+func TestTrafficAICirculatesRoundaboutWithoutCrossingCenterIsland(t *testing.T) {
+	// Build Emerald Lake map which features the 湖心仙岛古风环岛
+	w := NewWorld(42.0, MapThemeEmeraldLake)
+	if len(w.Roundabouts) == 0 {
+		t.Fatalf("Emerald lake map must have a roundabout")
+	}
+	rb := w.Roundabouts[0]
+	center := rb.Center
+	innerR := rb.InnerRadius
+	laneW := 42.0
+
+	// Test approaches from East, West, North, South
+	approaches := []struct {
+		name        string
+		startPos    Vec2
+		heading     float64
+		isEW        bool
+		roadCenter  float64
+		expectedExit float64
+	}{
+		{
+			name:        "Eastbound (from West)",
+			startPos:    Vec2{X: center.X - 350, Y: center.Y + laneW*0.75},
+			heading:     0,
+			isEW:        true,
+			roadCenter:  center.Y,
+			expectedExit: 0,
+		},
+		{
+			name:        "Westbound (from East)",
+			startPos:    Vec2{X: center.X + 350, Y: center.Y - laneW*0.75},
+			heading:     math.Pi,
+			isEW:        true,
+			roadCenter:  center.Y,
+			expectedExit: math.Pi,
+		},
+		{
+			name:        "Southbound (from North)",
+			startPos:    Vec2{X: center.X + laneW*0.75, Y: center.Y - 350},
+			heading:     math.Pi / 2,
+			isEW:        false,
+			roadCenter:  center.X,
+			expectedExit: math.Pi / 2,
+		},
+		{
+			name:        "Northbound (from South)",
+			startPos:    Vec2{X: center.X - laneW*0.75, Y: center.Y + 350},
+			heading:     -math.Pi / 2,
+			isEW:        false,
+			roadCenter:  center.X,
+			expectedExit: -math.Pi / 2,
+		},
+	}
+
+	bus := NewBus(5000, 5000, 0) // bus placed far away
+	dt := 1.0 / 60.0
+
+	for _, app := range approaches {
+		t.Run(app.name, func(t *testing.T) {
+			car := &TrafficCar{
+				ID:          0,
+				Pos:         app.startPos,
+				Heading:     app.heading,
+				Speed:       140,
+				TargetSpeed: 140,
+				Length:      46,
+				Width:       22,
+				RoadCenter:  app.roadCenter,
+				IsEW:        app.isEW,
+				LaneIndex:   1,
+			}
+			tm := &TrafficManager{Cars: []*TrafficCar{car}}
+
+			enteredRoundabout := false
+			minDistToCenter := math.MaxFloat64
+
+			// Simulate 350 frames (~5.8 seconds), enough to enter, circulate, and exit
+			for frame := 0; frame < 350; frame++ {
+				tm.Update(dt, bus, nil, 1, laneW, w)
+
+				dist := car.Pos.Distance(center)
+				if dist < minDistToCenter {
+					minDistToCenter = dist
+				}
+
+				if car.InRoundabout {
+					enteredRoundabout = true
+					// Vehicle must NEVER penetrate the inner island of the roundabout
+					if dist < innerR {
+						t.Fatalf("[%s] AI Car penetrated central island! Car Pos: %v, Center: %v, Dist: %.2f < InnerRadius: %.2f",
+							app.name, car.Pos, center, dist, innerR)
+					}
+					// Vehicle must maintain buffer distance (>= 15px) outside the inner island
+					if dist < innerR+15.0 {
+						t.Fatalf("[%s] AI Car too close to central island curb: dist=%.2f, innerR=%.2f",
+							app.name, dist, innerR)
+					}
+
+					// Verify vehicle heading aligns to circle tangent during steady circulation
+					// (permitting smooth gradual steering transition during entry and exit)
+					if car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
+						expectedTangentHeading := NormalizeAngle(car.RoundaboutAngle - math.Pi/2)
+						headingDiff := math.Abs(NormalizeAngle(car.Heading - expectedTangentHeading))
+						if headingDiff > 0.15 {
+							t.Fatalf("[%s] AI Car heading %.2f differs from rotary tangent %.2f (diff=%.3f)",
+								app.name, car.Heading, expectedTangentHeading, headingDiff)
+						}
+					}
+				}
+			}
+
+			if !enteredRoundabout {
+				t.Fatalf("[%s] AI Car should have entered and circulated around the roundabout", app.name)
+			}
+			if minDistToCenter < innerR {
+				t.Fatalf("[%s] AI Car minimum distance to center %.2f is inside inner island %.2f",
+					app.name, minDistToCenter, innerR)
+			}
+		})
+	}
+}
+
+func TestRoundaboutRouteLineCurvatureAndCenterClearance(t *testing.T) {
+	// In Emerald Lake map, stops 1 and 2 are on opposite sides of the roundabout
+	w := NewWorld(42.0, MapThemeEmeraldLake)
+	if len(w.Roundabouts) == 0 {
+		t.Fatalf("Emerald lake map must have a roundabout")
+	}
+	rb := w.Roundabouts[0]
+	center := rb.Center
+	innerR := rb.InnerRadius
+
+	if len(w.Stops) < 2 {
+		t.Fatalf("Emerald lake map must have at least 2 stops")
+	}
+
+	// Compute path between consecutive stops
+	for i := 0; i < len(w.Stops)-1; i++ {
+		s1 := w.Stops[i]
+		s2 := w.Stops[i+1]
+		path := computeRoadPathBetweenStops(w, s1, s2, 42.0)
+		if len(path) == 0 {
+			continue
+		}
+
+		// Verify every waypoint in the navigation route maintains clearance from central island
+		for idx, pt := range path {
+			dist := pt.Distance(center)
+			if dist < innerR-5.0 {
+				t.Fatalf("Route waypoint #%d (%v) between [%s] and [%s] cuts through central island (dist=%.2f < innerR=%.2f)",
+					idx, pt, s1.Name, s2.Name, dist, innerR)
+			}
+		}
+	}
+}
+
+// TestTrafficAIRoundaboutSmoothnessNoTeleportation strictly monitors the car's frame-to-frame displacement
+// and heading rate to guarantee 100% absence of teleportation, snapping, or flickering ("闪现")
+// during entry, circular travel, and exit transitions.
+func TestTrafficAIRoundaboutSmoothnessNoTeleportation(t *testing.T) {
+	w := NewWorld(42.0, MapThemeEmeraldLake)
+	if len(w.Roundabouts) == 0 {
+		t.Fatalf("Emerald lake map must have a roundabout")
+	}
+	rb := w.Roundabouts[0]
+	center := rb.Center
+	laneW := 42.0
+	bus := NewBus(5000, 5000, 0)
+	dt := 1.0 / 60.0
+
+	// Test Eastbound and Westbound approaches across the small roundabout
+	testCases := []struct {
+		name     string
+		startPos Vec2
+		heading  float64
+		isEW     bool
+		roadC    float64
+	}{
+		{"Eastbound", Vec2{X: center.X - 320, Y: center.Y + laneW*0.75}, 0, true, center.Y},
+		{"Westbound", Vec2{X: center.X + 320, Y: center.Y - laneW*0.75}, math.Pi, true, center.Y},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			car := &TrafficCar{
+				ID:          0,
+				Pos:         tc.startPos,
+				Heading:     tc.heading,
+				Speed:       140,
+				TargetSpeed: 140,
+				Length:      46,
+				Width:       22,
+				RoadCenter:  tc.roadC,
+				IsEW:        tc.isEW,
+				LaneIndex:   1,
+			}
+			tm := &TrafficManager{Cars: []*TrafficCar{car}}
+
+			prevPos := car.Pos
+			prevHeading := car.Heading
+			maxStepDisplacement := 0.0
+			maxHeadingChange := 0.0
+
+			for frame := 0; frame < 360; frame++ {
+				tm.Update(dt, bus, nil, 1, laneW, w)
+
+				stepDisplacement := car.Pos.Distance(prevPos)
+				headingChange := math.Abs(NormalizeAngle(car.Heading - prevHeading))
+
+				if stepDisplacement > maxStepDisplacement {
+					maxStepDisplacement = stepDisplacement
+				}
+				if headingChange > maxHeadingChange {
+					maxHeadingChange = headingChange
+				}
+
+				// At speed ~140px/s, nominal frame displacement is 140 * (1/60) = 2.33 px.
+				// Any frame-to-frame jump exceeding 8.0 px represents an unphysical snap/teleport ("闪现").
+				if stepDisplacement > 8.0 {
+					t.Fatalf("[%s] Frame %d: Teleportation detected! Single-frame displacement = %.2f px > 8.0 px limit (prev: %v, curr: %v, inRoundabout: %v)",
+						tc.name, frame, stepDisplacement, prevPos, car.Pos, car.InRoundabout)
+				}
+
+				// Heading must not instantaneously snap (e.g. 70+ degrees in a single frame)
+				if headingChange > 0.25 {
+					t.Fatalf("[%s] Frame %d: Instant heading snap detected! delta=%.3f rad (%.1f deg)",
+						tc.name, frame, headingChange, headingChange*180.0/math.Pi)
+				}
+
+				prevPos = car.Pos
+				prevHeading = car.Heading
+			}
+
+			// Validate maximum displacement across the entire 6-second journey was smooth and continuous
+			if maxStepDisplacement > 6.0 {
+				t.Errorf("[%s] Expected silky smooth displacement (<6.0px/frame), got max=%.2f px",
+					tc.name, maxStepDisplacement)
+			}
+		})
+	}
+}
+
+// TestBusStopApproachAndBayBoundaryClearance verifies that the white box area in the user screenshot
+// (the approach deceleration taper leading to Coastal Bay Stop #10 深水港智能集装箱总站)
+// as well as all bus bays across all maps provide clean ZoneRoad clearance without hitting ZoneHardBarrier.
+func TestBusStopApproachAndBayBoundaryClearance(t *testing.T) {
+	laneW := 42.0
+
+	// 1. Specific test for Coastal Bay Stop #10 (深水港智能集装箱总站)
+	wc := NewWorld(laneW, MapThemeCoastalBay)
+	var stop10 *BusStop
+	for _, s := range wc.Stops {
+		if s.ID == 10 {
+			stop10 = s
+			break
+		}
+	}
+	if stop10 == nil {
+		t.Fatalf("Coastal Bay stop #10 not found")
+	}
+
+	// Verify coordinates in the user's white-circled screenshot area (approaching bay at X=-1880, Y=420)
+	whiteBoxCoords := []Vec2{
+		{X: -1880, Y: 420}, // Direct white-circled area before the bus stop
+		{X: -1875, Y: 390}, // Mid-approach taper
+		{X: -1870, Y: 350}, // Pulling into yellow bay box
+		{X: -1865, Y: 300}, // Parked within yellow bay box
+	}
+	for _, pt := range whiteBoxCoords {
+		res := wc.CheckBoundaries(pt, 18.0, laneW)
+		if res.Zone == ZoneHardBarrier {
+			t.Fatalf("Coastal Bay stop #10 approach point %v hit hard barrier: %s (pen=%.1f)",
+				pt, res.ObstacleName, res.Penetration)
+		}
+		if res.Zone != ZoneRoad {
+			t.Fatalf("Coastal Bay stop #10 approach point %v expected ZoneRoad, got %v", pt, res.Zone)
+		}
+	}
+
+	// Verify that physical shelter structure on sidewalk DOES properly detect collision
+	shelterHit := wc.CheckBoundaries(stop10.ShelterPos, 18.0, laneW)
+	if shelterHit.Zone != ZoneHardBarrier {
+		t.Fatalf("Expected physical shelter structure at %v to trigger ZoneHardBarrier, got %v",
+			stop10.ShelterPos, shelterHit.Zone)
+	}
+
+	// 2. Comprehensive check across all themes: each stop bay and approach corridor must be free of hard barriers
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+	}
+	for _, theme := range themes {
+		w := NewWorld(laneW, theme)
+		for _, s := range w.Stops {
+			cosH := math.Cos(s.Heading)
+			sinH := math.Sin(s.Heading)
+			perpX := -sinH
+			perpY := cosH
+
+			// Test bay center
+			bRes := w.CheckBoundaries(s.Pos, 18.0, laneW)
+			if bRes.Zone == ZoneHardBarrier {
+				t.Fatalf("[%s] Stop #%d '%s' bay center %v hit hard barrier: %s",
+					theme.DisplayName(), s.ID, s.Name, s.Pos, bRes.ObstacleName)
+			}
+
+			// Test points along approach taper: 120px and 60px before stop bay
+			for _, offset := range []float64{-120.0, -60.0, 0.0, 60.0} {
+				// Point halfway into bay
+				testPt := s.Pos.Add(Vec2{X: cosH * offset, Y: sinH * offset})
+				res := w.CheckBoundaries(testPt, 18.0, laneW)
+				if res.Zone == ZoneHardBarrier {
+					t.Fatalf("[%s] Stop #%d '%s' corridor offset %.0f at %v hit hard barrier: %s",
+						theme.DisplayName(), s.ID, s.Name, offset, testPt, res.ObstacleName)
+				}
+			}
+
+			// Outer edge of bay (s.Width * 0.45 towards curb)
+			bayEdgePt := s.Pos.Add(Vec2{X: perpX * (s.Width * 0.45), Y: perpY * (s.Width * 0.45)})
+			edgeRes := w.CheckBoundaries(bayEdgePt, 18.0, laneW)
+			if edgeRes.Zone == ZoneHardBarrier {
+				t.Fatalf("[%s] Stop #%d '%s' outer bay edge at %v hit hard barrier: %s",
+					theme.DisplayName(), s.ID, s.Name, bayEdgePt, edgeRes.ObstacleName)
+			}
+		}
+	}
+}
+
+// TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts verifies that AI vehicles follow a true circular arc
+// inside the roundabout at all times, without expanding outward diagonally or cutting into corner obstacles.
+func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeEmeraldLake,
+	}
+	laneW := 42.0
+	dt := 1.0 / 60.0
+	bus := NewBus(5000, 5000, 0)
+
+	for _, theme := range themes {
+		w := NewWorld(laneW, theme)
+		if len(w.Roundabouts) == 0 {
+			continue
+		}
+		rb := w.Roundabouts[0]
+		center := rb.Center
+
+		t.Run(theme.DisplayName(), func(t *testing.T) {
+			// Test approach from West (Eastbound)
+			car := &TrafficCar{
+				ID:          0,
+				Pos:         Vec2{X: center.X - 350, Y: center.Y + laneW*0.75},
+				Heading:     0,
+				Speed:       140,
+				TargetSpeed: 140,
+				Length:      46,
+				Width:       22,
+				RoadCenter:  center.Y,
+				IsEW:        true,
+				LaneIndex:   1,
+			}
+			tm := &TrafficManager{Cars: []*TrafficCar{car}}
+
+			entered := false
+			exited := false
+
+			for frame := 0; frame < 400; frame++ {
+				tm.Update(dt, bus, nil, 1, laneW, w)
+
+				if car.InRoundabout {
+					entered = true
+					dist := car.Pos.Distance(center)
+
+					// 1. Vehicle must strictly maintain its circulating radius within a tight band during circulation (no diagonal curb expansion)
+					if car.RoundaboutTraveled >= 0.40 {
+						if math.Abs(dist-car.RoundaboutTargetR) > 8.0 {
+							t.Fatalf("[%s] Frame %d: Car radius deviated from circular target: dist=%.2f, targetR=%.2f, diff=%.2f > 8px",
+								theme.DisplayName(), frame, dist, car.RoundaboutTargetR, math.Abs(dist-car.RoundaboutTargetR))
+						}
+					}
+
+					// 2. Car distance must stay strictly between inner island and outer curb with safe buffer
+					if dist < rb.InnerRadius+15.0 {
+						t.Fatalf("[%s] Frame %d: Car too close to central island: dist=%.2f, innerR=%.2f",
+							theme.DisplayName(), frame, dist, rb.InnerRadius)
+					}
+					if car.RoundaboutTraveled >= 0.40 && dist > rb.Radius-15.0 {
+						t.Fatalf("[%s] Frame %d: Car drifted into outer curb obstacle zone: dist=%.2f, outerR=%.2f",
+							theme.DisplayName(), frame, dist, rb.Radius)
+					}
+
+					// 3. Boundary check must confirm vehicle is squarely on ZoneRoad at all times
+					bRes := w.CheckBoundaries(car.Pos, car.Width/2, laneW)
+					if bRes.Zone != ZoneRoad {
+						t.Fatalf("[%s] Frame %d: Car at %v not on ZoneRoad (got %v, obstacle: %s)",
+							theme.DisplayName(), frame, car.Pos, bRes.Zone, bRes.ObstacleName)
+					}
+
+					// 4. During steady rotary travel, heading must align with circle tangent
+					if car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
+						expectedTangent := NormalizeAngle(car.RoundaboutAngle - math.Pi/2)
+						headingErr := math.Abs(NormalizeAngle(car.Heading - expectedTangent))
+						if headingErr > 0.12 {
+							t.Fatalf("[%s] Frame %d: Car heading %.2f deviated from circle tangent %.2f by %.3f rad",
+								theme.DisplayName(), frame, car.Heading, expectedTangent, headingErr)
+						}
+					}
+				} else if entered {
+					exited = true
+					// Once exited, verify car is safely on road
+					bRes := w.CheckBoundaries(car.Pos, car.Width/2, laneW)
+					if bRes.Zone == ZoneHardBarrier {
+						t.Fatalf("[%s] Frame %d: Car hit hard barrier upon exiting roundabout: %v, obstacle: %s",
+							theme.DisplayName(), frame, car.Pos, bRes.ObstacleName)
+					}
+				}
+			}
+
+			if !entered {
+				t.Fatalf("[%s] AI Car failed to enter roundabout", theme.DisplayName())
+			}
+			if !exited {
+				t.Fatalf("[%s] AI Car failed to exit roundabout", theme.DisplayName())
+			}
+		})
 	}
 }
 

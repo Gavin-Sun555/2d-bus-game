@@ -3,6 +3,12 @@
 busgame
 *.exe
 *.wasm
+*.app
+dist/
 
 # OS
 .DS_Store
+
+# Test & coverage artifacts
+*.out
+*.test

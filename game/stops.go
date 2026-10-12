@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
-	"math/rand"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -33,8 +33,20 @@ type BusStop struct {
 	AccentColor color.RGBA
 }
 
+// LocalizedName returns the station name localized according to CurrentLanguage
+func (s *BusStop) LocalizedName() string {
+	if CurrentLanguage == LanguageEN {
+		if idx := strings.Index(s.Name, "("); idx != -1 {
+			if end := strings.Index(s.Name, ")"); end > idx {
+				return strings.TrimSpace(s.Name[idx+1 : end])
+			}
+		}
+	}
+	return s.Name
+}
+
 func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes int, accent color.RGBA, laneWidth float64, initialWaiting ...int) *BusStop {
-	waitPax := 6 + rand.Intn(10)
+	waitPax := 6 + simRand.Intn(10)
 	if len(initialWaiting) > 0 {
 		waitPax = initialWaiting[0]
 	}
@@ -48,7 +60,7 @@ func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes
 		Width:             44,
 		WaitingPassengers: waitPax,
 		MaxWaiting:        35,
-		SpawnInterval:     20.0 + rand.Float64()*15.0, // 20-35s passenger arrival rate
+		SpawnInterval:     20.0 + simRand.Float64()*15.0, // 20-35s passenger arrival rate
 		AccentColor:       accent,
 	}
 	s.UpdateGeometry(laneWidth)
@@ -73,7 +85,7 @@ func (s *BusStop) Update(dt float64) {
 	if s.SpawnTimer >= s.SpawnInterval {
 		s.SpawnTimer = 0
 		if s.WaitingPassengers < s.MaxWaiting {
-			s.WaitingPassengers += 1 + rand.Intn(3)
+			s.WaitingPassengers += 1 + simRand.Intn(3)
 			if s.WaitingPassengers > s.MaxWaiting {
 				s.WaitingPassengers = s.MaxWaiting
 			}
@@ -115,7 +127,14 @@ func (s *BusStop) ContainsBus(bus *Bus) bool {
 }
 
 // Draw renders the bus stop, waiting shelter, and passenger dots
-func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHovered bool) {
+func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHovered bool, isPlanMode ...bool) {
+	planMode := len(isPlanMode) > 0 && isPlanMode[0]
+
+	// Frustum culling: skip drawing if stop and shelter are completely off-screen
+	if !cam.IsPointVisible(s.Pos, 160) && !cam.IsPointVisible(s.ShelterPos, 160) {
+		return
+	}
+
 	cosH := math.Cos(s.Heading)
 	sinH := math.Sin(s.Heading)
 
@@ -127,17 +146,19 @@ func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHover
 	drawRotatedBox(screen, cam, s.Pos, cosH, sinH, s.Length, s.Width, RGBA(24, 24, 27, 240))
 	drawRotatedBoxOutline(screen, cam, s.Pos, cosH, sinH, s.Length, s.Width, 3, bayBorderColor)
 
-	// Diagonal yellow hazard stripes inside the bay
-	numStripes := 6
-	step := s.Length / float64(numStripes)
-	for i := -numStripes / 2; i <= numStripes / 2; i++ {
-		offset := float64(i) * step
-		p1 := s.Pos.Add(Vec2{X: cosH*offset - sinH*(s.Width/2 - 4), Y: sinH*offset + cosH*(s.Width/2 - 4)})
-		p2 := s.Pos.Add(Vec2{X: cosH*(offset+20) + sinH*(s.Width/2 - 4), Y: sinH*(offset+20) - cosH*(s.Width/2 - 4)})
-		s1 := cam.WorldToScreen(p1)
-		s2 := cam.WorldToScreen(p2)
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
-			float32(2.5*cam.Zoom), RGBA(234, 179, 8, 140), true)
+	// Diagonal yellow hazard stripes inside the bay (skip in plan mode or when zoomed out to reduce vector calls)
+	if !planMode && cam.Zoom >= 0.40 {
+		numStripes := 6
+		step := s.Length / float64(numStripes)
+		for i := -numStripes / 2; i <= numStripes/2; i++ {
+			offset := float64(i) * step
+			p1 := s.Pos.Add(Vec2{X: cosH*offset - sinH*(s.Width/2 - 4), Y: sinH*offset + cosH*(s.Width/2 - 4)})
+			p2 := s.Pos.Add(Vec2{X: cosH*(offset+20) + sinH*(s.Width/2 - 4), Y: sinH*(offset+20) - cosH*(s.Width/2 - 4)})
+			s1 := cam.WorldToScreen(p1)
+			s2 := cam.WorldToScreen(p2)
+			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+				float32(2.5*cam.Zoom), RGBA(234, 179, 8, 140), true)
+		}
 	}
 
 	// 2. Glass Bus Shelter on Sidewalk
@@ -147,24 +168,25 @@ func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHover
 	// Shelter roof accent bar
 	drawRotatedBox(screen, cam, s.ShelterPos, cosH, sinH, shelterLen-4, 4, s.AccentColor)
 
-	// 3. Waiting Passengers visualization (dots lined up near shelter)
+	// 3. Waiting Passengers visualization (dots lined up near shelter; skip when zoomed out)
 	shelterScreen := cam.WorldToScreen(s.ShelterPos)
-	perpX := -sinH
-	perpY := cosH
-	for i := 0; i < s.WaitingPassengers && i < 24; i++ {
-		row := float64(i / 12)
-		col := float64(i % 12)
-		pWorld := s.ShelterPos.Add(Vec2{
-			X: cosH*(col*6 - 32) + perpX*(row*6 + 12),
-			Y: sinH*(col*6 - 32) + perpY*(row*6 + 12),
-		})
-		ps := cam.WorldToScreen(pWorld)
-		vector.DrawFilledCircle(screen, float32(ps.X), float32(ps.Y), float32(2.8*cam.Zoom),
-			RGBA(251, 191, 36, 230), true)
+	if !planMode && cam.Zoom >= 0.45 {
+		perpX := -sinH
+		perpY := cosH
+		for i := 0; i < s.WaitingPassengers && i < 24; i++ {
+			row := float64(i / 12)
+			col := float64(i % 12)
+			pWorld := s.ShelterPos.Add(Vec2{
+				X: cosH*(col*6 - 32) + perpX*(row*6 + 12),
+				Y: sinH*(col*6 - 32) + perpY*(row*6 + 12),
+			})
+			ps := cam.WorldToScreen(pWorld)
+			vector.DrawFilledCircle(screen, float32(ps.X), float32(ps.Y), float32(2.8*cam.Zoom),
+				RGBA(251, 191, 36, 230), true)
+		}
 	}
 
 	// 4. Station Marker Pole / Flag
-	sc := cam.WorldToScreen(s.Pos)
 	badgeRadius := float32(14 * cam.Zoom)
 	if badgeRadius < 8 {
 		badgeRadius = 8
@@ -178,7 +200,7 @@ func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHover
 	vector.DrawFilledCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
 		badgeRadius, badgeColor, true)
 	vector.StrokeCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
-		badgeRadius, float32(2*cam.Zoom), RGBA(255, 255, 255, 255), true)
+		badgeRadius, float32(math.Max(1.5, 2*cam.Zoom)), RGBA(255, 255, 255, 255), true)
 
 	// Station info label
 	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.Name, s.WaitingPassengers)
@@ -189,11 +211,14 @@ func (s *BusStop) Draw(screen *ebiten.Image, cam *Camera, isTarget bool, isHover
 		}
 	}
 	DrawText(screen, infoText, shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4), 12, color.White)
-
-	_ = sc
 }
 
 func drawRotatedBoxOutline(screen *ebiten.Image, cam *Camera, center Vec2, cosH, sinH, len, wid, stroke float64, c color.RGBA) {
+	radius := math.Hypot(len, wid) * 0.5
+	if !cam.IsPointVisible(center, radius) {
+		return
+	}
+
 	perpX := -sinH
 	perpY := cosH
 	hl := len / 2
@@ -209,7 +234,7 @@ func drawRotatedBoxOutline(screen *ebiten.Image, cam *Camera, center Vec2, cosH,
 	s3 := cam.WorldToScreen(c3)
 	s4 := cam.WorldToScreen(c4)
 
-	sw := float32(stroke * cam.Zoom)
+	sw := float32(math.Max(1.5, stroke*cam.Zoom))
 	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), sw, c, true)
 	vector.StrokeLine(screen, float32(s2.X), float32(s2.Y), float32(s3.X), float32(s3.Y), sw, c, true)
 	vector.StrokeLine(screen, float32(s3.X), float32(s3.Y), float32(s4.X), float32(s4.Y), sw, c, true)

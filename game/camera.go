@@ -2,7 +2,6 @@ package game
 
 import (
 	"math"
-	"math/rand"
 )
 
 // CameraMode defines the driving perspective of the camera
@@ -102,8 +101,8 @@ func (c *Camera) Update(dt float64) {
 	// Screen shake decay
 	if c.ShakeIntensity > 0.1 {
 		c.ShakeIntensity *= math.Pow(0.05, dt)
-		c.ShakeOffset.X = (rand.Float64()*2 - 1) * c.ShakeIntensity
-		c.ShakeOffset.Y = (rand.Float64()*2 - 1) * c.ShakeIntensity
+		c.ShakeOffset.X = (simRand.Float64()*2 - 1) * c.ShakeIntensity
+		c.ShakeOffset.Y = (simRand.Float64()*2 - 1) * c.ShakeIntensity
 	} else {
 		c.ShakeIntensity = 0
 		c.ShakeOffset = Vec2{}
@@ -184,4 +183,30 @@ func (c *Camera) ScreenToWorld(screen Vec2) Vec2 {
 	wx := dx + effX
 	wy := dy + effY
 	return Vec2{X: wx, Y: wy}
+}
+
+// IsBoxVisible checks whether an axis-aligned bounding box [minX, minY, maxX, maxY] in world coordinates
+// intersects the visible camera viewport (with a safety margin for culling).
+func (c *Camera) IsBoxVisible(minX, minY, maxX, maxY float64) bool {
+	margin := 50.0 / c.Zoom
+	if c.Rotation == 0 {
+		halfW := float64(c.ScreenWidth) * 0.5 / c.Zoom
+		halfH := float64(c.ScreenHeight) * 0.5 / c.Zoom
+		camMinX := c.Pos.X - halfW - margin
+		camMaxX := c.Pos.X + halfW + margin
+		camMinY := c.Pos.Y - halfH - margin
+		camMaxY := c.Pos.Y + halfH + margin
+		return maxX >= camMinX && minX <= camMaxX && maxY >= camMinY && minY <= camMaxY
+	}
+	// General rotation: check bounding sphere distance
+	cx := (minX + maxX) * 0.5
+	cy := (minY + maxY) * 0.5
+	halfDiag := math.Hypot(maxX-minX, maxY-minY)*0.5 + margin
+	screenRadius := math.Hypot(float64(c.ScreenWidth), float64(c.ScreenHeight)) * 0.5 / c.Zoom
+	return math.Hypot(cx-c.Pos.X, cy-c.Pos.Y) <= screenRadius+halfDiag
+}
+
+// IsPointVisible checks whether a circle centered at pos with radius r intersects the visible viewport.
+func (c *Camera) IsPointVisible(pos Vec2, radius float64) bool {
+	return c.IsBoxVisible(pos.X-radius, pos.Y-radius, pos.X+radius, pos.Y+radius)
 }

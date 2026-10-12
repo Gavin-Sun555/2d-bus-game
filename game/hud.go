@@ -19,17 +19,35 @@ type ToastMessage struct {
 
 // HUD handles the on-screen dashboard and user interface
 type HUD struct {
-	Toasts          []ToastMessage
-	GearRBounds     Rect
-	GearNBounds     Rect
-	GearDBounds     Rect
-	CameraBtnBounds Rect
+	Toasts            []ToastMessage
+	GearRBounds           Rect
+	GearNBounds           Rect
+	GearDBounds           Rect
+	AutopilotBounds       Rect
+	CameraBtnBounds       Rect
+	MapThemeBtnBounds     Rect
+	MenuBtnBounds         Rect
+	ReturnToMenuRequested bool
 }
 
 func NewHUD() *HUD {
 	return &HUD{
 		Toasts: make([]ToastMessage, 0),
 	}
+}
+
+// HandleMenuBtnClick detects mouse click on the top-bar main menu / map change button
+func (h *HUD) HandleMenuBtnClick(mousePos Vec2) bool {
+	if h.MenuBtnBounds.Contains(mousePos) || h.MapThemeBtnBounds.Contains(mousePos) {
+		h.ReturnToMenuRequested = true
+		return true
+	}
+	return false
+}
+
+// HandleMapThemeBtnClick detects mouse click on the top-bar map theme button
+func (h *HUD) HandleMapThemeBtnClick(mousePos Vec2, settings *Settings) bool {
+	return h.HandleMenuBtnClick(mousePos)
 }
 
 // HandleCameraBtnClick detects mouse click on the top-bar camera perspective button
@@ -41,11 +59,11 @@ func (h *HUD) HandleCameraBtnClick(mousePos Vec2, cam *Camera) (toggled bool, no
 		newMode := cam.ToggleMode()
 		switch newMode {
 		case CameraModeHeadingUp:
-			return true, "已切换视角: 【车头朝上 (跟随视角)】 - 车头始终朝上，视野随转向旋转"
+			return true, T("已切换视角: 【车头朝上 (跟随视角)】 - 视野随转向旋转", "Camera Mode: [Heading-Up Follow] - Rotates with steering")
 		case CameraModeSouthUp:
-			return true, "已切换视角: 【固定正南 (倒置视角)】 - 地图固定正南朝上"
+			return true, T("已切换视角: 【固定正南 (倒置视角)】 - 地图固定正南朝上", "Camera Mode: [Fixed South-Up] - Map fixed south")
 		default:
-			return true, "已切换视角: 【固定正北 (标准视角)】 - 地图固定正北朝上"
+			return true, T("已切换视角: 【固定正北 (标准视角)】 - 地图固定正北朝上", "Camera Mode: [Fixed North-Up] - Standard map north")
 		}
 	}
 	return false, ""
@@ -58,18 +76,33 @@ func (h *HUD) HandleGearClick(mousePos Vec2, bus *Bus) (shifted bool, notice str
 	}
 	if h.GearRBounds.Contains(mousePos) {
 		if bus.ShiftTo(GearReverse) {
-			return true, "已挂入倒挡 (R) [按 W/↑ 倒车，S/↓ 刹车]"
+			return true, T("已挂入倒挡 (R) [按 W/↑ 倒车，S/↓ 刹车]", "Shifted to Reverse (R) [W/↑ Reverse, S/↓ Brake]")
 		}
-		return false, "车速过快，变速箱保护锁止！请先踩刹车减速"
+		return false, T("车速过快，变速箱保护锁止！请先踩刹车减速", "Speed too high! Gearbox lock active. Please brake first")
 	} else if h.GearNBounds.Contains(mousePos) {
 		if bus.ShiftTo(GearNeutral) {
-			return true, "已挂入空挡 (N)"
+			return true, T("已挂入空挡 (N)", "Shifted to Neutral (N)")
 		}
 	} else if h.GearDBounds.Contains(mousePos) {
 		if bus.ShiftTo(GearDrive) {
-			return true, "已挂入前进挡 (D)"
+			return true, T("已挂入前进挡 (D)", "Shifted to Drive (D)")
 		}
-		return false, "倒车速度过快，无法直接切入前进挡！请先踩刹车减速"
+		return false, T("倒车速度过快，无法切入前进挡！请先踩刹车减速", "Reverse speed too high! Cannot shift to D. Please brake first")
+	}
+	return false, ""
+}
+
+// HandleAutopilotClick detects mouse click on the dashboard autopilot button
+func (h *HUD) HandleAutopilotClick(mousePos Vec2, settings *Settings) (toggled bool, notice string) {
+	if settings == nil {
+		return false, ""
+	}
+	if h.AutopilotBounds.Contains(mousePos) {
+		settings.AutopilotEnabled = !settings.AutopilotEnabled
+		if settings.AutopilotEnabled {
+			return true, T("已开启 AI 自动巡航驾驶 (P键随时切换)", "AI Autopilot ON (Press P anytime to toggle)")
+		}
+		return true, T("已切换回手动驾驶模式 (P键随时切换)", "Manual Driving Mode ON (Press P anytime to toggle)")
 	}
 	return false, ""
 }
@@ -125,58 +158,94 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *Bus, route *Route, world *World, i
 	vector.StrokeLine(screen, 0, 56, float32(w), 56, 1.5, RGBA(51, 65, 85, 255), false)
 
 	// Mode Indicator Badge
-	modeText := " [驾驶模式 DRIVE] (TAB 规划)"
+	modeText := T(" [驾驶模式 DRIVE] (TAB 规划)", " [DRIVE MODE] (TAB Route)")
 	modeBg := RGBA(14, 165, 233, 240) // Cyan
 	if isPlanMode {
-		modeText = " [线路规划模式 PLAN] (TAB 驾驶)"
+		modeText = T(" [线路规划模式 PLAN] (TAB 驾驶)", " [PLAN MODE] (TAB Drive)")
 		modeBg = RGBA(168, 85, 247, 240) // Purple
 	}
 	vector.DrawFilledRect(screen, 16, 12, 220, 32, modeBg, true)
 	DrawText(screen, modeText, 22, 20, 13, color.White)
 
 	// Economy & Capacity Badges
-	cashText := fmt.Sprintf("营收: $%d", cash)
+	cashText := Tf("营收: $%d", "Revenue: $%d", cash)
 	DrawText(screen, cashText, 246, 20, 13, RGBA(250, 204, 21, 255))
 
-	paxText := fmt.Sprintf("乘客: %d/%d", bus.PassengerCount, bus.Capacity)
+	paxText := Tf("乘客: %d/%d", "Pax: %d/%d", bus.PassengerCount, bus.Capacity)
 	DrawText(screen, paxText, 345, 20, 13, RGBA(56, 189, 248, 255))
 
 	// Current target stop & Stop bell status
 	if targetID := route.GetCurrentTargetStopID(); targetID >= 0 && targetID < len(world.Stops) {
 		stop := world.Stops[targetID]
-		targetMsg := fmt.Sprintf("下一站: [%s] (候车 %d人)", stop.Name, stop.WaitingPassengers)
+		distToStop := bus.Pos.Distance(stop.Pos)
+		distMeters := int(math.Round(distToStop * 0.5))
+		targetMsg := Tf("下一站: [%s] 距%dm (候车 %d人)", "Next: [%s] %dm (Wait: %d)", stop.LocalizedName(), distMeters, stop.WaitingPassengers)
 		DrawText(screen, targetMsg, 445, 20, 12, RGBA(226, 232, 240, 255))
 
 		// Stop Bell badge
 		bellX := 660.0
 		if stopBellRung {
-			bellText := fmt.Sprintf("🔔 下车铃: %d人准备下车", passengersAlighting)
+			bellText := Tf("🔔 下车铃: %d人准备下车", "🔔 Bell: %d to alight", passengersAlighting)
 			vector.DrawFilledRect(screen, float32(bellX), 12, 175, 32, RGBA(180, 83, 9, 230), true)
 			vector.StrokeRect(screen, float32(bellX), 12, 175, 32, 1.5, RGBA(250, 204, 21, 255), true)
 			DrawText(screen, bellText, bellX+10, 20, 12, RGBA(254, 240, 138, 255))
 		} else {
-			bellText := "🔕 下车铃: 无人按铃"
+			bellText := T("🔕 下车铃: 无人按铃", "🔕 Bell: None")
 			vector.DrawFilledRect(screen, float32(bellX), 12, 150, 32, RGBA(30, 41, 59, 220), true)
 			vector.StrokeRect(screen, float32(bellX), 12, 150, 32, 1.0, RGBA(100, 116, 139, 200), true)
 			DrawText(screen, bellText, bellX+12, 20, 12, RGBA(148, 163, 184, 255))
 		}
 	} else {
-		DrawText(screen, "未选择目标站点", 445, 20, 13, RGBA(148, 163, 184, 255))
+		DrawText(screen, T("未选择目标站点", "No target stop selected"), 445, 20, 13, RGBA(148, 163, 184, 255))
 	}
 
+	// Map Theme Selector Badge
+	// Main Menu / Change Map Badge
+	mapBtnX := float32(w - 530)
+	mapBtnW := float32(165)
+	h.MenuBtnBounds = Rect{X: float64(mapBtnX), Y: 12, W: float64(mapBtnW), H: 32}
+	h.MapThemeBtnBounds = h.MenuBtnBounds
+	menuBtnStr := T("🏠 主菜单/换图", "🏠 Menu / Maps")
+	menuBtnColor := RGBA(168, 85, 247, 255)
+	if settings != nil {
+		switch settings.MapTheme {
+		case MapThemeCoastalBay:
+			menuBtnStr = T("🏠 海滨港湾 [换图]", "🏠 Coastal Bay [Maps]")
+			menuBtnColor = RGBA(6, 182, 212, 255)
+		case MapThemeRiverValley:
+			menuBtnStr = T("🏠 溪谷江城 [换图]", "🏠 River Valley [Maps]")
+			menuBtnColor = RGBA(16, 185, 129, 255)
+		case MapThemeEmeraldLake:
+			menuBtnStr = T("🏠 湖畔水乡 [换图]", "🏠 Emerald Lake [Maps]")
+			menuBtnColor = RGBA(34, 197, 94, 255)
+		case MapThemeTwinCities:
+			menuBtnStr = T("🏠 高新双城 [换图]", "🏠 Twin Districts [Maps]")
+			menuBtnColor = RGBA(217, 70, 239, 255)
+		case MapThemeCustom:
+			menuBtnStr = T("🏠 自定义图 [换图]", "🏠 Custom Map [Maps]")
+			menuBtnColor = RGBA(245, 158, 11, 255)
+		default:
+			menuBtnStr = T("🏠 现代都会 [换图]", "🏠 Metropolis [Maps]")
+			menuBtnColor = RGBA(59, 130, 246, 255)
+		}
+	}
+	vector.DrawFilledRect(screen, mapBtnX, 12, mapBtnW, 32, RGBA(30, 41, 59, 240), true)
+	vector.StrokeRect(screen, mapBtnX, 12, mapBtnW, 32, 1.5, menuBtnColor, true)
+	DrawText(screen, menuBtnStr, float64(mapBtnX)+12, 20, 12, menuBtnColor)
+
 	// Camera Perspective Badge (Switchable between North-Up, Heading-Up, and South-Up)
-	camBtnX := float32(w - 380)
-	camBtnW := float32(175)
+	camBtnX := float32(w - 355)
+	camBtnW := float32(165)
 	h.CameraBtnBounds = Rect{X: float64(camBtnX), Y: 12, W: float64(camBtnW), H: 32}
-	camModeStr := "🎥 视角: 正北固定 [V]"
+	camModeStr := T("🎥 视角: 正北 [V]", "🎥 Cam: North [V]")
 	camModeColor := RGBA(148, 163, 184, 255)
 	if cam != nil {
 		switch cam.Mode {
 		case CameraModeHeadingUp:
-			camModeStr = "🎥 视角: 车头朝上 [V]"
+			camModeStr = T("🎥 视角: 跟随 [V]", "🎥 Cam: Follow [V]")
 			camModeColor = RGBA(56, 189, 248, 255)
 		case CameraModeSouthUp:
-			camModeStr = "🎥 视角: 正南固定 [V]"
+			camModeStr = T("🎥 视角: 正南 [V]", "🎥 Cam: South [V]")
 			camModeColor = RGBA(251, 146, 60, 255)
 		}
 	}
@@ -185,17 +254,17 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *Bus, route *Route, world *World, i
 	DrawText(screen, camModeStr, float64(camBtnX)+12, 20, 12, camModeColor)
 
 	// Settings button / violation status on top right
-	fineStatusText := "[违章: 开启]"
+	fineStatusText := T("[违章: 开启]", "[Fines: ON]")
 	fineStatusColor := RGBA(34, 197, 94, 255)
 	if !settings.TrafficFinesEnabled {
-		fineStatusText = "[违章: 关闭]"
+		fineStatusText = T("[违章: 关闭]", "[Fines: OFF]")
 		fineStatusColor = RGBA(239, 68, 68, 255)
 	}
-	settingsBtnX := float32(w - 195)
-	vector.DrawFilledRect(screen, settingsBtnX, 12, 180, 32, RGBA(30, 41, 59, 240), true)
-	vector.StrokeRect(screen, settingsBtnX, 12, 180, 32, 1.5, fineStatusColor, true)
+	settingsBtnX := float32(w - 180)
+	vector.DrawFilledRect(screen, settingsBtnX, 12, 165, 32, RGBA(30, 41, 59, 240), true)
+	vector.StrokeRect(screen, settingsBtnX, 12, 165, 32, 1.5, fineStatusColor, true)
 	settingsBtnLabel := fmt.Sprintf("%s [ESC]", fineStatusText)
-	DrawText(screen, settingsBtnLabel, float64(settingsBtnX)+14, 20, 13, fineStatusColor)
+	DrawText(screen, settingsBtnLabel, float64(settingsBtnX)+14, 20, 12, fineStatusColor)
 
 	// 2. Bottom Dashboard (in Drive Mode)
 	if !isPlanMode {
@@ -205,7 +274,7 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *Bus, route *Route, world *World, i
 		}
 		h.drawDriveDashboard(screen, bus, activeStop, targetStop, stopBellRung, passengersAlighting, activeTLS, settings)
 	} else {
-		h.drawPlanningInstructions(screen, route, world)
+		h.drawPlanningInstructions(screen, route, world, settings)
 	}
 
 	// 3. Render Toasts
@@ -253,28 +322,28 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 				// Major intersection: show both Left-Turn and Straight signals
 				lCol := RGBA(248, 113, 113, 255)
 				lDot := RGBA(248, 40, 40, 255)
-				lText := "左转↰ 红"
+				lText := T("左转↰ 红", "Left↰ RED")
 				if leftSig == SignalYellow {
 					lCol = RGBA(250, 204, 21, 255)
 					lDot = RGBA(250, 204, 21, 255)
-					lText = "左转↰ 黄"
+					lText = T("左转↰ 黄", "Left↰ YEL")
 				} else if leftSig == SignalGreen {
 					lCol = RGBA(74, 222, 128, 255)
 					lDot = RGBA(34, 197, 94, 255)
-					lText = "左转↰ 绿"
+					lText = T("左转↰ 绿", "Left↰ GRN")
 				}
 
 				tCol := RGBA(248, 113, 113, 255)
 				tDot := RGBA(248, 40, 40, 255)
-				tText := "直行↑ 红"
+				tText := T("直行↑ 红", "Thru↑ RED")
 				if thruSig == SignalYellow {
 					tCol = RGBA(250, 204, 21, 255)
 					tDot = RGBA(250, 204, 21, 255)
-					tText = "直行↑ 黄"
+					tText = T("直行↑ 黄", "Thru↑ YEL")
 				} else if thruSig == SignalGreen {
 					tCol = RGBA(74, 222, 128, 255)
 					tDot = RGBA(34, 197, 94, 255)
-					tText = "直行↑ 绿"
+					tText = T("直行↑ 绿", "Thru↑ GRN")
 				}
 
 				// Soft frosted glass bloom halo behind active lamps
@@ -286,7 +355,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 				vector.DrawFilledCircle(screen, float32(dashX+118), lampY, 5, tDot, true)
 				DrawText(screen, tText, dashX+128, sigBoxY+11, 11, tCol)
 
-				distText := fmt.Sprintf("(距线 %.0fm)", math.Max(0, dist))
+				distText := Tf("(距线 %.0fm)", "(%.0fm to line)", math.Max(0, dist))
 				DrawText(screen, distText, dashX+214, sigBoxY+11, 11, RGBA(203, 213, 225, 255))
 			} else {
 				// Standard 3-lamp banner for minor intersections
@@ -299,15 +368,15 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 				switch thruSig {
 				case SignalRed:
 					rCol = RGBA(248, 40, 40, 255)
-					statusText = fmt.Sprintf("前方信号: 红灯 (停止线前等待 %.0fm)", math.Max(0, dist))
+					statusText = Tf("前方信号: 红灯 (停止线前等待 %.0fm)", "Signal: RED (Stop before line %.0fm)", math.Max(0, dist))
 					statusColor = RGBA(248, 113, 113, 255)
 				case SignalYellow:
 					yCol = RGBA(250, 204, 21, 255)
-					statusText = fmt.Sprintf("前方信号: 黄灯 (减速准备 %.0fm)", math.Max(0, dist))
+					statusText = Tf("前方信号: 黄灯 (减速准备 %.0fm)", "Signal: YELLOW (Prepare to stop %.0fm)", math.Max(0, dist))
 					statusColor = RGBA(250, 204, 21, 255)
 				case SignalGreen:
 					gCol = RGBA(34, 197, 94, 255)
-					statusText = fmt.Sprintf("前方信号: 绿灯 (准许通行 %.0fm)", math.Max(0, dist))
+					statusText = Tf("前方信号: 绿灯 (准许通行 %.0fm)", "Signal: GREEN (Proceed %.0fm)", math.Max(0, dist))
 					statusColor = RGBA(74, 222, 128, 255)
 				}
 
@@ -320,8 +389,8 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 	}
 
 	// Dark round cluster background
-	vector.DrawFilledRect(screen, float32(dashX), float32(dashY), 320, 80, RGBA(15, 23, 42, 230), true)
-	vector.StrokeRect(screen, float32(dashX), float32(dashY), 320, 80, 1.5, RGBA(51, 65, 85, 255), true)
+	vector.DrawFilledRect(screen, float32(dashX), float32(dashY), 350, 80, RGBA(15, 23, 42, 230), true)
+	vector.StrokeRect(screen, float32(dashX), float32(dashY), 350, 80, 1.5, RGBA(51, 65, 85, 255), true)
 
 	// Speed calculation (convert px/s to intuitive km/h)
 	speedKmh := int(math.Abs(bus.Speed) * 0.18)
@@ -388,23 +457,37 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 	statusStr := bus.Gear.Name()
 	statusCol := RGBA(74, 222, 128, 255)
 	if bus.DoorsOpen {
-		statusStr = "【开门P】"
+		statusStr = T("【开门P】", "[DOOR P]")
 		statusCol = RGBA(250, 204, 21, 255)
 	} else if bus.IsHandbraking {
-		statusStr = "【!手刹!】"
+		statusStr = T("【!手刹!】", "[!PARK!]")
 		statusCol = RGBA(239, 68, 68, 255)
 	} else if bus.IsBraking {
-		statusStr = "【脚刹】"
+		statusStr = T("【脚刹】", "[BRAKE]")
 		statusCol = RGBA(248, 113, 113, 255)
 	} else if bus.Gear == GearReverse {
 		statusCol = RGBA(248, 113, 113, 255)
 	} else if bus.Gear == GearNeutral {
 		statusCol = RGBA(250, 204, 21, 255)
 	}
-	DrawText(screen, statusStr, dashX+202, dashY+16, 11, statusCol)
+	DrawText(screen, statusStr, dashX+200, dashY+16, 11, statusCol)
+
+	// Interactive AI Autopilot Badge: [🤖 AI巡航(P)] / [🤖 手动(P)]
+	apW := 88.0
+	apH := 20.0
+	h.AutopilotBounds = Rect{X: dashX + 252, Y: dashY + 12, W: apW, H: apH}
+	if settings != nil && settings.AutopilotEnabled {
+		vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), RGBA(6, 182, 212, 235), true)
+		vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, RGBA(165, 243, 252, 255), true)
+		DrawText(screen, T("🤖 AI巡航(P)", "🤖 Autopilot(P)"), h.AutopilotBounds.X+6, h.AutopilotBounds.Y+4, 11, RGBA(15, 23, 42, 255))
+	} else {
+		vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), RGBA(30, 41, 59, 200), true)
+		vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.0, RGBA(100, 116, 139, 180), true)
+		DrawText(screen, T("🤖 手动(P)", "🤖 Manual(P)"), h.AutopilotBounds.X+10, h.AutopilotBounds.Y+4, 11, RGBA(148, 163, 184, 255))
+	}
 
 	// Gear shortcut prompt row
-	DrawText(screen, "换挡: [Shift/Ctrl]升降 [R][N][G]切挡", dashX+114, dashY+38, 10, RGBA(148, 163, 184, 220))
+	DrawText(screen, T("换挡: [Shift/Ctrl]升降 [R/N/G]切挡 [P]AI", "Shift: [Shift/Ctrl] [R/N/G] [P]AI"), dashX+114, dashY+38, 10, RGBA(148, 163, 184, 220))
 
 	// Health and Steering info row
 	durCol := RGBA(34, 197, 94, 255)
@@ -413,14 +496,14 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 	} else if bus.Durability < 70 {
 		durCol = RGBA(234, 179, 8, 255)
 	}
-	durStr := fmt.Sprintf("车况:%.0f%%", bus.Durability)
+	durStr := Tf("车况:%.0f%%", "Health:%.0f%%", bus.Durability)
 	DrawText(screen, durStr, dashX+114, dashY+58, 10, durCol)
 
 	if bus.OnShoulder {
 		vector.DrawFilledRect(screen, float32(dashX+182), float32(dashY+54), 126, 18, RGBA(234, 179, 8, 220), true)
-		DrawText(screen, "[ 路肩缓冲减速 ]", dashX+190, dashY+57, 10, RGBA(15, 23, 42, 255))
+		DrawText(screen, T("[ 路肩缓冲减速 ]", "[ Shoulder Slow ]"), dashX+190, dashY+57, 10, RGBA(15, 23, 42, 255))
 	} else {
-		steerStr := fmt.Sprintf("转向: %.0f°", bus.SteeringAngle*180/math.Pi)
+		steerStr := Tf("转向: %.0f°", "Steer: %.0f°", bus.SteeringAngle*180/math.Pi)
 		DrawText(screen, steerStr, dashX+182, dashY+58, 10, RGBA(203, 213, 225, 255))
 		steerRatio := bus.SteeringAngle / bus.MaxSteerAngle
 		vector.StrokeLine(screen, float32(dashX+240), float32(dashY+63), float32(dashX+240+steerRatio*20), float32(dashY+63), 2.0, RGBA(56, 189, 248, 255), true)
@@ -428,7 +511,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 
 	// Prompt Banners at Bottom Center
 	if activeStop != nil {
-		promptW := 420.0
+		promptW := 440.0
 		promptH := 46.0
 		promptX := float64(screen.Bounds().Dx())/2 - promptW/2
 		promptY := float64(screenH) - 80.0
@@ -438,9 +521,9 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 		vector.StrokeRect(screen, float32(promptX), float32(promptY), float32(promptW), float32(promptH),
 			2, RGBA(250, 204, 21, 255), true)
 
-		promptText := fmt.Sprintf("已停靠在 [%s]! 按 [E] 开门上下客", activeStop.Name)
+		promptText := Tf("已停靠在 [%s]! 按 [E] 开门上下客", "Stopped at [%s]! Press [E] to open doors", activeStop.LocalizedName())
 		if bus.DoorsOpen {
-			promptText = fmt.Sprintf("上下客完成! 按 [E] 关门准备发车 >>")
+			promptText = T("上下客完成! 按 [E] 关门准备发车 >>", "Boarding complete! Press [E] to close doors >>")
 		}
 		DrawText(screen, promptText, promptX+20, promptY+15, 13, RGBA(250, 204, 21, 255))
 	} else if targetStop != nil {
@@ -460,7 +543,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 				vector.StrokeRect(screen, float32(promptX), float32(promptY), float32(promptW), float32(promptH),
 					2, RGBA(52, 211, 153, 255), true)
 
-				promptText := fmt.Sprintf("【满足飞站条件】[%s] 站台无人且无下车铃！按 [F] 飞站 ⏩ (或直接驶过)", targetStop.Name)
+				promptText := Tf("【满足飞站条件】[%s] 站台无人且无下车铃！按 [F] 飞站 ⏩ (或直接驶过)", "[Express Skip] [%s] No waiting pax & no bell! Press [F] to skip ⏩", targetStop.LocalizedName())
 				DrawText(screen, promptText, promptX+16, promptY+15, 13, RGBA(209, 250, 229, 255))
 			} else {
 				// Must Stop
@@ -472,34 +555,37 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 				vector.StrokeRect(screen, float32(promptX), float32(promptY), float32(promptW), float32(promptH),
 					2, RGBA(234, 179, 8, 255), true)
 
-				promptText := fmt.Sprintf("【须靠站】[%s] 站台 %d 人候车 / 车内 %d 人下车，请减速靠站",
-					targetStop.Name, targetStop.WaitingPassengers, passengersAlighting)
+				promptText := Tf("【须靠站】[%s] 站台 %d 人候车 / 车内 %d 人下车，请减速靠站", "[Must Stop] [%s] %d waiting / %d alighting, please decelerate to stop bay", targetStop.LocalizedName(), targetStop.WaitingPassengers, passengersAlighting)
 				DrawText(screen, promptText, promptX+16, promptY+15, 13, RGBA(254, 240, 138, 255))
 			}
 		}
 	}
 }
 
-func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *Route, world *World) {
+func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *Route, world *World, settings *Settings) {
 	screenH := screen.Bounds().Dy()
 	screenW := screen.Bounds().Dx()
 
 	// Planning helper card at bottom center
-	panelW := 680.0
-	panelH := 88.0
+	panelW := 740.0
+	panelH := 92.0
 	panelX := float64(screenW)/2 - panelW/2
-	panelY := float64(screenH) - 106.0
+	panelY := float64(screenH) - 108.0
 
 	vector.DrawFilledRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH),
 		RGBA(15, 23, 42, 230), true)
 	vector.StrokeRect(screen, float32(panelX), float32(panelY), float32(panelW), float32(panelH),
 		1.5, RGBA(168, 85, 247, 240), true)
 
-	DrawText(screen, "【线路规划面板】鼠标左键点击任意站点图标将其加入行驶路线", panelX+20, panelY+12, 13, RGBA(192, 132, 252, 255))
-	DrawText(screen, "【靠站规则】公交车站均设于道路顺行右侧，系统已自动按顺行右侧靠站规划最佳街道路线", panelX+20, panelY+30, 11, RGBA(250, 204, 21, 255))
-	routeDesc := fmt.Sprintf("当前路线: %s", route.GetRouteDescription(world))
-	DrawText(screen, routeDesc, panelX+20, panelY+48, 12, color.White)
-	DrawText(screen, "[C键] 清空路线重新规划  |  [TAB键] 返回驾驶并执行当前路线", panelX+20, panelY+68, 12, RGBA(148, 163, 184, 255))
+	DrawText(screen, T("【线路规划面板】鼠标左键点击任意站点图标将其加入行驶路线", "[Route Planning Panel] Left click station icons to add to driving route"), panelX+20, panelY+12, 13, RGBA(192, 132, 252, 255))
+	fleetText := ""
+	if settings != nil {
+		fleetText = Tf(" | 路线AI车队: %d 辆 (ESC设置修改)", " | Route AI Fleet: %d buses (ESC to edit)", settings.AIBusCount)
+	}
+	DrawText(screen, Tf("【靠站规则】公交车站均设于道路顺行右侧，系统已自动按顺行右侧靠站规划路线%s", "[Stop Rules] Stations placed on right side of roadway. Route safely planned for right-side bays%s", fleetText), panelX+20, panelY+32, 11, RGBA(250, 204, 21, 255))
+	routeDesc := Tf("当前路线: %s", "Active Route: %s", route.GetRouteDescription(world))
+	DrawText(screen, routeDesc, panelX+20, panelY+50, 12, color.White)
+	DrawText(screen, T("[C键] 清空路线重新规划  |  [TAB键] 返回驾驶并执行当前路线  |  [P键] 开启AI自动巡航驾驶", "[C] Clear & Redo Route  |  [TAB] Resume Driving with Route  |  [P] Toggle AI Autopilot"), panelX+20, panelY+70, 12, RGBA(148, 163, 184, 255))
 }
 
 func (h *HUD) drawToasts(screen *ebiten.Image) {

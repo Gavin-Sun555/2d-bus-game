@@ -70,6 +70,24 @@ func NormalizeAngle(rad float64) float64 {
 	return rad
 }
 
+// LerpAngle calculates linear interpolation between angles a and b following the shortest angular distance
+func LerpAngle(a, b, t float64) float64 {
+	diff := NormalizeAngle(b - a)
+	return NormalizeAngle(a + diff*t)
+}
+
+// RotateTowards smoothly steps an angle towards target by at most maxDelta radians
+func RotateTowards(current, target, maxDelta float64) float64 {
+	diff := NormalizeAngle(target - current)
+	if math.Abs(diff) <= maxDelta {
+		return target
+	}
+	if diff > 0 {
+		return NormalizeAngle(current + maxDelta)
+	}
+	return NormalizeAngle(current - maxDelta)
+}
+
 // ColorRGBA helper
 func RGBA(r, g, b, a uint8) color.RGBA {
 	return color.RGBA{R: r, G: g, B: b, A: a}

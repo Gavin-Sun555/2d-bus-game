@@ -650,7 +650,18 @@ func drawBusBody(screen *ebiten.Image, cam *Camera, center Vec2, heading, length
 	}
 }
 
+var (
+	sharedQuadIndices       = []uint16{0, 1, 2, 0, 2, 3}
+	sharedDrawTrianglesOpts = ebiten.DrawTrianglesOptions{}
+	sharedQuadVertices      = [4]ebiten.Vertex{}
+)
+
 func drawRotatedBox(screen *ebiten.Image, cam *Camera, center Vec2, cosH, sinH, len, wid float64, c color.RGBA) {
+	radius := math.Hypot(len, wid) * 0.5
+	if !cam.IsPointVisible(center, radius) {
+		return
+	}
+
 	perpX := -sinH
 	perpY := cosH
 
@@ -667,17 +678,19 @@ func drawRotatedBox(screen *ebiten.Image, cam *Camera, center Vec2, cosH, sinH, 
 	s3 := cam.WorldToScreen(c3)
 	s4 := cam.WorldToScreen(c4)
 
-	// Render quad as 2 triangles using vertices
-	vs := []ebiten.Vertex{
-		{DstX: float32(s1.X), DstY: float32(s1.Y), ColorR: float32(c.R) / 255, ColorG: float32(c.G) / 255, ColorB: float32(c.B) / 255, ColorA: float32(c.A) / 255},
-		{DstX: float32(s2.X), DstY: float32(s2.Y), ColorR: float32(c.R) / 255, ColorG: float32(c.G) / 255, ColorB: float32(c.B) / 255, ColorA: float32(c.A) / 255},
-		{DstX: float32(s3.X), DstY: float32(s3.Y), ColorR: float32(c.R) / 255, ColorG: float32(c.G) / 255, ColorB: float32(c.B) / 255, ColorA: float32(c.A) / 255},
-		{DstX: float32(s4.X), DstY: float32(s4.Y), ColorR: float32(c.R) / 255, ColorG: float32(c.G) / 255, ColorB: float32(c.B) / 255, ColorA: float32(c.A) / 255},
-	}
-	indices := []uint16{0, 1, 2, 0, 2, 3}
+	cr := float32(c.R) / 255
+	cg := float32(c.G) / 255
+	cb := float32(c.B) / 255
+	ca := float32(c.A) / 255
+
+	// Zero-allocation quad rendering
+	sharedQuadVertices[0] = ebiten.Vertex{DstX: float32(s1.X), DstY: float32(s1.Y), ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	sharedQuadVertices[1] = ebiten.Vertex{DstX: float32(s2.X), DstY: float32(s2.Y), ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	sharedQuadVertices[2] = ebiten.Vertex{DstX: float32(s3.X), DstY: float32(s3.Y), ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
+	sharedQuadVertices[3] = ebiten.Vertex{DstX: float32(s4.X), DstY: float32(s4.Y), ColorR: cr, ColorG: cg, ColorB: cb, ColorA: ca}
 
 	whiteImg := getWhiteSubImage()
-	screen.DrawTriangles(vs, indices, whiteImg, &ebiten.DrawTrianglesOptions{})
+	screen.DrawTriangles(sharedQuadVertices[:], sharedQuadIndices, whiteImg, &sharedDrawTrianglesOpts)
 }
 
 var whiteImage *ebiten.Image
