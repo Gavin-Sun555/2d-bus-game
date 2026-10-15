@@ -112,6 +112,7 @@ type Bus struct {
 	// Passenger capacity
 	PassengerCount int
 	Capacity       int
+	Passengers     []Passenger
 
 	// Vehicle Health & Collision
 	Durability    float64 // 0.0 to 100.0%
@@ -120,6 +121,11 @@ type Bus struct {
 
 	// Skidmarks and trail
 	TireTracks []TireMark
+}
+
+// Passenger represents an onboard passenger with an intended destination stop ID
+type Passenger struct {
+	TargetStopID int
 }
 
 type TireMark struct {
@@ -139,9 +145,9 @@ func NewBus(x, y float64, heading float64) *Bus {
 		Length:           96,
 		Width:            36,
 		WheelBase:        60,
-		MaxSpeedFwd:      330,
+		MaxSpeedFwd:      460,
 		MaxSpeedRev:      100,
-		AccelRate:        190,
+		AccelRate:        230,
 		BrakeRate:        380,
 		HandbrakeRate:    600,
 		FrictionRate:     70,
@@ -150,11 +156,87 @@ func NewBus(x, y float64, heading float64) *Bus {
 		SteerReturnSpd:   3.5,  // auto-center return speed
 		Capacity:         45,
 		PassengerCount:   0,
+		Passengers:       make([]Passenger, 0, 45),
 		Durability:       100.0,
 		OnShoulder:       false,
 		CrashCooldown:    0,
 		TireTracks:       make([]TireMark, 0, 200),
 	}
+}
+
+// CountPassengersAlightingAt returns the number of passengers whose destination is stopID
+func (b *Bus) CountPassengersAlightingAt(stopID int) int {
+	count := 0
+	for _, p := range b.Passengers {
+		if p.TargetStopID == stopID {
+			count++
+		}
+	}
+	return count
+}
+
+// RemovePassengersAlightingAt removes all passengers destined for stopID and returns the count removed
+func (b *Bus) RemovePassengersAlightingAt(stopID int) int {
+	if len(b.Passengers) == 0 {
+		b.PassengerCount = 0
+		return 0
+	}
+	remaining := make([]Passenger, 0, len(b.Passengers))
+	removed := 0
+	for _, p := range b.Passengers {
+		if p.TargetStopID == stopID {
+			removed++
+		} else {
+			remaining = append(remaining, p)
+		}
+	}
+	b.Passengers = remaining
+	b.PassengerCount = len(b.Passengers)
+	return removed
+}
+
+// ClearPassengers removes all passengers from the bus and returns the count removed
+func (b *Bus) ClearPassengers() int {
+	removed := len(b.Passengers)
+	b.Passengers = make([]Passenger, 0, b.Capacity)
+	b.PassengerCount = 0
+	return removed
+}
+
+// BoardPassengers adds up to count passengers destined for randomly chosen stops from candidateDestStopIDs.
+// Returns the actual number of passengers boarded.
+func (b *Bus) BoardPassengers(count int, candidateDestStopIDs []int) int {
+	if count <= 0 {
+		return 0
+	}
+	availableSpace := b.Capacity - len(b.Passengers)
+	if count > availableSpace {
+		count = availableSpace
+	}
+	if count <= 0 {
+		return 0
+	}
+
+	for i := 0; i < count; i++ {
+		targetID := -1
+		if len(candidateDestStopIDs) > 0 {
+			targetID = candidateDestStopIDs[simRand.Intn(len(candidateDestStopIDs))]
+		}
+		b.Passengers = append(b.Passengers, Passenger{
+			TargetStopID: targetID,
+		})
+	}
+	b.PassengerCount = len(b.Passengers)
+	return count
+}
+
+// GetDestinationsCountMap returns a map of destination stop IDs to passenger counts
+func (b *Bus) GetDestinationsCountMap() map[int]int {
+	m := make(map[int]int)
+	for _, p := range b.Passengers {
+		m[p.TargetStopID]++
+	}
+	return m
 }
 
 // ShiftTo safely shifts to the specified gear with transmission speed protection

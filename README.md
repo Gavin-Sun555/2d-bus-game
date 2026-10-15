@@ -23,7 +23,14 @@
    - 纵横分布有北环快速路、南环快速路、中央贯通大道、海滨大道、高新大道等，横跨市区运河水道、中央生态公园、金融摩天大厦区与高铁北站枢纽。
    - **12 个特色城市站点**，覆盖商业、医疗、教育、体育、交通、海港等全方位客流。
 2. **多等级道路系统与动态自定义车道宽度 (Multi-Tier Roads & Customizable Lane Width)**：
-   - **内置多等级道路**：包含双向4车道主干道、双向2车道次干道、立体跨线高架等。
+   - **内置多等级道路**：包含全新双向6车道（每向3车道）城市快速路/中央干道、双向4车道主干道、双向2车道次干道、立体跨线高架等。
+   - **双向6车道（每个方向3车道 / 共6车道）宏伟干线与全系统支持**：
+     - **都会核心 (Metropolis CBD)**：北环快速路全面扩建为双向六车道快速路 (`北环六车道快速路`)。
+     - **海滨港湾 (Coastal Bay)**：港城中央大道与跨海湾长堤大桥全面升级为双向六车道景观大道与跨海特大桥 (`港城中央六车道大道`、`跨海湾长堤六车道大桥大道`)，跨海大桥桥面同步拓宽至 140px。
+     - **溪谷江城 (River Valley)**：高铁新城大道、世纪悬索长江特大桥及其南北引道全线升级为双向六车道 (`高铁新城六车道大道`、`世纪悬索长江六车道大桥`、`东大桥北/南引道`)，跨江大桥桥面拓宽至 140px。
+     - **高新双城 (Twin Districts)**：中央跨区高架快速路升级为双向六车道立体快速廊道 (`中央跨区高架六车道快速路`)，跨区高架桥面拓宽至 140px。
+     - **自定义地图 (Custom Map)**：完整支持在 `custom_map.json` 中配置 `lanes: 6`，默认星光北环大道升级为六车道大道。
+     - **全方位配套设施**：双实黄线中央隔离带 + 每向双白色虚线车道线；路口地面导向标线全面升级为三车道配置（Lane 0 左转、Lane 1 直行、Lane 2 直行与右转）；交通信号灯悬臂横梁加长并悬挂 3 组独立信号灯头；电子警察门架横跨 6 车道并布设 4 组抓拍相机；社会车辆在 3 条车道内均衡分布巡航。
    - **动态车道宽度**：支持在 ESC 设置中实时自定义 42px / 52px / 64px / 78px 车道宽度。
 3. **顺行靠右停靠与智能道路定向导航 (Right-Hand Stops & Directed Route Planning)**：
    - **靠右顺行靠站规则**：公交车乘客门设于车身右侧，所有公交站台均设在道路行车方向的右侧外缘。公交车必须顺向靠右驶入停靠港湾方可开门上下客。
@@ -65,14 +72,20 @@
     - 真实的公交车前后轴距物理模型，转向拥有内轮差与后轮循迹感，前轮转向角可视化呈现。
     - 动态根据当前城市的真实道路与路口生成交通信号灯、停止线与电子警察监控。
     - AI 私家车智能避让停止中的公交车；非玩家全责碰撞免予扣款；严格执行真实交规抓拍判定。
-12. **AI 自动巡航驾驶系统 (AI Autopilot for Player Bus)**：
+    - **非用户车辆死锁超时防卡死预防机制 (Anti-Deadlock Prevention)**：当一个区域内，两个非玩家车辆相互顶住停滞、无法动弹超过一轮红绿灯周期（$\ge 38$ 秒）时，判定为不可自愈的死锁卡死 bug，触发预防保护直接消除卡死车辆，彻底打破僵局并恢复车流通畅；玩家大巴前后的正常行车等待受到严格豁免保护，绝不会触发车辆消失。
+12. **AI 自动巡航驾驶系统与灵活飞站机制 (AI Autopilot & Smart Skip Stop)**：
     - **玩家公交车 AI 代驾**：玩家可随时将车辆完全托管给 AI 系统！AI 会精准沿规划路线循迹巡航，遇到红灯自动于停止线前平稳停车，遇前车或社会车辆自动跟车制动。
     - **精准靠站与上下客全流程托管**：接近站点时减速顺向驶入右侧黄色停靠港湾并校正车身，停稳后自动切空挡开门上下客、计算停留候客时间，关门后自动切前进挡平稳发车驶向下一站。
+    - **进阶飞站机制 (Skip Stop)**：满足以下任一条件且**车内无乘客按铃下车**时，可直接飞站跳过下一站：
+      1. 前方站台**无候车乘客**；
+      2. 前方站台**已有其他车辆（AI公交车或社会车辆）在停靠靠站**（即使站台有候车乘客，也可直接飞站提速）。
+      - 支持快捷键 **`[F]`** 手动飞站、高速驶过时**自动飞站**，以及 AI 巡航托管下的**自主智能飞站**！
+    - **大路口左转红绿灯精准合规 (Major Intersection Left-Turn Compliance)**：彻底解决 AI 在 4 车道/6 车道等大路口左转闯红灯问题。AI 巡航在接近路口前精准感知交叉口导向车道与路径出弯走向，即使直行绿灯亮起，只要左转红灯箭头未熄灭，大巴均严格于左转车道停止线前平稳刹停；杜绝因提前变道微调误判为右转而发生红灯豁免穿行的问题。
     - **随时开启与关闭**：按下快捷键 **`P`**、点击仪表盘右侧 **`[🤖 AI巡航(P)]`** 按钮或在 ESC 设置面板中自由切换。
 13. **多路线独立 AI 公交车队管理 (Configurable Route AI Bus Fleets)**：
     - **城市公交网络多车同台**：除了玩家驾驶的公交车外，城市路网上支持部署多条线路的 AI 公交车（1号线、2号线、3号线）。
-    - **自由配置每条路线车队规模**：在 ESC 设置面板中，可分别将 1号线、2号线、3号线设置为 0 ~ 4 辆 AI 公交车。
-    - **高辨识度专属涂装与车顶 LED 站牌**：AI 公交车配备各线路专属涂装（1号线翡翠绿、2号线琥珀橙、3号线紫罗兰），头顶常驻高亮 LED 路线标牌（如 `[1号线] AI#1 👥12人`），并在城市站点独立交换候车乘客，营造繁荣真实的都市公交网络！
+    - **自由配置每条路线车队规模**：在 ESC 设置面板中，可将路线车队设置为 0 ~ 8 辆 AI 公交车。
+    - **高辨识度专属涂装与车顶 LED 站牌**：AI 公交车配备 8 款专属定制涂装（翡翠绿、琥珀橙、紫罗兰、碧空青、樱花粉、钴蓝、亮金、薄荷青蓝等），头顶常驻高亮 LED 路线标牌（如 `[1号线] AI#1 👥12人`），并在城市站点独立交换候车乘客，营造繁荣真实的都市公交网络！
 14. **中英双语界面与即时切换 (Bilingual Chinese/English UI)**：
     - 完整支持**简体中文**与 **English** 双语界面。
     - 主菜单、驾驶仪表盘、HUD 状态栏、站点名称、设置菜单与操作提示实时翻译。
@@ -88,8 +101,10 @@
 | **TAB** | - | 切换至线路规划模式 | 返回驾驶模式开始运营 | 模式切换 |
 | **L** | **切换界面语言 (中文 / English)** | **切换界面语言 (中文 / English)** | **切换界面语言 (中文 / English)** | 语言即时切换 |
 | **P** | - | **开启 / 关闭 AI 自动驾驶巡航** | 开启 / 关闭 AI 自动巡航预设 | AI 自动驾驶切换 |
+| **B** (或 **Shift+P**) | - | **切换 AI 狂暴模式 (直行狂飙/双车道变道超车，遵守交规)** | 预设狂暴极速模式 | 自动驾驶极速模式 |
 | **1 ~ 6** | 快速选中对应 1~6 号城市卡片 | - | - | 快速选择地图 |
 | **C** | 快速选中【06 自定义地图】 | - | 清空当前规划路线 | 选自定义图 / 重置路线 |
+| **Z** / **退格 (Backspace)** / **Del** | - | - | **撤销/取消刚添加进路线的最后一个站点** | 撤销上一个站点避免重画 |
 | **R** | **热重载 custom_map.json** | **热重载 custom_map.json** (自定义地图下) | - | 实时重新载入自定义地图 |
 | **A / D** 或 **← / →** | 切换上一个 / 下一个城市卡片 | 左右方向盘转向 (Steer) | 地图向左 / 向右平移 | 转向与卡片切换 |
 | **Enter** / **空格** | 进入选定城市开始运营 | 紧急手刹 (Handbrake) | - | 开始运营 / 驻车制动 |
@@ -99,8 +114,8 @@
 | **Shift** / **Ctrl (或 Q)** | - | **升档 / 降档 (Shift Up / Down)**：循环切换 R ➔ N ➔ D 档位 | - | 变速箱换挡 |
 | **N** / **G** | - | **直接挂挡**：切入 空挡 (N) / 前进挡 (D) | - | 快速切挡 |
 | **E** | - | 进站开门 / 关门发车 (Toggle Doors) | - | 上下客锁止 |
-| **F** | - | 站内无人且无下车铃时**飞站 (Skip Stop)** 跳过下一站 | - | 跳站提速 |
-| **鼠标左键** | 点击城市卡片、开始按钮或语言切换 | 点击仪表盘档位、[🤖 AI巡航]、顶栏 [🏠 主菜单] 或 [视角] | 点击站点加入路线 / 拖拽平移地图 | 界面交互 |
+| **F** | - | 站内无人或**站台已有车靠站**且无下车铃时**飞站 (Skip Stop)** 跳过下一站 | - | 跳站提速 |
+| **鼠标左键** | 点击城市卡片、开始按钮或语言切换 | 点击仪表盘档位、[🤖 AI巡航 / ⚡ 狂暴AI]、顶栏按钮 | 点击站点加入路线 / 拖拽平移地图 | 界面交互 |
 | **鼠标滚轮** | - | - | 放大 / 缩小城市地图视角 | 缩放视口 |
 
 ---
@@ -110,12 +125,13 @@
 按 **`ESC`** 可随时呼出设置菜单：
 1. **返回主菜单 / 更换城市**：点击 `[🏠 返回主菜单 (选择地图)]` 退入主菜单切换不同城市。
 2. **红绿灯违章抓拍与罚款机制**：点击切换 `【已开启 (扣$50)】` 或 `【已关闭 (无罚款)】`。
-3. **AI 私家车交通流密度**：点击切换 `低密度 (12辆)` / `中等密度 (24辆)` / `高密度 (36辆)`。
-4. **自定义全城车道宽度**：点击切换 `标准紧凑 (42px)` / `宽敞市区 (52px)` / `开阔大道 (64px)` / `超宽城际 (78px)`。
-5. **驾驶摄像机视角 (Camera View)**：点击切换 `【固定正北 (标准)】` / `【车头朝上 (跟随)】` / `【固定正南 (倒置)】`。
-6. **玩家公交 AI 自动巡航驾驶**：点击切换 `【开启】` 或 `【关闭】`（随时按 P 键也可切换）。
-7. **线路 AI 公交车队配置 (除玩家车外)**：点击循环调节 `1号线 [0~4]辆`、`2号线 [0~4]辆`、`3号线 [0~4]辆`，即时在城市路网中调度和运行 AI 公交车队。
-8. **界面语言 / Language**：点击切换 `【🌐 简体中文 (Chinese)】` 或 `【🌐 English (英文)】`，游戏内全界面即时生效（快捷键 `L`）。
+3. **AI 私家车交通流密度**：点击切换 `低密度 (12辆)` / `中等密度 (24辆)` / `高密度 (36辆)` / `超高密度 (72辆)` / `极限车流 (128辆)`。
+4. **驾驶摄像机视角 (Camera View)**：点击切换 `【固定正北 (标准)】` / `【车头朝上 (跟随)】` / `【固定正南 (倒置)】`。
+5. **玩家公交 AI 自动驾驶与狂暴模式**：点击循环切换 `【👤 手动驾驶: 关闭】` ➔ `【🤖 AI自动驾驶: 标准巡航】` ➔ `【⚡ AI自动驾驶: 狂暴极速】`（快捷键 `P` 启闭，`B` 切换狂暴）。狂暴模式下直行最高车速飙升至 **80 KM/H ($445\text{px/s}$)**，支持**遇黄灯直接全速冲过（闯黄灯通行不刹停且免罚款）**；且在多车道干道支持**超远距离提前自主变道超车**：距前车 **$380\sim 640\text{px}$** 便已提前规划并敏捷并线，拒绝贴身尾随或刹停顿挫；采用全新**五次/三次 Hermite S型缓动（SmootherStep）动态横向变道算法**（横向变道速率大幅提至 $65\sim 95\text{px/s}$ 并具零加速度平滑过渡），尤其是 6 车道干道从行车道并入左转车道配置 **$350\sim 450\text{px}$** 超长自然柔和 S 曲线渐变段，彻底告别直角急甩与速度骤降，变道姿态如丝般顺滑；全城路口间距延长约 3 倍（`MapGridScale = 3.0`），长街区为极速行驶与变道超车提供超长直道舞台；弯道与红灯避障依然智能减速停稳。同时所有模式下均支持**自适应路口间距的智能提前左转变道**。
+   - **超车安全变回与防撞回退机制**：彻底根除“还未完全超过就急于变回导致碰撞”的物理缺陷，在变回原车道前强制执行**严密纵向安全距离校验**（要求被超车辆完全落入大巴车尾后方至少 **$75\text{px}$** 缓冲净空，且原车道前后死角 $100\%$ 无障碍物），变回并线全程保持极速巡航不发生刹车顿挫；变回途中若原车道突发险情可即刻安全反向回切至超车道避险。
+   - **六车道（单向三车道）直行自适应车道选择**：当大巴在每方向 3 车道的 6 车道干道直行通过路口时，狂暴模式不再死板地强制并回最右侧车道（原偏移 0.0），而是实时评估两个直行车道（中间内侧直行道偏移 `-lw` 与外侧直行道偏移 `0.0`）的前方排队车流与红灯拥堵分，智能选择或保持在车少通畅的直行道全速通过路口，直行绿灯通行无阻。
+6. **线路 AI 公交车队配置 (除玩家车外)**：点击循环调节 `【AI公交车队: 0~8 辆】`，即时在城市路网中调度和运行 AI 公交车队（其他 AI 车保持标准模式）。
+7. **界面语言 / Language**：点击切换 `【🌐 简体中文 (Chinese)】` 或 `【🌐 English (英文)】`，游戏内全界面即时生效（快捷键 `L`）。
 
 ---
 
@@ -308,16 +324,56 @@ make dev
 make cross
 ```
 
-#### 5. 运行单元测试与集成测试
-```bash
-# 运行全部测试（包含全部单元测试与 6 大地图全流程跑通集成测试）
-go test -v ./...
-# 或使用:
-make test
+#### 5. 运行测试与版本发布验收规范 (Testing & Release Qualification)
 
-# 专门运行地图全流程跑通集成测试
-go test -v -run "TestIntegration" ./...
+项目提供分层测试机制：**日常功能开发运行极速基础测试**，而在**向 GitHub 提交与发布新版本之前，必须运行全地图 Release Qualification 综合验收测试套件**：
+
+```bash
+# 1. 基础快速测试 (平时开发模式，秒级完成，自动跳过耗时验收)：
+make test               # 或: go test -short ./...
+
+# 2. 发布前全地图 Release Qualification 综合验收测试 (发布到 GitHub 前必跑！)：
+make test-qualify       # 或: go test -v -run TestReleaseQualification ./...
+# 包含：
+# - 6 大城市地图多圈闭环自主营运巡航 (标准模式 + 狂暴模式)
+# - 128 台社会车辆 + 8 辆 AI 公交车队超重载并发防死锁验证
+# - 狂暴模式超车变道平滑度与零不必要减速动力学审计 (0.35s~0.55s 敏捷入位)
+# - 6 大地图所有站点港湾与环岛道路界限防撞硬阻隔与双黄线安全合规审计
+# - 中英文双语环境全地图线路站牌、换行与 HUD 布局零截断审计
+
+# 3. 运行全量测试用例：
+make test-all           # 或: go test -v ./...
 ```
+
+---
+
+### 🏷️ 版本记录与发布说明 (Release Notes)
+
+- **v0.0.3** (当前最新):
+  - **🏆 全地图多轮闭环发布验收测试套件 (Release Qualification Suite)**：
+    - 新增面向 GitHub 新版本发布资格认证的端到端集成测试 (`make test-qualify`)。
+    - 针对全 6 张地图（都会、海滨、溪谷、翠湖、双城、自定义地图）多圈全流程自动化营运。
+    - 验证 128 台民用车（密度5）与 8 辆 AI 公交车队超重载并发下的零卡死、零物理穿模与平稳调度。
+    - 日常功能开发使用 `make test`（基于 `go test -short`），执行耗时 $< 1$ 秒，兼顾敏捷开发与严苛发版质量。
+  - **⚡ 狂暴模式 (Berserk Mode) 超车变道动力学深度优化**：
+    - 消除变道初期迟缓拖沓、减速过甚的体验问题，采用平滑三次 Hermite 偏移行车线算法。
+    - 横向入位时间精准缩短至 $0.35\text{s} \sim 0.55\text{s}$，变道全过程保持 $\ge 120\text{px/s}$ 高速冲刺巡航，零不必要拖泥带水减速。
+    - 修复远端弯道曲率误累加至近端长直道的历史问题，高速直道巡航更加平顺稳定。
+  - **🗺️ 双向 6 车道宏伟快速廊道全面贯通**：
+    - 都会核心北环六车道、海滨港湾跨海长堤六车道、溪谷江城跨江大桥六车道、高新双城跨区高架六车道全线通车。
+    - 交通灯三联装横梁、4 目抓拍电子警察立杆与三车道导向标线全面标准化。
+  - **🌐 中英双语路线标牌自适应排版优化**：
+    - 针对超长站点名称与跨语言字符宽度，引入动态阶梯换行、换行引导箭头与末端紧凑角标，杜绝界面遮挡。
+
+- **v0.0.2**:
+  - 用户自定义地图引擎 (`custom_map.json` 与 `R` 键一键免重启热重载)。
+  - 全流程 AI 巡航托管代驾与智能飞站。
+  - 8 款独立 AI 公交车队独立营运。
+  - 中英双语界面一键即时切换 (`L` 键)。
+  - 原生 macOS 高清 Retina 应用程序包构建体系 (`AppIcon.icns` 与 `./build.sh app`)。
+
+- **v0.0.1**:
+  - 2D Bus Simulator 初始版本发布，经典都市大地图、拟真车辆动力学、红绿灯与公交线路规划。
 
 ---
 
@@ -399,8 +455,10 @@ An expansive top-down metropolitan bus simulation and route planning game built 
 | **TAB** | - | Switch to Route Planning Mode | Return to Drive Mode | Switch gameplay mode |
 | **L** | **Toggle Language (中文 / English)** | **Toggle Language (中文 / English)** | **Toggle Language (中文 / English)** | Instant language toggle |
 | **P** | - | **Toggle AI Autopilot** | Toggle Autopilot default | AI autonomous driving toggle |
+| **B** (or **Shift+P**) | - | **Toggle AI Berserk Mode (Fast straightaways & 2-lane overtaking, strict rules)** | Preset Berserk Mode | Fast straightaway mode |
 | **1 ~ 6** | Select City Cards 1 to 6 | - | - | Quick map selection |
 | **C** | Select [06 Custom Map] | - | Clear currently planned route | Select custom map / Reset route |
+| **Z** / **Backspace** / **Del** | - | - | **Undo / Remove last stop added to route** | Undo stop without replanning |
 | **R** | **Hot-reload custom_map.json** | **Hot-reload custom_map.json** (in Custom Map) | - | Reload custom map from disk |
 | **A / D** or **← / →** | Previous / Next city card | Steer steering wheel left / right | Pan map left / right | Steering & card navigation |
 | **Enter** / **Space** | Start driving selected city | Emergency Handbrake | - | Start game / Parking brake |
@@ -411,7 +469,7 @@ An expansive top-down metropolitan bus simulation and route planning game built 
 | **N** / **G** | - | **Direct Gear Selection**: Neutral (N) / Drive (D) | - | Quick gear shift |
 | **E** | - | Open / Close Doors at bus stop (Toggle Doors) | - | Passenger door interlock |
 | **F** | - | **Skip Stop**: Bypass next stop when empty and no bell | - | Speed up route service |
-| **Left Click** | Select city card, Start button, or Language button | Click dashboard gears, [🤖 Autopilot], [🏠 Main Menu], or [View] | Click stops to build route / Drag map | UI interaction |
+| **Left Click** | Select city card, Start button, or Language button | Click dashboard gears, [🤖 Autopilot / ⚡ Berserk], [🏠 Main Menu], or [View] | Click stops to build route / Drag map | UI interaction |
 | **Scroll Wheel** | - | - | Zoom in / out map view | Viewport zoom |
 
 ---
@@ -424,8 +482,8 @@ Press **`ESC`** at any time to open the Settings modal:
 3. **AI Private Vehicle Traffic Density**: Cycle between `Low (12 cars)`, `Medium (24 cars)`, and `High (36 cars)`.
 4. **Custom Citywide Lane Width**: Cycle between `Compact (42px)`, `Standard (52px)`, `Boulevard (64px)`, and `Expressway (78px)`.
 5. **Camera Perspective**: Switch between `[North-Up (Classic)]`, `[Heading-Up (Follow)]`, and `[South-Up (Inverted)]`.
-6. **Player Bus AI Autopilot**: Toggle `[Enabled]` or `[Disabled]` (also accessible via hotkey `P`).
-7. **Route AI Bus Fleet Sizing**: Adjust fleet numbers independently for `Line 1 [0~4]`, `Line 2 [0~4]`, and `Line 3 [0~4]`.
+6. **Player Bus AI Autopilot & Berserk Mode**: Cycle between `[👤 Manual: OFF]`, `[🤖 Autopilot: Standard]`, and `[⚡ Autopilot: BERSERK]` (hotkey `P` to toggle, `B` for Berserk). In Berserk mode, top cruise speed on straight roads is boosted to $310\text{px/s}$, with **autonomous multi-lane overtaking** of slower vehicles on 2-lane roads; corners, red lights, and station stops strictly follow traffic rules. All modes feature **intelligent, block-distance adaptive early left-turn lane merging**.
+7. **Route AI Bus Fleet Sizing**: Adjust fleet numbers independently for `Line 1 [0~4]`, `Line 2 [0~4]`, and `Line 3 [0~4]` (other AI vehicles remain in standard cruise mode).
 8. **UI Language / 界面语言**: Toggle between `[🌐 简体中文 (Chinese)]` and `[🌐 English (英文)]` with immediate UI refresh (hotkey `L`).
 
 ---
@@ -489,7 +547,7 @@ The project includes a standard `custom_map.json` file in the root directory. Yo
       "name": "Avenue Name",
       "p1": [-1500, -600],
       "p2": [1500, -600],
-      "lanes": 4
+      "lanes": 6
     }
   ],
   "stops": [
@@ -498,7 +556,7 @@ The project includes a standard `custom_map.json` file in the root directory. Yo
       "name": "Stop Name",
       "pos": [-1500, -600],
       "heading": 0.0,
-      "lanes": 4,
+      "lanes": 6,
       "color": "#3B82F6",
       "capacity": 20
     }
@@ -605,13 +663,43 @@ make dev
 make cross
 ```
 
-#### 5. Run Tests
-```bash
-# Run all tests (unit tests and 6-map full integration tests)
-go test -v ./...
-# or:
-make test
+#### 5. Testing & Release Qualification Workflow
 
-# Run map full integration test suite specifically
-go test -v -run "TestIntegration" ./...
+The project provides a tiered testing architecture: **routine feature development runs lightning-fast unit tests**, while **the comprehensive multi-map Release Qualification suite must pass before any new release is published to GitHub**:
+
+```bash
+# 1. Fast Development Test Suite (runs in < 1s, skips long qualification runs):
+make test               # or: go test -short ./...
+
+# 2. Release Qualification Suite (MANDATORY before publishing releases to GitHub):
+make test-qualify       # or: go test -v -run TestReleaseQualification ./...
+# Covers:
+# - All 6 city maps autonomous multi-lap transit (Standard & Berserk modes)
+# - Maximum concurrency stress: 128 traffic cars + 8 AI bus fleet with zero deadlocks
+# - Berserk overtaking lane transition audit (0.35s~0.55s snappy change, >= 120 px/s)
+# - Boundary safety audit: zero hard barrier collisions across all 72 stop bays & roundabouts
+# - Bilingual HUD & route line formatting with zero text clipping or overlapping
+
+# 3. Run all unit and integration tests:
+make test-all           # or: go test -v ./...
 ```
+
+---
+
+### 🏷️ Release Notes
+
+- **v0.0.3** (Current):
+  - **🏆 Release Qualification Test Suite**: Automated qualification pipeline (`make test-qualify`) across all 6 city maps, multi-lap transit loops, 128 traffic cars + 8 AI bus fleets, and strict safety audits. Routine development tests (`make test`) run in $< 1$s.
+  - **⚡ Berserk Mode Overtaking Optimization**: Snappy $0.35\text{s} \sim 0.55\text{s}$ lane transitions using cubic Hermite offset paths, eliminating sluggish deceleration and sustaining $\ge 120\text{px/s}$ cruise speeds during overtakes.
+  - **🗺️ Six-Lane Grand Express Corridors**: Fully realized 6-lane expressways across Metropolis, Coastal Bay, River Valley, and Twin Cities with triple-head traffic lights, 4-lens electronic surveillance, and dedicated lane guide arrows.
+  - **🌐 Adaptive Bilingual Route Display**: Responsive multi-line wrapping and concise summary badges for complex transit loops in both Chinese and English.
+
+- **v0.0.2**:
+  - Custom map JSON engine with in-game hot-reloading (`R`).
+  - Full AI autopilot with boarding management and smart skip-stop.
+  - 8-bus multi-route AI fleet.
+  - Instant bilingual English/Chinese localization (`L`).
+  - Native macOS application bundle with high-res Retina icon.
+
+- **v0.0.1**:
+  - Initial public release of 2D Bus Simulator & Route Planner.

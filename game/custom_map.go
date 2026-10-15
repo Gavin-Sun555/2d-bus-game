@@ -15,7 +15,7 @@ import (
 type CustomRoadData struct {
 	P1    [2]float64 `json:"p1"`
 	P2    [2]float64 `json:"p2"`
-	Lanes int        `json:"lanes"` // 2 or 4
+	Lanes int        `json:"lanes"` // 2, 4, or 6
 	Name  string     `json:"name"`
 }
 
@@ -25,7 +25,7 @@ type CustomStopData struct {
 	Name     string     `json:"name"`
 	Pos      [2]float64 `json:"pos"`
 	Heading  float64    `json:"heading"` // in radians (e.g. 0=East, 1.57=South, 3.14=West, -1.57=North)
-	Lanes    int        `json:"lanes"`   // 2 or 4
+	Lanes    int        `json:"lanes"`   // 2, 4, or 6
 	Color    string     `json:"color"`   // Hex string like "#3B82F6"
 	Capacity int        `json:"capacity"`
 }
@@ -134,8 +134,8 @@ func GetDefaultCustomMapData() *CustomMapData {
 		Subtitle: "玩家自定义自建都市 · 星光高架与双子湖生态客运网",
 		Style:    "metropolis",
 		Roads: []CustomRoadData{
-			// Major 4-lane Ring & Grid
-			{P1: [2]float64{-2600, -1200}, P2: [2]float64{2600, -1200}, Lanes: 4, Name: "星光北环大道"},
+			// Major 4-lane Ring & Grid, with 6-lane North Ring Avenue
+			{P1: [2]float64{-2600, -1200}, P2: [2]float64{2600, -1200}, Lanes: 6, Name: "星光北环六车道大道"},
 			{P1: [2]float64{-2600, -600}, P2: [2]float64{2600, -600}, Lanes: 2, Name: "未来二路"},
 			{P1: [2]float64{-2600, 0}, P2: [2]float64{2600, 0}, Lanes: 4, Name: "天际中央主轴"},
 			{P1: [2]float64{-2600, 600}, P2: [2]float64{2600, 600}, Lanes: 2, Name: "创新二路"},
@@ -155,15 +155,15 @@ func GetDefaultCustomMapData() *CustomMapData {
 			{ID: 0, Name: "星光中央总站 (Starlight Hub)", Pos: [2]float64{-325, 0}, Heading: 0, Lanes: 4, Color: "#3B82F6", Capacity: 14},
 			{ID: 1, Name: "未来科技塔 (Future Tower)", Pos: [2]float64{325, 0}, Heading: math.Pi, Lanes: 4, Color: "#10B981", Capacity: 10},
 			{ID: 2, Name: "天际广场 (Skyline Plaza)", Pos: [2]float64{1300, -300}, Heading: math.Pi / 2, Lanes: 2, Color: "#A855F7", Capacity: 8},
-			{ID: 3, Name: "量子实验室 (Quantum Lab)", Pos: [2]float64{2600, -900}, Heading: -math.Pi / 2, Lanes: 2, Color: "#06B6D4", Capacity: 8},
-			{ID: 4, Name: "星海体育馆 (Star Arena)", Pos: [2]float64{1950, -1200}, Heading: math.Pi, Lanes: 4, Color: "#EC4899", Capacity: 10},
-			{ID: 5, Name: "空港北枢纽 (North Airport)", Pos: [2]float64{-325, -1200}, Heading: 0, Lanes: 4, Color: "#F59E0B", Capacity: 14},
-			{ID: 6, Name: "运河客运港 (Canal Port)", Pos: [2]float64{-2600, -900}, Heading: math.Pi / 2, Lanes: 2, Color: "#0EA5E9", Capacity: 8},
-			{ID: 7, Name: "大学城东校区 (Uni Campus)", Pos: [2]float64{-2600, 900}, Heading: -math.Pi / 2, Lanes: 2, Color: "#8B5CF6", Capacity: 8},
+			{ID: 3, Name: "量子实验室 (Quantum Lab)", Pos: [2]float64{2600, -900}, Heading: -math.Pi / 2, Lanes: 4, Color: "#06B6D4", Capacity: 8},
+			{ID: 4, Name: "星海体育馆 (Star Arena)", Pos: [2]float64{1950, -1200}, Heading: math.Pi, Lanes: 6, Color: "#EC4899", Capacity: 10},
+			{ID: 5, Name: "空港北枢纽 (North Airport)", Pos: [2]float64{-325, -1200}, Heading: 0, Lanes: 6, Color: "#F59E0B", Capacity: 14},
+			{ID: 6, Name: "运河客运港 (Canal Port)", Pos: [2]float64{-2600, -900}, Heading: math.Pi / 2, Lanes: 4, Color: "#0EA5E9", Capacity: 8},
+			{ID: 7, Name: "大学城东校区 (Uni Campus)", Pos: [2]float64{-2600, 900}, Heading: -math.Pi / 2, Lanes: 4, Color: "#8B5CF6", Capacity: 8},
 			{ID: 8, Name: "第一市民医院 (General Hospital)", Pos: [2]float64{-1300, 300}, Heading: -math.Pi / 2, Lanes: 2, Color: "#EF4444", Capacity: 10},
 			{ID: 9, Name: "星湖生态公园 (Star Lake Park)", Pos: [2]float64{-1950, 1200}, Heading: 0, Lanes: 4, Color: "#22C55E", Capacity: 8},
 			{ID: 10, Name: "文创生活街区 (Creative Zone)", Pos: [2]float64{325, 1200}, Heading: math.Pi, Lanes: 4, Color: "#F97316", Capacity: 10},
-			{ID: 11, Name: "国际会展总站 (Expo Center)", Pos: [2]float64{2600, 900}, Heading: math.Pi / 2, Lanes: 2, Color: "#D946EF", Capacity: 8},
+			{ID: 11, Name: "国际会展总站 (Expo Center)", Pos: [2]float64{2600, 900}, Heading: math.Pi / 2, Lanes: 4, Color: "#D946EF", Capacity: 8},
 		},
 		Rivers: []CustomRiverData{
 			{Y: -300, Height: 70},
@@ -595,12 +595,14 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 	// 3. Roads
 	for _, r := range data.Roads {
 		lanes := r.Lanes
-		if lanes != 2 && lanes != 4 {
+		if lanes != 2 && lanes != 4 && lanes != 6 {
 			lanes = 4
 		}
 		rType := RoadAvenue4Lane
 		if lanes == 2 {
 			rType = RoadStreet2Lane
+		} else if lanes == 6 {
+			rType = RoadExpressway6Lane
 		}
 		w.Roads = append(w.Roads, RoadSegment{
 			P1:       Vec2{X: r.P1[0], Y: r.P1[1]},
@@ -654,7 +656,7 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 			stopID = i
 		}
 		lanes := s.Lanes
-		if lanes != 2 && lanes != 4 {
+		if lanes != 2 && lanes != 4 && lanes != 6 {
 			lanes = 4
 		}
 		accent := parseHexColor(s.Color, RGBA(59, 130, 246, 255))
@@ -673,6 +675,7 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 			cap,
 		))
 	}
+	w.MatchStopRoadLanes(laneWidth)
 
 	// 7. Buildings
 	for _, b := range data.Buildings {

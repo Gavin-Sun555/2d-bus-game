@@ -93,6 +93,11 @@ func RGBA(r, g, b, a uint8) color.RGBA {
 	return color.RGBA{R: r, G: g, B: b, A: a}
 }
 
+// NRGBA helper returns non-alpha-premultiplied color for Ebitengine vector rendering
+func NRGBA(r, g, b, a uint8) color.NRGBA {
+	return color.NRGBA{R: r, G: g, B: b, A: a}
+}
+
 // OBB represents an Oriented Bounding Box in 2D
 type OBB struct {
 	Center  Vec2

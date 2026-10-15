@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -78,6 +79,26 @@ func (r *Route) Clear() {
 	r.cachedDescDirty = true
 }
 
+// RemoveLastStop removes the last station from the route.
+// Returns the removed stop ID and true, or -1 and false if route is already empty.
+func (r *Route) RemoveLastStop() (int, bool) {
+	if len(r.StopIDs) == 0 {
+		return -1, false
+	}
+	lastIdx := len(r.StopIDs) - 1
+	removedID := r.StopIDs[lastIdx]
+	r.StopIDs = r.StopIDs[:lastIdx]
+	if r.CurrentIndex >= len(r.StopIDs) {
+		if len(r.StopIDs) > 0 {
+			r.CurrentIndex = len(r.StopIDs) - 1
+		} else {
+			r.CurrentIndex = 0
+		}
+	}
+	r.cachedDescDirty = true
+	return removedID, true
+}
+
 func (r *Route) GetCurrentTargetStopID() int {
 	if len(r.StopIDs) == 0 {
 		return -1
@@ -106,6 +127,108 @@ func (r *Route) AdvanceToNextStop() {
 	r.cachedDescDirty = true
 }
 
+// IsTerminusIndex checks if the given stop sequence index is the terminal of the route.
+func (r *Route) IsTerminusIndex(index int) bool {
+	n := len(r.StopIDs)
+	if n == 0 {
+		return false
+	}
+	return index == n-1
+}
+
+// IsTerminus checks if the given stopID is the terminal stop of the route.
+func (r *Route) IsTerminus(stopID int) bool {
+	n := len(r.StopIDs)
+	if n == 0 {
+		return false
+	}
+	return r.StopIDs[n-1] == stopID
+}
+
+// GetUpcomingCandidateStopIDs returns valid destination stop IDs for passengers
+// boarding at the specified index within the route's StopIDs sequence.
+// Ensures passengers only choose downstream stops on the current run and never
+// pick their boarding station or ride a full loop back to the same terminus.
+func (r *Route) GetUpcomingCandidateStopIDs(stopIndex int) []int {
+	n := len(r.StopIDs)
+	if n <= 1 {
+		return nil
+	}
+	if stopIndex < 0 || stopIndex >= n {
+		stopIndex = stopIndex % n
+		if stopIndex < 0 {
+			stopIndex += n
+		}
+	}
+	currentStopID := r.StopIDs[stopIndex]
+	isClosedLoop := (n >= 2 && r.StopIDs[0] == r.StopIDs[n-1])
+
+	var candidateSlice []int
+	if isClosedLoop {
+		if stopIndex == 0 || stopIndex == n-1 {
+			// Boarding at terminal of closed loop: upcoming stops on the loop are intermediate stops (indices 1 to n-2).
+			// This specifically prevents passengers boarding at the terminal from riding an entire loop back to the terminal.
+			if n > 2 {
+				candidateSlice = r.StopIDs[1 : n-1]
+			} else {
+				candidateSlice = []int{r.StopIDs[1]}
+			}
+		} else {
+			// Boarding at intermediate stop: upcoming stops up to the terminus (indices stopIndex+1 to n-1).
+			candidateSlice = r.StopIDs[stopIndex+1 : n]
+		}
+	} else {
+		// Open route
+		if stopIndex < n-1 {
+			candidateSlice = r.StopIDs[stopIndex+1 : n]
+		} else {
+			candidateSlice = r.StopIDs[0 : n-1]
+		}
+	}
+
+	// Deduplicate and ensure currentStopID is never included
+	seen := make(map[int]bool)
+	var result []int
+	for _, id := range candidateSlice {
+		if id != currentStopID && !seen[id] {
+			seen[id] = true
+			result = append(result, id)
+		}
+	}
+
+	// Fallback safety: if result is empty, find any other stop in route that is not currentStopID
+	if len(result) == 0 {
+		for _, id := range r.StopIDs {
+			if id != currentStopID && !seen[id] {
+				seen[id] = true
+				result = append(result, id)
+			}
+		}
+	}
+	return result
+}
+
+// GetUpcomingCandidateStopIDsForStop returns candidate destination stop IDs
+// for passengers boarding at a specific bus stop ID.
+func (r *Route) GetUpcomingCandidateStopIDsForStop(currentStopID int) []int {
+	n := len(r.StopIDs)
+	if n == 0 {
+		return nil
+	}
+	// Prefer current index if it matches the stop
+	if r.CurrentIndex < n && r.StopIDs[r.CurrentIndex] == currentStopID {
+		return r.GetUpcomingCandidateStopIDs(r.CurrentIndex)
+	}
+	// Otherwise look forward from CurrentIndex
+	for i := 0; i < n; i++ {
+		idx := (r.CurrentIndex + i) % n
+		if r.StopIDs[idx] == currentStopID {
+			return r.GetUpcomingCandidateStopIDs(idx)
+		}
+	}
+	return r.GetUpcomingCandidateStopIDs(r.CurrentIndex)
+}
+
 type gridStopInfo struct {
 	entryI, entryJ int
 	exitI, exitJ   int
@@ -114,7 +237,7 @@ type gridStopInfo struct {
 
 func getGridCoordinates(w *World) ([]float64, []float64) {
 	if w == nil || len(w.Roads) == 0 {
-		return []float64{-2600, -1300, 0, 1300, 2600}, []float64{-1200, -600, 0, 600, 1200}
+		return []float64{-2600 * MapGridScale, -1300 * MapGridScale, 0, 1300 * MapGridScale, 2600 * MapGridScale}, []float64{-1200 * MapGridScale, -600 * MapGridScale, 0, 600 * MapGridScale, 1200 * MapGridScale}
 	}
 	xVals := make([]float64, 0, 16)
 	yVals := make([]float64, 0, 16)
@@ -151,10 +274,10 @@ func getGridCoordinates(w *World) ([]float64, []float64) {
 	sort.Float64s(yVals)
 
 	if len(xVals) < 2 {
-		xVals = []float64{-2600, -1300, 0, 1300, 2600}
+		xVals = []float64{-2600 * MapGridScale, -1300 * MapGridScale, 0, 1300 * MapGridScale, 2600 * MapGridScale}
 	}
 	if len(yVals) < 2 {
-		yVals = []float64{-1200, -600, 0, 600, 1200}
+		yVals = []float64{-1200 * MapGridScale, -600 * MapGridScale, 0, 600 * MapGridScale, 1200 * MapGridScale}
 	}
 
 	return xVals, yVals
@@ -285,42 +408,35 @@ func getStopGridInfo(s *BusStop, xs, ys []float64) gridStopInfo {
 	}
 }
 
-func getRoadLaneOffset(roadCoord float64, isEW bool, lw float64, w *World) float64 {
-	is4Lane := false
+func getRoadLaneOffset(roadCoord float64, isEW bool, lw float64, w *World, posOptional ...Vec2) float64 {
+	lanes := 2
 	if w != nil {
-		for _, r := range w.Roads {
-			if isEW && math.Abs(r.P1.Y-r.P2.Y) < 15.0 && math.Abs(r.P1.Y-roadCoord) < 15.0 {
-				if r.Lanes >= 4 {
-					is4Lane = true
-					break
-				}
-			} else if !isEW && math.Abs(r.P1.X-r.P2.X) < 15.0 && math.Abs(r.P1.X-roadCoord) < 15.0 {
-				if r.Lanes >= 4 {
-					is4Lane = true
-					break
-				}
-			}
-		}
+		lanes = w.GetRoadLanes(roadCoord, isEW, posOptional...)
 	} else {
 		if isEW {
-			if math.Abs(roadCoord-(-1200)) < 20 || math.Abs(roadCoord) < 20 || math.Abs(roadCoord-1200) < 20 {
-				is4Lane = true
+			if math.Abs(roadCoord-(-1200*MapGridScale)) < 20 {
+				lanes = 6
+			} else if math.Abs(roadCoord) < 20 || math.Abs(roadCoord-1200*MapGridScale) < 20 {
+				lanes = 4
 			}
 		} else {
 			if math.Abs(roadCoord) < 20 {
-				is4Lane = true
+				lanes = 4
 			}
 		}
 	}
 
-	if is4Lane {
+	if lanes >= 6 {
+		return lw * 2.5
+	}
+	if lanes >= 4 {
 		return lw * 1.5
 	}
 	return lw * 0.5
 }
 
-func calcSegOffset(roadCoord float64, isEW bool, dir int, lw float64, w *World) float64 {
-	d := getRoadLaneOffset(roadCoord, isEW, lw, w)
+func calcSegOffset(roadCoord float64, isEW bool, dir int, lw float64, w *World, posOptional ...Vec2) float64 {
+	d := getRoadLaneOffset(roadCoord, isEW, lw, w, posOptional...)
 	if isEW {
 		if dir == 0 { // East: driving lane is on south side (+Y)
 			return d
@@ -360,9 +476,9 @@ func isRoad4LaneAt(w *World, coord float64, isEW bool, pos Vec2) bool {
 		return w.IsRoad4Lane(coord, isEW, pos)
 	}
 	if isEW {
-		return math.Abs(coord-(-1200)) < 20 || math.Abs(coord) < 20 || math.Abs(coord-1200) < 20
+		return math.Abs(coord-(-1200*MapGridScale)) < 20 || math.Abs(coord) < 20 || math.Abs(coord-1200*MapGridScale) < 20
 	}
-	return math.Abs(coord) < 20 || math.Abs(coord-(-2600)) < 20 || math.Abs(coord-2600) < 20
+	return math.Abs(coord) < 20 || math.Abs(coord-(-2600*MapGridScale)) < 20 || math.Abs(coord-2600*MapGridScale) < 20
 }
 
 type roadSegmentLine struct {
@@ -375,12 +491,40 @@ type roadSegmentLine struct {
 func getLanePt(i, j, dir int, xs, ys []float64, lw float64, w *World) Vec2 {
 	if dir == 0 || dir == 2 { // East or West
 		yRoad := ys[j]
-		off := calcSegOffset(yRoad, true, dir, lw, w)
+		var probePos Vec2
+		if dir == 0 {
+			nextX := xs[i] + 50.0
+			if i+1 < len(xs) {
+				nextX = (xs[i] + xs[i+1]) * 0.5
+			}
+			probePos = Vec2{X: nextX, Y: yRoad}
+		} else {
+			prevX := xs[i] - 50.0
+			if i > 0 {
+				prevX = (xs[i] + xs[i-1]) * 0.5
+			}
+			probePos = Vec2{X: prevX, Y: yRoad}
+		}
+		off := calcSegOffset(yRoad, true, dir, lw, w, probePos)
 		return Vec2{X: xs[i], Y: yRoad + off}
 	}
 	// South or North
 	xRoad := xs[i]
-	off := calcSegOffset(xRoad, false, dir, lw, w)
+	var probePos Vec2
+	if dir == 1 {
+		nextY := ys[j] + 50.0
+		if j+1 < len(ys) {
+			nextY = (ys[j] + ys[j+1]) * 0.5
+		}
+		probePos = Vec2{X: xRoad, Y: nextY}
+	} else {
+		prevY := ys[j] - 50.0
+		if j > 0 {
+			prevY = (ys[j] + ys[j-1]) * 0.5
+		}
+		probePos = Vec2{X: xRoad, Y: prevY}
+	}
+	off := calcSegOffset(xRoad, false, dir, lw, w, probePos)
 	return Vec2{X: xRoad + off, Y: ys[j]}
 }
 
@@ -446,14 +590,14 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 	if !isS1EW {
 		s1Coord = s1.RoadCenter.X
 	}
-	s1Off := calcSegOffset(s1Coord, isS1EW, info1.dir, lw, w)
+	s1Off := calcSegOffset(s1Coord, isS1EW, info1.dir, lw, w, s1.RoadCenter)
 
 	isS2EW := math.Abs(math.Cos(s2.Heading)) > math.Abs(math.Sin(s2.Heading))
 	s2Coord := s2.RoadCenter.Y
 	if !isS2EW {
 		s2Coord = s2.RoadCenter.X
 	}
-	s2Off := calcSegOffset(s2Coord, isS2EW, info2.dir, lw, w)
+	s2Off := calcSegOffset(s2Coord, isS2EW, info2.dir, lw, w, s2.RoadCenter)
 
 	// Check if s1 and s2 are on the exact same road segment in the exact same direction
 	if info1.entryI == info2.entryI && info1.entryJ == info2.entryJ && info1.dir == info2.dir {
@@ -648,14 +792,18 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 		if isTurn {
 			prevDir := st.dir
 			currDir := states[lastK].dir
+			uPrev := getDirUnit(prevDir)
+			uCurr := getDirUnit(currDir)
+			pPrev := interPt.Sub(uPrev.Mul(100.0))
+			pCurr := interPt.Add(uCurr.Mul(100.0))
 
 			if nearRb != nil {
 				circR := getRoundaboutOuterLaneRadius(*nearRb)
 				var pEnter, pExit Vec2
-				yOffPrev := calcSegOffset(ys[st.j], true, prevDir, lw, w)
-				xOffPrev := calcSegOffset(xs[st.i], false, prevDir, lw, w)
-				yOffCurr := calcSegOffset(ys[st.j], true, currDir, lw, w)
-				xOffCurr := calcSegOffset(xs[st.i], false, currDir, lw, w)
+				yOffPrev := calcSegOffset(ys[st.j], true, prevDir, lw, w, pPrev)
+				xOffPrev := calcSegOffset(xs[st.i], false, prevDir, lw, w, pPrev)
+				yOffCurr := calcSegOffset(ys[st.j], true, currDir, lw, w, pCurr)
+				xOffCurr := calcSegOffset(xs[st.i], false, currDir, lw, w, pCurr)
 
 				switch prevDir {
 				case 0: // Eastbound
@@ -678,12 +826,48 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 				case 3: // Northbound
 					pExit = Vec2{X: nearRb.Center.X + xOffCurr, Y: nearRb.Center.Y - circR}
 				}
-				pts = append(pts, pEnter, pExit)
+				turn := (currDir - prevDir + 4) % 4
+				if turn == 2 {
+					// Roundabout U-turn: circumnavigate counter-clockwise along outer lane (~320-360 deg)
+					// instead of taking a wrong-way shortcut across the junction mouth
+					pts = append(pts, pEnter)
+					enterAngle := math.Atan2(pEnter.Y-nearRb.Center.Y, pEnter.X-nearRb.Center.X)
+					exitAngle := math.Atan2(pExit.Y-nearRb.Center.Y, pExit.X-nearRb.Center.X)
+					dTheta := enterAngle - exitAngle
+					for dTheta <= 0 {
+						dTheta += 2 * math.Pi
+					}
+					for dTheta > 2*math.Pi {
+						dTheta -= 2 * math.Pi
+					}
+					if dTheta < math.Pi {
+						dTheta += 2 * math.Pi
+					}
+
+					numSteps := int(math.Ceil(dTheta / (math.Pi / 24.0)))
+					if numSteps < 24 {
+						numSteps = 24
+					}
+					for step := 1; step <= numSteps; step++ {
+						ang := enterAngle - dTheta*float64(step)/float64(numSteps)
+						arcPt := nearRb.Center.Add(Vec2{
+							X: math.Cos(ang) * circR,
+							Y: math.Sin(ang) * circR,
+						})
+						if len(pts) == 0 || pts[len(pts)-1].Distance(arcPt) > 4.0 {
+							pts = append(pts, arcPt)
+						}
+					}
+
+					if len(pts) == 0 || pts[len(pts)-1].Distance(pExit) > 4.0 {
+						pts = append(pts, pExit)
+					}
+				} else {
+					pts = append(pts, pEnter, pExit)
+				}
 			} else {
 				turn := (currDir - prevDir + 4) % 4
-				uPrev := getDirUnit(prevDir)
 				rPrev := getDirPerp(prevDir)
-				uCurr := getDirUnit(currDir)
 				rCurr := getDirPerp(currDir)
 
 				isPrevEW := (prevDir == 0 || prevDir == 2)
@@ -691,14 +875,12 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 				if !isPrevEW {
 					prevCoord = xs[st.i]
 				}
-				isIncoming4Lane := isRoad4LaneAt(w, prevCoord, isPrevEW, interPt)
 
 				isCurrEW := (currDir == 0 || currDir == 2)
 				currCoord := ys[st.j]
 				if !isCurrEW {
 					currCoord = xs[st.i]
 				}
-				isOutgoing4Lane := isRoad4LaneAt(w, currCoord, isCurrEW, interPt)
 
 				segLen := 600.0
 				if len(pts) > 0 {
@@ -709,27 +891,129 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					// 90-degree right turn from outer lane into outer lane
 					var corner Vec2
 					if isPrevEW {
-						yOff := calcSegOffset(ys[st.j], true, prevDir, lw, w)
-						xOff := calcSegOffset(xs[st.i], false, currDir, lw, w)
+						yOff := calcSegOffset(ys[st.j], true, prevDir, lw, w, pPrev)
+						xOff := calcSegOffset(xs[st.i], false, currDir, lw, w, pCurr)
 						corner = Vec2{X: xs[st.i] + xOff, Y: ys[st.j] + yOff}
 					} else {
-						xOff := calcSegOffset(xs[st.i], false, prevDir, lw, w)
-						yOff := calcSegOffset(ys[st.j], true, currDir, lw, w)
+						xOff := calcSegOffset(xs[st.i], false, prevDir, lw, w, pPrev)
+						yOff := calcSegOffset(ys[st.j], true, currDir, lw, w, pCurr)
 						corner = Vec2{X: xs[st.i] + xOff, Y: ys[st.j] + yOff}
 					}
-					pts = append(pts, corner)
+
+					outOff := getRoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
+					if outOff <= lw*0.6 {
+						// Destination road is a 2-lane road (1 lane per direction, 52px wide).
+						// With enlarged intersections, start the cubic Bezier transition earlier
+						// and sweep smoothly with generous turning radius:
+						dIn := 130.0
+						dOut := 115.0
+						dCurbShift := 8.5 // Shift towards right curb for oncoming clearance
+
+						b0 := corner.Sub(uPrev.Mul(dIn)).Add(rPrev.Mul(dCurbShift * 0.35))
+						b1 := corner.Sub(uPrev.Mul(dIn * 0.40)).Add(rPrev.Mul(dCurbShift * 0.90)).Add(rCurr.Mul(dCurbShift * 0.45))
+						b2 := corner.Add(uCurr.Mul(dOut * 0.40)).Add(rCurr.Mul(dCurbShift * 0.90)).Add(rPrev.Mul(dCurbShift * 0.45))
+						b3 := corner.Add(uCurr.Mul(dOut)).Add(rCurr.Mul(dCurbShift))
+
+						const nSteps = 8
+						for m := 0; m <= nSteps; m++ {
+							u := float64(m) / float64(nSteps)
+							u1 := 1.0 - u
+							// Cubic Bezier: B(u) = (1-u)^3*b0 + 3(1-u)^2*u*b1 + 3(1-u)*u^2*b2 + u^3*b3
+							pt := b0.Mul(u1 * u1 * u1).
+								Add(b1.Mul(3.0 * u1 * u1 * u)).
+								Add(b2.Mul(3.0 * u1 * u * u)).
+								Add(b3.Mul(u * u * u))
+							if len(pts) == 0 || pts[len(pts)-1].Distance(pt) > 4.0 {
+								pts = append(pts, pt)
+							}
+						}
+						// Smoothly return to standard lane center downstream
+						pMergeBack := corner.Add(uCurr.Mul(dOut + 80.0))
+						pts = append(pts, pMergeBack)
+					} else {
+						// Destination is a 4-lane or 6-lane road:
+						// Smooth cubic Bezier right turn curve into target outer lane instead of harsh 90-degree corner
+						dIn := 105.0
+						dOut := 105.0
+						b0 := corner.Sub(uPrev.Mul(dIn))
+						b1 := corner.Sub(uPrev.Mul(dIn * 0.38))
+						b2 := corner.Add(uCurr.Mul(dOut * 0.38))
+						b3 := corner.Add(uCurr.Mul(dOut))
+
+						const nSteps = 7
+						for m := 0; m <= nSteps; m++ {
+							u := float64(m) / float64(nSteps)
+							u1 := 1.0 - u
+							pt := b0.Mul(u1 * u1 * u1).
+								Add(b1.Mul(3.0 * u1 * u1 * u)).
+								Add(b2.Mul(3.0 * u1 * u * u)).
+								Add(b3.Mul(u * u * u))
+							if len(pts) == 0 || pts[len(pts)-1].Distance(pt) > 4.0 {
+								pts = append(pts, pt)
+							}
+						}
+					}
 				} else if turn == 3 || turn == 2 {
 					// Left turn (turn == 3) or U-turn (turn == 2)
-					dMerge := math.Min(180.0, segLen*0.55)
-					if dMerge < lw*2.0 {
-						dMerge = lw * 2.0
+					// Intelligently scale merge distance based on block length (segLen, distance between intersections):
+					// - Short blocks (<= 320px): keep compact merge around 110-170px (~segLen * 0.52)
+					// - Medium blocks (320px - 600px): merge earlier, scaling smoothly from ~165px to ~360px
+					// - Long blocks (> 600px): merge significantly earlier (up to 650px) to enter the left-turn lane well in advance
+					var dMerge float64
+					if segLen <= 320.0 {
+						dMerge = math.Min(175.0, segLen*0.52)
+					} else if segLen <= 600.0 {
+						dMerge = 165.0 + (segLen-320.0)*0.70
+					} else {
+						dMerge = math.Min(800.0, 361.0+(segLen-600.0)*0.55)
+					}
+					if dMerge < lw*2.5 {
+						dMerge = lw * 2.5
+					}
+					if dMerge > segLen*0.75 {
+						dMerge = segLen * 0.75
 					}
 
-					if isIncoming4Lane {
-						// 4-lane avenue: merge orthogonally from outer travel lane (1.5*lw) into dedicated left-turn lane (0.5*lw)
-						pMergeStart := interPt.Sub(uPrev.Mul(dMerge)).Add(rPrev.Mul(lw * 1.5))
-						pMergeEnd := interPt.Sub(uPrev.Mul(dMerge)).Add(rPrev.Mul(lw * 0.5))
-						pts = append(pts, pMergeStart, pMergeEnd)
+					inOff := getRoadLaneOffset(prevCoord, isPrevEW, lw, w, pPrev)
+					if inOff > lw*0.6 {
+						// Multi-lane avenue (4-lane or 6-lane): merge smoothly via cubic Hermite S-curve
+						// from travel lane (inOff) into dedicated left-turn lane (targetOff = 0.5*lw)
+						targetOff := lw * 0.5
+						deltaOff := math.Abs(inOff - targetOff)
+						dFinish := math.Max(lw*2.5, 130.0) // finish merge well before stop line / intersection mouth
+						availTaper := math.Max(0.0, dMerge-dFinish)
+
+						var lMerge float64
+						if deltaOff > lw*1.2 {
+							// 6-lane road (104px shift across 2 lanes): long, silky smooth taper
+							lMerge = math.Min(availTaper*0.90, 520.0)
+						} else {
+							// 4-lane road (52px shift across 1 lane): graceful taper
+							lMerge = math.Min(availTaper*0.80, 240.0)
+						}
+						lMerge = math.Max(lMerge, math.Min(100.0, availTaper))
+
+						if lMerge < 20.0 {
+							pMergeStart := interPt.Sub(uPrev.Mul(dMerge)).Add(rPrev.Mul(inOff))
+							pMergeEnd := interPt.Sub(uPrev.Mul(dFinish)).Add(rPrev.Mul(targetOff))
+							pts = append(pts, pMergeStart, pMergeEnd)
+						} else {
+							dMergeStart := dMerge
+							const nMergeSteps = 6
+							for m := 0; m <= nMergeSteps; m++ {
+								u := float64(m) / float64(nMergeSteps)
+								// Cubic Hermite smoothstep easing: w(u) = 3u^2 - 2u^3
+								wStep := u * u * (3.0 - 2.0*u)
+								d := dMergeStart - u*lMerge
+								off := inOff + (targetOff-inOff)*wStep
+								pt := interPt.Sub(uPrev.Mul(d)).Add(rPrev.Mul(off))
+								pts = append(pts, pt)
+							}
+							if dMergeStart-lMerge > dFinish+15.0 {
+								pStopApproach := interPt.Sub(uPrev.Mul(dFinish)).Add(rPrev.Mul(targetOff))
+								pts = append(pts, pStopApproach)
+							}
+						}
 					}
 
 					if turn == 3 {
@@ -737,7 +1021,8 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 						pCornerInner := interPt.Add(rPrev.Mul(lw * 0.5)).Add(rCurr.Mul(lw * 0.5))
 						pts = append(pts, pCornerInner)
 
-						if isOutgoing4Lane {
+						outOff := getRoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
+						if outOff > lw*0.6 {
 							availDist := 400.0
 							if k+2 < len(states) {
 								nextPt := Vec2{X: xs[states[k+2].i], Y: ys[states[k+2].j]}
@@ -751,19 +1036,40 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 									availDist = dS2
 								}
 							}
-							dMergeOut := math.Min(180.0, availDist*0.45)
-							if dMergeOut > lw*2.0 {
-								pTargetInner := interPt.Add(uCurr.Mul(dMergeOut)).Add(rCurr.Mul(lw * 0.5))
-								pTargetOuter := interPt.Add(uCurr.Mul(dMergeOut)).Add(rCurr.Mul(lw * 1.5))
-								pts = append(pts, pTargetInner, pTargetOuter)
+
+							dExitStart := math.Max(lw*2.2, 120.0)
+							deltaOut := math.Abs(outOff - lw*0.5)
+							availExit := math.Max(0.0, availDist*0.88-dExitStart)
+							if availExit > 50.0 {
+								var lExit float64
+								if deltaOut > lw*1.2 {
+									lExit = math.Min(availExit*0.85, 420.0)
+								} else {
+									lExit = math.Min(availExit*0.80, 240.0)
+								}
+								lExit = math.Max(lExit, math.Min(80.0, availExit))
+
+								const nExitSteps = 6
+								for m := 0; m <= nExitSteps; m++ {
+									u := float64(m) / float64(nExitSteps)
+									wStep := u * u * (3.0 - 2.0*u)
+									d := dExitStart + u*lExit
+									off := (lw * 0.5) + (outOff-(lw*0.5))*wStep
+									pt := interPt.Add(uCurr.Mul(d)).Add(rCurr.Mul(off))
+									pts = append(pts, pt)
+								}
+							} else {
+								dMergeOut := math.Min(180.0, availDist*0.45)
+								if dMergeOut > lw*2.0 {
+									pTargetInner := interPt.Add(uCurr.Mul(dMergeOut)).Add(rCurr.Mul(lw * 0.5))
+									pTargetOuter := interPt.Add(uCurr.Mul(dMergeOut + 60.0)).Add(rCurr.Mul(outOff))
+									pts = append(pts, pTargetInner, pTargetOuter)
+								}
 							}
 						}
 					} else {
 						// U-turn (turn == 2): orthogonal loop across center divider from inner lane
-						outOff := lw * 0.5
-						if isOutgoing4Lane {
-							outOff = lw * 1.5
-						}
+						outOff := getRoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
 						pA := interPt.Add(rPrev.Mul(lw * 0.5))
 						pB := interPt.Add(rCurr.Mul(outOff))
 						pts = append(pts, pA, pB)
@@ -776,8 +1082,10 @@ func computeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 			if nearRb != nil {
 				circR := getRoundaboutOuterLaneRadius(*nearRb)
 				dir := st.dir
-				yOff := calcSegOffset(ys[st.j], true, dir, lw, w)
-				xOff := calcSegOffset(xs[st.i], false, dir, lw, w)
+				uDir := getDirUnit(dir)
+				pEnterProbe := interPt.Sub(uDir.Mul(100.0))
+				yOff := calcSegOffset(ys[st.j], true, dir, lw, w, pEnterProbe)
+				xOff := calcSegOffset(xs[st.i], false, dir, lw, w, pEnterProbe)
 				var pEnter, pExit Vec2
 				switch dir {
 				case 0:
@@ -884,33 +1192,50 @@ func insertRoundaboutArcs(pts []Vec2, w *World) []Vec2 {
 			closestPt := p1.Add(v.Mul(tClosest))
 			distClosest := closestPt.Distance(rb.Center)
 
-			// If the straight segment passes through the roundabout inner core
-			if distClosest < circR-5.0 {
-				f := p1.Sub(rb.Center)
-				a := lenV2
-				b := 2.0 * (f.X*v.X + f.Y*v.Y)
-				c := (f.X*f.X + f.Y*f.Y) - circR*circR
-				disc := b*b - 4.0*a*c
+			// If the straight segment passes through the roundabout inner core or cuts backwards across an entrance
+			isWrongWayChord := false
+			if p1.Distance(rb.Center) <= rb.Radius+40.0 && p2.Distance(rb.Center) <= rb.Radius+40.0 && distClosest <= rb.Radius+25.0 {
+				rx := closestPt.X - rb.Center.X
+				ry := closestPt.Y - rb.Center.Y
+				// In screen coordinates (Y down), counter-clockwise tangent is (ry, -rx)
+				// Dot product v · T = v.X*ry - v.Y*rx
+				// If negative, it moves clockwise (wrong-way / 逆行 in a counter-clockwise roundabout)
+				if v.X*ry-v.Y*rx < -10.0 {
+					isWrongWayChord = true
+				}
+			}
 
+			if distClosest < circR-5.0 || isWrongWayChord {
 				var enterPt, exitPt Vec2
-				if disc >= 0 {
-					sqrtDisc := math.Sqrt(disc)
-					t1 := (-b - sqrtDisc) / (2.0 * a)
-					t2 := (-b + sqrtDisc) / (2.0 * a)
-
-					if t1 >= -0.15 && t1 <= 1.15 {
-						enterPt = p1.Add(v.Mul(math.Max(0, math.Min(1, t1))))
-					} else {
-						enterPt = p1
-					}
-					if t2 >= -0.15 && t2 <= 1.15 {
-						exitPt = p1.Add(v.Mul(math.Max(0, math.Min(1, t2))))
-					} else {
-						exitPt = p2
-					}
-				} else {
+				if isWrongWayChord {
 					enterPt = p1
 					exitPt = p2
+				} else {
+					f := p1.Sub(rb.Center)
+					a := lenV2
+					b := 2.0 * (f.X*v.X + f.Y*v.Y)
+					c := (f.X*f.X + f.Y*f.Y) - circR*circR
+					disc := b*b - 4.0*a*c
+
+					if disc >= 0 {
+						sqrtDisc := math.Sqrt(disc)
+						t1 := (-b - sqrtDisc) / (2.0 * a)
+						t2 := (-b + sqrtDisc) / (2.0 * a)
+
+						if t1 >= -0.15 && t1 <= 1.15 {
+							enterPt = p1.Add(v.Mul(math.Max(0, math.Min(1, t1))))
+						} else {
+							enterPt = p1
+						}
+						if t2 >= -0.15 && t2 <= 1.15 {
+							exitPt = p1.Add(v.Mul(math.Max(0, math.Min(1, t2))))
+						} else {
+							exitPt = p2
+						}
+					} else {
+						enterPt = p1
+						exitPt = p2
+					}
 				}
 
 				enterAngle := math.Atan2(enterPt.Y-rb.Center.Y, enterPt.X-rb.Center.X)
@@ -918,14 +1243,14 @@ func insertRoundaboutArcs(pts []Vec2, w *World) []Vec2 {
 
 				// Counter-clockwise rotary circulation: angle decreases from enterAngle to exitAngle
 				dTheta := enterAngle - exitAngle
-				for dTheta < 0 {
+				for dTheta <= 0 {
 					dTheta += 2 * math.Pi
 				}
-				for dTheta >= 2*math.Pi {
+				for dTheta > 2*math.Pi {
 					dTheta -= 2 * math.Pi
 				}
-				if dTheta < 0.1 {
-					dTheta = 2 * math.Pi
+				if isWrongWayChord && dTheta < math.Pi {
+					dTheta += 2 * math.Pi
 				}
 
 				// Generate smooth arc waypoints along circR
@@ -1187,4 +1512,88 @@ func (r *Route) GetRouteDescription(world *World) string {
 	r.cachedDesc = desc
 	r.cachedDescDirty = false
 	return desc
+}
+
+// GetFormattedRouteLines generates wrapped lines of route stops that strictly fit within maxWidth.
+// Long routes are wrapped onto multiple lines with clear arrow indicators (➔) and sequence numbering.
+func (r *Route) GetFormattedRouteLines(world *World, maxWidth float64, fontSize float64) []string {
+	if world == nil || len(r.StopIDs) == 0 {
+		return []string{T("未规划站点 (点击地图站点图标添加)", "No stations planned (Click station icons to add)")}
+	}
+
+	prefix := Tf("当前路线 (%d站): ", "Active Route (%d stops): ", len(r.StopIDs))
+
+	type stopItem struct {
+		display string
+		index   int
+	}
+
+	isClosed := (len(r.StopIDs) >= 2 && r.StopIDs[0] == r.StopIDs[len(r.StopIDs)-1])
+	items := make([]stopItem, 0, len(r.StopIDs))
+
+	for i, stopID := range r.StopIDs {
+		name := fmt.Sprintf("#%d", stopID)
+		if stopID >= 0 && stopID < len(world.Stops) {
+			name = world.Stops[stopID].CleanName()
+		}
+		if i == r.CurrentIndex {
+			name = fmt.Sprintf("[%s ★]", name)
+		} else if isClosed && i == len(r.StopIDs)-1 {
+			name = fmt.Sprintf("%s(终点)", name)
+		}
+		items = append(items, stopItem{
+			display: fmt.Sprintf("%d.%s", i+1, name),
+			index:   i,
+		})
+	}
+
+	maxLines := 3
+	lines := make([]string, 0, 3)
+	currentLine := prefix
+
+	for i := 0; i < len(items); i++ {
+		seg := items[i].display
+		var candidate string
+		if currentLine == prefix || strings.HasSuffix(currentLine, "↳ ") {
+			candidate = currentLine + seg
+		} else {
+			candidate = currentLine + " ➔ " + seg
+		}
+
+		w, _ := MeasureText(candidate, fontSize)
+		if w <= maxWidth {
+			currentLine = candidate
+			continue
+		}
+
+		// candidate exceeds maxWidth: need to wrap or summarize
+		if len(lines)+1 >= maxLines {
+			// On the last line: summarize remaining stops to avoid overflowing
+			remaining := len(items) - i
+			lastItem := items[len(items)-1]
+			summary := Tf(" ➔ ... (+%d站) ➔ %s", " ➔ ... (+%d) ➔ %s", remaining, lastItem.display)
+
+			// Ensure currentLine + summary fits within maxWidth
+			for {
+				sw, _ := MeasureText(currentLine+summary, fontSize)
+				if sw <= maxWidth || !strings.Contains(currentLine, " ➔ ") {
+					break
+				}
+				lastIdx := strings.LastIndex(currentLine, " ➔ ")
+				currentLine = currentLine[:lastIdx]
+			}
+			currentLine += summary
+			break
+		}
+
+		// Wrap to new line
+		lines = append(lines, currentLine)
+		currentLine = "   ↳ " + seg
+	}
+
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }

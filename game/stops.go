@@ -45,6 +45,21 @@ func (s *BusStop) LocalizedName() string {
 	return s.Name
 }
 
+// CleanName returns the clean, concise station name without redundant bilingual parenthetical text
+// (Chinese only in Chinese mode, English only in English mode)
+func (s *BusStop) CleanName() string {
+	if idx := strings.Index(s.Name, "("); idx != -1 {
+		if CurrentLanguage == LanguageEN {
+			if end := strings.Index(s.Name, ")"); end > idx {
+				return strings.TrimSpace(s.Name[idx+1 : end])
+			}
+		} else {
+			return strings.TrimSpace(s.Name[:idx])
+		}
+	}
+	return s.Name
+}
+
 func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes int, accent color.RGBA, laneWidth float64, initialWaiting ...int) *BusStop {
 	waitPax := 6 + simRand.Intn(10)
 	if len(initialWaiting) > 0 {

@@ -6,7 +6,7 @@ APP_NAME := busgame
 
 BUNDLE_NAME := 2D Bus Simulator.app
 
-.PHONY: all build run dev app open test cross clean help
+.PHONY: all build run dev app open test test-qualify test-all cross clean help
 
 all: build
 
@@ -34,8 +34,19 @@ run: build
 dev:
 	go run .
 
-## test: 运行全套单元测试与集成测试
+## test: 运行基础快速测试 (平时开发模式，秒级通过)
 test:
+	@echo "🧪 正在运行基础快速测试套件 (Fast Dev Mode)..."
+	go test -short ./...
+
+## test-qualify: 运行发布前全地图全场景验收测试 (发布到 GitHub 前必跑)
+test-qualify:
+	@echo "🏆 正在运行全地图多轮 Release Qualification 验收测试..."
+	go test -v -run TestReleaseQualification ./...
+
+## test-all: 运行包含基础测试与全量验收测试的所有用例
+test-all:
+	@echo "🧪 正在运行全部测试用例..."
 	go test -v ./...
 
 ## cross: 跨平台交叉编译 (macOS ARM64/Intel, Windows, Linux)
@@ -59,11 +70,13 @@ clean:
 ## help: 显示帮助信息
 help:
 	@echo "2D Bus Simulator - 可用命令:"
-	@echo "  make build  - 编译可执行文件 ./$(APP_NAME)"
-	@echo "  make app    - 构建 macOS 原生应用程序包 ($(BUNDLE_NAME))"
-	@echo "  make open   - 构建并以原生 App 启动 (Dock 显现高清图标)"
-	@echo "  make run    - 编译并在终端直接运行可执行文件"
-	@echo "  make dev    - 直接通过 go run . 启动"
-	@echo "  make test   - 运行全量测试套件"
-	@echo "  make cross  - 跨平台编译至 dist/ 目录"
-	@echo "  make clean  - 清理编译产物"
+	@echo "  make build        - 编译可执行文件 ./$(APP_NAME)"
+	@echo "  make app          - 构建 macOS 原生应用程序包 ($(BUNDLE_NAME))"
+	@echo "  make open         - 构建并以原生 App 启动 (Dock 显现高清图标)"
+	@echo "  make run          - 编译并在终端直接运行可执行文件"
+	@echo "  make dev          - 直接通过 go run . 启动"
+	@echo "  make test         - 运行基础快速测试 (日常开发秒级通过)"
+	@echo "  make test-qualify - 运行全地图全场景发布验收测试 (发布到 GitHub 前必跑)"
+	@echo "  make test-all     - 运行全量测试套件"
+	@echo "  make cross        - 跨平台编译至 dist/ 目录"
+	@echo "  make clean        - 清理编译产物"

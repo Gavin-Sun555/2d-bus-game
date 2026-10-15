@@ -428,22 +428,9 @@ func TestSettingsInteractionAndToggles(t *testing.T) {
 		t.Errorf("Settings should be closed after second Toggle")
 	}
 
-	// Lane width levels
-	s.LaneWidthLevel = 0
-	if s.GetLaneWidth() != 42.0 {
-		t.Errorf("Level 0 lane width should be 42.0, got %.1f", s.GetLaneWidth())
-	}
-	s.LaneWidthLevel = 1
+	// Lane width is fixed to 52.0 (宽敞市区 Comfortable Wide) as default
 	if s.GetLaneWidth() != 52.0 {
-		t.Errorf("Level 1 lane width should be 52.0, got %.1f", s.GetLaneWidth())
-	}
-	s.LaneWidthLevel = 2
-	if s.GetLaneWidth() != 64.0 {
-		t.Errorf("Level 2 lane width should be 64.0, got %.1f", s.GetLaneWidth())
-	}
-	s.LaneWidthLevel = 3
-	if s.GetLaneWidth() != 78.0 {
-		t.Errorf("Level 3 lane width should be 78.0, got %.1f", s.GetLaneWidth())
+		t.Errorf("Expected fixed lane width of 52.0 (宽敞市区), got %.1f", s.GetLaneWidth())
 	}
 }
 

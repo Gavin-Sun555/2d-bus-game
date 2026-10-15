@@ -6,8 +6,8 @@
     {
       "p1": [-2600, -1200],
       "p2": [2600, -1200],
-      "lanes": 4,
-      "name": "星光北环大道"
+      "lanes": 6,
+      "name": "星光北环六车道大道"
     },
     {
       "p1": [-2600, -600],
@@ -109,7 +109,7 @@
       "name": "量子实验室 (Quantum Lab)",
       "pos": [2600, -900],
       "heading": -1.5707963,
-      "lanes": 2,
+      "lanes": 4,
       "color": "#06B6D4",
       "capacity": 8
     },
@@ -118,7 +118,7 @@
       "name": "星海体育馆 (Star Arena)",
       "pos": [1950, -1200],
       "heading": 3.14159265,
-      "lanes": 4,
+      "lanes": 6,
       "color": "#EC4899",
       "capacity": 10
     },
@@ -127,7 +127,7 @@
       "name": "空港北枢纽 (North Airport)",
       "pos": [-325, -1200],
       "heading": 0.0,
-      "lanes": 4,
+      "lanes": 6,
       "color": "#F59E0B",
       "capacity": 14
     },
@@ -136,7 +136,7 @@
       "name": "运河客运港 (Canal Port)",
       "pos": [-2600, -900],
       "heading": 1.5707963,
-      "lanes": 2,
+      "lanes": 4,
       "color": "#0EA5E9",
       "capacity": 8
     },
@@ -145,7 +145,7 @@
       "name": "大学城东校区 (Uni Campus)",
       "pos": [-2600, 900],
       "heading": -1.5707963,
-      "lanes": 2,
+      "lanes": 4,
       "color": "#8B5CF6",
       "capacity": 8
     },
@@ -181,7 +181,7 @@
       "name": "国际会展总站 (Expo Center)",
       "pos": [2600, 900],
       "heading": 1.5707963,
-      "lanes": 2,
+      "lanes": 4,
       "color": "#D946EF",
       "capacity": 8
     }

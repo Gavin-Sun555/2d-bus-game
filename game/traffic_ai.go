@@ -47,6 +47,9 @@ type TrafficCar struct {
 	RoundaboutTraveled    float64
 	RoundaboutTargetR     float64
 	RoundaboutOuterRadius float64
+
+	// Deadlock prevention
+	DeadlockTimer float64 // Time in seconds spent motionless while jammed against another non-player vehicle
 }
 
 type TrafficManager struct {
@@ -54,11 +57,13 @@ type TrafficManager struct {
 	AIBusMgr *AIBusManager
 }
 
+const MaxTrafficCars = 128
+
 func NewTrafficManager(initialLaneWidth float64) *TrafficManager {
 	tm := &TrafficManager{
 		Cars: make([]*TrafficCar, 0),
 	}
-	tm.initializeCars(36, initialLaneWidth)
+	tm.initializeCars(MaxTrafficCars, initialLaneWidth)
 	return tm
 }
 
@@ -68,10 +73,17 @@ func (tm *TrafficManager) GetActiveCars(densityLevel int) []*TrafficCar {
 		return nil
 	}
 	activeCount := 24
-	if densityLevel == 1 {
+	switch densityLevel {
+	case 1:
 		activeCount = 12
-	} else if densityLevel == 3 {
+	case 2:
+		activeCount = 24
+	case 3:
 		activeCount = 36
+	case 4:
+		activeCount = 72
+	case 5:
+		activeCount = 128
 	}
 	if activeCount > len(tm.Cars) {
 		activeCount = len(tm.Cars)
@@ -90,130 +102,8 @@ var carPalette = []color.RGBA{
 }
 
 func (tm *TrafficManager) initializeCars(count int, laneWidth float64) {
-	// 36 spawn points spread across safe mid-blocks of the metropolitan grid
-	// Every spawn point is at least 300~500px away from any intersection center
-	spawnDefs := []struct {
-		pos Vec2
-		h   float64
-		rc  float64
-		ew  bool
-	}{
-		// North Ring (Y = -1200, 4-lane) Eastbound & Westbound
-		{pos: Vec2{X: -2400, Y: -1200 + laneWidth*1.5}, h: 0, rc: -1200, ew: true},
-		{pos: Vec2{X: -1950, Y: -1200 + laneWidth*1.5}, h: 0, rc: -1200, ew: true},
-		{pos: Vec2{X: -1000, Y: -1200 + laneWidth*1.5}, h: 0, rc: -1200, ew: true},
-		{pos: Vec2{X: 500, Y: -1200 + laneWidth*1.5}, h: 0, rc: -1200, ew: true},
-		{pos: Vec2{X: 1600, Y: -1200 + laneWidth*1.5}, h: 0, rc: -1200, ew: true},
-		{pos: Vec2{X: 2400, Y: -1200 - laneWidth*1.5}, h: math.Pi, rc: -1200, ew: true},
-		{pos: Vec2{X: 2300, Y: -1200 - laneWidth*1.5}, h: math.Pi, rc: -1200, ew: true},
-		{pos: Vec2{X: 800, Y: -1200 - laneWidth*1.5}, h: math.Pi, rc: -1200, ew: true},
-		{pos: Vec2{X: -350, Y: -1200 - laneWidth*1.5}, h: math.Pi, rc: -1200, ew: true},
-		{pos: Vec2{X: -1950, Y: -1200 - laneWidth*1.5}, h: math.Pi, rc: -1200, ew: true},
-
-		// Central Boulevard (Y = 0, 4-lane) Eastbound & Westbound
-		{pos: Vec2{X: -2400, Y: 0 + laneWidth*1.5}, h: 0, rc: 0, ew: true},
-		{pos: Vec2{X: -1750, Y: 0 + laneWidth*1.5}, h: 0, rc: 0, ew: true},
-		{pos: Vec2{X: -1000, Y: 0 + laneWidth*1.5}, h: 0, rc: 0, ew: true},
-		{pos: Vec2{X: 350, Y: 0 + laneWidth*1.5}, h: 0, rc: 0, ew: true},
-		{pos: Vec2{X: 1750, Y: 0 + laneWidth*1.5}, h: 0, rc: 0, ew: true},
-		{pos: Vec2{X: 2400, Y: 0 - laneWidth*1.5}, h: math.Pi, rc: 0, ew: true},
-		{pos: Vec2{X: 2150, Y: 0 - laneWidth*1.5}, h: math.Pi, rc: 0, ew: true},
-		{pos: Vec2{X: 1000, Y: 0 - laneWidth*1.5}, h: math.Pi, rc: 0, ew: true},
-		{pos: Vec2{X: -350, Y: 0 - laneWidth*1.5}, h: math.Pi, rc: 0, ew: true},
-		{pos: Vec2{X: -2150, Y: 0 - laneWidth*1.5}, h: math.Pi, rc: 0, ew: true},
-
-		// South Ring (Y = 1200, 4-lane) Eastbound & Westbound
-		{pos: Vec2{X: -2400, Y: 1200 + laneWidth*1.5}, h: 0, rc: 1200, ew: true},
-		{pos: Vec2{X: -1500, Y: 1200 + laneWidth*1.5}, h: 0, rc: 1200, ew: true},
-		{pos: Vec2{X: -500, Y: 1200 + laneWidth*1.5}, h: 0, rc: 1200, ew: true},
-		{pos: Vec2{X: 350, Y: 1200 + laneWidth*1.5}, h: 0, rc: 1200, ew: true},
-		{pos: Vec2{X: 1750, Y: 1200 + laneWidth*1.5}, h: 0, rc: 1200, ew: true},
-		{pos: Vec2{X: 2400, Y: 1200 - laneWidth*1.5}, h: math.Pi, rc: 1200, ew: true},
-		{pos: Vec2{X: 2150, Y: 1200 - laneWidth*1.5}, h: math.Pi, rc: 1200, ew: true},
-		{pos: Vec2{X: 1000, Y: 1200 - laneWidth*1.5}, h: math.Pi, rc: 1200, ew: true},
-		{pos: Vec2{X: -800, Y: 1200 - laneWidth*1.5}, h: math.Pi, rc: 1200, ew: true},
-		{pos: Vec2{X: -1500, Y: 1200 - laneWidth*1.5}, h: math.Pi, rc: 1200, ew: true},
-
-		// North-South: Far-West Blvd (X = -2600, 2-lane)
-		{pos: Vec2{X: -2600 - laneWidth*0.5, Y: -900}, h: math.Pi / 2, rc: -2600, ew: false},
-		{pos: Vec2{X: -2600 - laneWidth*0.5, Y: 300}, h: math.Pi / 2, rc: -2600, ew: false},
-		{pos: Vec2{X: -2600 + laneWidth*0.5, Y: 900}, h: -math.Pi / 2, rc: -2600, ew: false},
-		{pos: Vec2{X: -2600 + laneWidth*0.5, Y: -300}, h: -math.Pi / 2, rc: -2600, ew: false},
-
-		// North-South: Central Axis (X = 0, 4-lane)
-		{pos: Vec2{X: 0 - laneWidth*1.5, Y: -900}, h: math.Pi / 2, rc: 0, ew: false},
-		{pos: Vec2{X: 0 - laneWidth*1.5, Y: 450}, h: math.Pi / 2, rc: 0, ew: false},
-		{pos: Vec2{X: 0 + laneWidth*1.5, Y: 900}, h: -math.Pi / 2, rc: 0, ew: false},
-		{pos: Vec2{X: 0 + laneWidth*1.5, Y: -450}, h: -math.Pi / 2, rc: 0, ew: false},
-
-		// North-South: Far-East Blvd (X = 2600, 2-lane)
-		{pos: Vec2{X: 2600 - laneWidth*0.5, Y: -900}, h: math.Pi / 2, rc: 2600, ew: false},
-		{pos: Vec2{X: 2600 - laneWidth*0.5, Y: 300}, h: math.Pi / 2, rc: 2600, ew: false},
-		{pos: Vec2{X: 2600 + laneWidth*0.5, Y: 900}, h: -math.Pi / 2, rc: 2600, ew: false},
-		{pos: Vec2{X: 2600 + laneWidth*0.5, Y: -300}, h: -math.Pi / 2, rc: 2600, ew: false},
-	}
-
-	// 25 City Intersections coordinates for programmatic validation
-	interCenters := []Vec2{
-		{X: -2600, Y: -1200}, {X: -1300, Y: -1200}, {X: 0, Y: -1200}, {X: 1300, Y: -1200}, {X: 2600, Y: -1200},
-		{X: -2600, Y: -600}, {X: -1300, Y: -600}, {X: 0, Y: -600}, {X: 1300, Y: -600}, {X: 2600, Y: -600},
-		{X: -2600, Y: 0}, {X: -1300, Y: 0}, {X: 0, Y: 0}, {X: 1300, Y: 0}, {X: 2600, Y: 0},
-		{X: -2600, Y: 600}, {X: -1300, Y: 600}, {X: 0, Y: 600}, {X: 1300, Y: 600}, {X: 2600, Y: 600},
-		{X: -2600, Y: 1200}, {X: -1300, Y: 1200}, {X: 0, Y: 1200}, {X: 1300, Y: 1200}, {X: 2600, Y: 1200},
-	}
-
-	for i := 0; i < count && i < len(spawnDefs); i++ {
-		sd := spawnDefs[i]
-		spawnPos := sd.pos
-
-		// Programmatic guarantee: never spawn inside or within 220px of any intersection
-		for _, ic := range interCenters {
-			if spawnPos.Distance(ic) < 240.0 {
-				if sd.ew {
-					if math.Cos(sd.h) >= 0 {
-						spawnPos.X = ic.X + 280
-					} else {
-						spawnPos.X = ic.X - 280
-					}
-				} else {
-					if math.Sin(sd.h) >= 0 {
-						spawnPos.Y = ic.Y + 280
-					} else {
-						spawnPos.Y = ic.Y - 280
-					}
-				}
-			}
-		}
-
-		cType := CarSedan
-		cColor := carPalette[i%len(carPalette)]
-		if i%4 == 0 {
-			cType = CarTaxi
-			cColor = RGBA(234, 179, 8, 255)
-		} else if i%3 == 0 {
-			cType = CarSUV
-		}
-
-		car := &TrafficCar{
-			ID:          i,
-			Pos:         spawnPos,
-			Heading:     sd.h,
-			Speed:       130 + simRand.Float64()*30,
-			TargetSpeed: 150 + simRand.Float64()*40,
-			Type:        cType,
-			Color:       cColor,
-			Length:      46,
-			Width:       22,
-			RoadCenter:  sd.rc,
-			IsEW:        sd.ew,
-			LaneIndex:   i % 2,
-		}
-		if cType == CarSUV {
-			car.Length = 50
-			car.Width = 24
-		}
-		tm.Cars = append(tm.Cars, car)
-	}
+	w := NewWorld(laneWidth, MapThemeMetropolis)
+	tm.BuildForWorld(w, count, laneWidth)
 }
 
 // BuildForWorld adapts civilian AI traffic to the active city map's road network
@@ -222,25 +112,23 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 		return
 	}
 	tm.Cars = make([]*TrafficCar, 0)
-	if w.Theme == MapThemeMetropolis {
-		tm.initializeCars(count, laneWidth)
-		return
-	}
 
 	type spawnDef struct {
-		pos Vec2
-		h   float64
-		rc  float64
-		ew  bool
+		pos     Vec2
+		h       float64
+		rc      float64
+		ew      bool
+		laneIdx int
 	}
 	var defs []spawnDef
 
 	for _, r := range w.Roads {
 		dir := r.P2.Sub(r.P1)
 		lenR := dir.Length()
-		if lenR < 500 {
+		if lenR < 300 {
 			continue
 		}
+		unitDir := dir.Mul(1.0 / lenR)
 		isEW := math.Abs(r.P1.Y-r.P2.Y) < 1.0
 		var roadCoord float64
 		if isEW {
@@ -249,9 +137,16 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 			roadCoord = r.P1.X
 		}
 
-		fractions := []float64{0.25, 0.5, 0.75}
-		for _, frac := range fractions {
-			pt := r.P1.Add(dir.Mul(frac))
+		numLanesPerDir := 1
+		if r.Lanes >= 6 {
+			numLanesPerDir = 3
+		} else if r.Lanes >= 4 {
+			numLanesPerDir = 2
+		}
+
+		step := 220.0
+		for dist := 260.0; dist <= lenR-260.0; dist += step {
+			pt := r.P1.Add(unitDir.Mul(dist))
 
 			nearInter := false
 			for _, ipt := range w.Intersections {
@@ -266,7 +161,7 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 
 			nearRb := false
 			for _, rb := range w.Roundabouts {
-				if pt.Distance(rb.Center) < rb.Radius+50 {
+				if pt.Distance(rb.Center) < rb.Radius+60 {
 					nearRb = true
 					break
 				}
@@ -286,22 +181,19 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 				continue
 			}
 
-			is4Lane := w.IsRoad4Lane(roadCoord, isEW, pt)
-			offset := laneWidth * 0.5
-			if is4Lane {
-				offset = laneWidth * 1.5 // outer travel lane
-			}
-
-			if isEW {
-				defs = append(defs,
-					spawnDef{pos: Vec2{X: pt.X, Y: roadCoord + offset}, h: 0, rc: roadCoord, ew: true},
-					spawnDef{pos: Vec2{X: pt.X, Y: roadCoord - offset}, h: math.Pi, rc: roadCoord, ew: true},
-				)
-			} else {
-				defs = append(defs,
-					spawnDef{pos: Vec2{X: roadCoord - offset, Y: pt.Y}, h: math.Pi / 2, rc: roadCoord, ew: false},
-					spawnDef{pos: Vec2{X: roadCoord + offset, Y: pt.Y}, h: -math.Pi / 2, rc: roadCoord, ew: false},
-				)
+			for lane := 0; lane < numLanesPerDir; lane++ {
+				offset := (float64(lane) + 0.5) * laneWidth
+				if isEW {
+					defs = append(defs,
+						spawnDef{pos: Vec2{X: pt.X, Y: roadCoord + offset}, h: 0, rc: roadCoord, ew: true, laneIdx: lane},
+						spawnDef{pos: Vec2{X: pt.X, Y: roadCoord - offset}, h: math.Pi, rc: roadCoord, ew: true, laneIdx: lane},
+					)
+				} else {
+					defs = append(defs,
+						spawnDef{pos: Vec2{X: roadCoord - offset, Y: pt.Y}, h: math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane},
+						spawnDef{pos: Vec2{X: roadCoord + offset, Y: pt.Y}, h: -math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane},
+					)
+				}
 			}
 		}
 	}
@@ -310,8 +202,14 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 		count = len(defs)
 	}
 
+	stride := 1.0
+	if count > 0 {
+		stride = float64(len(defs)) / float64(count)
+	}
 	for i := 0; i < count; i++ {
-		sd := defs[i]
+		idx := int(float64(i)*stride) % len(defs)
+		sd := defs[idx]
+
 		cType := CarSedan
 		cColor := carPalette[i%len(carPalette)]
 		if i%4 == 0 {
@@ -333,7 +231,7 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 			Width:       22,
 			RoadCenter:  sd.rc,
 			IsEW:        sd.ew,
-			LaneIndex:   i % 2,
+			LaneIndex:   sd.laneIdx,
 		}
 		if cType == CarSUV {
 			car.Length = 50
@@ -343,17 +241,13 @@ func (tm *TrafficManager) BuildForWorld(w *World, count int, laneWidth float64) 
 	}
 }
 
+// DeadlockDurationThreshold defines the duration in seconds of deadlock (exceeding one full 37s traffic light cycle)
+// before an unresolvable jammed non-player car disappears.
+const DeadlockDurationThreshold = 38.0
+
 // Update updates all AI cars according to traffic rules, bus proximity, traffic density and customizable lane width
 func (tm *TrafficManager) Update(dt float64, bus *Bus, tls *TrafficLightSystem, densityLevel int, laneWidth float64, worldOptional ...*World) {
-	activeCount := 24
-	if densityLevel == 1 {
-		activeCount = 12
-	} else if densityLevel == 3 {
-		activeCount = 36
-	}
-	if activeCount > len(tm.Cars) {
-		activeCount = len(tm.Cars)
-	}
+	activeCount := len(tm.GetActiveCars(densityLevel))
 
 	var w *World
 	if len(worldOptional) > 0 && worldOptional[0] != nil {
@@ -363,6 +257,116 @@ func (tm *TrafficManager) Update(dt float64, bus *Bus, tls *TrafficLightSystem, 
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
 		tm.updateSingleCar(dt, car, i, bus, tls, activeCount, laneWidth, w)
+	}
+
+	// Deadlock prevention: when two non-player vehicles are jammed motionless for > 1 traffic light cycle, disappear
+	tm.resolveDeadlockedCars(dt, bus, activeCount, laneWidth, w)
+}
+
+// DespawnCar removes a car from active traffic
+func (tm *TrafficManager) DespawnCar(index int) {
+	if tm == nil || index < 0 || index >= len(tm.Cars) {
+		return
+	}
+	tm.Cars = append(tm.Cars[:index], tm.Cars[index+1:]...)
+}
+
+func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCount int, laneWidth float64, w *World) {
+	if tm == nil || len(tm.Cars) == 0 {
+		return
+	}
+	if activeCount > len(tm.Cars) {
+		activeCount = len(tm.Cars)
+	}
+
+	for i := 0; i < activeCount; i++ {
+		car := tm.Cars[i]
+
+		// 1. Moving vehicles are never deadlocked
+		if math.Abs(car.Speed) >= 3.0 {
+			car.DeadlockTimer = 0
+			continue
+		}
+
+		// 2. EXCLUDE user bus: if car is stopped because of player bus, do NOT count as deadlock
+		if bus != nil {
+			distToBus := car.Pos.Distance(bus.Pos)
+			if distToBus < 180.0 {
+				toBus := bus.Pos.Sub(car.Pos)
+				cosH := math.Cos(car.Heading)
+				sinH := math.Sin(car.Heading)
+				fwdBus := toBus.X*cosH + toBus.Y*sinH
+				latBus := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
+				if fwdBus > -15.0 && latBus < laneWidth*1.5 {
+					car.DeadlockTimer = 0
+					continue
+				}
+			}
+		}
+
+		// 3. Check if jammed against another non-player vehicle
+		isJammed := false
+
+		// Check against other civilian AI cars
+		for j := 0; j < activeCount; j++ {
+			if j == i {
+				continue
+			}
+			other := tm.Cars[j]
+			if math.Abs(other.Speed) >= 3.0 {
+				continue
+			}
+			dist := car.Pos.Distance(other.Pos)
+			maxJamDist := (car.Length + other.Length)*0.5 + 35.0
+			if dist < maxJamDist {
+				toOther := other.Pos.Sub(car.Pos)
+				cosH := math.Cos(car.Heading)
+				sinH := math.Sin(car.Heading)
+				fwd := toOther.X*cosH + toOther.Y*sinH
+				if fwd > -15.0 || dist < (car.Length+other.Length)*0.5+10.0 {
+					isJammed = true
+					break
+				}
+			}
+		}
+
+		// Check against AI route buses
+		if !isJammed && tm.AIBusMgr != nil {
+			for _, ab := range tm.AIBusMgr.Buses {
+				if ab.Bus == nil || math.Abs(ab.Bus.Speed) >= 3.0 {
+					continue
+				}
+				dist := car.Pos.Distance(ab.Bus.Pos)
+				maxJamDist := (car.Length + ab.Bus.Length)*0.5 + 40.0
+				if dist < maxJamDist {
+					toOther := ab.Bus.Pos.Sub(car.Pos)
+					cosH := math.Cos(car.Heading)
+					sinH := math.Sin(car.Heading)
+					fwd := toOther.X*cosH + toOther.Y*sinH
+					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
+						isJammed = true
+						break
+					}
+				}
+			}
+		}
+
+		if isJammed {
+			car.DeadlockTimer += dt
+		} else {
+			if car.DeadlockTimer > 0 {
+				car.DeadlockTimer = math.Max(0, car.DeadlockTimer-dt*2.0)
+			}
+		}
+	}
+
+	// 4. Remove / despawn car if deadlock timer exceeds threshold
+	for i := activeCount - 1; i >= 0; i-- {
+		car := tm.Cars[i]
+		if car.DeadlockTimer >= DeadlockDurationThreshold {
+			tm.DespawnCar(i)
+			break // Despawning one vehicle breaks the deadlock for others in the jam
+		}
 	}
 }
 
@@ -913,12 +917,14 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 					if !newIsEW {
 						newRC = inter.Center.X
 					}
-					isNew4Lane := false
+					newLanes := 2
 					if w != nil {
-						isNew4Lane = w.IsRoad4Lane(newRC, newIsEW, inter.Center)
+						newLanes = w.GetRoadLanes(newRC, newIsEW, inter.Center)
 					}
 					newOffset := laneWidth * 0.5
-					if isNew4Lane && !turnIsLeft {
+					if newLanes >= 6 && !turnIsLeft {
+						newOffset = laneWidth * 1.5
+					} else if newLanes >= 4 && !turnIsLeft {
 						newOffset = laneWidth * 1.5
 					}
 
@@ -1051,23 +1057,33 @@ func (tm *TrafficManager) handleCarNavigation(car *TrafficCar, laneWidth float64
 		}
 	}
 
-	is4Lane := false
+	lanes := 2
 	if w != nil {
-		is4Lane = w.IsRoad4Lane(car.RoadCenter, car.IsEW, car.Pos)
+		lanes = w.GetRoadLanes(car.RoadCenter, car.IsEW, car.Pos)
 	} else {
 		if car.IsEW {
-			if car.RoadCenter == -1200 || car.RoadCenter == 0 || car.RoadCenter == 1200 {
-				is4Lane = true
+			if car.RoadCenter == -1200 {
+				lanes = 6
+			} else if car.RoadCenter == 0 || car.RoadCenter == 1200 {
+				lanes = 4
 			}
 		} else {
 			if car.RoadCenter == 0 {
-				is4Lane = true
+				lanes = 4
 			}
 		}
 	}
 
 	laneOffset := laneWidth * 0.5 // Standard 2-lane road: center of travel lane
-	if is4Lane {
+	if lanes >= 6 {
+		if car.LaneIndex == 0 {
+			laneOffset = laneWidth * 0.5 // Inner lane (dedicated left turn)
+		} else if car.LaneIndex == 1 {
+			laneOffset = laneWidth * 1.5 // Middle lane (straight through)
+		} else {
+			laneOffset = laneWidth * 2.5 // Outer lane (straight through / slow lane)
+		}
+	} else if lanes >= 4 {
 		if car.LaneIndex == 0 {
 			laneOffset = laneWidth * 0.5 // Inner lane (dedicated left turn)
 		} else {
@@ -1098,15 +1114,7 @@ func (tm *TrafficManager) handleCarNavigation(car *TrafficCar, laneWidth float64
 
 // Draw renders all active AI cars
 func (tm *TrafficManager) Draw(screen *ebiten.Image, cam *Camera, densityLevel int) {
-	activeCount := 24
-	if densityLevel == 1 {
-		activeCount = 12
-	} else if densityLevel == 3 {
-		activeCount = 36
-	}
-	if activeCount > len(tm.Cars) {
-		activeCount = len(tm.Cars)
-	}
+	activeCount := len(tm.GetActiveCars(densityLevel))
 
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
@@ -1139,7 +1147,7 @@ func drawSingleCar(screen *ebiten.Image, cam *Camera, c *TrafficCar) {
 		drawRotatedBox(screen, cam, roofPos, cosH, sinH, 12, 6, RGBA(254, 240, 138, 255))
 	}
 
-	// Headlights (Front)
+	// Headlights (Front Left & Right)
 	perpX := -sinH
 	perpY := cosH
 	hlDist := c.Length / 2
@@ -1149,11 +1157,11 @@ func drawSingleCar(screen *ebiten.Image, cam *Camera, c *TrafficCar) {
 	drawRotatedBox(screen, cam, hl1, cosH, sinH, 3, 4, RGBA(254, 240, 138, 255))
 	drawRotatedBox(screen, cam, hl2, cosH, sinH, 3, 4, RGBA(254, 240, 138, 255))
 
-	// Soft Headlight beam forward
-	b1 := cam.WorldToScreen(hl1)
-	b2 := cam.WorldToScreen(hl1.Add(Vec2{X: cosH * 40, Y: sinH * 40}))
-	vector.StrokeLine(screen, float32(b1.X), float32(b1.Y), float32(b2.X), float32(b2.Y),
-		float32(2*cam.Zoom), RGBA(254, 240, 138, 50), true)
+	// Soft Headlight beams forward for BOTH left and right headlights
+	if cam.Zoom >= 0.20 {
+		drawCarHeadlightBeam(screen, cam, hl1, cosH, sinH, perpX, perpY)
+		drawCarHeadlightBeam(screen, cam, hl2, cosH, sinH, perpX, perpY)
+	}
 
 	// Taillights / Brake lights (Rear)
 	tl1 := c.Pos.Add(Vec2{X: -cosH*hlDist - perpX*hlOffset, Y: -sinH*hlDist - perpY*hlOffset})
@@ -1164,6 +1172,29 @@ func drawSingleCar(screen *ebiten.Image, cam *Camera, c *TrafficCar) {
 	}
 	drawRotatedBox(screen, cam, tl1, cosH, sinH, 3, 4, tlColor)
 	drawRotatedBox(screen, cam, tl2, cosH, sinH, 3, 4, tlColor)
+}
+
+func drawCarHeadlightBeam(screen *ebiten.Image, cam *Camera, startPos Vec2, cosH, sinH, perpX, perpY float64) {
+	beamLen := 52.0
+	beamSpread := 11.0
+	p1 := cam.WorldToScreen(startPos)
+	endCenter := startPos.Add(Vec2{X: cosH * beamLen, Y: sinH * beamLen})
+	p2 := cam.WorldToScreen(endCenter.Add(Vec2{X: perpX * beamSpread, Y: perpY * beamSpread}))
+	p3 := cam.WorldToScreen(endCenter.Sub(Vec2{X: perpX * beamSpread, Y: perpY * beamSpread}))
+	pMid := cam.WorldToScreen(endCenter)
+
+	beamColor := RGBA(254, 240, 138, 28)
+	coreColor := RGBA(254, 240, 138, 75)
+	zoom := float32(cam.Zoom)
+
+	// Small glowing lamp halo at fixture
+	vector.DrawFilledCircle(screen, float32(p1.X), float32(p1.Y), 3.0*zoom, RGBA(254, 240, 138, 85), true)
+
+	// Center beam ray
+	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(pMid.X), float32(pMid.Y), 1.5*zoom, coreColor, true)
+	// Outer beam cone edge lines
+	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), 1.0*zoom, beamColor, true)
+	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), 1.0*zoom, beamColor, true)
 }
 
 // IsBusFacingWrongWay checks whether the player bus is driving or facing the wrong way (逆行) on a roadway.

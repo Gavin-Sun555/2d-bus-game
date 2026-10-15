@@ -59,6 +59,10 @@ type Game struct {
 	dragStartPos Vec2
 	camStartPos  Vec2
 
+	// Route planning tracking
+	planModeInitialStops  []int
+	planModeRouteModified bool
+
 	// Boarding tracking
 	boardedThisStop bool
 
@@ -74,37 +78,50 @@ func NewGame(width, height int) *Game {
 	initLaneWidth := settings.GetLaneWidth()
 
 	world := NewWorld(initLaneWidth)
+	route := GetStandardRouteForMap(settings.MapTheme, world)
 
 	g := &Game{
-		Width:            width,
-		Height:           height,
-		State:            StateMainMenu,
-		SelectedMapTheme: MapThemeMetropolis,
-		World:            world,
-		Route:            GetStandardRouteForMap(settings.MapTheme, world),
-		Camera:           NewCamera(width, height),
-		HUD:              NewHUD(),
-		TrafficLights:    NewTrafficLightSystem(),
-		TrafficMgr:       NewTrafficManager(initLaneWidth),
-		Settings:         settings,
-		AutopilotDriver:  NewAutopilotDriver(),
-		AIBusMgr:         NewAIBusManager(),
-		IsPlanMode:       false,
-		Cash:             100, // Starting budget
-		lastLaneWidth:    initLaneWidth,
+		Width:                 width,
+		Height:                height,
+		State:                 StateMainMenu,
+		SelectedMapTheme:      MapThemeMetropolis,
+		World:                 world,
+		Route:                 route,
+		Camera:                NewCamera(width, height),
+		HUD:                   NewHUD(),
+		TrafficLights:         NewTrafficLightSystem(),
+		TrafficMgr:            NewTrafficManager(initLaneWidth),
+		Settings:              settings,
+		AutopilotDriver:       NewAutopilotDriver(),
+		AIBusMgr:              NewAIBusManager(),
+		IsPlanMode:            false,
+		Cash:                  100, // Starting budget
+		lastLaneWidth:         initLaneWidth,
+		planModeInitialStops:  make([]int, 0),
+		planModeRouteModified: false,
 	}
 
 	// Adapt traffic lights and civilian AI traffic to active world network
 	g.TrafficMgr.AIBusMgr = g.AIBusMgr
 	g.TrafficLights.BuildForWorld(g.World)
-	g.TrafficMgr.BuildForWorld(g.World, 36, initLaneWidth)
-	g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, initLaneWidth)
+	g.TrafficMgr.BuildForWorld(g.World, MaxTrafficCars, initLaneWidth)
 
-	// Spawn bus parked inside the first station's bay box (Stop 0: Central Terminal)
+	// Spawn bus parked inside the first station's bay box
 	firstStop := g.World.Stops[0]
+	if len(g.Route.StopIDs) > 0 {
+		startID := g.Route.StopIDs[0]
+		if startID >= 0 && startID < len(g.World.Stops) {
+			firstStop = g.World.Stops[startID]
+		}
+	}
 	g.Bus = NewBus(firstStop.Pos.X, firstStop.Pos.Y, firstStop.Heading)
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
+
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.ActiveRoute = g.Route
+		g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, initLaneWidth, g.Bus)
+	}
 
 	g.rollAlightingForNextStop()
 
@@ -129,12 +146,9 @@ func (g *Game) SetMapTheme(theme MapTheme) {
 
 	// Rebuild traffic lights and AI civilian vehicles for active map
 	g.TrafficLights.BuildForWorld(g.World)
-	g.TrafficMgr.BuildForWorld(g.World, 36, currentLaneW)
+	g.TrafficMgr.BuildForWorld(g.World, MaxTrafficCars, currentLaneW)
 	if g.AutopilotDriver != nil {
 		g.AutopilotDriver.Reset()
-	}
-	if g.AIBusMgr != nil {
-		g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW)
 	}
 
 	// Clear Dijkstra memoized path cache because roads/roundabouts differ
@@ -147,6 +161,12 @@ func (g *Game) SetMapTheme(theme MapTheme) {
 
 	// Reposition bus cleanly to the first stop of the route
 	firstStop := g.World.Stops[0]
+	if len(g.Route.StopIDs) > 0 {
+		startID := g.Route.StopIDs[0]
+		if startID >= 0 && startID < len(g.World.Stops) {
+			firstStop = g.World.Stops[startID]
+		}
+	}
 	g.Bus.Pos = firstStop.Pos
 	g.Bus.Heading = firstStop.Heading
 	g.Bus.Speed = 0
@@ -154,7 +174,12 @@ func (g *Game) SetMapTheme(theme MapTheme) {
 	g.Bus.DoorsOpen = true
 	g.Bus.IsBraking = false
 	g.Bus.OnShoulder = false
-	g.Bus.PassengerCount = 0
+	g.Bus.ClearPassengers()
+
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.ActiveRoute = g.Route
+		g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
+	}
 
 	g.Camera.FollowBus(g.Bus)
 	g.Camera.Pos = g.Bus.Pos
@@ -184,36 +209,28 @@ func (g *Game) ReloadCustomMap() error {
 
 func (g *Game) rollAlightingForNextStop() {
 	g.bellToastShown = false
-	if g.Bus.PassengerCount == 0 {
+	if g.Bus == nil || g.Route == nil {
+		g.stopBellRung = false
+		g.passengersAlighting = 0
+		return
+	}
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	if targetStopID < 0 || g.Bus.PassengerCount == 0 {
 		g.stopBellRung = false
 		g.passengersAlighting = 0
 		return
 	}
 
-	if g.Bus.PassengerCount <= 3 {
-		if simRand.Float64() < 0.5 {
-			g.passengersAlighting = 1
-			g.stopBellRung = true
-		} else {
-			g.passengersAlighting = 0
-			g.stopBellRung = false
-		}
-	} else {
-		if simRand.Float64() < 0.35 {
-			g.passengersAlighting = 0
-			g.stopBellRung = false
-		} else {
-			maxA := g.Bus.PassengerCount / 2
-			if maxA < 1 {
-				maxA = 1
-			}
-			if maxA > 5 {
-				maxA = 5
-			}
-			g.passengersAlighting = 1 + simRand.Intn(maxA)
-			g.stopBellRung = true
+	alighting := g.Bus.CountPassengersAlightingAt(targetStopID)
+	// If heading to the terminus of the route, all remaining passengers on board will alight
+	if g.Route.IsTerminusIndex(g.Route.CurrentIndex) {
+		if g.Bus.PassengerCount > alighting {
+			alighting = g.Bus.PassengerCount
 		}
 	}
+
+	g.passengersAlighting = alighting
+	g.stopBellRung = (g.passengersAlighting > 0)
 }
 
 func (g *Game) Update() error {
@@ -250,7 +267,7 @@ func (g *Game) Update() error {
 		g.lastLaneWidth = currentLaneW
 		g.World.UpdateLaneWidth(currentLaneW)
 		if g.AIBusMgr != nil {
-			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW)
+			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
 		}
 		g.HUD.AddToast(fmt.Sprintf("全城道路标线与车道宽度已动态切换为: %.0f px", currentLaneW), true)
 	}
@@ -258,7 +275,7 @@ func (g *Game) Update() error {
 	// Check if AI bus fleet counts were updated in Settings
 	if g.Settings.AIBusFleetChanged {
 		if g.AIBusMgr != nil {
-			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW)
+			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
 		}
 		g.Settings.AIBusFleetChanged = false
 		g.HUD.AddToast(fmt.Sprintf("路线AI公交车队已调度就绪: 共 %d 辆 (环线循环)", g.Settings.AIBusCount), true)
@@ -292,32 +309,15 @@ func (g *Game) Update() error {
 
 	// 2. Mode switching (TAB)
 	if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
-		g.IsPlanMode = !g.IsPlanMode
-		if g.IsPlanMode {
-			// Instant transition to panoramic planning view (no slow progressive animation)
-			g.Camera.TargetPos = Vec2{X: 0, Y: 0}
-			g.Camera.Pos = Vec2{X: 0, Y: 0}
-			g.Camera.TargetZoom = 0.22
-			g.Camera.Zoom = 0.22
-			g.Camera.Rotation = 0
-			g.Camera.TargetRotation = 0
-			g.HUD.AddToast("已进入【线路规划模式】：点击站点可加入路线 (滚轮可缩放/拖拽漫游)", false)
-		} else {
-			// Instant snap back to driver mode
-			g.Camera.FollowBus(g.Bus)
-			g.Camera.Pos = g.Camera.TargetPos
-			g.Camera.TargetZoom = 1.0
-			g.Camera.Zoom = 1.0
-			g.Camera.Rotation = g.Camera.TargetRotation
-			g.HUD.AddToast("已进入【驾驶模式】：开始运营发车！", true)
-		}
+		g.TogglePlanMode()
 	}
 
-	// 3. Traffic lights update
-	g.TrafficLights.Update(dt)
-
-	// 4. AI Traffic & Route AI Buses (Paused during Planning Mode to eliminate stutter and lag)
+	// 3. Game simulation (Traffic lights, AI traffic, AI buses, passenger arrivals, violations)
+	// Fully PAUSED during Planning Mode so the city stops and no new passengers generate while planning!
 	if !g.IsPlanMode {
+		// Traffic lights update
+		g.TrafficLights.Update(dt)
+
 		// AI Traffic vehicles update with dynamic lane width and active world for roundabout navigation
 		g.TrafficMgr.Update(dt, g.Bus, g.TrafficLights, g.Settings.TrafficDensity, currentLaneW, g.World)
 
@@ -352,6 +352,9 @@ func (g *Game) Update() error {
 
 		// Collision check between player bus and AI cars
 		g.checkBusCarCollisions()
+
+		// World update (passenger arrivals at bus stops)
+		g.World.Update(dt)
 	}
 
 	// 7. Planning / Driver Mode inputs
@@ -364,24 +367,16 @@ func (g *Game) Update() error {
 	// 8. Camera update
 	g.Camera.Update(dt)
 
-	// 9. World update (passenger arrivals)
-	g.World.Update(dt)
-
-	// 10. HUD toasts update
+	// 9. HUD toasts update
 	g.HUD.Update(dt)
 
 	return nil
 }
 
 func (g *Game) checkBusCarCollisions() {
-	activeCount := 24
-	if g.Settings.TrafficDensity == 1 {
-		activeCount = 12
-	} else if g.Settings.TrafficDensity == 3 {
-		activeCount = 36
-	}
-	if activeCount > len(g.TrafficMgr.Cars) {
-		activeCount = len(g.TrafficMgr.Cars)
+	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
+	if len(activeCars) == 0 {
+		return
 	}
 
 	busOBB := OBB{
@@ -391,8 +386,7 @@ func (g *Game) checkBusCarCollisions() {
 		Heading: g.Bus.Heading,
 	}
 
-	for i := 0; i < activeCount; i++ {
-		car := g.TrafficMgr.Cars[i]
+	for _, car := range activeCars {
 		carOBB := OBB{
 			Center:  car.Pos,
 			HalfLen: car.Length / 2, // 23.0 ~ 25.0
@@ -604,7 +598,7 @@ func (g *Game) updatePlanningMode(dt float64) {
 	// Mouse Zoom with expanded range for large map
 	_, wheelY := ebiten.Wheel()
 	if wheelY != 0 {
-		g.Camera.TargetZoom = Clamp(g.Camera.TargetZoom+wheelY*0.06, 0.14, 1.4)
+		g.Camera.TargetZoom = Clamp(g.Camera.TargetZoom+wheelY*0.03, 0.04, 1.4)
 		g.Camera.Zoom = g.Camera.TargetZoom
 	}
 
@@ -613,6 +607,12 @@ func (g *Game) updatePlanningMode(dt float64) {
 	mouseScreen := Vec2{X: float64(mx), Y: float64(my)}
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		// Check top-bar mode badge click to exit plan mode
+		if g.HUD.HandleModeBtnClick(mouseScreen) {
+			g.TogglePlanMode()
+			return
+		}
+
 		// Check top-bar map theme button click
 		if toggled := g.HUD.HandleMapThemeBtnClick(mouseScreen, g.Settings); toggled {
 			g.SetMapTheme(g.Settings.MapTheme)
@@ -623,6 +623,20 @@ func (g *Game) updatePlanningMode(dt float64) {
 		if toggled, notice := g.HUD.HandleCameraBtnClick(mouseScreen, g.Camera); toggled {
 			g.Settings.CameraViewMode = g.Camera.Mode
 			g.HUD.AddToast(notice, false)
+			return
+		}
+
+		// Check interactive buttons on planning panel first
+		if g.HUD.HandlePlanUndoClick(mouseScreen) {
+			g.UndoLastPlannedStop()
+			return
+		}
+		if g.HUD.HandlePlanClearClick(mouseScreen) {
+			g.ClearPlannedRoute()
+			return
+		}
+		if g.HUD.IsInsidePlanPanel(mouseScreen) {
+			// Clicked inside planning panel: do not initiate world map dragging
 			return
 		}
 
@@ -637,9 +651,13 @@ func (g *Game) updatePlanningMode(dt float64) {
 		}
 
 		if clickedStopID >= 0 {
+			prevLen := len(g.Route.StopIDs)
 			g.Route.AddStop(clickedStopID)
-			stopName := g.World.Stops[clickedStopID].Name
-			g.HUD.AddToast(fmt.Sprintf("已将站点 [%s] 添加至路线", stopName), true)
+			if len(g.Route.StopIDs) > prevLen {
+				g.planModeRouteModified = true
+			}
+			stopName := g.World.Stops[clickedStopID].LocalizedName()
+			g.HUD.AddToast(fmt.Sprintf(T("已将站点 [%s] 添加至路线", "Added stop [%s] to route"), stopName), true)
 		} else {
 			// Start dragging map
 			g.isDragging = true
@@ -680,24 +698,231 @@ func (g *Game) updatePlanningMode(dt float64) {
 		g.Camera.Pos = g.Camera.TargetPos
 	}
 
+	// Undo / Cancel last station with Backspace, Z, Delete, or U key
+	if inpututil.IsKeyJustPressed(ebiten.KeyBackspace) || inpututil.IsKeyJustPressed(ebiten.KeyZ) ||
+		inpututil.IsKeyJustPressed(ebiten.KeyDelete) || inpututil.IsKeyJustPressed(ebiten.KeyU) {
+		g.UndoLastPlannedStop()
+	}
+
 	// Clear route with C key
 	if inpututil.IsKeyJustPressed(ebiten.KeyC) {
-		g.Route.Clear()
-		g.HUD.AddToast("已清空规划路线，请重新规划！", false)
+		g.ClearPlannedRoute()
 	}
+}
+
+// UndoLastPlannedStop cancels/removes the last station added to the planned route.
+func (g *Game) UndoLastPlannedStop() bool {
+	if g.Route == nil {
+		return false
+	}
+	if removedID, ok := g.Route.RemoveLastStop(); ok {
+		g.planModeRouteModified = true
+		stopName := fmt.Sprintf("#%d", removedID)
+		if g.World != nil && removedID >= 0 && removedID < len(g.World.Stops) {
+			stopName = g.World.Stops[removedID].LocalizedName()
+		}
+		if len(g.Route.StopIDs) > 0 {
+			g.HUD.AddToast(fmt.Sprintf(T("已撤销最后一个站点 [%s] (路线剩余 %d 站)", "Removed last stop [%s] (%d remaining)"), stopName, len(g.Route.StopIDs)), false)
+		} else {
+			g.HUD.AddWarningToast(fmt.Sprintf(T("已撤销最后一个站点 [%s]，当前路线已为空！", "Removed last stop [%s], route is now empty!"), stopName))
+		}
+		return true
+	}
+	g.HUD.AddWarningToast(T("当前路线中已无站点可撤销！", "No stops to undo in current route!"))
+	return false
+}
+
+// ClearPlannedRoute clears all stations from the planned route.
+func (g *Game) ClearPlannedRoute() {
+	if g.Route == nil {
+		return
+	}
+	g.Route.Clear()
+	g.planModeRouteModified = true
+	g.HUD.AddToast(T("已清空规划路线，请重新规划！", "Route cleared, please click stations to replan!"), false)
+}
+
+func intSlicesEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TogglePlanMode toggles between Drive Mode and Route Planning Mode.
+// When returning to Drive Mode after replanning the route, both the player's bus
+// and all AI buses are reset to the first stop of the replanned route.
+func (g *Game) TogglePlanMode() {
+	if !g.IsPlanMode {
+		// Enter Plan Mode
+		g.IsPlanMode = true
+		g.planModeInitialStops = append([]int(nil), g.Route.StopIDs...)
+		g.planModeRouteModified = false
+
+		// Instant transition to panoramic planning view
+		g.Camera.TargetPos = Vec2{X: 0, Y: 0}
+		g.Camera.Pos = Vec2{X: 0, Y: 0}
+		g.Camera.TargetZoom = 0.08
+		g.Camera.Zoom = 0.08
+		g.Camera.Rotation = 0
+		g.Camera.TargetRotation = 0
+		g.HUD.AddToast(T("已进入【线路规划模式】：游戏运行与客流生成已暂停 (点击站点加入路线，按TAB返回)", "[Plan Mode] Simulation & passenger spawning paused (Click stops to add to route, press TAB to return)"), false)
+	} else {
+		// Exit Plan Mode -> Return to Driver Mode
+		if len(g.Route.StopIDs) == 0 {
+			g.HUD.AddWarningToast(T("【路线未完成】当前路线为空，请至少点击选择 1 个站点规划路线后再返回驾驶！", "[Empty Route] Route is empty. Please select at least 1 stop before driving!"))
+			return
+		}
+
+		g.IsPlanMode = false
+
+		// Check if route was replanned
+		isReplanned := g.planModeRouteModified || !intSlicesEqual(g.Route.StopIDs, g.planModeInitialStops)
+		if isReplanned {
+			g.ResetBusesToRouteStart()
+			firstStopID := g.Route.StopIDs[0]
+			firstStopName := ""
+			if firstStopID >= 0 && firstStopID < len(g.World.Stops) {
+				firstStopName = g.World.Stops[firstStopID].LocalizedName()
+			}
+			g.HUD.AddToast(fmt.Sprintf(T("已进入【驾驶模式】：路线重新规划完成！车辆与 AI 车队已就位始发站 [%s]，开始运营发车！", "[Drive Mode] Route replanned! Bus and AI fleet reset to starting station [%s]!"), firstStopName), true)
+		} else {
+			// Instant snap back to driver mode without resetting vehicle positions
+			g.Camera.FollowBus(g.Bus)
+			g.Camera.Pos = g.Camera.TargetPos
+			g.Camera.TargetZoom = 1.0
+			g.Camera.Zoom = 1.0
+			g.Camera.Rotation = g.Camera.TargetRotation
+			g.HUD.AddToast(T("已进入【驾驶模式】：开始运营发车！", "[Drive Mode] Starting operation!"), true)
+		}
+	}
+}
+
+// ResetBusesToRouteStart resets both the player's bus and all AI fleet buses
+// to the first stop of the currently planned route.
+func (g *Game) ResetBusesToRouteStart() {
+	if g.Route == nil || len(g.Route.StopIDs) == 0 || g.World == nil || len(g.World.Stops) == 0 {
+		return
+	}
+
+	firstStopID := g.Route.StopIDs[0]
+	if firstStopID < 0 || firstStopID >= len(g.World.Stops) {
+		firstStopID = 0
+	}
+	firstStop := g.World.Stops[firstStopID]
+
+	// 1. Reset player bus
+	if g.Bus != nil {
+		g.Bus.Pos = firstStop.Pos
+		g.Bus.Heading = firstStop.Heading
+		g.Bus.Speed = 0
+		g.Bus.SteeringAngle = 0
+		g.Bus.Gear = GearDrive
+		g.Bus.TransmissionMode = TransmissionAuto
+		g.Bus.IsHandbraking = false
+		g.Bus.IsBraking = false
+		g.Bus.DoorsOpen = true // Ready at the starting station bay for passenger boarding
+		g.Bus.OnShoulder = false
+		g.Bus.ClearPassengers()
+	}
+
+	g.boardedThisStop = false
+	g.skipCooldown = 0
+	g.stopBellRung = false
+	g.passengersAlighting = 0
+	g.bellToastShown = false
+	g.Route.CurrentIndex = 0
+	g.Route.cachedDescDirty = true
+
+	if g.AutopilotDriver != nil {
+		g.AutopilotDriver.Reset()
+	}
+
+	// 2. Ensure initial stop has passengers for immediate departure
+	if firstStop.WaitingPassengers < 4 {
+		firstStop.WaitingPassengers = 4 + simRand.Intn(4)
+	}
+
+	// 3. Reset AI bus fleet queuing behind player bus at first stop
+	currentLaneW := g.Settings.GetLaneWidth()
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.ActiveRoute = g.Route
+		g.AIBusMgr.RebuildFleet(g.World, currentLaneW, g.Bus)
+	}
+
+	// 4. Follow player bus with camera
+	if g.Camera != nil && g.Bus != nil {
+		g.Camera.FollowBus(g.Bus)
+		g.Camera.Pos = g.Bus.Pos
+		g.Camera.TargetPos = g.Bus.Pos
+		g.Camera.TargetZoom = 1.0
+		g.Camera.Zoom = 1.0
+		g.Camera.Rotation = g.Camera.TargetRotation
+	}
+
+	g.rollAlightingForNextStop()
+}
+
+// ReplanRoute updates the active route to the given stop sequence and resets
+// the player bus and AI fleet to the first station.
+func (g *Game) ReplanRoute(stopIDs []int) {
+	if len(stopIDs) == 0 {
+		return
+	}
+	g.Route.Clear()
+	for _, id := range stopIDs {
+		g.Route.AddStop(id)
+	}
+	g.ResetBusesToRouteStart()
 }
 
 func (g *Game) updateDriverMode(dt float64) {
 	currentLaneW := g.Settings.GetLaneWidth()
 
-	// 0. AI Autopilot Toggle (P key)
+	// 0. AI Autopilot Toggle (P key) & Berserk Mode Toggle (B key or Shift+P)
 	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
-		g.Settings.AutopilotEnabled = !g.Settings.AutopilotEnabled
-		if g.Settings.AutopilotEnabled {
-			g.AutopilotDriver.Reset()
-			g.HUD.AddToast("【🤖 AI自动驾驶已开启】AI已接管车辆，遵循交规循迹靠站上下客 (按 P 键随时接管)", true)
+		if ebiten.IsKeyPressed(ebiten.KeyShift) {
+			// Shift+P: Toggle Berserk Mode
+			g.Settings.AutopilotBerserk = !g.Settings.AutopilotBerserk
+			if !g.Settings.AutopilotEnabled {
+				g.Settings.AutopilotEnabled = true
+				g.AutopilotDriver.Reset()
+			}
+			if g.Settings.AutopilotBerserk {
+				g.HUD.AddToast(T("【⚡ AI自动驾驶·狂暴模式已开启】直行极速狂飙，双车道变道超车，严守交规安全避障！", "【⚡ AI Berserk Mode ON】Top speed boosted, multi-lane overtaking enabled, obeying all rules!"), true)
+			} else {
+				g.HUD.AddToast(T("【🤖 AI自动驾驶·标准模式已恢复】平稳巡航行驶 (按 B 键切换狂暴模式)", "【🤖 AI Standard Mode ON】Cruising safely (Press B for Berserk)"), true)
+			}
 		} else {
-			g.HUD.AddToast("【👤 已恢复手动驾驶】您已接管公交车控制权 (按 P 键可重新开启 AI 巡航)", false)
+			// Normal P key: Toggle Autopilot ON/OFF
+			g.Settings.AutopilotEnabled = !g.Settings.AutopilotEnabled
+			if g.Settings.AutopilotEnabled {
+				g.AutopilotDriver.Reset()
+				if g.Settings.AutopilotBerserk {
+					g.HUD.AddToast(T("【⚡ AI自动驾驶·狂暴模式已开启】直行极速狂飙，双车道变道超车，严守交规安全避障！", "【⚡ AI Berserk Mode ON】Top speed boosted, multi-lane overtaking enabled, obeying all rules!"), true)
+				} else {
+					g.HUD.AddToast(T("【🤖 AI自动驾驶已开启】AI已接管车辆，遵循交规循迹靠站 (按 B 开启狂暴，按 P 接管)", "【🤖 AI Autopilot ON】AI controls vehicle, serving stops (Press B for Berserk, P to exit)"), true)
+				}
+			} else {
+				g.HUD.AddToast(T("【👤 已恢复手动驾驶】您已接管公交车控制权 (按 P 键可重新开启 AI)", "【👤 Manual Mode Restored】You have taken control (Press P to enable AI)"), false)
+			}
+		}
+	} else if inpututil.IsKeyJustPressed(ebiten.KeyB) {
+		// Dedicated B key: Toggle Berserk Mode
+		g.Settings.AutopilotBerserk = !g.Settings.AutopilotBerserk
+		if !g.Settings.AutopilotEnabled {
+			g.Settings.AutopilotEnabled = true
+			g.AutopilotDriver.Reset()
+		}
+		if g.Settings.AutopilotBerserk {
+			g.HUD.AddToast(T("【⚡ AI自动驾驶·狂暴模式已开启】直行极速狂飙，双车道变道超车，严守交规安全避障！", "【⚡ AI Berserk Mode ON】Top speed boosted, multi-lane overtaking enabled, obeying all rules!"), true)
+		} else {
+			g.HUD.AddToast(T("【🤖 AI自动驾驶·标准模式已恢复】平稳巡航行驶 (按 B 键切换狂暴模式)", "【🤖 AI Standard Mode ON】Cruising safely (Press B for Berserk)"), true)
 		}
 	}
 
@@ -729,6 +954,7 @@ func (g *Game) updateDriverMode(dt float64) {
 			}
 		}
 
+		g.AutopilotDriver.BerserkMode = g.Settings.AutopilotBerserk
 		throttle, brake, steer, handbrake, toggleDoors, _ = g.AutopilotDriver.ComputeControls(
 			g.Bus, g.Route, g.World, g.TrafficLights, obs, currentLaneW, dt,
 		)
@@ -810,11 +1036,14 @@ func (g *Game) updateDriverMode(dt float64) {
 		}
 	}
 
-	// 5. Mouse click on HUD buttons (Map theme badge, Perspective badge, Gear selectors & Autopilot)
+	// 5. Mouse click on HUD buttons (Mode badge, Map theme badge, Perspective badge, Gear selectors & Autopilot)
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		mx, my := ebiten.CursorPosition()
 		mouseScreen := Vec2{X: float64(mx), Y: float64(my)}
-		if toggled := g.HUD.HandleMenuBtnClick(mouseScreen); toggled {
+		if g.HUD.HandleModeBtnClick(mouseScreen) {
+			g.TogglePlanMode()
+			return
+		} else if toggled := g.HUD.HandleMenuBtnClick(mouseScreen); toggled {
 			g.State = StateMainMenu
 			return
 		} else if toggled, notice := g.HUD.HandleCameraBtnClick(mouseScreen, g.Camera); toggled {
@@ -912,9 +1141,23 @@ func (g *Game) updateDriverMode(dt float64) {
 			g.HUD.AddToast(fmt.Sprintf("[🔔 下车铃响] 叮咚~ 车内有 %d 位乘客按下车铃，将在下一站下车！", g.passengersAlighting), false)
 		}
 
-		// 2. Skip Stop (飞站) check when approaching within 280px
-		if distToTarget <= 280.0 {
-			canSkip := targetStop.WaitingPassengers == 0 && !g.stopBellRung
+		// 2. Skip Stop (飞站) check when approaching within 320px
+		if distToTarget <= 320.0 {
+			isOccupied := g.IsStopOccupiedByOtherVehicle(targetStop)
+			canSkip := !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+
+			// Proactive AI Autopilot Skip when station is occupied and no bell rung
+			if g.Settings.AutopilotEnabled && canSkip && isOccupied && g.skipCooldown <= 0 {
+				g.skipCooldown = 3.0
+				oldName := targetStop.Name
+				g.Route.AdvanceToNextStop()
+				newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
+				g.rollAlightingForNextStop()
+				if g.AutopilotDriver != nil {
+					g.AutopilotDriver.Reset()
+				}
+				g.HUD.AddToast(fmt.Sprintf("【🤖 AI自主飞站】[%s] 检测到前方已有车靠站且无下车乘客，自动飞站提速！下一站: [%s]", oldName, newTarget.Name), true)
+			}
 
 			// Manual skip with F key
 			if inpututil.IsKeyJustPressed(ebiten.KeyF) {
@@ -923,14 +1166,18 @@ func (g *Game) updateDriverMode(dt float64) {
 					g.Route.AdvanceToNextStop()
 					newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 					g.rollAlightingForNextStop()
-					g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 站内无人且无人按铃，已飞站！下一站: [%s]", oldName, newTarget.Name), true)
+					if isOccupied {
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 前方站台已有车靠站且本车无人下车，已飞站！下一站: [%s]", oldName, newTarget.Name), true)
+					} else {
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 站内无人且无人按铃，已飞站！下一站: [%s]", oldName, newTarget.Name), true)
+					}
 				} else {
 					reasons := ""
-					if targetStop.WaitingPassengers > 0 {
-						reasons += fmt.Sprintf("站台有 %d 人候车 ", targetStop.WaitingPassengers)
-					}
 					if g.stopBellRung {
 						reasons += fmt.Sprintf("车内有 %d 人按铃下车 ", g.passengersAlighting)
+					}
+					if targetStop.WaitingPassengers > 0 && !isOccupied {
+						reasons += fmt.Sprintf("站台有 %d 人候车且前方无其他车辆靠站 ", targetStop.WaitingPassengers)
 					}
 					g.HUD.AddWarningToast(fmt.Sprintf("【不可飞站】[%s] %s，必须进站停靠！", targetStop.Name, reasons))
 				}
@@ -941,14 +1188,18 @@ func (g *Game) updateDriverMode(dt float64) {
 			headingVec := Vec2{X: math.Cos(targetStop.Heading), Y: math.Sin(targetStop.Heading)}
 			forwardProj := dVec.X*headingVec.X + dVec.Y*headingVec.Y
 
-			if forwardProj > 50 && distToTarget < 220 && math.Abs(g.Bus.Speed) > 15 {
+			if forwardProj > 50 && distToTarget < 260 && math.Abs(g.Bus.Speed) > 15 {
 				if canSkip && g.skipCooldown <= 0 {
 					g.skipCooldown = 2.5
 					oldName := targetStop.Name
 					g.Route.AdvanceToNextStop()
 					newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 					g.rollAlightingForNextStop()
-					g.HUD.AddToast(fmt.Sprintf("【⚡ 快速飞站】顺利掠过 [%s]！已自动飞站，下一站: [%s]", oldName, newTarget.Name), true)
+					if isOccupied {
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 快速飞站】顺利掠过 [%s]（站台已有车靠站）！已自动飞站，下一站: [%s]", oldName, newTarget.Name), true)
+					} else {
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 快速飞站】顺利掠过 [%s]！已自动飞站，下一站: [%s]", oldName, newTarget.Name), true)
+					}
 				}
 			}
 		}
@@ -982,23 +1233,16 @@ func (g *Game) updateDriverMode(dt float64) {
 			// Embark / Disembark passengers
 			g.boardedThisStop = true
 
-			// Passengers getting off
-			offCount := 0
-			if g.passengersAlighting > 0 {
-				offCount = g.passengersAlighting
-				if offCount > g.Bus.PassengerCount {
-					offCount = g.Bus.PassengerCount
-				}
-				g.Bus.PassengerCount -= offCount
-				g.stopBellRung = false
-				g.passengersAlighting = 0
-			} else if g.Bus.PassengerCount > 0 {
-				offCount = 1 + simRand.Intn(g.Bus.PassengerCount)
-				if offCount > g.Bus.PassengerCount {
-					offCount = g.Bus.PassengerCount
-				}
-				g.Bus.PassengerCount -= offCount
+			// Passengers getting off:
+			// Remove passengers whose target destination is this stop
+			offCount := g.Bus.RemovePassengersAlightingAt(activeStop.ID)
+
+			// If this active stop is the terminus of the route, all remaining passengers must alight
+			if g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() {
+				offCount += g.Bus.ClearPassengers()
 			}
+			g.stopBellRung = false
+			g.passengersAlighting = 0
 
 			// Passengers getting on
 			boardSpace := g.Bus.Capacity - g.Bus.PassengerCount
@@ -1008,12 +1252,13 @@ func (g *Game) updateDriverMode(dt float64) {
 			}
 
 			if boardCount > 0 {
-				activeStop.WaitingPassengers -= boardCount
-				g.Bus.PassengerCount += boardCount
-				fareEarned := boardCount * 3
+				candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
+				actualBoarded := g.Bus.BoardPassengers(boardCount, candidates)
+				activeStop.WaitingPassengers -= actualBoarded
+				fareEarned := actualBoarded * 3
 				g.Cash += fareEarned
 				toastMsg := fmt.Sprintf("[%s] 下客 %d 人，上客 %d 人，营收 +$%d！",
-					activeStop.Name, offCount, boardCount, fareEarned)
+					activeStop.Name, offCount, actualBoarded, fareEarned)
 				g.HUD.AddToast(toastMsg, true)
 			} else {
 				toastMsg := fmt.Sprintf("[%s] 下客 %d 人，当前车厢已满载！", activeStop.Name, offCount)
@@ -1023,13 +1268,48 @@ func (g *Game) updateDriverMode(dt float64) {
 			// Advance to next stop if this was the planned target stop
 			if activeStop.ID == g.Route.GetCurrentTargetStopID() {
 				g.Route.AdvanceToNextStop()
-				g.rollAlightingForNextStop()
 			}
+			g.rollAlightingForNextStop()
 		}
 	} else {
 		// Left the stop bay, reset boarding flag
 		g.boardedThisStop = false
 	}
+}
+
+// IsStopOccupiedByOtherVehicle checks if a bus stop bay is currently occupied by another stopped or docking vehicle
+func (g *Game) IsStopOccupiedByOtherVehicle(stop *BusStop) bool {
+	if stop == nil {
+		return false
+	}
+	// 1. Check AI route buses
+	if g.AIBusMgr != nil {
+		for _, ab := range g.AIBusMgr.Buses {
+			if ab.Bus != nil {
+				// Docked strictly inside yellow bay box
+				if stop.ContainsBus(ab.Bus) {
+					return true
+				}
+				// Autopilot driver is in docked state at this stop
+				if ab.Driver != nil && ab.Driver.State == AutopilotStateDocked && ab.Driver.DockedStopID == stop.ID {
+					return true
+				}
+				// Close to bay center and stopped or crawling
+				if ab.Bus.Pos.Distance(stop.Pos) < (stop.Length*0.5 + 25.0) && math.Abs(ab.Bus.Speed) < 8.0 {
+					return true
+				}
+			}
+		}
+	}
+	// 2. Check civilian traffic cars that might be stalled or parked in the bay
+	if g.TrafficMgr != nil {
+		for _, c := range g.TrafficMgr.Cars {
+			if c.Pos.Distance(stop.Pos) < 55.0 && math.Abs(c.Speed) < 8.0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -1078,6 +1358,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			currentStop = s
 			break
 		}
+	}
+	if targetStopID >= 0 && targetStopID < len(g.World.Stops) {
+		g.HUD.TargetStopOccupied = g.IsStopOccupiedByOtherVehicle(g.World.Stops[targetStopID])
+	} else {
+		g.HUD.TargetStopOccupied = false
 	}
 	g.HUD.Draw(screen, g.Bus, g.Route, g.World, g.IsPlanMode, g.Cash, currentStop, g.Settings, g.stopBellRung, g.passengersAlighting, g.Camera, g.TrafficLights)
 

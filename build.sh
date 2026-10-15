@@ -45,6 +45,18 @@ cmd_run() {
 
 cmd_test() {
     print_banner
+    echo -e "${BLUE}🧪 正在运行基础快速测试 (Fast Dev Mode)...${NC}"
+    go test -short ./...
+}
+
+cmd_test_qualify() {
+    print_banner
+    echo -e "${BLUE}🏆 正在运行全地图多轮 Release Qualification 验收测试...${NC}"
+    go test -v -run TestReleaseQualification ./...
+}
+
+cmd_test_all() {
+    print_banner
     echo -e "${BLUE}🧪 正在运行全部单元测试与集成测试...${NC}"
     go test -v ./...
 }
@@ -164,6 +176,12 @@ case "$1" in
     test)
         cmd_test
         ;;
+    test-qualify)
+        cmd_test_qualify
+        ;;
+    test-all)
+        cmd_test_all
+        ;;
     cross)
         cmd_cross
         ;;
@@ -176,7 +194,9 @@ case "$1" in
         echo "  run           编译并立即在终端启动运行游戏"
         echo "  app           构建带专属高清图标的 macOS 原生应用程序包 (${BUNDLE_NAME})"
         echo "  open          构建并以 macOS 原生 App 方式启动 (在 Dock 显示专属图标)"
-        echo "  test          运行全量测试套件"
+        echo "  test          运行基础快速测试 (平时开发秒级通过)"
+        echo "  test-qualify  运行全地图全场景发布验收测试 (发布到 GitHub 前必跑)"
+        echo "  test-all      运行全部单元与集成测试"
         echo "  cross         跨平台编译 (macOS ARM64/Intel, Windows, Linux) 至 dist/"
         echo "  clean         清理生成的二进制产物"
         echo "  help          显示本帮助信息"

@@ -10,14 +10,16 @@ import (
 )
 
 const (
+	MapGridScale  = 3.0  // Multiplier lengthening road distances between intersections (~3x) for overtaking & high-speed cruising
 	ShoulderWidth = 40.0 // Width of shoulder outside road curb where bus can drive but slows down
 )
 
 type RoadType int
 
 const (
-	RoadAvenue4Lane RoadType = iota // 4-lane major avenue / ring highway
-	RoadStreet2Lane                 // 2-lane city street
+	RoadAvenue4Lane     RoadType = iota // 4-lane major avenue / ring highway
+	RoadStreet2Lane                     // 2-lane city street
+	RoadExpressway6Lane                 // 6-lane express avenue / trunk highway
 )
 
 type RoadZone int
@@ -46,7 +48,10 @@ type RoadSegment struct {
 }
 
 func (r RoadSegment) GetWidth(laneWidth float64) float64 {
-	if r.Lanes == 4 {
+	if r.Lanes >= 6 || r.Type == RoadExpressway6Lane {
+		return float64(r.Lanes)*laneWidth + 24.0 // 6 lanes + central median
+	}
+	if r.Lanes == 4 || r.Type == RoadAvenue4Lane {
 		return float64(r.Lanes)*laneWidth + 24.0 // 4 lanes + central median
 	}
 	return float64(r.Lanes)*laneWidth + 12.0 // 2 lanes + median divider
@@ -218,10 +223,10 @@ func (w *World) IsAtRoundabout(pt Vec2) bool {
 	return false
 }
 
-// IsRoad4Lane checks whether a road at coordinate (and optional position) is a 4-lane avenue
-func (w *World) IsRoad4Lane(coord float64, isEW bool, posOptional ...Vec2) bool {
+// GetRoadLanes returns the number of lanes for a road at coordinate (and optional position)
+func (w *World) GetRoadLanes(coord float64, isEW bool, posOptional ...Vec2) int {
 	if w == nil {
-		return false
+		return 2
 	}
 	hasPos := len(posOptional) > 0
 	var pos Vec2
@@ -252,11 +257,30 @@ func (w *World) IsRoad4Lane(coord float64, isEW bool, posOptional ...Vec2) bool 
 						}
 					}
 				}
-				return r.Lanes == 4 || r.Type == RoadAvenue4Lane
+				if r.Lanes > 0 {
+					return r.Lanes
+				}
+				if r.Type == RoadExpressway6Lane {
+					return 6
+				}
+				if r.Type == RoadAvenue4Lane {
+					return 4
+				}
+				return 2
 			}
 		}
 	}
-	return false
+	return 2
+}
+
+// IsRoad6Lane checks whether a road at coordinate (and optional position) is a 6-lane express avenue
+func (w *World) IsRoad6Lane(coord float64, isEW bool, posOptional ...Vec2) bool {
+	return w.GetRoadLanes(coord, isEW, posOptional...) >= 6
+}
+
+// IsRoad4Lane checks whether a road at coordinate (and optional position) is a 4-lane or multi-lane avenue
+func (w *World) IsRoad4Lane(coord float64, isEW bool, posOptional ...Vec2) bool {
+	return w.GetRoadLanes(coord, isEW, posOptional...) >= 4
 }
 
 type RoundaboutType int
@@ -355,9 +379,145 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 		w.buildMap1Metropolis(laneWidth)
 	}
 
+	w.applyMapScale(MapGridScale, laneWidth)
+	w.MatchStopRoadLanes(laneWidth)
 	w.computeIntersections()
 	ActiveWorldForRoute = w
 	ClearRoutePathCache()
+}
+
+// MatchStopRoadLanes automatically detects the actual adjacent road segment for each bus stop
+// and aligns s.RoadLanes to the road's true lane count, guaranteeing that all bus stop bays
+// are indented safely outside the curb rather than sitting inside the travel roadway.
+func (w *World) MatchStopRoadLanes(laneWidth float64) {
+	for _, s := range w.Stops {
+		isEW := math.Abs(math.Cos(s.Heading)) > math.Abs(math.Sin(s.Heading))
+		for _, r := range w.Roads {
+			rIsEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
+			if isEW != rIsEW {
+				continue
+			}
+			if isEW {
+				if math.Abs(r.P1.Y-s.RoadCenter.Y) < 10.0 {
+					minX := math.Min(r.P1.X, r.P2.X) - 50.0
+					maxX := math.Max(r.P1.X, r.P2.X) + 50.0
+					if s.RoadCenter.X >= minX && s.RoadCenter.X <= maxX {
+						if s.RoadLanes != r.Lanes {
+							s.RoadLanes = r.Lanes
+							s.UpdateGeometry(laneWidth)
+						}
+						break
+					}
+				}
+			} else {
+				if math.Abs(r.P1.X-s.RoadCenter.X) < 10.0 {
+					minY := math.Min(r.P1.Y, r.P2.Y) - 50.0
+					maxY := math.Max(r.P1.Y, r.P2.Y) + 50.0
+					if s.RoadCenter.Y >= minY && s.RoadCenter.Y <= maxY {
+						if s.RoadLanes != r.Lanes {
+							s.RoadLanes = r.Lanes
+							s.UpdateGeometry(laneWidth)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+}
+
+// applyMapScale uniformly scales road lengths, stop positions, water, bridges, and buildings
+// to lengthen intersection-to-intersection road blocks by ~3x while preserving standard lane widths.
+func (w *World) applyMapScale(scale float64, laneWidth float64) {
+	if scale == 1.0 {
+		return
+	}
+	for i := range w.Roads {
+		w.Roads[i].P1 = w.Roads[i].P1.Mul(scale)
+		w.Roads[i].P2 = w.Roads[i].P2.Mul(scale)
+	}
+	for _, st := range w.Stops {
+		st.RoadCenter = st.RoadCenter.Mul(scale)
+		st.UpdateGeometry(laneWidth)
+	}
+	for i := range w.Bridges {
+		w.Bridges[i].Pos = w.Bridges[i].Pos.Mul(scale)
+		w.Bridges[i].Length *= scale
+	}
+	for i := range w.Roundabouts {
+		w.Roundabouts[i].Center = w.Roundabouts[i].Center.Mul(scale)
+	}
+	for i := range w.Waters {
+		w.Waters[i].Center = w.Waters[i].Center.Mul(scale)
+		w.Waters[i].Width *= scale
+		w.Waters[i].Height *= scale
+	}
+	for i := range w.Rivers {
+		w.Rivers[i].Y *= scale
+		w.Rivers[i].Height *= scale
+	}
+	for i := range w.Buildings {
+		w.Buildings[i].Pos = w.Buildings[i].Pos.Mul(scale)
+		w.Buildings[i].W *= 1.8
+		w.Buildings[i].H *= 1.8
+	}
+	for i := range w.Trees {
+		w.Trees[i].Pos = w.Trees[i].Pos.Mul(scale)
+	}
+}
+
+func (w *World) IsOverpassAt(pt Vec2) bool {
+	for _, br := range w.Bridges {
+		if br.IsOverpass {
+			cosH := math.Cos(br.Heading)
+			sinH := math.Sin(br.Heading)
+			diff := pt.Sub(br.Pos)
+			longDist := math.Abs(diff.X*cosH + diff.Y*sinH)
+			latDist := math.Abs(-diff.X*sinH + diff.Y*cosH)
+			if longDist <= br.Length*0.5+15.0 && latDist <= br.Width*0.5+15.0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (w *World) GetIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf, nsHalf float64) {
+	maxEW := 2
+	maxNS := 2
+	for _, r := range w.Roads {
+		if math.Abs(r.P1.Y-r.P2.Y) < 1.0 && math.Abs(r.P1.Y-c.Y) < 10.0 {
+			minX := math.Min(r.P1.X, r.P2.X)
+			maxX := math.Max(r.P1.X, r.P2.X)
+			if c.X >= minX-15.0 && c.X <= maxX+15.0 {
+				if r.Lanes > maxEW {
+					maxEW = r.Lanes
+				}
+			}
+		}
+		if math.Abs(r.P1.X-r.P2.X) < 1.0 && math.Abs(r.P1.X-c.X) < 10.0 {
+			minY := math.Min(r.P1.Y, r.P2.Y)
+			maxY := math.Max(r.P1.Y, r.P2.Y)
+			if c.Y >= minY-15.0 && c.Y <= maxY+15.0 {
+				if r.Lanes > maxNS {
+					maxNS = r.Lanes
+				}
+			}
+		}
+	}
+	ewHalf = laneWidth*1.0 + 6.0
+	if maxEW >= 6 {
+		ewHalf = laneWidth*3.0 + 12.0
+	} else if maxEW >= 4 {
+		ewHalf = laneWidth*2.0 + 12.0
+	}
+	nsHalf = laneWidth*1.0 + 6.0
+	if maxNS >= 6 {
+		nsHalf = laneWidth*3.0 + 12.0
+	} else if maxNS >= 4 {
+		nsHalf = laneWidth*2.0 + 12.0
+	}
+	return ewHalf, nsHalf
 }
 
 func (w *World) computeIntersections() {
@@ -385,10 +545,14 @@ func (w *World) computeIntersections() {
 			x := ns.P1.X
 
 			if x >= minX-5 && x <= maxX+5 && y >= minY-5 && y <= maxY+5 {
+				pt := Vec2{X: x, Y: y}
+				if w.IsOverpassAt(pt) {
+					continue
+				}
 				key := [2]int{int(math.Round(x)), int(math.Round(y))}
 				if !seen[key] {
 					seen[key] = true
-					w.Intersections = append(w.Intersections, Vec2{X: x, Y: y})
+					w.Intersections = append(w.Intersections, pt)
 				}
 			}
 		}
@@ -401,9 +565,9 @@ func (w *World) WaterBodies() []WaterBody {
 
 // 1. 都会核心 (Metropolis CBD)
 func (w *World) buildMap1Metropolis(laneWidth float64) {
-	// Avenues: 4-lane Ring & Grid
+	// Avenues: 4-lane Ring & Grid, with 6-lane North Ring Expressway
 	w.Roads = append(w.Roads,
-		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: 2600, Y: -1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "北环快速路"},
+		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: 2600, Y: -1200}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "北环六车道快速路"},
 		RoadSegment{P1: Vec2{X: -2600, Y: -600}, P2: Vec2{X: 2600, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "北二路"},
 		RoadSegment{P1: Vec2{X: -2600, Y: 0}, P2: Vec2{X: 2600, Y: 0}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "中央主干大道"},
 		RoadSegment{P1: Vec2{X: -2600, Y: 600}, P2: Vec2{X: 2600, Y: 600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "南二路"},
@@ -464,7 +628,7 @@ func (w *World) buildMap2CoastalBay(laneWidth float64) {
 	w.Roads = append(w.Roads,
 		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: 0, Y: -1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "北海滨大道"},
 		RoadSegment{P1: Vec2{X: -2600, Y: -600}, P2: Vec2{X: 0, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "渔港观光大道"},
-		RoadSegment{P1: Vec2{X: -2600, Y: 0}, P2: Vec2{X: 0, Y: 0}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "港城中央大道"},
+		RoadSegment{P1: Vec2{X: -2600, Y: 0}, P2: Vec2{X: 0, Y: 0}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "港城中央六车道大道"},
 		RoadSegment{P1: Vec2{X: -2600, Y: 600}, P2: Vec2{X: 0, Y: 600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "滨海度假路"},
 		RoadSegment{P1: Vec2{X: -2600, Y: 1200}, P2: Vec2{X: 0, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "南湾快速大道"},
 
@@ -477,7 +641,7 @@ func (w *World) buildMap2CoastalBay(laneWidth float64) {
 
 	// Ocean Causeway & Offshore Deepwater Port Island (X in [0, 2600])
 	w.Roads = append(w.Roads,
-		RoadSegment{P1: Vec2{X: 0, Y: 0}, P2: Vec2{X: 2600, Y: 0}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "跨海湾长堤大桥大道"},
+		RoadSegment{P1: Vec2{X: 0, Y: 0}, P2: Vec2{X: 2600, Y: 0}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "跨海湾长堤六车道大桥大道"},
 		RoadSegment{P1: Vec2{X: 2600, Y: -600}, P2: Vec2{X: 2600, Y: 600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "深水码头港区大道"},
 		RoadSegment{P1: Vec2{X: 1800, Y: -600}, P2: Vec2{X: 2600, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "港口北防波堤路"},
 		RoadSegment{P1: Vec2{X: 1800, Y: 600}, P2: Vec2{X: 2600, Y: 600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "港口南集装箱路"},
@@ -489,7 +653,7 @@ func (w *World) buildMap2CoastalBay(laneWidth float64) {
 
 	// Grand Sea Bridge
 	w.Bridges = append(w.Bridges,
-		Bridge{Pos: Vec2{X: 900, Y: 0}, Heading: 0, Length: 1200, Width: 100, Name: "跨海湾特大悬索桥", IsCable: true},
+		Bridge{Pos: Vec2{X: 900, Y: 0}, Heading: 0, Length: 1200, Width: 140, Name: "跨海湾特大悬索桥", IsCable: true},
 	)
 
 	// Lighthouse Roundabout at (-1300, 600)
@@ -527,29 +691,29 @@ func (w *World) buildMap3RiverValley(laneWidth float64) {
 		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: -2600, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "翠微山路"},
 		RoadSegment{P1: Vec2{X: -1300, Y: -1200}, P2: Vec2{X: -1300, Y: -600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "西大桥北引道"},
 		RoadSegment{P1: Vec2{X: 0, Y: -1200}, P2: Vec2{X: 0, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "江北中轴大道"},
-		RoadSegment{P1: Vec2{X: 1300, Y: -1200}, P2: Vec2{X: 1300, Y: -600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "东大桥北引道"},
+		RoadSegment{P1: Vec2{X: 1300, Y: -1200}, P2: Vec2{X: 1300, Y: -600}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "东大桥北引道"},
 		RoadSegment{P1: Vec2{X: 2600, Y: -1200}, P2: Vec2{X: 2600, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "观音山大道"},
 	)
 
 	// River Crossing Bridges (Spanning across the river corridor between Y=-600 and Y=600)
 	w.Roads = append(w.Roads,
 		RoadSegment{P1: Vec2{X: -1300, Y: -600}, P2: Vec2{X: -1300, Y: 600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "溪谷斜拉长江大桥"},
-		RoadSegment{P1: Vec2{X: 1300, Y: -600}, P2: Vec2{X: 1300, Y: 600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "世纪悬索长江大桥"},
+		RoadSegment{P1: Vec2{X: 1300, Y: -600}, P2: Vec2{X: 1300, Y: 600}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "世纪悬索长江六车道大桥"},
 	)
 	w.Bridges = append(w.Bridges,
 		Bridge{Pos: Vec2{X: -1300, Y: 0}, Heading: math.Pi / 2, Length: 600, Width: 95, Name: "溪谷斜拉长江大桥", IsCable: true},
-		Bridge{Pos: Vec2{X: 1300, Y: 0}, Heading: math.Pi / 2, Length: 600, Width: 95, Name: "世纪悬索长江大桥", IsCable: true},
+		Bridge{Pos: Vec2{X: 1300, Y: 0}, Heading: math.Pi / 2, Length: 600, Width: 140, Name: "世纪悬索长江大桥", IsCable: true},
 	)
 
 	// South Bank Roads (Y >= 600, spacious 600px grid)
 	w.Roads = append(w.Roads,
 		RoadSegment{P1: Vec2{X: -2600, Y: 600}, P2: Vec2{X: 2600, Y: 600}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "南滨江商务大道"},
-		RoadSegment{P1: Vec2{X: -2600, Y: 1200}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "高铁新城大道"},
+		RoadSegment{P1: Vec2{X: -2600, Y: 1200}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "高铁新城六车道大道"},
 
 		RoadSegment{P1: Vec2{X: -2600, Y: 600}, P2: Vec2{X: -2600, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "创智南路"},
 		RoadSegment{P1: Vec2{X: -1300, Y: 600}, P2: Vec2{X: -1300, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "西大桥南引道"},
 		RoadSegment{P1: Vec2{X: 0, Y: 600}, P2: Vec2{X: 0, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "江南中轴大道"},
-		RoadSegment{P1: Vec2{X: 1300, Y: 600}, P2: Vec2{X: 1300, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "东大桥南引道"},
+		RoadSegment{P1: Vec2{X: 1300, Y: 600}, P2: Vec2{X: 1300, Y: 1200}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "东大桥南引道"},
 		RoadSegment{P1: Vec2{X: 2600, Y: 600}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "产业园区路"},
 	)
 
@@ -617,7 +781,6 @@ func (w *World) buildMap4EmeraldLake(laneWidth float64) {
 // 5. 高新双城 (Twin Districts & Interchange Expressway)
 func (w *World) buildMap5TwinCities(laneWidth float64) {
 	// Central Ecological Buffer Greenbelt & Canal
-	w.Rivers = append(w.Rivers, River{Y: 0, Height: 40})
 	w.Waters = append(w.Waters, WaterBody{
 		Center:  Vec2{X: 0, Y: 0},
 		Width:   180,
@@ -659,17 +822,16 @@ func (w *World) buildMap5TwinCities(laneWidth float64) {
 		RoadSegment{P1: Vec2{X: -1300, Y: 1200}, P2: Vec2{X: 1300, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "南双城干道"},
 
 		// Central Cross-District Expressway Viaduct (Continuously spans across the entire map at Y = 0!)
-		RoadSegment{P1: Vec2{X: -2600, Y: 0}, P2: Vec2{X: 2600, Y: 0}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "中央跨区高架快速路"},
+		RoadSegment{P1: Vec2{X: -2600, Y: 0}, P2: Vec2{X: 2600, Y: 0}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "中央跨区高架六车道快速路"},
 
-		// Ground-Level Central Parkway passing underneath
+		// Ground-Level Central Interchange Connectors flanking the central canal park
 		RoadSegment{P1: Vec2{X: -650, Y: -1200}, P2: Vec2{X: -650, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "西互通立体匝道"},
-		RoadSegment{P1: Vec2{X: 0, Y: -1200}, P2: Vec2{X: 0, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "中央公园生态大道"},
 		RoadSegment{P1: Vec2{X: 650, Y: -1200}, P2: Vec2{X: 650, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "东互通立体匝道"},
 	)
 
-	// Grade-Separated Highway Overpass Viaduct at (0, 0)
+	// Grade-Separated Highway Overpass Viaduct at (0, 0) spanning across the canal
 	w.Bridges = append(w.Bridges,
-		Bridge{Pos: Vec2{X: 0, Y: 0}, Heading: 0, Length: 360, Width: 110, Name: "双城枢纽跨线立交桥", IsOverpass: true},
+		Bridge{Pos: Vec2{X: 0, Y: 0}, Heading: 0, Length: 360, Width: 352, Name: "双城枢纽跨线立交桥", IsOverpass: true},
 	)
 
 	w.buildTwinCitiesStops(laneWidth)
@@ -718,15 +880,15 @@ func (w *World) buildMetropolisStops(laneWidth float64) {
 		NewBusStop(0, names[0], Vec2{X: -650, Y: 0}, 0, 4, accents[0], laneWidth, 12),
 		NewBusStop(1, names[1], Vec2{X: 650, Y: 0}, math.Pi, 4, accents[1], laneWidth, 8),
 		NewBusStop(2, names[2], Vec2{X: 1300, Y: -300}, math.Pi/2, 2, accents[2], laneWidth, 0),
-		NewBusStop(3, names[3], Vec2{X: 2600, Y: -900}, -math.Pi/2, 2, accents[3], laneWidth, 0),
-		NewBusStop(4, names[4], Vec2{X: 1950, Y: -1200}, math.Pi, 4, accents[4], laneWidth, 8),
-		NewBusStop(5, names[5], Vec2{X: -650, Y: -1200}, 0, 4, accents[5], laneWidth, 16),
-		NewBusStop(6, names[6], Vec2{X: -2600, Y: -900}, math.Pi/2, 2, accents[6], laneWidth, 6),
-		NewBusStop(7, names[7], Vec2{X: -2600, Y: 900}, -math.Pi/2, 2, accents[7], laneWidth, 10),
+		NewBusStop(3, names[3], Vec2{X: 2600, Y: -900}, -math.Pi/2, 4, accents[3], laneWidth, 0),
+		NewBusStop(4, names[4], Vec2{X: 1950, Y: -1200}, math.Pi, 6, accents[4], laneWidth, 8),
+		NewBusStop(5, names[5], Vec2{X: -650, Y: -1200}, 0, 6, accents[5], laneWidth, 16),
+		NewBusStop(6, names[6], Vec2{X: -2600, Y: -900}, math.Pi/2, 4, accents[6], laneWidth, 6),
+		NewBusStop(7, names[7], Vec2{X: -2600, Y: 900}, -math.Pi/2, 4, accents[7], laneWidth, 10),
 		NewBusStop(8, names[8], Vec2{X: -1300, Y: 300}, -math.Pi/2, 2, accents[8], laneWidth, 0),
 		NewBusStop(9, names[9], Vec2{X: -1950, Y: 1200}, 0, 4, accents[9], laneWidth, 0),
 		NewBusStop(10, names[10], Vec2{X: 650, Y: 1200}, math.Pi, 4, accents[10], laneWidth, 0),
-		NewBusStop(11, names[11], Vec2{X: 2600, Y: 900}, math.Pi/2, 2, accents[11], laneWidth, 4),
+		NewBusStop(11, names[11], Vec2{X: 2600, Y: 900}, math.Pi/2, 4, accents[11], laneWidth, 4),
 	)
 }
 
@@ -752,8 +914,8 @@ func (w *World) buildCoastalBayStops(laneWidth float64) {
 		RGBA(245, 158, 11, 255), RGBA(14, 165, 233, 255), RGBA(168, 85, 247, 255), RGBA(239, 68, 68, 255),
 	}
 	w.Stops = append(w.Stops,
-		NewBusStop(0, names[0], Vec2{X: -1625, Y: 0}, 0, 4, accents[0], laneWidth, 10),
-		NewBusStop(1, names[1], Vec2{X: -325, Y: 0}, 0, 4, accents[1], laneWidth, 12),
+		NewBusStop(0, names[0], Vec2{X: -1625, Y: 0}, 0, 6, accents[0], laneWidth, 10),
+		NewBusStop(1, names[1], Vec2{X: -325, Y: 0}, 0, 6, accents[1], laneWidth, 12),
 		NewBusStop(2, names[2], Vec2{X: -1625, Y: -1200}, 0, 2, accents[2], laneWidth, 6),
 		NewBusStop(3, names[3], Vec2{X: 0, Y: -300}, math.Pi/2, 4, accents[3], laneWidth, 8),
 		NewBusStop(4, names[4], Vec2{X: 0, Y: 300}, -math.Pi/2, 4, accents[4], laneWidth, 10),
@@ -793,14 +955,14 @@ func (w *World) buildRiverValleyStops(laneWidth float64) {
 		NewBusStop(1, names[1], Vec2{X: 650, Y: -1200}, math.Pi, 4, accents[1], laneWidth, 8),
 		NewBusStop(2, names[2], Vec2{X: -1950, Y: -600}, 0, 4, accents[2], laneWidth, 6),
 		NewBusStop(3, names[3], Vec2{X: -1300, Y: -300}, math.Pi/2, 4, accents[3], laneWidth, 10),
-		NewBusStop(4, names[4], Vec2{X: -650, Y: 1200}, math.Pi, 4, accents[4], laneWidth, 16),
+		NewBusStop(4, names[4], Vec2{X: -650, Y: 1200}, math.Pi, 6, accents[4], laneWidth, 16),
 		NewBusStop(5, names[5], Vec2{X: -650, Y: 600}, 0, 4, accents[5], laneWidth, 10),
-		NewBusStop(6, names[6], Vec2{X: 1300, Y: -150}, -math.Pi/2, 4, accents[6], laneWidth, 10),
+		NewBusStop(6, names[6], Vec2{X: 1300, Y: -150}, -math.Pi/2, 6, accents[6], laneWidth, 10),
 		NewBusStop(7, names[7], Vec2{X: 650, Y: 600}, 0, 4, accents[7], laneWidth, 8),
 		NewBusStop(8, names[8], Vec2{X: 0, Y: -900}, math.Pi/2, 2, accents[8], laneWidth, 10),
 		NewBusStop(9, names[9], Vec2{X: 650, Y: -600}, math.Pi, 4, accents[9], laneWidth, 8),
 		NewBusStop(10, names[10], Vec2{X: 1950, Y: 600}, math.Pi, 4, accents[10], laneWidth, 10),
-		NewBusStop(11, names[11], Vec2{X: 650, Y: 1200}, 0, 4, accents[11], laneWidth, 10),
+		NewBusStop(11, names[11], Vec2{X: 650, Y: 1200}, 0, 6, accents[11], laneWidth, 10),
 	)
 }
 
@@ -863,13 +1025,13 @@ func (w *World) buildTwinCitiesStops(laneWidth float64) {
 		RGBA(139, 92, 246, 255), RGBA(59, 130, 246, 255), RGBA(14, 165, 233, 255), RGBA(236, 72, 153, 255),
 	}
 	w.Stops = append(w.Stops,
-		NewBusStop(0, names[0], Vec2{X: -2275, Y: 0}, 0, 4, accents[0], laneWidth, 12),
+		NewBusStop(0, names[0], Vec2{X: -2275, Y: 0}, 0, 6, accents[0], laneWidth, 12),
 		NewBusStop(1, names[1], Vec2{X: -2275, Y: -1200}, 0, 2, accents[1], laneWidth, 8),
 		NewBusStop(2, names[2], Vec2{X: -1300, Y: 300}, math.Pi/2, 4, accents[2], laneWidth, 10),
-		NewBusStop(3, names[3], Vec2{X: -975, Y: 0}, 0, 4, accents[3], laneWidth, 10),
-		NewBusStop(4, names[4], Vec2{X: 975, Y: 0}, 0, 4, accents[4], laneWidth, 10),
+		NewBusStop(3, names[3], Vec2{X: -975, Y: 0}, 0, 6, accents[3], laneWidth, 10),
+		NewBusStop(4, names[4], Vec2{X: 975, Y: 0}, 0, 6, accents[4], laneWidth, 10),
 		NewBusStop(5, names[5], Vec2{X: 2275, Y: -1200}, 0, 2, accents[5], laneWidth, 8),
-		NewBusStop(6, names[6], Vec2{X: 2275, Y: 0}, 0, 4, accents[6], laneWidth, 14),
+		NewBusStop(6, names[6], Vec2{X: 2275, Y: 0}, 0, 6, accents[6], laneWidth, 14),
 		NewBusStop(7, names[7], Vec2{X: 1300, Y: 300}, -math.Pi/2, 4, accents[7], laneWidth, 8),
 		NewBusStop(8, names[8], Vec2{X: -1625, Y: -600}, 0, 2, accents[8], laneWidth, 14),
 		NewBusStop(9, names[9], Vec2{X: -1625, Y: 600}, math.Pi, 2, accents[9], laneWidth, 10),
@@ -887,10 +1049,10 @@ func (w *World) buildMetropolisBuildings() {
 	}{
 		{cx: 650, cy: 300, w: 340, h: 160, col: RGBA(15, 23, 42, 255), roof: RGBA(30, 41, 59, 255)},
 		{cx: -650, cy: 300, w: 320, h: 160, col: RGBA(30, 41, 59, 255), roof: RGBA(51, 65, 85, 255)},
-		{cx: 1720, cy: -850, w: 260, h: 140, col: RGBA(30, 41, 59, 255), roof: RGBA(59, 130, 246, 255)},
-		{cx: 650, cy: -900, w: 360, h: 160, col: RGBA(30, 41, 59, 255), roof: RGBA(236, 72, 153, 255)},
-		{cx: -650, cy: -900, w: 360, h: 160, col: RGBA(15, 23, 42, 255), roof: RGBA(245, 158, 11, 255)},
-		{cx: -1950, cy: -900, w: 360, h: 160, col: RGBA(30, 41, 59, 255), roof: RGBA(71, 85, 105, 255)},
+		{cx: 1720, cy: -810, w: 260, h: 140, col: RGBA(30, 41, 59, 255), roof: RGBA(59, 130, 246, 255)},
+		{cx: 650, cy: -820, w: 360, h: 140, col: RGBA(30, 41, 59, 255), roof: RGBA(236, 72, 153, 255)},
+		{cx: -650, cy: -820, w: 360, h: 140, col: RGBA(15, 23, 42, 255), roof: RGBA(245, 158, 11, 255)},
+		{cx: -1950, cy: -820, w: 360, h: 140, col: RGBA(30, 41, 59, 255), roof: RGBA(71, 85, 105, 255)},
 		{cx: -1950, cy: 850, w: 380, h: 160, col: RGBA(39, 39, 42, 255), roof: RGBA(63, 63, 70, 255)},
 		{cx: -1950, cy: 300, w: 340, h: 150, col: RGBA(30, 41, 59, 255), roof: RGBA(51, 65, 85, 255)},
 		{cx: -650, cy: 850, w: 340, h: 160, col: RGBA(248, 250, 252, 255), roof: RGBA(239, 68, 68, 255)},
@@ -1094,17 +1256,19 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 	}
 
 	// 2. Check Outer Metropolitan Perimeter Wall (Hard Barrier)
-	if pos.X > 3200 {
-		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: -1, Y: 0}, Penetration: pos.X - 3200, ObstacleName: "东侧边界隔离墙"}
+	boundX := 3200.0 * MapGridScale
+	boundY := 1480.0 * MapGridScale
+	if pos.X > boundX {
+		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: -1, Y: 0}, Penetration: pos.X - boundX, ObstacleName: "东侧边界隔离墙"}
 	}
-	if pos.X < -3200 {
-		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 1, Y: 0}, Penetration: -3200 - pos.X, ObstacleName: "西侧边界隔离墙"}
+	if pos.X < -boundX {
+		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 1, Y: 0}, Penetration: -boundX - pos.X, ObstacleName: "西侧边界隔离墙"}
 	}
-	if pos.Y > 1480 {
-		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 0, Y: -1}, Penetration: pos.Y - 1480, ObstacleName: "南侧边界隔离墙"}
+	if pos.Y > boundY {
+		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 0, Y: -1}, Penetration: pos.Y - boundY, ObstacleName: "南侧边界隔离墙"}
 	}
-	if pos.Y < -1480 {
-		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 0, Y: 1}, Penetration: -1480 - pos.Y, ObstacleName: "北侧边界隔离墙"}
+	if pos.Y < -boundY {
+		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: 0, Y: 1}, Penetration: -boundY - pos.Y, ObstacleName: "北侧边界隔离墙"}
 	}
 
 	// 2.5 Check Roundabout Road Corridors and Central Islands FIRST
@@ -1129,7 +1293,7 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 
 	// 2.7 Check Intersection Turning Clearances:
 	// Provide generous turning clearance at all intersections of the active map so long buses can comfortably turn
-	interTurnClearance := math.Max(190.0, laneWidth*3.0+40.0)
+	interTurnClearance := math.Max(260.0, laneWidth*4.2+55.0)
 	for _, ipt := range w.Intersections {
 		dx := pos.X - ipt.X
 		dy := pos.Y - ipt.Y
@@ -1169,9 +1333,9 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 
 		// 2. Bus Bay & Transit Corridor Envelope:
 		// Bay box length is st.Length (140 px, dLong in [-70, +70]).
-		// Approach taper: dLong in [-220, -70] (150 px smooth entry corridor).
+		// Approach queue corridor: dLong in [-1200, -70] (safely accommodates multi-bus fleet departure queue up to 8 buses).
 		// Departure taper: dLong in [+70, +180] (110 px smooth exit corridor).
-		if dLong >= -220.0 && dLong <= 180.0 {
+		if dLong >= -1200.0 && dLong <= 180.0 {
 			curbDist := (float64(st.RoadLanes)/2.0)*laneWidth + st.Width*0.48
 			// Only apply to the bus stop side of the road
 			if dLat >= -curbDist-15.0 {
@@ -1180,9 +1344,8 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 
 				var curbLat float64
 				if dLong < -70.0 {
-					// Approach transition taper
-					t := (dLong - (-220.0)) / 150.0
-					curbLat = mainRoadCurbLat + t*(bayOuterCurbLat-mainRoadCurbLat)
+					// Approach queuing corridor: maintain full outer bay envelope clearance for queued AI fleet
+					curbLat = bayOuterCurbLat
 				} else if dLong > 70.0 {
 					// Departure transition taper
 					t := (180.0 - dLong) / 110.0
@@ -1194,11 +1357,6 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 
 				if dLat <= curbLat {
 					return BoundaryCheckResult{Zone: ZoneRoad}
-				} else if dLat <= curbLat+ShoulderWidth {
-					return BoundaryCheckResult{
-						Zone:        ZoneShoulder,
-						Penetration: dLat - curbLat,
-					}
 				}
 			}
 		}
@@ -1270,6 +1428,7 @@ func distToSegment(p, a, b Vec2) (float64, Vec2) {
 
 // UpdateLaneWidth updates all bus stop positions dynamically when lane width changes
 func (w *World) UpdateLaneWidth(laneWidth float64) {
+	w.MatchStopRoadLanes(laneWidth)
 	for _, s := range w.Stops {
 		s.UpdateGeometry(laneWidth)
 	}
@@ -1526,19 +1685,17 @@ func drawBridges(screen *ebiten.Image, cam *Camera, w *World, laneWidth float64)
 
 		if br.IsOverpass {
 			// Grade-separated Highway Overpass Viaduct (立体跨线立交桥)
-			// 1. Concrete deck drop shadow beneath the flyover
-			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: 10, Y: 14}), cosH, sinH, br.Length, br.Width+16, RGBA(15, 23, 42, 175))
-			// 2. Concrete bridge deck surface
-			drawRotatedBox(screen, cam, br.Pos, cosH, sinH, br.Length, br.Width, RGBA(30, 41, 59, 255))
-			// 3. Sturdy reinforced support pier pillars on outer sides
+			// 1. Sleek drop shadow along outer bottom edge outside the bridge deck
+			drawParallelLine(screen, cam, br.Pos.Add(Vec2{X: 6, Y: 10}), cosH, sinH, br.Length, offset+8, RGBA(15, 23, 42, 150), 10)
+			// 2. Sturdy reinforced support pier pillars on outer sides at canal banks
 			pierOffset := br.Width/2 + 8
 			pierW := 22.0
 			pierL := 40.0
-			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: -br.Length*0.35, Y: pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
-			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: -br.Length*0.35, Y: -pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
-			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: br.Length*0.35, Y: pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
-			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: br.Length*0.35, Y: -pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
-			// 4. Heavy reinforced concrete crash barriers with warning stripes
+			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: -br.Length * 0.35, Y: pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
+			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: -br.Length * 0.35, Y: -pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
+			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: br.Length * 0.35, Y: pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
+			drawRotatedBox(screen, cam, br.Pos.Add(Vec2{X: br.Length * 0.35, Y: -pierOffset}), cosH, sinH, pierL, pierW, RGBA(100, 116, 139, 255))
+			// 3. Heavy reinforced concrete crash barriers with warning stripes
 			drawParallelLine(screen, cam, br.Pos, cosH, sinH, br.Length, offset, RGBA(226, 232, 240, 255), 4.5)
 			drawParallelLine(screen, cam, br.Pos, cosH, sinH, br.Length, -offset, RGBA(226, 232, 240, 255), 4.5)
 			drawParallelLine(screen, cam, br.Pos, cosH, sinH, br.Length, offset-4, RGBA(245, 158, 11, 230), 2.5)
@@ -1579,43 +1736,59 @@ func drawBridges(screen *ebiten.Image, cam *Camera, w *World, laneWidth float64)
 }
 
 func drawIntersectionPads(screen *ebiten.Image, cam *Camera, w *World, laneWidth float64, planMode bool) {
-	// Expanded turning pad: generous intersection plaza clearance at every intersection
-	padHalf := math.Max(165.0, laneWidth*3.0 + 35.0)
-	shoulderHalf := padHalf + ShoulderWidth
-
 	for _, c := range w.Intersections {
 		if w.IsAtRoundabout(c) {
 			continue // Roundabouts render their own circular roadway, apron, and center plaza
 		}
-		if !cam.IsPointVisible(c, shoulderHalf*1.5) {
+		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(c, laneWidth)
+		shoulderHalfX := nsHalf + ShoulderWidth + 14.0
+		shoulderHalfY := ewHalf + ShoulderWidth + 14.0
+		if !cam.IsPointVisible(c, math.Max(shoulderHalfX, shoulderHalfY)*1.5) {
 			continue
 		}
 		// In plan mode, skip shoulder backing apron at intersections
 		if !planMode {
-			drawRotatedBox(screen, cam, c, 1, 0, shoulderHalf*2, shoulderHalf*2, RGBA(51, 65, 85, 255))
+			drawRotatedBox(screen, cam, c, 1, 0, shoulderHalfX*2, shoulderHalfY*2, RGBA(51, 65, 85, 255))
 		}
 	}
 }
 
 func drawIntersectionAsphalt(screen *ebiten.Image, cam *Camera, w *World, laneWidth float64) {
-	padHalf := math.Max(165.0, laneWidth*3.0 + 35.0)
-
 	for _, c := range w.Intersections {
 		if w.IsAtRoundabout(c) {
 			continue // Roundabouts render their own circular roadway, apron, and center plaza
 		}
-		if !cam.IsPointVisible(c, padHalf*1.5) {
+		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(c, laneWidth)
+		padHalfX := nsHalf + 18.0
+		padHalfY := ewHalf + 18.0
+		if !cam.IsPointVisible(c, math.Max(padHalfX, padHalfY)*1.5) {
 			continue
 		}
-		drawRotatedBox(screen, cam, c, 1, 0, padHalf*2, padHalf*2, RGBA(30, 41, 59, 255))
+		drawRotatedBox(screen, cam, c, 1, 0, padHalfX*2, padHalfY*2, RGBA(30, 41, 59, 255))
+
+		// Draw smooth curved curb return fillets at all 4 corners of the intersection
+		// so turning vehicles have broad, sweeping asphalt connecting the perpendicular roads
+		curbR := 36.0 * cam.Zoom
+		if curbR >= 2.0 {
+			quads := [4][2]float64{
+				{-padHalfX + 16.0, -padHalfY + 16.0},
+				{padHalfX - 16.0, -padHalfY + 16.0},
+				{-padHalfX + 16.0, padHalfY - 16.0},
+				{padHalfX - 16.0, padHalfY - 16.0},
+			}
+			for _, q := range quads {
+				cornerPt := cam.WorldToScreen(c.Add(Vec2{X: q[0], Y: q[1]}))
+				vector.DrawFilledCircle(screen, float32(cornerPt.X), float32(cornerPt.Y), float32(curbR), RGBA(30, 41, 59, 255), true)
+			}
+		}
 	}
 }
 
 func drawRiver(screen *ebiten.Image, cam *Camera, riv River) {
-	if !cam.IsBoxVisible(-4000, riv.Y-riv.Height/2, 4000, riv.Y+riv.Height/2) {
+	if !cam.IsBoxVisible(-16000, riv.Y-riv.Height/2, 16000, riv.Y+riv.Height/2) {
 		return
 	}
-	drawRotatedBox(screen, cam, Vec2{X: 0, Y: riv.Y}, 1, 0, 8000, riv.Height, RGBA(14, 116, 144, 210)) // Cyan-blue canal water
+	drawRotatedBox(screen, cam, Vec2{X: 0, Y: riv.Y}, 1, 0, 32000, riv.Height, RGBA(14, 116, 144, 210)) // Cyan-blue canal water
 }
 
 func drawRoad(screen *ebiten.Image, cam *Camera, w *World, r RoadSegment, laneWidth float64, planMode bool) {
@@ -1676,7 +1849,17 @@ func drawRoad(screen *ebiten.Image, cam *Camera, w *World, r RoadSegment, laneWi
 
 	// 5. Center Dividers & Lane Markings
 	if r.HasLines {
-		if r.Lanes == 4 {
+		if r.Lanes >= 6 || r.Type == RoadExpressway6Lane {
+			drawCenterDividers(screen, cam, center, cosH, sinH, len, 6.0, RGBA(250, 204, 21, 240))
+			drawCenterDividers(screen, cam, center, cosH, sinH, len, -6.0, RGBA(250, 204, 21, 240))
+
+			laneOffset1 := laneWidth * 1.0
+			laneOffset2 := laneWidth * 2.0
+			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, laneOffset1, planMode)
+			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, -laneOffset1, planMode)
+			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, laneOffset2, planMode)
+			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, -laneOffset2, planMode)
+		} else if r.Lanes == 4 || r.Type == RoadAvenue4Lane {
 			drawCenterDividers(screen, cam, center, cosH, sinH, len, 6.0, RGBA(250, 204, 21, 240))
 			drawCenterDividers(screen, cam, center, cosH, sinH, len, -6.0, RGBA(250, 204, 21, 240))
 
@@ -1699,7 +1882,7 @@ func drawParallelLine(screen *ebiten.Image, cam *Camera, center Vec2, cosH, sinH
 
 func drawHazardBarrier(screen *ebiten.Image, cam *Camera, r RoadSegment, center Vec2, cosH, sinH, len, offset, laneWidth float64, splits []float64) {
 	isEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
-	gapRadius := math.Max(190.0, laneWidth*3.0 + 40.0) // generous opening at all road intersections for comfortable turning
+	gapRadius := math.Max(245.0, laneWidth*4.2+50.0) // generous opening at all road intersections for comfortable turning
 
 	if isEW {
 		minX := math.Min(r.P1.X, r.P2.X)
@@ -1826,77 +2009,119 @@ func drawDashedWhiteLine(screen *ebiten.Image, cam *Camera, center Vec2, cosH, s
 }
 
 func drawCrosswalks(screen *ebiten.Image, cam *Camera, w *World, laneWidth float64) {
-	stopLineDist := laneWidth*1.6 + 18.0
-	crosswalkDist := stopLineDist - 25.0
-
 	for _, pt := range w.Intersections {
 		if w.IsAtRoundabout(pt) {
 			continue // Roundabouts feature self-regulating circular rotary flow, not straight 4-way crosswalks or lane arrows
 		}
-		if !cam.IsPointVisible(pt, stopLineDist+60) {
+
+		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(pt, laneWidth)
+		ewStopLineDist := nsHalf + 43.0
+		ewCrosswalkDist := ewStopLineDist - 25.0
+		nsStopLineDist := ewHalf + 43.0
+		nsCrosswalkDist := nsStopLineDist - 25.0
+
+		maxBound := math.Max(ewStopLineDist, nsStopLineDist) + 60.0
+		if !cam.IsPointVisible(pt, maxBound) {
 			continue
 		}
 
-		hasEW := false
-		isEW4Lane := false
-		hasNS := false
-		isNS4Lane := false
+		hasWest, westLanes := false, 0
+		hasEast, eastLanes := false, 0
+		hasNorth, northLanes := false, 0
+		hasSouth, southLanes := false, 0
 
 		for _, r := range w.Roads {
-			if math.Abs(r.P1.Y-r.P2.Y) < 1.0 && math.Abs(r.P1.Y-pt.Y) < 5.0 {
+			if math.Abs(r.P1.Y-r.P2.Y) < 1.0 && math.Abs(r.P1.Y-pt.Y) < 10.0 {
 				minX := math.Min(r.P1.X, r.P2.X)
 				maxX := math.Max(r.P1.X, r.P2.X)
-				if pt.X >= minX-10 && pt.X <= maxX+10 {
-					hasEW = true
-					if r.Lanes == 4 {
-						isEW4Lane = true
+				if minX < pt.X-15.0 && maxX >= pt.X-15.0 {
+					hasWest = true
+					if r.Lanes > westLanes {
+						westLanes = r.Lanes
+					}
+				}
+				if minX <= pt.X+15.0 && maxX > pt.X+15.0 {
+					hasEast = true
+					if r.Lanes > eastLanes {
+						eastLanes = r.Lanes
 					}
 				}
 			}
-			if math.Abs(r.P1.X-r.P2.X) < 1.0 && math.Abs(r.P1.X-pt.X) < 5.0 {
+			if math.Abs(r.P1.X-r.P2.X) < 1.0 && math.Abs(r.P1.X-pt.X) < 10.0 {
 				minY := math.Min(r.P1.Y, r.P2.Y)
 				maxY := math.Max(r.P1.Y, r.P2.Y)
-				if pt.Y >= minY-10 && pt.Y <= maxY+10 {
-					hasNS = true
-					if r.Lanes == 4 {
-						isNS4Lane = true
+				if minY < pt.Y-15.0 && maxY >= pt.Y-15.0 {
+					hasNorth = true
+					if r.Lanes > northLanes {
+						northLanes = r.Lanes
+					}
+				}
+				if minY <= pt.Y+15.0 && maxY > pt.Y+15.0 {
+					hasSouth = true
+					if r.Lanes > southLanes {
+						southLanes = r.Lanes
 					}
 				}
 			}
 		}
 
-		// 1. Draw Zebra Crossings around intersection for connected branches
-		if hasNS {
-			// North branch (pedestrians cross EW):
-			drawZebraBranch(screen, cam, pt.Add(Vec2{X: 0, Y: -crosswalkDist}), true, isNS4Lane, laneWidth)
-			// South branch (pedestrians cross EW):
-			drawZebraBranch(screen, cam, pt.Add(Vec2{X: 0, Y: crosswalkDist}), true, isNS4Lane, laneWidth)
+		// 1. Draw Zebra Crossings around intersection for connected branches only
+		if hasNorth {
+			drawZebraBranch(screen, cam, pt.Add(Vec2{X: 0, Y: -nsCrosswalkDist}), true, northLanes, laneWidth)
 		}
-		if hasEW {
-			// West branch (pedestrians cross NS):
-			drawZebraBranch(screen, cam, pt.Add(Vec2{X: -crosswalkDist, Y: 0}), false, isEW4Lane, laneWidth)
-			// East branch (pedestrians cross NS):
-			drawZebraBranch(screen, cam, pt.Add(Vec2{X: crosswalkDist, Y: 0}), false, isEW4Lane, laneWidth)
+		if hasSouth {
+			drawZebraBranch(screen, cam, pt.Add(Vec2{X: 0, Y: nsCrosswalkDist}), true, southLanes, laneWidth)
+		}
+		if hasWest {
+			drawZebraBranch(screen, cam, pt.Add(Vec2{X: -ewCrosswalkDist, Y: 0}), false, westLanes, laneWidth)
+		}
+		if hasEast {
+			drawZebraBranch(screen, cam, pt.Add(Vec2{X: ewCrosswalkDist, Y: 0}), false, eastLanes, laneWidth)
 		}
 
-		// 2. Draw dedicated turning lane markings & pavement arrows for 4-lane avenues
-		if isEW4Lane {
-			// West approach (Eastbound, incoming lane on +Y)
-			wCenter := pt.X - stopLineDist
+		// 2. Draw dedicated turning lane markings & pavement arrows for multi-lane avenues
+		if westLanes >= 6 {
+			// West approach: 6-lane express avenue (Lane 0 left-turn, Lane 1 through, Lane 2 through/turn)
+			wCenter := pt.X - ewStopLineDist
+			wLane0Y := pt.Y + 4 + laneWidth*0.5
+			wLane1Y := pt.Y + 4 + laneWidth*1.5
+			wLane2Y := pt.Y + 4 + laneWidth*2.5
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 45, Y: wLane0Y}, 0, true)
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 110, Y: wLane0Y}, 0, true)
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 45, Y: wLane1Y}, 0, false)
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 110, Y: wLane1Y}, 0, false)
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 45, Y: wLane2Y}, 0, false)
+			drawGroundArrow(screen, cam, Vec2{X: wCenter - 110, Y: wLane2Y}, 0, false)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: wCenter - 60, Y: pt.Y + 4 + laneWidth*1.0}, 1, 0, 120)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: wCenter - 60, Y: pt.Y + 4 + laneWidth*2.0}, 1, 0, 120)
+		} else if westLanes >= 4 {
+			wCenter := pt.X - ewStopLineDist
 			wInnerY := pt.Y + 4 + laneWidth*0.5
 			wOuterY := pt.Y + 4 + laneWidth*1.5
-			// Left-turn arrow (↰) on inner lane
 			drawGroundArrow(screen, cam, Vec2{X: wCenter - 45, Y: wInnerY}, 0, true)
 			drawGroundArrow(screen, cam, Vec2{X: wCenter - 110, Y: wInnerY}, 0, true)
-			// Straight arrow (↑) on outer lane
 			drawGroundArrow(screen, cam, Vec2{X: wCenter - 45, Y: wOuterY}, 0, false)
 			drawGroundArrow(screen, cam, Vec2{X: wCenter - 110, Y: wOuterY}, 0, false)
-			// Solid white dividing line separating left-turn lane and through lane
 			wLineY := pt.Y + 4 + laneWidth
 			drawSolidWhiteDivider(screen, cam, Vec2{X: wCenter - 60, Y: wLineY}, 1, 0, 120)
+		}
 
-			// East approach (Westbound, incoming lane on -Y)
-			eCenter := pt.X + stopLineDist
+		if eastLanes >= 6 {
+			// East approach: 6-lane express avenue
+			eCenter := pt.X + ewStopLineDist
+			eLane0Y := pt.Y - 4 - laneWidth*0.5
+			eLane1Y := pt.Y - 4 - laneWidth*1.5
+			eLane2Y := pt.Y - 4 - laneWidth*2.5
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 45, Y: eLane0Y}, math.Pi, true)
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 110, Y: eLane0Y}, math.Pi, true)
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 45, Y: eLane1Y}, math.Pi, false)
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 110, Y: eLane1Y}, math.Pi, false)
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 45, Y: eLane2Y}, math.Pi, false)
+			drawGroundArrow(screen, cam, Vec2{X: eCenter + 110, Y: eLane2Y}, math.Pi, false)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: eCenter + 60, Y: pt.Y - 4 - laneWidth*1.0}, -1, 0, 120)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: eCenter + 60, Y: pt.Y - 4 - laneWidth*2.0}, -1, 0, 120)
+		} else if eastLanes >= 4 {
+			eCenter := pt.X + ewStopLineDist
 			eInnerY := pt.Y - 4 - laneWidth*0.5
 			eOuterY := pt.Y - 4 - laneWidth*1.5
 			drawGroundArrow(screen, cam, Vec2{X: eCenter + 45, Y: eInnerY}, math.Pi, true)
@@ -1907,9 +2132,22 @@ func drawCrosswalks(screen *ebiten.Image, cam *Camera, w *World, laneWidth float
 			drawSolidWhiteDivider(screen, cam, Vec2{X: eCenter + 60, Y: eLineY}, -1, 0, 120)
 		}
 
-		if isNS4Lane {
-			// North approach (Southbound, incoming lane on -X)
-			nCenter := pt.Y - stopLineDist
+		if northLanes >= 6 {
+			// North approach: 6-lane express avenue
+			nCenter := pt.Y - nsStopLineDist
+			nLane0X := pt.X - 4 - laneWidth*0.5
+			nLane1X := pt.X - 4 - laneWidth*1.5
+			nLane2X := pt.X - 4 - laneWidth*2.5
+			drawGroundArrow(screen, cam, Vec2{X: nLane0X, Y: nCenter - 45}, math.Pi/2, true)
+			drawGroundArrow(screen, cam, Vec2{X: nLane0X, Y: nCenter - 110}, math.Pi/2, true)
+			drawGroundArrow(screen, cam, Vec2{X: nLane1X, Y: nCenter - 45}, math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: nLane1X, Y: nCenter - 110}, math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: nLane2X, Y: nCenter - 45}, math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: nLane2X, Y: nCenter - 110}, math.Pi/2, false)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: pt.X - 4 - laneWidth*1.0, Y: nCenter - 60}, 0, 1, 120)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: pt.X - 4 - laneWidth*2.0, Y: nCenter - 60}, 0, 1, 120)
+		} else if northLanes >= 4 {
+			nCenter := pt.Y - nsStopLineDist
 			nInnerX := pt.X - 4 - laneWidth*0.5
 			nOuterX := pt.X - 4 - laneWidth*1.5
 			drawGroundArrow(screen, cam, Vec2{X: nInnerX, Y: nCenter - 45}, math.Pi/2, true)
@@ -1918,9 +2156,24 @@ func drawCrosswalks(screen *ebiten.Image, cam *Camera, w *World, laneWidth float
 			drawGroundArrow(screen, cam, Vec2{X: nOuterX, Y: nCenter - 110}, math.Pi/2, false)
 			nLineX := pt.X - 4 - laneWidth
 			drawSolidWhiteDivider(screen, cam, Vec2{X: nLineX, Y: nCenter - 60}, 0, 1, 120)
+		}
 
-			// South approach (Northbound, incoming lane on +X)
-			sCenter := pt.Y + stopLineDist
+		if southLanes >= 6 {
+			// South approach: 6-lane express avenue
+			sCenter := pt.Y + nsStopLineDist
+			sLane0X := pt.X + 4 + laneWidth*0.5
+			sLane1X := pt.X + 4 + laneWidth*1.5
+			sLane2X := pt.X + 4 + laneWidth*2.5
+			drawGroundArrow(screen, cam, Vec2{X: sLane0X, Y: sCenter + 45}, -math.Pi/2, true)
+			drawGroundArrow(screen, cam, Vec2{X: sLane0X, Y: sCenter + 110}, -math.Pi/2, true)
+			drawGroundArrow(screen, cam, Vec2{X: sLane1X, Y: sCenter + 45}, -math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: sLane1X, Y: sCenter + 110}, -math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: sLane2X, Y: sCenter + 45}, -math.Pi/2, false)
+			drawGroundArrow(screen, cam, Vec2{X: sLane2X, Y: sCenter + 110}, -math.Pi/2, false)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: pt.X + 4 + laneWidth*1.0, Y: sCenter + 60}, 0, -1, 120)
+			drawSolidWhiteDivider(screen, cam, Vec2{X: pt.X + 4 + laneWidth*2.0, Y: sCenter + 60}, 0, -1, 120)
+		} else if southLanes >= 4 {
+			sCenter := pt.Y + nsStopLineDist
 			sInnerX := pt.X + 4 + laneWidth*0.5
 			sOuterX := pt.X + 4 + laneWidth*1.5
 			drawGroundArrow(screen, cam, Vec2{X: sInnerX, Y: sCenter + 45}, -math.Pi/2, true)
@@ -1933,10 +2186,12 @@ func drawCrosswalks(screen *ebiten.Image, cam *Camera, w *World, laneWidth float
 	}
 }
 
-func drawZebraBranch(screen *ebiten.Image, cam *Camera, center Vec2, horizontal bool, is4Lane bool, laneWidth float64) {
+func drawZebraBranch(screen *ebiten.Image, cam *Camera, center Vec2, horizontal bool, lanes int, laneWidth float64) {
 	numStripes := 6
 	step := 15.0
-	if is4Lane {
+	if lanes >= 6 {
+		numStripes = 18
+	} else if lanes >= 4 {
 		numStripes = 12
 	}
 	for i := -numStripes / 2; i <= numStripes/2; i++ {

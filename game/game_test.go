@@ -87,7 +87,7 @@ func TestTrafficLights(t *testing.T) {
 
 	// Test red light check on player bus
 	bus := NewBus(inter.Center.X, inter.Center.Y, math.Pi/2) // facing South (Red)
-	bus.Speed = 60                                          // moving
+	bus.Speed = 60                                           // moving
 	violated, _ := tls.CheckPlayerViolation(bus)
 	if !violated {
 		t.Fatalf("Expected violation when crossing red light at speed")
@@ -237,19 +237,9 @@ func TestSettingsAndCustomLaneWidth(t *testing.T) {
 		t.Fatalf("Expected traffic fines enabled by default")
 	}
 
-	// Test lane width levels
+	// Test lane width is fixed to 52.0 (宽敞市区 Comfortable Wide) as default
 	if settings.GetLaneWidth() != 52.0 {
-		t.Fatalf("Expected default lane width to be 52.0, got %f", settings.GetLaneWidth())
-	}
-
-	settings.LaneWidthLevel = 0
-	if settings.GetLaneWidth() != 42.0 {
-		t.Fatalf("Expected level 0 to be 42.0, got %f", settings.GetLaneWidth())
-	}
-
-	settings.LaneWidthLevel = 3
-	if settings.GetLaneWidth() != 78.0 {
-		t.Fatalf("Expected level 3 to be 78.0, got %f", settings.GetLaneWidth())
+		t.Fatalf("Expected default fixed lane width to be 52.0, got %f", settings.GetLaneWidth())
 	}
 
 	// Test World dynamic lane width update
@@ -300,8 +290,9 @@ func TestGetRoadPathBetweenStops(t *testing.T) {
 			}
 		}
 
-		// At least one dimension should be zero or negligible along orthogonal grid (outside roundabouts)
-		if !isRoundaboutSeg && dx > 1.0 && dy > 1.0 {
+		// Segments along road grid should be orthogonal or gentle lane-change tapers (outside roundabouts)
+		isLaneTaper := (dx > 1.0 && dy > 1.0 && (dx <= 120.0 || dy <= 120.0))
+		if !isRoundaboutSeg && !isLaneTaper && dx > 1.0 && dy > 1.0 {
 			t.Errorf("Path segment from %v to %v is diagonal, expected orthogonal grid line", pA, pB)
 		}
 
@@ -498,7 +489,8 @@ func TestSkipStopLogic(t *testing.T) {
 	g.stopBellRung = false
 	g.passengersAlighting = 0
 
-	canSkip := targetStop.WaitingPassengers == 0 && !g.stopBellRung
+	isOccupied := g.IsStopOccupiedByOtherVehicle(targetStop)
+	canSkip := !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
 	if !canSkip {
 		t.Fatalf("Expected canSkip to be true when station is empty and no bell rung")
 	}
@@ -511,18 +503,43 @@ func TestSkipStopLogic(t *testing.T) {
 		t.Fatalf("Expected target stop to advance after skip stop")
 	}
 
-	// 2. When station has waiting passengers: CANNOT skip
+	// 2. When station has waiting passengers and is NOT occupied: CANNOT skip
 	targetStop.WaitingPassengers = 5
 	g.stopBellRung = false
-	if targetStop.WaitingPassengers == 0 && !g.stopBellRung {
-		t.Fatalf("Should not allow skip when waiting passengers > 0")
+	isOccupied = false
+	canSkip = !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+	if canSkip {
+		t.Fatalf("Should not allow skip when waiting passengers > 0 and station is not occupied")
 	}
 
-	// 3. When passenger rings stop bell: CANNOT skip even if station is empty
-	targetStop.WaitingPassengers = 0
+	// 3. When station has waiting passengers BUT is OCCUPIED by another bus, AND no stop bell rung: CAN SKIP!
+	// (当前方车站有车在靠站的时候，且车上无人下车，可直接飞站)
+	targetStop.WaitingPassengers = 5
+	g.stopBellRung = false
+	isOccupied = true
+	canSkip = !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+	if !canSkip {
+		t.Fatalf("Should allow skip when station is occupied by another vehicle and no stop bell rung on our bus")
+	}
+
+	// 4. When station is OCCUPIED, but our bus has passengers alighting (bell rung): CANNOT skip!
+	// (有乘客按铃下车，必须进站停靠下客)
+	targetStop.WaitingPassengers = 5
 	g.stopBellRung = true
 	g.passengersAlighting = 2
-	if targetStop.WaitingPassengers == 0 && !g.stopBellRung {
+	isOccupied = true
+	canSkip = !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+	if canSkip {
+		t.Fatalf("Should not allow skip when stop bell is rung, even if station is occupied")
+	}
+
+	// 5. When passenger rings stop bell even if station is empty: CANNOT skip
+	targetStop.WaitingPassengers = 0
+	g.stopBellRung = true
+	g.passengersAlighting = 1
+	isOccupied = false
+	canSkip = !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+	if canSkip {
 		t.Fatalf("Should not allow skip when stop bell is rung")
 	}
 }
@@ -683,16 +700,20 @@ func TestInitialCarSpawnsClearOfIntersectionsAndRoadCenter(t *testing.T) {
 		t.Fatalf("Expected initialized cars")
 	}
 
-	interCenters := []Vec2{
+	interCenters := make([]Vec2, 25)
+	rawInters := []Vec2{
 		{X: -2600, Y: -1200}, {X: -1300, Y: -1200}, {X: 0, Y: -1200}, {X: 1300, Y: -1200}, {X: 2600, Y: -1200},
 		{X: -2600, Y: -600}, {X: -1300, Y: -600}, {X: 0, Y: -600}, {X: 1300, Y: -600}, {X: 2600, Y: -600},
 		{X: -2600, Y: 0}, {X: -1300, Y: 0}, {X: 0, Y: 0}, {X: 1300, Y: 0}, {X: 2600, Y: 0},
 		{X: -2600, Y: 600}, {X: -1300, Y: 600}, {X: 0, Y: 600}, {X: 1300, Y: 600}, {X: 2600, Y: 600},
 		{X: -2600, Y: 1200}, {X: -1300, Y: 1200}, {X: 0, Y: 1200}, {X: 1300, Y: 1200}, {X: 2600, Y: 1200},
 	}
+	for idx, ic := range rawInters {
+		interCenters[idx] = ic.Mul(MapGridScale)
+	}
 
 	// Central Terminal bay position
-	centralTerminal := Vec2{X: -650, Y: 0}
+	centralTerminal := Vec2{X: -650 * MapGridScale, Y: 0}
 
 	for i, car := range tm.Cars {
 		// Verify no car spawns inside or within 220px of ANY intersection center
@@ -770,7 +791,7 @@ func TestAICarStoppingBufferClearOfZebraCrossing(t *testing.T) {
 	}
 	tls := &TrafficLightSystem{Intersections: []*TrafficIntersection{inter}}
 	laneW := 42.0
-	stopLineDist := laneW*1.6 + 18.0 // 85.2
+	stopLineDist := laneW*1.6 + 18.0     // 85.2
 	crosswalkDist := stopLineDist - 25.0 // 60.2
 
 	// AI Car sedan length = 46, halfLen = 23.
@@ -818,22 +839,23 @@ func TestEnlargedIntersectionTurningClearance(t *testing.T) {
 	world := NewWorld(52.0)
 	laneW := 52.0
 
-	// Smallest 2-lane intersection: X = -1300, Y = -600 (West Park Blvd & North 2nd St)
-	// Right turn corner apron: X = -1355, Y = -655 (dist to center = sqrt(55^2+55^2) = 77.8px)
-	cornerPos := Vec2{X: -1355, Y: -655}
+	// Smallest 2-lane intersection: X = -1300 * MapGridScale, Y = -600 * MapGridScale
+	icX := -1300.0 * MapGridScale
+	icY := -600.0 * MapGridScale
+	cornerPos := Vec2{X: icX - 55.0, Y: icY - 55.0}
 	res := world.CheckBoundaries(cornerPos, 18.0, laneW)
 	if res.Zone != ZoneRoad {
 		t.Fatalf("Expected enlarged intersection corner to be ZoneRoad for comfortable turning, got %v", res.Zone)
 	}
 
 	// Wide turning trajectory (dist = 120px and 160px from center) must also remain safely inside ZoneRoad
-	wideTurnPos := Vec2{X: -1300 + 85.0, Y: -600 + 85.0} // dist ~120px
+	wideTurnPos := Vec2{X: icX + 85.0, Y: icY + 85.0} // dist ~120px
 	resWide := world.CheckBoundaries(wideTurnPos, 18.0, laneW)
 	if resWide.Zone != ZoneRoad {
 		t.Fatalf("Expected wide turn trajectory at intersection to be ZoneRoad, got %v", resWide.Zone)
 	}
 
-	extraWideTurnPos := Vec2{X: -1300 + 115.0, Y: -600 + 115.0} // dist ~162px
+	extraWideTurnPos := Vec2{X: icX + 115.0, Y: icY + 115.0} // dist ~162px
 	resExtraWide := world.CheckBoundaries(extraWideTurnPos, 18.0, laneW)
 	if resExtraWide.Zone != ZoneRoad {
 		t.Fatalf("Expected extra wide turn trajectory at intersection to be ZoneRoad, got %v", resExtraWide.Zone)
@@ -1054,10 +1076,10 @@ func TestRoadCameraWrongWayViolations(t *testing.T) {
 		t.Fatalf("Expected surveillance cameras on straight roads")
 	}
 
-	// 1. Camera on Central Boulevard East (X = 1950, Y = 0, EW road)
+	// 1. Camera on Central Boulevard East (X = 1950 * MapGridScale, Y = 0, EW road)
 	// Normal traffic on South side (Y = 30) flows EAST (heading = 0)
 	// Bus driving WEST (heading = Pi) on the South side is WRONG-WAY (逆行)!
-	busWrongWay := NewBus(1950, 30.0, math.Pi) // Facing West on South side
+	busWrongWay := NewBus(1950*MapGridScale, 30.0, math.Pi) // Facing West on South side
 	busWrongWay.Speed = 35.0
 
 	violated, notice := tls.CheckRoadCameraViolation(busWrongWay)
@@ -1069,7 +1091,7 @@ func TestRoadCameraWrongWayViolations(t *testing.T) {
 	}
 
 	// 2. Normal lawful driving on the same road section (Facing East on South side)
-	busLegal := NewBus(-1950, 30.0, 0) // Facing East on South side near Camera 1
+	busLegal := NewBus(-1950*MapGridScale, 30.0, 0) // Facing East on South side near Camera 1
 	busLegal.Speed = 35.0
 	vLegal, _ := tls.CheckRoadCameraViolation(busLegal)
 	if vLegal {
@@ -1118,7 +1140,7 @@ func TestAIVehicleLaneComplianceAndTurnExecution(t *testing.T) {
 	if car.IsEW {
 		t.Fatalf("AI Car in left-turn lane must turn onto cross street (IsEW=false)")
 	}
-	if math.Abs(NormalizeAngle(car.Heading - (-math.Pi/2))) > 0.1 {
+	if math.Abs(NormalizeAngle(car.Heading-(-math.Pi/2))) > 0.1 {
 		t.Fatalf("AI Car must turn left towards North (-Pi/2), got heading: %f", car.Heading)
 	}
 	if car.LaneIndex != 1 {
@@ -1992,36 +2014,37 @@ func TestSingleLaneRoadPermissiveTurnsNoLaneViolation(t *testing.T) {
 	tls := NewTrafficLightSystem()
 	laneW := 42.0
 
-	// Find intersection at (1300, 0)
+	// Find intersection at (1300 * MapGridScale, 0)
+	itX := 1300.0 * MapGridScale
 	var inter *TrafficIntersection
 	for _, it := range tls.Intersections {
-		if math.Abs(it.Center.X-1300) < 5.0 && math.Abs(it.Center.Y) < 5.0 {
+		if math.Abs(it.Center.X-itX) < 5.0 && math.Abs(it.Center.Y) < 5.0 {
 			inter = it
 			break
 		}
 	}
 	if inter == nil {
-		t.Fatalf("Intersection at (1300, 0) not found")
+		t.Fatalf("Intersection at (%.0f, 0) not found", itX)
 	}
 
 	// Set NS phase to Green
 	inter.Phase = PhaseNSGreen
 	inter.Timer = 1.0
 
-	// 1. Permissive Left Turn on Green from single-lane street (X = 1300, Northbound towards -Pi/2)
+	// 1. Permissive Left Turn on Green from single-lane street (X = itX, Northbound towards -Pi/2)
 	// Turns LEFT onto Westbound Y = 0 (Heading = Pi)
-	busLeft := NewBus(1300, 110.0, -math.Pi/2)
+	busLeft := NewBus(itX, 110.0, -math.Pi/2)
 	busLeft.Speed = 30.0
 	busLeft.SteeringAngle = -0.05 // steering left
 
 	// Entry
 	tls.CheckPlayerViolation(busLeft, laneW)
 	// Inside turning left
-	busLeft.Pos = Vec2{X: 1290.0, Y: 10.0}
+	busLeft.Pos = Vec2{X: itX - 10.0, Y: 10.0}
 	busLeft.Heading = -3 * math.Pi / 4
 	tls.CheckPlayerViolation(busLeft, laneW)
-	// Exit onto Westbound avenue (Heading = Pi, X = 1210 < 1300 - stopLineDist)
-	busLeft.Pos = Vec2{X: 1210.0, Y: -21.0}
+	// Exit onto Westbound avenue (Heading = Pi, X = itX - 90 < itX - stopLineDist)
+	busLeft.Pos = Vec2{X: itX - 90.0, Y: -21.0}
 	busLeft.Heading = math.Pi
 	violated, notice := tls.CheckPlayerViolation(busLeft, laneW)
 	if violated {
@@ -2085,13 +2108,13 @@ func TestBlockWidthExtendedAndBusStopsDistancedFromIntersections(t *testing.T) {
 	}
 	foundInter := false
 	for _, it := range tls.Intersections {
-		if it.Center.X == 2600 && it.Center.Y == 0 {
+		if math.Abs(it.Center.X-2600*MapGridScale) < 5.0 && math.Abs(it.Center.Y) < 5.0 {
 			foundInter = true
 			break
 		}
 	}
 	if !foundInter {
-		t.Fatalf("Expected outer boulevard intersection at X=2600, Y=0")
+		t.Fatalf("Expected outer boulevard intersection at X=%.0f, Y=0", 2600*MapGridScale)
 	}
 
 	// 2. Verify all bus stops are located away from intersections
@@ -2443,7 +2466,7 @@ func TestFiveDistinctCityMapsAndMainMenu(t *testing.T) {
 
 	// 1. Verify 5 completely distinct maps with unique road topologies, stops, and geography
 	type mapSpec struct {
-		theme       MapTheme
+		theme            MapTheme
 		expectedMinRoads int
 		expectedMinStops int
 		expectedBridges  int
@@ -2495,13 +2518,27 @@ func TestFiveDistinctCityMapsAndMainMenu(t *testing.T) {
 	for _, br := range wTwin.Bridges {
 		if br.IsOverpass && br.Style() == BridgeStyleOverpass {
 			foundOverpass = true
-			if br.Length < 300 || br.Width < 100 {
-				t.Fatalf("Overpass dimensions too small: length %f, width %f", br.Length, br.Width)
+			if br.Length < 300 || br.Width < 336 {
+				t.Fatalf("Overpass dimensions too small to cover 6-lane highway: length %f, width %f", br.Length, br.Width)
 			}
 		}
 	}
 	if !foundOverpass {
 		t.Fatal("Map 5 must include a grade-separated highway overpass viaduct")
+	}
+	// Verify that the overpass at (0, 0) is recognized and does not generate an at-grade intersection
+	if !wTwin.IsOverpassAt(Vec2{X: 0, Y: 0}) {
+		t.Fatal("Expected IsOverpassAt(0, 0) to be true for Map 5")
+	}
+	for _, ipt := range wTwin.Intersections {
+		if ipt.Distance(Vec2{X: 0, Y: 0}) < 10 {
+			t.Fatalf("Map 5 must not generate an at-grade intersection on top of the overpass at (0, 0)")
+		}
+	}
+	for _, riv := range wTwin.Rivers {
+		if math.Abs(riv.Y) < 10 {
+			t.Fatalf("Map 5 must not have a horizontal river conflict at Y=0")
+		}
 	}
 
 	// 3. Main Menu System State Flow
@@ -3065,10 +3102,10 @@ func TestNavigationToNextStopOnAllMaps(t *testing.T) {
 						p2 := path[i+1]
 						// Crossing river Y=0
 						if (p1.Y < -50 && p2.Y > 50) || (p1.Y > 50 && p2.Y < -50) {
-							// Must be along one of the two bridge X coordinates (-1300 or 1300)
+							// Must be along one of the two bridge X coordinates (-1300*MapGridScale or 1300*MapGridScale)
 							midX := (p1.X + p2.X) * 0.5
-							isBridge1 := math.Abs(midX - (-1300)) < 90
-							isBridge2 := math.Abs(midX - 1300) < 90
+							isBridge1 := math.Abs(midX-(-1300*MapGridScale)) < 180
+							isBridge2 := math.Abs(midX-1300*MapGridScale) < 180
 							if !isBridge1 && !isBridge2 {
 								t.Fatalf("[%s] Path crossed the river without using a bridge: from (%.1f, %.1f) to (%.1f, %.1f) at X=%.1f",
 									theme.DisplayName(), p1.X, p1.Y, p2.X, p2.Y, midX)
@@ -3077,20 +3114,20 @@ func TestNavigationToNextStopOnAllMaps(t *testing.T) {
 					}
 				}
 
-				// 4. In Coastal Bay, verify path does NOT jump across the open bay (between mainland X <= 0 and harbor X >= 1800)
+				// 4. In Coastal Bay, verify path does NOT jump across the open bay (between mainland X <= 0 and harbor X >= 1800*MapGridScale)
 				if theme == MapThemeCoastalBay {
 					for i := 0; i < len(path)-1; i++ {
 						p1 := path[i]
 						p2 := path[i+1]
-						// Crossing open water between mainland (X <= 150) and harbor (X >= 1750)
+						// Crossing open water between mainland and offshore harbor
 						if math.Abs(p1.Y-p2.Y) < 10 {
 							minX := math.Min(p1.X, p2.X)
 							maxX := math.Max(p1.X, p2.X)
-							if minX < 1600 && maxX > 250 && (maxX-minX) > 100 {
-								// Any segment traversing this open bay must be Causeway Bridge (Y=0) or South Cape Boardwalk (Y=1200)
+							if minX < 1600*MapGridScale && maxX > 250*MapGridScale && (maxX-minX) > 100 {
+								// Any segment traversing this open bay must be Causeway Bridge (Y=0) or South Cape Boardwalk (Y=1200*MapGridScale)
 								y := (p1.Y + p2.Y) * 0.5
-								isCauseway := math.Abs(y) < 90
-								isSouthCape := math.Abs(y-1200) < 90
+								isCauseway := math.Abs(y) < 140
+								isSouthCape := math.Abs(y-1200*MapGridScale) < 140
 								if !isCauseway && !isSouthCape {
 									t.Fatalf("[%s] Path traversed offshore open water without a bridge/causeway: (%.1f, %.1f) to (%.1f, %.1f)",
 										theme.DisplayName(), p1.X, p1.Y, p2.X, p2.Y)
@@ -3199,43 +3236,43 @@ func TestTrafficAICirculatesRoundaboutWithoutCrossingCenterIsland(t *testing.T) 
 
 	// Test approaches from East, West, North, South
 	approaches := []struct {
-		name        string
-		startPos    Vec2
-		heading     float64
-		isEW        bool
-		roadCenter  float64
+		name         string
+		startPos     Vec2
+		heading      float64
+		isEW         bool
+		roadCenter   float64
 		expectedExit float64
 	}{
 		{
-			name:        "Eastbound (from West)",
-			startPos:    Vec2{X: center.X - 350, Y: center.Y + laneW*0.75},
-			heading:     0,
-			isEW:        true,
-			roadCenter:  center.Y,
+			name:         "Eastbound (from West)",
+			startPos:     Vec2{X: center.X - 350, Y: center.Y + laneW*0.75},
+			heading:      0,
+			isEW:         true,
+			roadCenter:   center.Y,
 			expectedExit: 0,
 		},
 		{
-			name:        "Westbound (from East)",
-			startPos:    Vec2{X: center.X + 350, Y: center.Y - laneW*0.75},
-			heading:     math.Pi,
-			isEW:        true,
-			roadCenter:  center.Y,
+			name:         "Westbound (from East)",
+			startPos:     Vec2{X: center.X + 350, Y: center.Y - laneW*0.75},
+			heading:      math.Pi,
+			isEW:         true,
+			roadCenter:   center.Y,
 			expectedExit: math.Pi,
 		},
 		{
-			name:        "Southbound (from North)",
-			startPos:    Vec2{X: center.X + laneW*0.75, Y: center.Y - 350},
-			heading:     math.Pi / 2,
-			isEW:        false,
-			roadCenter:  center.X,
+			name:         "Southbound (from North)",
+			startPos:     Vec2{X: center.X + laneW*0.75, Y: center.Y - 350},
+			heading:      math.Pi / 2,
+			isEW:         false,
+			roadCenter:   center.X,
 			expectedExit: math.Pi / 2,
 		},
 		{
-			name:        "Northbound (from South)",
-			startPos:    Vec2{X: center.X - laneW*0.75, Y: center.Y + 350},
-			heading:     -math.Pi / 2,
-			isEW:        false,
-			roadCenter:  center.X,
+			name:         "Northbound (from South)",
+			startPos:     Vec2{X: center.X - laneW*0.75, Y: center.Y + 350},
+			heading:      -math.Pi / 2,
+			isEW:         false,
+			roadCenter:   center.X,
 			expectedExit: -math.Pi / 2,
 		},
 	}
@@ -3447,12 +3484,14 @@ func TestBusStopApproachAndBayBoundaryClearance(t *testing.T) {
 		t.Fatalf("Coastal Bay stop #10 not found")
 	}
 
-	// Verify coordinates in the user's white-circled screenshot area (approaching bay at X=-1880, Y=420)
+	// Verify approach coordinates along stop10 travel heading
+	cosH := math.Cos(stop10.Heading)
+	sinH := math.Sin(stop10.Heading)
 	whiteBoxCoords := []Vec2{
-		{X: -1880, Y: 420}, // Direct white-circled area before the bus stop
-		{X: -1875, Y: 390}, // Mid-approach taper
-		{X: -1870, Y: 350}, // Pulling into yellow bay box
-		{X: -1865, Y: 300}, // Parked within yellow bay box
+		stop10.Pos.Add(Vec2{X: -cosH * 120, Y: -sinH * 120}),
+		stop10.Pos.Add(Vec2{X: -cosH * 70, Y: -sinH * 70}),
+		stop10.Pos.Add(Vec2{X: -cosH * 30, Y: -sinH * 30}),
+		stop10.Pos,
 	}
 	for _, pt := range whiteBoxCoords {
 		res := wc.CheckBoundaries(pt, 18.0, laneW)
@@ -3618,6 +3657,993 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 	}
 }
 
+func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
+	// 1. Two AI civilian cars jammed head-to-head
+	tm := &TrafficManager{
+		Cars: make([]*TrafficCar, 0),
+	}
+	car1 := &TrafficCar{
+		ID:          1,
+		Pos:         Vec2{X: 100, Y: 0},
+		Heading:     0,
+		Speed:       0,
+		TargetSpeed: 100,
+		Length:      46,
+		Width:       22,
+		RoadCenter:  0,
+		IsEW:        true,
+	}
+	car2 := &TrafficCar{
+		ID:          2,
+		Pos:         Vec2{X: 150, Y: 0},
+		Heading:     math.Pi,
+		Speed:       0,
+		TargetSpeed: 100,
+		Length:      46,
+		Width:       22,
+		RoadCenter:  0,
+		IsEW:        true,
+	}
+	tm.Cars = append(tm.Cars, car1, car2)
 
+	playerBus := NewBus(5000, 5000, 0) // Far away player bus
 
+	// Simulate 10 seconds of motionless deadlock (less than 38s traffic light cycle threshold)
+	dt := 0.5
+	for elapsed := 0.0; elapsed < 10.0; elapsed += dt {
+		tm.resolveDeadlockedCars(dt, playerBus, len(tm.Cars), 52.0, nil)
+	}
+
+	if len(tm.Cars) != 2 {
+		t.Fatalf("Expected 2 cars still present after only 10s deadlock, got %d", len(tm.Cars))
+	}
+	if car1.DeadlockTimer < 9.5 || car1.DeadlockTimer > 10.5 {
+		t.Fatalf("Expected car1 deadlock timer ~10s, got %f", car1.DeadlockTimer)
+	}
+
+	// Moving resets deadlock timer
+	car1.Speed = 50.0
+	tm.resolveDeadlockedCars(dt, playerBus, len(tm.Cars), 52.0, nil)
+	if car1.DeadlockTimer != 0 {
+		t.Fatalf("Expected moving car to reset deadlock timer to 0, got %f", car1.DeadlockTimer)
+	}
+	car1.Speed = 0
+
+	// Now simulate until deadlock timer exceeds DeadlockDurationThreshold (38.0s)
+	// (Simulate 39s more)
+	for elapsed := 0.0; elapsed < 39.0; elapsed += dt {
+		tm.resolveDeadlockedCars(dt, playerBus, len(tm.Cars), 52.0, nil)
+		if len(tm.Cars) < 2 {
+			break
+		}
+	}
+
+	if len(tm.Cars) != 1 {
+		t.Fatalf("Expected one car to directly disappear after > 38s deadlock, remaining: %d", len(tm.Cars))
+	}
+
+	// 2. Verify AI car stopped behind player bus NEVER despawns
+	soloCar := tm.Cars[0]
+	soloCar.Pos = Vec2{X: 100, Y: 0}
+	soloCar.Heading = 0
+	soloCar.Speed = 0
+	soloCar.DeadlockTimer = 0
+
+	// Place player bus right in front of soloCar
+	playerBus.Pos = Vec2{X: 150, Y: 0}
+	playerBus.Heading = 0
+	playerBus.Speed = 0
+
+	for elapsed := 0.0; elapsed < 45.0; elapsed += dt {
+		tm.resolveDeadlockedCars(dt, playerBus, len(tm.Cars), 52.0, nil)
+	}
+
+	if len(tm.Cars) != 1 {
+		t.Fatalf("Car should not disappear when stopped because of the player bus!")
+	}
+	if soloCar.DeadlockTimer != 0 {
+		t.Fatalf("Deadlock timer should remain 0 when blocked by player bus, got %f", soloCar.DeadlockTimer)
+	}
+
+	// 3. Two AI buses jammed head-to-head
+	w := NewWorld(52.0, MapThemeMetropolis)
+	abm := NewAIBusManager()
+	abm.SetLineCount(2, w, 52.0)
+
+	if len(abm.Buses) >= 2 {
+		bus1 := abm.Buses[0]
+		bus2 := abm.Buses[1]
+		bus1.Bus.Pos = Vec2{X: 200, Y: 0}
+		bus1.Bus.Heading = 0
+		bus1.Bus.Speed = 0
+		bus2.Bus.Pos = Vec2{X: 270, Y: 0}
+		bus2.Bus.Heading = math.Pi
+		bus2.Bus.Speed = 0
+
+		oldPos1 := bus1.Bus.Pos
+
+		// Simulate 40s (> DeadlockDurationThreshold)
+		for elapsed := 0.0; elapsed < 40.0; elapsed += dt {
+			abm.Update(dt, playerBus, w, nil, tm, 52.0, 2)
+		}
+
+		// At least one AI bus must have repositioned to its next route stop to clear the jam
+		if bus1.Bus.Pos == oldPos1 && bus2.Bus.Pos.Distance(oldPos1) < 100.0 {
+			t.Fatalf("Expected AI buses to resolve deadlock after > 38s by advancing stop")
+		}
+	}
+}
+
+func TestPassengerDestinationAssignment(t *testing.T) {
+	// 1. Metropolis closed loop: [0, 2, 10, 8, 0]
+	route := NewDefaultRoute()
+
+	// Stop 0 (Terminal at start of loop): candidates must strictly be [2, 10, 8], NOT 0
+	c0 := route.GetUpcomingCandidateStopIDs(0)
+	if len(c0) != 3 {
+		t.Fatalf("Expected 3 candidates for Stop 0, got %v", c0)
+	}
+	for _, id := range c0 {
+		if id == 0 {
+			t.Fatalf("Stop 0 must NEVER be a candidate destination for passengers boarding at Stop 0! Got %v", c0)
+		}
+	}
+
+	// Stop 2 (index 1): candidates must strictly be [10, 8, 0], NOT 2
+	c1 := route.GetUpcomingCandidateStopIDs(1)
+	if len(c1) != 3 {
+		t.Fatalf("Expected 3 candidates for Stop 2, got %v", c1)
+	}
+	for _, id := range c1 {
+		if id == 2 {
+			t.Fatalf("Stop 2 must NEVER be a candidate destination for passengers boarding at Stop 2! Got %v", c1)
+		}
+	}
+
+	// Stop 10 (index 2): candidates must be [8, 0]
+	c2 := route.GetUpcomingCandidateStopIDs(2)
+	if len(c2) != 2 || c2[0] != 8 || c2[1] != 0 {
+		t.Fatalf("Expected candidates [8, 0] for Stop 10, got %v", c2)
+	}
+
+	// Stop 8 (index 3): candidates must be [0]
+	c3 := route.GetUpcomingCandidateStopIDs(3)
+	if len(c3) != 1 || c3[0] != 0 {
+		t.Fatalf("Expected candidates [0] for Stop 8, got %v", c3)
+	}
+
+	// Stop 0 at terminus (index 4): candidates for next run must be [2, 10, 8], NOT 0
+	c4 := route.GetUpcomingCandidateStopIDs(4)
+	if len(c4) != 3 {
+		t.Fatalf("Expected 3 candidates for terminal boarding, got %v", c4)
+	}
+	for _, id := range c4 {
+		if id == 0 {
+			t.Fatalf("Stop 0 must NEVER be candidate destination for terminal boarding, got %v", c4)
+		}
+	}
+
+	// Also check GetUpcomingCandidateStopIDsForStop
+	cFor0 := route.GetUpcomingCandidateStopIDsForStop(0)
+	for _, id := range cFor0 {
+		if id == 0 {
+			t.Fatalf("GetUpcomingCandidateStopIDsForStop(0) must not contain 0, got %v", cFor0)
+		}
+	}
+}
+
+func TestPassengerBoardingAndAlighting(t *testing.T) {
+	bus := NewBus(0, 0, 0)
+	if bus.PassengerCount != 0 || len(bus.Passengers) != 0 {
+		t.Fatalf("New bus must have 0 passengers")
+	}
+
+	// Board 10 passengers with destinations in [2, 10, 8]
+	candidates := []int{2, 10, 8}
+	boarded := bus.BoardPassengers(10, candidates)
+	if boarded != 10 || bus.PassengerCount != 10 || len(bus.Passengers) != 10 {
+		t.Fatalf("Expected 10 boarded passengers, got %d (count=%d)", boarded, bus.PassengerCount)
+	}
+
+	// Verify all passengers have a valid destination in candidates
+	for _, p := range bus.Passengers {
+		if p.TargetStopID != 2 && p.TargetStopID != 10 && p.TargetStopID != 8 {
+			t.Fatalf("Invalid passenger destination: %d", p.TargetStopID)
+		}
+	}
+
+	// Alight passengers destined for Stop 2
+	expectedAlighting2 := bus.CountPassengersAlightingAt(2)
+	removed2 := bus.RemovePassengersAlightingAt(2)
+	if removed2 != expectedAlighting2 {
+		t.Fatalf("Removed count %d != counted alighting %d", removed2, expectedAlighting2)
+	}
+	if bus.PassengerCount != 10-removed2 || len(bus.Passengers) != 10-removed2 {
+		t.Fatalf("PassengerCount mismatch after alighting: %d vs %d", bus.PassengerCount, 10-removed2)
+	}
+	if bus.CountPassengersAlightingAt(2) != 0 {
+		t.Fatalf("Expected 0 passengers remaining for Stop 2")
+	}
+
+	// Clear passengers
+	remaining := bus.PassengerCount
+	cleared := bus.ClearPassengers()
+	if cleared != remaining || bus.PassengerCount != 0 || len(bus.Passengers) != 0 {
+		t.Fatalf("ClearPassengers failed: cleared %d, count %d", cleared, bus.PassengerCount)
+	}
+}
+
+func TestPassengerNoLoopingOverFullRoute(t *testing.T) {
+	// Full simulated loop test: ensure passengers get off at their target stops
+	// and NO passenger ever stays on the bus for a full loop!
+	game := NewGame(1280, 720)
+
+	// Ensure Metropolis map and standard loop [0, 2, 10, 8, 0]
+	game.SetMapTheme(MapThemeMetropolis)
+	route := game.Route
+	if len(route.StopIDs) < 2 || route.StopIDs[0] != route.StopIDs[len(route.StopIDs)-1] {
+		t.Fatalf("Expected closed loop route for Metropolis")
+	}
+
+	// Simulate 3 full trips
+	for trip := 0; trip < 3; trip++ {
+		for stopSeqIdx := 0; stopSeqIdx < len(route.StopIDs); stopSeqIdx++ {
+			currStopID := route.StopIDs[stopSeqIdx]
+			stop := game.World.Stops[currStopID]
+
+			// Position bus at this stop
+			game.Bus.Pos = stop.Pos
+			game.Bus.Heading = stop.Heading
+			game.Bus.DoorsOpen = true
+			game.boardedThisStop = false
+
+			// Ensure station has waiting passengers
+			stop.WaitingPassengers = 8
+
+			// Update driver mode to trigger passenger boarding/alighting
+			game.updateDriverMode(0.016)
+
+			// Invariant check: PassengerCount must always equal len(Passengers)
+			if game.Bus.PassengerCount != len(game.Bus.Passengers) {
+				t.Fatalf("Trip %d Stop %d: PassengerCount (%d) != len(Passengers) (%d)",
+					trip, currStopID, game.Bus.PassengerCount, len(game.Bus.Passengers))
+			}
+
+			// Invariant check: No passenger on board should have target == currStopID
+			// (because all passengers destined for currStopID must have alighted)
+			if game.Bus.CountPassengersAlightingAt(currStopID) > 0 {
+				t.Fatalf("Trip %d Stop %d: passengers still on board destined for this stop!", trip, currStopID)
+			}
+		}
+
+		// At the completion of the loop (Stop 0 terminus), all passengers must have alighted
+		// Any new passengers boarded at Stop 0 must strictly have destination in [2, 10, 8]
+		for _, p := range game.Bus.Passengers {
+			if p.TargetStopID == 0 {
+				t.Fatalf("Trip %d: Found passenger on board with TargetStopID == 0 right after departing terminal!", trip)
+			}
+		}
+	}
+}
+
+func TestAIBusDestinationBasedExchange(t *testing.T) {
+	world := NewWorld(52.0, MapThemeMetropolis)
+	abm := NewAIBusManager()
+	abm.SetLineCount(1, world, 52.0)
+
+	if len(abm.Buses) < 1 {
+		t.Fatalf("Expected at least 1 AI bus")
+	}
+
+	ab := abm.Buses[0]
+	// AI bus route is [0, 2, 10, 8, 0]
+	ab.Route.CurrentIndex = 0
+	targetStopID := ab.Route.GetCurrentTargetStopID() // Stop 0
+	st := world.Stops[targetStopID]
+	st.WaitingPassengers = 10
+
+	// Dock bus and open doors
+	ab.Bus.DoorsOpen = true
+	ab.LastExchangedStopID = -1
+
+	// Simulate exchange directly
+	candidates := ab.Route.GetUpcomingCandidateStopIDs(ab.Route.CurrentIndex)
+	if len(candidates) == 0 {
+		t.Fatalf("Expected candidates for AI bus")
+	}
+	for _, id := range candidates {
+		if id == targetStopID {
+			t.Fatalf("AI bus candidate should not include current stop ID %d", targetStopID)
+		}
+	}
+
+	boarded := ab.Bus.BoardPassengers(5, candidates)
+	if boarded != 5 || ab.Bus.PassengerCount != 5 {
+		t.Fatalf("Expected 5 boarded on AI bus, got %d", boarded)
+	}
+
+	// When docking at next stop, passengers targeting it alight
+	nextStopID := candidates[0]
+	countForNext := ab.Bus.CountPassengersAlightingAt(nextStopID)
+	removed := ab.Bus.RemovePassengersAlightingAt(nextStopID)
+	if removed != countForNext {
+		t.Fatalf("AI bus alighting count mismatch: %d vs %d", removed, countForNext)
+	}
+}
+
+func TestCleanStationName(t *testing.T) {
+	stop := &BusStop{
+		Name: "中央枢纽 (Central Terminal)",
+	}
+
+	CurrentLanguage = LanguageZH
+	if clean := stop.CleanName(); clean != "中央枢纽" {
+		t.Fatalf("Expected Chinese CleanName to be '中央枢纽', got %q", clean)
+	}
+
+	CurrentLanguage = LanguageEN
+	if clean := stop.CleanName(); clean != "Central Terminal" {
+		t.Fatalf("Expected English CleanName to be 'Central Terminal', got %q", clean)
+	}
+
+	// Reset language back to Chinese
+	CurrentLanguage = LanguageZH
+}
+
+func TestFormattedRouteLinesNoOverflow(t *testing.T) {
+	world := NewWorld(52.0, MapThemeMetropolis)
+
+	// 1. Default 5-stop route
+	route := NewDefaultRoute()
+	lines := route.GetFormattedRouteLines(world, 1100.0, 12.0)
+	if len(lines) == 0 {
+		t.Fatalf("Expected at least 1 formatted route line")
+	}
+	for i, l := range lines {
+		w, _ := MeasureText(l, 12.0)
+		if w > 1100.0 {
+			t.Fatalf("Line %d exceeds maxWidth 1100.0: w=%.1f text=%q", i, w, l)
+		}
+	}
+
+	// 2. Constrained width test: ensure wrapping onto multiple lines
+	narrowLines := route.GetFormattedRouteLines(world, 350.0, 12.0)
+	if len(narrowLines) < 2 {
+		t.Fatalf("Expected route to wrap onto multiple lines under 350px width, got %d lines: %v", len(narrowLines), narrowLines)
+	}
+	for i, l := range narrowLines {
+		w, _ := MeasureText(l, 12.0)
+		if w > 350.0 {
+			t.Fatalf("Narrow Line %d exceeds maxWidth 350.0: w=%.1f text=%q", i, w, l)
+		}
+	}
+
+	// 3. Extremely long route (30 stops): must wrap and truncate safely without overflowing maxWidth
+	longRoute := NewRoute()
+	for i := 0; i < 30; i++ {
+		longRoute.AddStop(i % len(world.Stops))
+	}
+	longLines := longRoute.GetFormattedRouteLines(world, 1000.0, 12.0)
+	if len(longLines) > 3 {
+		t.Fatalf("Expected at most 3 wrapped lines for long route, got %d", len(longLines))
+	}
+	for i, l := range longLines {
+		w, _ := MeasureText(l, 12.0)
+		if w > 1000.0 {
+			t.Fatalf("Long route Line %d exceeds maxWidth 1000.0: w=%.1f text=%q", i, w, l)
+		}
+	}
+}
+
+func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(MapThemeMetropolis)
+
+	laneW := g.Settings.GetLaneWidth()
+	g.Settings.AIBusCount = 2
+	g.AIBusMgr.BuildFleet(g.World, 2, laneW, g.Bus)
+
+	if len(g.AIBusMgr.Buses) != 2 {
+		t.Fatalf("Expected 2 AI buses, got %d", len(g.AIBusMgr.Buses))
+	}
+
+	// 1. Move player bus away and load passengers to simulate active driving
+	g.Bus.Pos = Vec2{X: 800, Y: 400}
+	g.Bus.Heading = 1.2
+	g.Bus.Speed = 160.0
+	g.Bus.DoorsOpen = false
+	g.Bus.BoardPassengers(5, []int{2, 10})
+	if g.Bus.PassengerCount != 5 {
+		t.Fatalf("Expected 5 passengers, got %d", g.Bus.PassengerCount)
+	}
+
+	// 2. Enter Plan Mode and exit WITHOUT modifying route: player vehicle must NOT reset
+	g.TogglePlanMode()
+	if !g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be true after TogglePlanMode")
+	}
+	g.TogglePlanMode()
+	if g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be false after TogglePlanMode")
+	}
+	if g.Bus.Pos.Distance(Vec2{X: 800, Y: 400}) > 1e-3 || g.Bus.Speed != 160.0 || g.Bus.PassengerCount != 5 {
+		t.Fatalf("Player vehicle state should not reset if route was not modified: pos=%+v speed=%f pax=%d",
+			g.Bus.Pos, g.Bus.Speed, g.Bus.PassengerCount)
+	}
+
+	// 3. Enter Plan Mode and REPLAN route to start at Stop 3 ([3, 7, 2, 3])
+	g.TogglePlanMode()
+	if !g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be true")
+	}
+	g.Route.Clear()
+	g.Route.AddStop(3)
+	g.Route.AddStop(7)
+	g.Route.AddStop(2)
+	g.Route.AddStop(3)
+	g.planModeRouteModified = true
+
+	// Exit Plan Mode: should trigger reset of player bus and AI fleet to first stop (Stop 3)
+	g.TogglePlanMode()
+	if g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be false after exiting plan mode")
+	}
+
+	stop3 := g.World.Stops[3]
+	if g.Bus.Pos.Distance(stop3.Pos) > 1e-3 {
+		t.Fatalf("Player bus position was not reset to first stop: expected %+v, got %+v", stop3.Pos, g.Bus.Pos)
+	}
+	if math.Abs(NormalizeAngle(g.Bus.Heading-stop3.Heading)) > 1e-4 {
+		t.Fatalf("Player bus heading was not reset: expected %f, got %f", stop3.Heading, g.Bus.Heading)
+	}
+	if g.Bus.Speed != 0 {
+		t.Fatalf("Player bus speed must be 0 after reset, got %f", g.Bus.Speed)
+	}
+	if g.Bus.PassengerCount != 0 {
+		t.Fatalf("Player bus passengers must be cleared for new route, got %d", g.Bus.PassengerCount)
+	}
+	if !g.Bus.DoorsOpen {
+		t.Fatal("Player bus doors should be open at initial station bay")
+	}
+	if g.Route.GetCurrentTargetStopID() != 3 {
+		t.Fatalf("Active target stop must be first stop 3, got %d", g.Route.GetCurrentTargetStopID())
+	}
+
+	// Verify AI buses reset and queued behind player bus at Stop 3
+	if len(g.AIBusMgr.Buses) != 2 {
+		t.Fatalf("Expected 2 AI buses, got %d", len(g.AIBusMgr.Buses))
+	}
+	cosH := math.Cos(stop3.Heading)
+	sinH := math.Sin(stop3.Heading)
+	backVec := Vec2{X: -cosH, Y: -sinH}
+
+	for i, ai := range g.AIBusMgr.Buses {
+		if math.Abs(NormalizeAngle(ai.Bus.Heading-stop3.Heading)) > 1e-4 {
+			t.Fatalf("AI bus %d heading mismatch: expected %f, got %f", i, stop3.Heading, ai.Bus.Heading)
+		}
+		if ai.Bus.Speed != 0 {
+			t.Fatalf("AI bus %d speed must be 0, got %f", i, ai.Bus.Speed)
+		}
+		expectedPos := stop3.Pos.Add(backVec.Mul(float64(i+1) * 120.0))
+		if ai.Bus.Pos.Distance(expectedPos) > 1.0 {
+			t.Fatalf("AI bus %d position mismatch: expected %+v, got %+v", i, expectedPos, ai.Bus.Pos)
+		}
+		if len(ai.Route.StopIDs) != 4 || ai.Route.StopIDs[0] != 3 || ai.Route.StopIDs[1] != 7 {
+			t.Fatalf("AI bus %d route was not updated to replanned route: %v", i, ai.Route.StopIDs)
+		}
+		if ai.Route.CurrentIndex != 0 {
+			t.Fatalf("AI bus %d CurrentIndex must be 0, got %d", i, ai.Route.CurrentIndex)
+		}
+	}
+
+	// 4. Test empty route validation: cannot exit plan mode if route is empty
+	g.TogglePlanMode()
+	g.Route.Clear()
+	g.TogglePlanMode()
+	if !g.IsPlanMode {
+		t.Fatal("Game should not exit Plan Mode when route is empty")
+	}
+
+	// 5. Test programmatic ReplanRoute helper
+	g.ReplanRoute([]int{5, 9, 5})
+	stop5 := g.World.Stops[5]
+	if g.Bus.Pos.Distance(stop5.Pos) > 1e-3 {
+		t.Fatalf("ReplanRoute failed to reset player bus to Stop 5: expected %+v, got %+v", stop5.Pos, g.Bus.Pos)
+	}
+	if len(g.AIBusMgr.Buses) > 0 {
+		expectedAI0Pos := stop5.Pos.Add(Vec2{X: -math.Cos(stop5.Heading), Y: -math.Sin(stop5.Heading)}.Mul(120.0))
+		if g.AIBusMgr.Buses[0].Bus.Pos.Distance(expectedAI0Pos) > 1.0 {
+			t.Fatalf("ReplanRoute failed to reset AI bus behind Stop 5: expected %+v, got %+v",
+				expectedAI0Pos, g.AIBusMgr.Buses[0].Bus.Pos)
+		}
+	}
+
+	// 6. Test HandleModeBtnClick in HUD
+	if !g.HUD.HandleModeBtnClick(Vec2{X: 100, Y: 25}) {
+		t.Fatal("Expected HandleModeBtnClick to return true for badge coordinates (100, 25)")
+	}
+	if g.HUD.HandleModeBtnClick(Vec2{X: 500, Y: 25}) {
+		t.Fatal("Expected HandleModeBtnClick to return false for outside coordinates (500, 25)")
+	}
+}
+
+// TestSingleLaneMeetsThreeLaneIntersectionStopLinePosition verifies that when a single-lane road
+// (1 lane each way = 2-lane road) meets a 3-lane road (3 lanes each way = 6-lane road),
+// the stop line and traffic lights of the single-lane road are positioned outside the 6-lane road
+// rather than in the middle of the road.
+func TestSingleLaneMeetsThreeLaneIntersectionStopLinePosition(t *testing.T) {
+	laneWidth := 52.0
+	// 6-lane East-West road meets 2-lane North-South road at (0, 0)
+	inter := &TrafficIntersection{
+		ID:              0,
+		Center:          Vec2{X: 0, Y: 0},
+		ApproachHasRoad: [4]bool{true, true, true, true},
+		ApproachLanes:   [4]int{6, 6, 2, 2},
+		ApproachIs4Lane: [4]bool{true, true, false, false},
+		Phase:           PhaseEWGreen,
+	}
+
+	ewStop, ewCross, nsStop, nsCross := inter.GetApproachDimensions(laneWidth)
+	_ = ewCross
+
+	// EW 6-lane road has half-width 3 * 52 + 12 = 168.0
+	ewRoadHalfWidth := laneWidth*3.0 + 12.0
+	// NS 2-lane road has half-width 1 * 52 + 6 = 58.0
+	nsRoadHalfWidth := laneWidth*1.0 + 6.0
+
+	// The NS approaches (single lane in each direction) must have their stop line and crosswalk
+	// placed completely outside the EW 6-lane road (i.e. > 168.0px from intersection center)
+	if nsStop <= ewRoadHalfWidth {
+		t.Fatalf("NS approach stop line (%.2f) must be outside the EW 6-lane roadway (half-width %.2f), not in the middle of the road", nsStop, ewRoadHalfWidth)
+	}
+	if nsCross <= ewRoadHalfWidth {
+		t.Fatalf("NS approach crosswalk (%.2f) must be outside the EW 6-lane roadway (half-width %.2f)", nsCross, ewRoadHalfWidth)
+	}
+	// Stop line must be behind crosswalk
+	if nsStop <= nsCross {
+		t.Fatalf("NS stop line (%.2f) must be behind crosswalk (%.2f)", nsStop, nsCross)
+	}
+
+	// EW approach (the 6-lane road crossing the 2-lane road) stop line must be outside the NS 2-lane road (58.0px)
+	if ewStop <= nsRoadHalfWidth {
+		t.Fatalf("EW approach stop line (%.2f) must be outside NS 2-lane roadway (half-width %.2f)", ewStop, nsRoadHalfWidth)
+	}
+
+	// Check heading-specific stop line calculation
+	northboundHeading := -math.Pi / 2 // Heading North (South approach)
+	nsStopForHeading := inter.GetStopLineDistForHeading(northboundHeading, laneWidth)
+	if nsStopForHeading != nsStop {
+		t.Fatalf("Expected northbound heading to use NS stop line %.2f, got %.2f", nsStop, nsStopForHeading)
+	}
+
+	eastboundHeading := 0.0 // Heading East (West approach)
+	ewStopForHeading := inter.GetStopLineDistForHeading(eastboundHeading, laneWidth)
+	if ewStopForHeading != ewStop {
+		t.Fatalf("Expected eastbound heading to use EW stop line %.2f, got %.2f", ewStop, ewStopForHeading)
+	}
+
+	// Now verify with real CoastalBay world map at intersection (-1950, 0)
+	w := NewWorld(laneWidth, MapThemeCoastalBay)
+	tls := NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+
+	var bayInter *TrafficIntersection
+	for _, it := range tls.Intersections {
+		if math.Abs(it.Center.X-(-1950.0)) < 10.0 && math.Abs(it.Center.Y-0.0) < 10.0 {
+			bayInter = it
+			break
+		}
+	}
+	if bayInter == nil {
+		t.Fatal("Coastal Bay intersection at (-1950, 0) not found")
+	}
+
+	bEWStop, bEWCross, bNSStop, bNSCross := bayInter.GetApproachDimensions(laneWidth)
+	if bNSStop <= 168.0 {
+		t.Fatalf("Coastal Bay intersection (-1950, 0) NS stop line (%.2f) is inside the 6-lane avenue (half-width 168.0)!", bNSStop)
+	}
+	if bNSCross <= 168.0 {
+		t.Fatalf("Coastal Bay intersection (-1950, 0) NS crosswalk (%.2f) is inside the 6-lane avenue (half-width 168.0)!", bNSCross)
+	}
+
+	// Verify vehicle stopping on red:
+	// A bus traveling North towards the intersection on the 2-lane road
+	bayInter.Phase = PhaseEWGreen // NS is RED!
+	busBumperPos := Vec2{X: -1950.0 + 26.0, Y: 250.0} // approaching from South, bumper at Y = 250
+	shouldStop, distToLine := tls.CheckStopForVehicle(busBumperPos, -math.Pi/2, 100.0, laneWidth)
+	if !shouldStop {
+		t.Fatal("Bus approaching red light on 2-lane road must stop")
+	}
+	// Distance to line should be relative to bNSStop (e.g. 250 - 211 = 39.0)
+	expectedDist := 250.0 - bNSStop
+	if math.Abs(distToLine-expectedDist) > 1.0 {
+		t.Fatalf("Expected distance to stop line around %.2f, got %.2f", expectedDist, distToLine)
+	}
+	_ = bEWStop
+	_ = bEWCross
+}
+
+// TestCoastalBaySouthCapeCausewayNoShoulderDriving verifies that along the South Cape Causeway
+// (南湾海角栈道, 2 lanes) leading to Stop 11 (Cape Lighthouse), the path waypoints
+// are strictly centered in the travel lane (ZoneRoad) and never stray onto the roadside shoulder (ZoneShoulder).
+func TestCoastalBaySouthCapeCausewayNoShoulderDriving(t *testing.T) {
+	laneW := 52.0
+	w := NewWorld(laneW, MapThemeCoastalBay)
+
+	stop11 := w.Stops[11]
+	if stop11.ID != 11 {
+		t.Fatalf("Expected stop 11, got %d", stop11.ID)
+	}
+
+	// Verify all paths leading to Stop 11 have 0 shoulder points
+	for i, sFrom := range w.Stops {
+		if i == 11 {
+			continue
+		}
+		path := GetRoadPathBetweenStopsInWorld(w, sFrom, stop11, laneW)
+		for idx, pt := range path {
+			if idx == 0 || idx == len(path)-1 {
+				continue // skip starting / ending stop bay
+			}
+			bRes := w.CheckBoundaries(pt, 18.0, laneW)
+			if bRes.Zone != ZoneRoad {
+				t.Fatalf("From Stop %d (%s) to Stop 11: pt[%d]=(%.1f, %.1f) is in %v, not ZoneRoad! (Bus driving on shoulder)",
+					i, sFrom.Name, idx, pt.X, pt.Y, bRes.Zone)
+			}
+		}
+	}
+
+	// Verify all paths leaving Stop 11 have 0 shoulder points
+	for j, sTo := range w.Stops {
+		if j == 11 {
+			continue
+		}
+		path := GetRoadPathBetweenStopsInWorld(w, stop11, sTo, laneW)
+		for idx, pt := range path {
+			if idx == 0 || idx == len(path)-1 {
+				continue
+			}
+			bRes := w.CheckBoundaries(pt, 18.0, laneW)
+			if bRes.Zone != ZoneRoad {
+				t.Fatalf("From Stop 11 to Stop %d (%s): pt[%d]=(%.1f, %.1f) is in %v, not ZoneRoad! (Bus driving on shoulder)",
+					j, sTo.Name, idx, pt.X, pt.Y, bRes.Zone)
+			}
+		}
+	}
+}
+
+// TestSixLaneCrossingFourLaneStopLineBehindCrosswalk verifies that at an intersection where a 6-lane road
+// and a 4-lane road meet, the stop line on all approaches is positioned strictly behind the zebra crosswalk
+// (further from the intersection center) and outside the crossing road corridor, preventing vehicles from
+// waiting inside the intersection and causing collisions with left-turning buses.
+func TestSixLaneCrossingFourLaneStopLineBehindCrosswalk(t *testing.T) {
+	laneWidth := 52.0
+
+	// 1. EW is 6 lanes, NS is 4 lanes
+	inter := &TrafficIntersection{
+		ID:              1,
+		Center:          Vec2{X: 0, Y: 0},
+		ApproachHasRoad: [4]bool{true, true, true, true},
+		ApproachLanes:   [4]int{6, 6, 4, 4},
+		ApproachIs4Lane: [4]bool{true, true, true, true},
+		Phase:           PhaseNSGreen, // EW has Red light
+	}
+
+	ewStop, ewCross, nsStop, nsCross := inter.GetApproachDimensions(laneWidth)
+
+	// Crossing NS road (4 lanes) half-width: 2 * 52 + 12 = 116.0
+	nsRoadHalfWidth := laneWidth*2.0 + 12.0
+	// Crossing EW road (6 lanes) half-width: 3 * 52 + 12 = 168.0
+	ewRoadHalfWidth := laneWidth*3.0 + 12.0
+
+	// For the 6-lane EW approach:
+	// Crosswalk must be outside the 4-lane crossing road (>= 116.0px)
+	if ewCross < nsRoadHalfWidth {
+		t.Fatalf("EW 6-lane crosswalk (%.2f) must be outside NS 4-lane roadway (half-width %.2f)", ewCross, nsRoadHalfWidth)
+	}
+	// Stop line must be strictly BEHIND the crosswalk (ewStop > ewCross)
+	if ewStop <= ewCross {
+		t.Fatalf("EW 6-lane stop line (%.2f) must be placed behind the crosswalk (%.2f)", ewStop, ewCross)
+	}
+	// Stop line must provide adequate pedestrian buffer (at least 20px behind crosswalk)
+	if ewStop-ewCross < 20.0 {
+		t.Fatalf("EW 6-lane stop line (%.2f) too close to crosswalk (%.2f), delta=%.2f (expected >= 20)", ewStop, ewCross, ewStop-ewCross)
+	}
+
+	// For the 4-lane NS approach:
+	// Crosswalk must be outside the 6-lane crossing road (>= 168.0px)
+	if nsCross < ewRoadHalfWidth {
+		t.Fatalf("NS 4-lane crosswalk (%.2f) must be outside EW 6-lane roadway (half-width %.2f)", nsCross, ewRoadHalfWidth)
+	}
+	// Stop line must be strictly BEHIND the crosswalk (nsStop > nsCross)
+	if nsStop <= nsCross {
+		t.Fatalf("NS 4-lane stop line (%.2f) must be placed behind the crosswalk (%.2f)", nsStop, nsCross)
+	}
+	if nsStop-nsCross < 20.0 {
+		t.Fatalf("NS 4-lane stop line (%.2f) too close to crosswalk (%.2f), delta=%.2f (expected >= 20)", nsStop, nsCross, nsStop-nsCross)
+	}
+
+	// 2. Symmetric check: EW is 4 lanes, NS is 6 lanes
+	interSym := &TrafficIntersection{
+		ID:              2,
+		Center:          Vec2{X: 0, Y: 0},
+		ApproachHasRoad: [4]bool{true, true, true, true},
+		ApproachLanes:   [4]int{4, 4, 6, 6},
+		ApproachIs4Lane: [4]bool{true, true, true, true},
+		Phase:           PhaseEWGreen,
+	}
+	sEWStop, sEWCross, sNSStop, sNSCross := interSym.GetApproachDimensions(laneWidth)
+	if sEWCross < ewRoadHalfWidth || sEWStop <= sEWCross {
+		t.Fatalf("Symmetric EW 4-lane approach: cross=%.2f, stop=%.2f, must clear 6-lane crossing road (%.2f)", sEWCross, sEWStop, ewRoadHalfWidth)
+	}
+	if sNSCross < nsRoadHalfWidth || sNSStop <= sNSCross {
+		t.Fatalf("Symmetric NS 6-lane approach: cross=%.2f, stop=%.2f, must clear 4-lane crossing road (%.2f)", sNSCross, sNSStop, nsRoadHalfWidth)
+	}
+
+	// 3. Verify in real Metropolis map where 6-lane North Ring Avenue intersects 4-lane avenues
+	w := NewWorld(laneWidth, MapThemeMetropolis)
+	tls := NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+
+	testedIntersections := 0
+	for _, it := range tls.Intersections {
+		ewL := math.Max(float64(it.ApproachLanes[0]), float64(it.ApproachLanes[1]))
+		nsL := math.Max(float64(it.ApproachLanes[2]), float64(it.ApproachLanes[3]))
+		if (ewL >= 6 && nsL >= 4) || (ewL >= 4 && nsL >= 6) {
+			testedIntersections++
+			eStop, eCross, nStop, nCross := it.GetApproachDimensions(laneWidth)
+
+			// Ensure stop line is always strictly behind crosswalk
+			if eStop <= eCross {
+				t.Fatalf("Metropolis intersection %v: EW stop line (%.2f) not behind crosswalk (%.2f)", it.Center, eStop, eCross)
+			}
+			if nStop <= nCross {
+				t.Fatalf("Metropolis intersection %v: NS stop line (%.2f) not behind crosswalk (%.2f)", it.Center, nStop, nCross)
+			}
+
+			// Ensure stop line is outside crossing road corridor
+			crossWidthEW := laneWidth*2.0 + 12.0 // at least 4 lanes
+			if nsL >= 6 {
+				crossWidthEW = laneWidth*3.0 + 12.0
+			}
+			if eStop <= crossWidthEW {
+				t.Fatalf("Metropolis intersection %v: EW stop line (%.2f) inside crossing road corridor (%.2f)", it.Center, eStop, crossWidthEW)
+			}
+		}
+	}
+
+	if testedIntersections == 0 {
+		t.Fatal("Expected to find at least one 6-lane x 4-lane intersection in Metropolis world map")
+	}
+}
+
+// TestPlanModePausesSimulationAndPassengerSpawning verifies that when planning routes (IsPlanMode = true),
+// the entire game simulation (traffic lights, AI traffic, player bus motion, passenger arrivals at bus stops)
+// is strictly paused, and no new passengers are automatically spawned.
+func TestPlanModePausesSimulationAndPassengerSpawning(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(MapThemeMetropolis)
+
+	// Ensure we start in Drive Mode
+	if g.IsPlanMode {
+		t.Fatal("Expected to start in Driver Mode")
+	}
+
+	// 1. In Driver Mode: Verify simulation ticks advance world & passenger timers
+	initialSpawnTimers := make([]float64, len(g.World.Stops))
+	initialPassengers := make([]int, len(g.World.Stops))
+	for i, s := range g.World.Stops {
+		initialSpawnTimers[i] = s.SpawnTimer
+		initialPassengers[i] = s.WaitingPassengers
+	}
+
+	initialTLTimer := g.TrafficLights.Intersections[0].Timer
+
+	// Run 10 ticks in Driver Mode
+	for i := 0; i < 10; i++ {
+		_ = g.Update()
+	}
+
+	// Verify timers advanced in Driver Mode
+	advancedInDriver := false
+	for i, s := range g.World.Stops {
+		if s.SpawnTimer != initialSpawnTimers[i] {
+			advancedInDriver = true
+			break
+		}
+	}
+	if !advancedInDriver {
+		t.Fatal("Expected stop spawn timers to advance in Driver Mode")
+	}
+	if g.TrafficLights.Intersections[0].Timer == initialTLTimer {
+		t.Fatal("Expected traffic light timer to advance in Driver Mode")
+	}
+
+	// 2. Enter Plan Mode: Verify simulation and passenger spawning are strictly paused
+	g.TogglePlanMode()
+	if !g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be true after TogglePlanMode()")
+	}
+
+	// Record snapshot of all stops, traffic lights, and AI cars
+	pausedSpawnTimers := make([]float64, len(g.World.Stops))
+	pausedPassengers := make([]int, len(g.World.Stops))
+	for i, s := range g.World.Stops {
+		pausedSpawnTimers[i] = s.SpawnTimer
+		pausedPassengers[i] = s.WaitingPassengers
+	}
+
+	pausedTLTimers := make([]float64, len(g.TrafficLights.Intersections))
+	for i, it := range g.TrafficLights.Intersections {
+		pausedTLTimers[i] = it.Timer
+	}
+
+	pausedCarPositions := make([]Vec2, len(g.TrafficMgr.Cars))
+	for i, c := range g.TrafficMgr.Cars {
+		pausedCarPositions[i] = c.Pos
+	}
+
+	// Run 100 ticks in Plan Mode (simulating 1.6+ seconds of player route planning)
+	for i := 0; i < 100; i++ {
+		_ = g.Update()
+	}
+
+	// Verify that passenger spawn timers did NOT advance at all
+	for i, s := range g.World.Stops {
+		if s.SpawnTimer != pausedSpawnTimers[i] {
+			t.Fatalf("Stop #%d (%s) spawn timer advanced while in plan mode: got %.3f, expected %.3f",
+				s.ID, s.Name, s.SpawnTimer, pausedSpawnTimers[i])
+		}
+		if s.WaitingPassengers != pausedPassengers[i] {
+			t.Fatalf("Stop #%d (%s) waiting passengers changed while in plan mode: got %d, expected %d",
+				s.ID, s.Name, s.WaitingPassengers, pausedPassengers[i])
+		}
+	}
+
+	// Verify that traffic lights did NOT advance
+	for i, it := range g.TrafficLights.Intersections {
+		if it.Timer != pausedTLTimers[i] {
+			t.Fatalf("Traffic intersection #%d timer advanced while in plan mode: got %.3f, expected %.3f",
+				it.ID, it.Timer, pausedTLTimers[i])
+		}
+	}
+
+	// Verify that civilian traffic cars did NOT move
+	for i, c := range g.TrafficMgr.Cars {
+		if c.Pos != pausedCarPositions[i] {
+			t.Fatalf("Civilian car #%d moved while in plan mode: got %v, expected %v",
+				c.ID, c.Pos, pausedCarPositions[i])
+		}
+	}
+
+	// 3. Exit Plan Mode: Verify simulation resumes cleanly
+	g.TogglePlanMode()
+	if g.IsPlanMode {
+		t.Fatal("Expected IsPlanMode to be false after TogglePlanMode()")
+	}
+
+	// Run 10 ticks in Driver Mode after resuming
+	for i := 0; i < 10; i++ {
+		_ = g.Update()
+	}
+
+	// Verify passenger spawn timers and traffic lights resume advancing
+	resumedPassengerTimers := false
+	for i, s := range g.World.Stops {
+		if s.SpawnTimer != pausedSpawnTimers[i] {
+			resumedPassengerTimers = true
+			break
+		}
+	}
+	if !resumedPassengerTimers {
+		t.Fatal("Expected passenger spawn timers to resume advancing after exiting plan mode")
+	}
+
+	if g.TrafficLights.Intersections[0].Timer == pausedTLTimers[0] {
+		t.Fatal("Expected traffic light timer to resume advancing after exiting plan mode")
+	}
+}
+
+// TestRouteRemoveLastStopAndUndo verifies:
+// 1. Route.RemoveLastStop removes the most recently added stop and adjusts CurrentIndex correctly.
+// 2. UndoLastPlannedStop properly manages Route, marks planModeRouteModified, and notifies user via HUD.
+// 3. ClearPlannedRoute properly clears all stops.
+// 4. HUD interactive buttons for Plan Undo and Clear detect clicks correctly.
+func TestRouteRemoveLastStopAndUndo(t *testing.T) {
+	// 1. Direct Route method testing
+	r := NewRoute()
+	if _, ok := r.RemoveLastStop(); ok {
+		t.Fatal("Expected RemoveLastStop on empty route to return false")
+	}
+
+	r.AddStop(0)
+	r.AddStop(2)
+	r.AddStop(10)
+	if len(r.StopIDs) != 3 {
+		t.Fatalf("Expected 3 stops, got %d", len(r.StopIDs))
+	}
+
+	r.CurrentIndex = 2 // Pointing to stop index 2 (stopID 10)
+	removedID, ok := r.RemoveLastStop()
+	if !ok || removedID != 10 {
+		t.Fatalf("Expected removed stopID 10, got %d (ok=%v)", removedID, ok)
+	}
+	if len(r.StopIDs) != 2 || r.StopIDs[0] != 0 || r.StopIDs[1] != 2 {
+		t.Fatalf("Expected stops [0, 2], got %v", r.StopIDs)
+	}
+	if r.CurrentIndex != 1 {
+		t.Fatalf("Expected CurrentIndex clamped to 1, got %d", r.CurrentIndex)
+	}
+
+	// Remove remaining stops down to 0
+	r.RemoveLastStop()
+	r.RemoveLastStop()
+	if len(r.StopIDs) != 0 || r.CurrentIndex != 0 {
+		t.Fatalf("Expected 0 stops and CurrentIndex=0, got len=%d, idx=%d", len(r.StopIDs), r.CurrentIndex)
+	}
+
+	// 2. Game level UndoLastPlannedStop & ClearPlannedRoute testing
+	g := NewGame(1280, 720)
+	g.TogglePlanMode()
+	if !g.IsPlanMode {
+		t.Fatal("Expected to enter Plan Mode")
+	}
+
+	g.Route.Clear()
+	g.Route.AddStop(1)
+	g.Route.AddStop(3)
+	g.Route.AddStop(5)
+	g.planModeRouteModified = false
+
+	// Undo stop 5
+	success := g.UndoLastPlannedStop()
+	if !success {
+		t.Fatal("Expected UndoLastPlannedStop to succeed")
+	}
+	if !g.planModeRouteModified {
+		t.Fatal("Expected planModeRouteModified to be true after undo")
+	}
+	if len(g.Route.StopIDs) != 2 || g.Route.StopIDs[1] != 3 {
+		t.Fatalf("Expected stops [1, 3], got %v", g.Route.StopIDs)
+	}
+
+	// Undo down to empty
+	g.UndoLastPlannedStop()
+	g.UndoLastPlannedStop()
+	if len(g.Route.StopIDs) != 0 {
+		t.Fatalf("Expected route to be empty, got %d stops", len(g.Route.StopIDs))
+	}
+
+	// Undo on empty route returns false
+	if g.UndoLastPlannedStop() {
+		t.Fatal("Expected UndoLastPlannedStop on empty route to return false")
+	}
+
+	// 3. ClearPlannedRoute testing
+	g.Route.AddStop(1)
+	g.Route.AddStop(2)
+	g.ClearPlannedRoute()
+	if len(g.Route.StopIDs) != 0 {
+		t.Fatalf("Expected ClearPlannedRoute to empty route, got %d stops", len(g.Route.StopIDs))
+	}
+
+	// 4. HUD click handlers testing
+	hud := NewHUD()
+	hud.PlanUndoBtnBounds = Rect{X: 100, Y: 200, W: 140, H: 24}
+	hud.PlanClearBtnBounds = Rect{X: 250, Y: 200, W: 100, H: 24}
+	hud.PlanPanelBounds = Rect{X: 50, Y: 150, W: 400, H: 100}
+
+	if !hud.HandlePlanUndoClick(Vec2{X: 150, Y: 210}) {
+		t.Fatal("Expected HandlePlanUndoClick to return true for point inside bounds")
+	}
+	if hud.HandlePlanUndoClick(Vec2{X: 50, Y: 210}) {
+		t.Fatal("Expected HandlePlanUndoClick to return false for point outside bounds")
+	}
+	if !hud.HandlePlanClearClick(Vec2{X: 280, Y: 210}) {
+		t.Fatal("Expected HandlePlanClearClick to return true for point inside bounds")
+	}
+	if !hud.IsInsidePlanPanel(Vec2{X: 120, Y: 180}) {
+		t.Fatal("Expected IsInsidePlanPanel to return true for point inside panel")
+	}
+}
 
