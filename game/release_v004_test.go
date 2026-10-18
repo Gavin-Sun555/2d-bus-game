@@ -3,33 +3,36 @@ package game
 import (
 	"math"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 )
 
 // TestRelease004ComprehensiveChecklist executes an end-to-end qualification audit for the v0.0.4 release:
-// 1. Unified 45-passenger capacity across player bus and all AI fleet buses.
-// 2. Greedy boarding at stations: all waiting passengers board as long as capacity is available,
-//    including consecutive/repeated boardings at the same stop.
-// 3. Route-constrained passenger generation: only stops on the planned route generate passengers,
-//    and their destinations are strictly downstream stops along the route.
-// 4. Yellow Box clearance ("Don't Block the Box"): AI cars holding before stop lines at green lights
-//    when a bus occupies or clears the intersection box.
-// 5. Severe gridlock timeout resolution (> 38.0s threshold):
-//    - Jammed AI cars disappear and reset to clear roadway segments with safe speed.
-//    - Jammed AI buses reset back to the route starting station (StopIDs[0]) with cleared passengers and index 0.
-//    - Player bus in AI autopilot mode safely resets back to the route starting station.
+//  1. Unified 45-passenger capacity across player bus and all AI fleet buses.
+//  2. Greedy boarding at stations: all waiting passengers board as long as capacity is available,
+//     including consecutive/repeated boardings at the same stop.
+//  3. Route-constrained passenger generation: only stops on the planned route generate passengers,
+//     and their destinations are strictly downstream stops along the route.
+//  4. Yellow Box clearance ("Don't Block the Box"): AI cars holding before stop lines at green lights
+//     when a bus occupies or clears the intersection box.
+//  5. Severe gridlock timeout resolution (> 38.0s threshold):
+//     - Jammed AI cars disappear and reset to clear roadway segments with safe speed.
+//     - Jammed AI buses reset back to the route starting station (StopIDs[0]) with cleared passengers and index 0.
+//     - Player bus in AI autopilot mode safely resets back to the route starting station.
 func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	laneWidth := 52.0
 
 	// -------------------------------------------------------------------------
 	// 1. Unified 45-Passenger Capacity for All Buses (Player & AI Fleet)
 	// -------------------------------------------------------------------------
-	playerBus := NewBus(0, 0, 0)
-	if playerBus.Capacity != 45 || DefaultBusCapacity != 45 {
+	playerBus := sim.NewBus(0, 0, 0)
+	if playerBus.Capacity != 45 || sim.DefaultBusCapacity != 45 {
 		t.Fatalf("Player bus capacity must be 45, got %d", playerBus.Capacity)
 	}
 
-	wMetro := NewWorld(laneWidth, MapThemeMetropolis)
-	abm := NewAIBusManager()
+	wMetro := sim.NewWorld(laneWidth, sim.MapThemeMetropolis)
+	abm := traffic.NewAIBusManager()
 	abm.BuildFleet(wMetro, 8, laneWidth, playerBus)
 	if len(abm.Buses) != 8 {
 		t.Fatalf("Expected 8 AI buses in fleet, got %d", len(abm.Buses))
@@ -114,9 +117,9 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// 4. Yellow Box Intersection Clearance ("Don't Block the Box")
 	// -------------------------------------------------------------------------
-	inter := &TrafficIntersection{
-		Center:            Vec2{X: 0, Y: 0},
-		Phase:             PhaseNSGreen, // NS green for northbound vehicle
+	inter := &sim.TrafficIntersection{
+		Center:            sim.Vec2{X: 0, Y: 0},
+		Phase:             sim.PhaseNSGreen, // NS green for northbound vehicle
 		IsMajor:           true,
 		ApproachHasRoad:   [4]bool{true, true, true, true},
 		ApproachLanes:     [4]int{4, 4, 4, 4},
@@ -125,15 +128,15 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 		YellowDuration:    2.5,
 		LeftGreenDuration: 5.5,
 	}
-	tls := NewTrafficLightSystem()
-	tls.Intersections = []*TrafficIntersection{inter}
+	tls := sim.NewTrafficLightSystem()
+	tls.Intersections = []*sim.TrafficIntersection{inter}
 
 	stopLineDist := inter.GetStopLineDistForHeading(-math.Pi/2, laneWidth)
-	carPos := Vec2{
+	carPos := sim.Vec2{
 		X: 78.0,
 		Y: stopLineDist + 25.0 + 23.0,
 	}
-	approachCar := &TrafficCar{
+	approachCar := &sim.TrafficCar{
 		ID:          1,
 		Pos:         carPos,
 		Heading:     -math.Pi / 2, // Northbound
@@ -145,14 +148,14 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 		IsEW:        false,
 		LaneIndex:   1, // Straight lane
 	}
-	tm := NewTrafficManager(laneWidth)
-	tm.Cars = []*TrafficCar{approachCar}
+	tm := traffic.NewTrafficManager(laneWidth)
+	tm.Cars = []*sim.TrafficCar{approachCar}
 
 	// Place bus inside intersection box traversing East-West
-	boxBus := NewBus(0, 0, 0)
+	boxBus := sim.NewBus(0, 0, 0)
 	boxBus.Speed = 10.0
 
-	tm.updateSingleCar(0.1, approachCar, 0, boxBus, tls, 1, laneWidth, nil)
+	tm.StepCar(0.1, approachCar, 0, boxBus, tls, 1, laneWidth, nil)
 
 	if !approachCar.IsBraking {
 		t.Fatalf("AI Car must brake and yield before stop line when bus is inside intersection box!")
@@ -168,13 +171,13 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	testAIBus := abm.Buses[0]
 	testAIBus.Route.CurrentIndex = 1
 	testAIBus.Bus.PassengerCount = 25
-	testAIBus.Bus.Passengers = make([]Passenger, 25)
-	testAIBus.Bus.Pos = Vec2{X: -400.0, Y: 26.0}
+	testAIBus.Bus.Passengers = make([]sim.Passenger, 25)
+	testAIBus.Bus.Pos = sim.Vec2{X: -400.0, Y: 26.0}
 	testAIBus.Bus.Heading = 0.0
 	testAIBus.Bus.Speed = 0.0
 
-	jammedCarPos := Vec2{X: -340.0, Y: 26.0}
-	jammedCar := &TrafficCar{
+	jammedCarPos := sim.Vec2{X: -340.0, Y: 26.0}
+	jammedCar := &sim.TrafficCar{
 		ID:          99,
 		Pos:         jammedCarPos,
 		Heading:     math.Pi,
@@ -185,7 +188,7 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 		RoadCenter:  52.0,
 		IsEW:        true,
 	}
-	tm.Cars = []*TrafficCar{jammedCar}
+	tm.Cars = []*sim.TrafficCar{jammedCar}
 	tm.AIBusMgr = abm
 
 	// Advance deadlock to 38.0s threshold
@@ -193,7 +196,7 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	for elapsed := 0.0; elapsed < 42.0; elapsed += dt {
 		testAIBus.Bus.Speed = 0.0
 		jammedCar.Speed = 0.0
-		tm.resolveDeadlockedCars(dt, nil, len(tm.Cars), laneWidth, wMetro)
+		tm.ResolveDeadlocks(dt, nil, len(tm.Cars), laneWidth, wMetro)
 		if jammedCar.DeadlockTimer == 0 && len(tm.Cars) > 0 && tm.Cars[0].Pos.Distance(jammedCarPos) > 10.0 {
 			break
 		}

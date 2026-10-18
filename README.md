@@ -10,6 +10,8 @@
 
 ---
 
+开发者入口：[项目架构与目录职责](docs/architecture.md)（包依赖、代码位置和测试方式）。
+
 ## 🇨🇳 中文说明 (Chinese)
 
 基于 **Go 语言** 和高性能 2D 游戏引擎 **[Ebitengine](https://ebitengine.org/)** 开发的大型都市俯视角公交车模拟与线路规划游戏。
@@ -352,6 +354,8 @@ make test-all           # 或: go test -v ./...
 ### 🏷️ 版本记录与发布说明 (Release Notes)
 
 - **v0.0.4** (当前最新):
+  - **代码架构与自动驾驶修复**：按仿真、自动驾驶、交通、渲染和界面拆分包；修复狂暴模式内侧车道进入环岛、汇入让行及进入左转车道时的误停。
+  - 发布说明与验证记录：[0.0.4](docs/releases/0.0.4.md)。
   - **🚍 统一 45 人大容量与贪婪全员上客机制 (Greedy Boarding & Unified 45-Pax Capacity)**：
     - 针对全图单主干闭环运营机制，全面标准化玩家公交车及全线 8 辆 AI 公交车队容量为 45 人。
     - 乘客到站“能上尽上”，只要车内有空位且站台有候车乘客即全员上车，不再受选线偏好阻碍；车满即止。
@@ -706,6 +710,8 @@ make test-all           # or: go test -v ./...
 ---
 
 - **v0.0.4** (Current):
+  - **Architecture and autopilot fixes**: Separate simulation, autopilot, traffic, rendering and UI packages; fix inner-lane roundabout entry, yield to circulating vehicles, and eliminate false stops beside through-lane queues.
+  - Release notes and validation: [0.0.4](docs/releases/0.0.4.md).
   - **🚍 Unified 45-Pax Capacity & Greedy Boarding**: Standardized 45-passenger capacity across player bus and all 8 AI fleet buses. Passengers board greedily on arrival as long as space remains without route divergence obstacles. Consecutive docking at the same stop continues boarding if capacity exists.
   - **📍 Route-Constrained Passenger Generation**: Passengers only spawn at stations included in the active route, with destinations strictly restricted to upcoming stops along the planned route.
   - **🚦 Yellow Box Intersection Clearance ("Don't Block the Box")**: Traffic AI cars yield before stop lines on green if an AI or player bus occupies or turns within the intersection box, preventing junction choke points.

@@ -1,0 +1,88 @@
+name: Test and release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install graphics and audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev xvfb
+      - run: go mod verify
+      - run: go vet ./...
+      - name: Full tests, race detection and coverage
+        run: xvfb-run -a go test -race -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Release qualification
+        run: xvfb-run -a make test-qualify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+          - runner: windows-latest
+            os: windows
+            arch: amd64
+          - runner: macos-14
+            os: darwin
+            arch: arm64
+          - runner: macos-14
+            os: darwin
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev
+      - name: Build release archive
+        run: python scripts/package_release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --version 0.0.4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: busgame-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: busgame-*
+          merge-multiple: true
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title '0.0.4' --notes-file docs/releases/0.0.4.md --latest

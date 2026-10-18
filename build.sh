@@ -52,7 +52,7 @@ cmd_test() {
 cmd_test_qualify() {
     print_banner
     echo -e "${BLUE}🏆 正在运行全地图多轮 Release Qualification 验收测试...${NC}"
-    go test -v -run TestReleaseQualification ./...
+    go test -v -run "TestReleaseQualification|TestRelease" ./...
 }
 
 cmd_test_all() {
@@ -123,9 +123,9 @@ cmd_app() {
     <key>CFBundleIdentifier</key>
     <string>com.gavinsun.2dbussimulator</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>0.0.4</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>0.0.4</string>
     <key>CFBundleExecutable</key>
     <string>busgame</string>
     <key>CFBundleIconFile</key>
