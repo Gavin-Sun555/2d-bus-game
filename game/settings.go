@@ -22,24 +22,29 @@ type Settings struct {
 	ReturnToMenuRequested bool
 
 	// AI Autopilot & Route AI Buses Configurations
-	AutopilotEnabled  bool
-	AutopilotBerserk  bool // Berserk mode: straightaways top speed boost while obeying traffic rules
-	AIBusCount        int  // Number of AI buses on the route (0 ~ 8)
-	AIBusFleetChanged bool
+	AutopilotEnabled         bool
+	AutopilotBerserk         bool // Berserk mode: straightaways top speed boost while obeying traffic rules
+	AutopilotBerserkMaxSpeed int  // Berserk top speed in km/h: 60, 80, 100, 120 (default: 80)
+	AIBusCount               int  // Number of AI buses on the route (0 ~ 8)
+	AIBusFleetChanged        bool
 
 	// UI Localization Language
 	Language Language
 
 	// Button bounds for click detection
-	fineToggleBounds    Rect
-	densityToggleBounds Rect
-	cameraToggleBounds  Rect
-	autopilotBounds     Rect
-	aiBusToggleBounds   Rect
-	themeToggleBounds   Rect
-	langToggleBounds    Rect
-	menuButtonBounds    Rect
-	closeButtonBounds   Rect
+	fineToggleBounds      Rect
+	densityToggleBounds   Rect
+	cameraToggleBounds    Rect
+	autopilotBounds       Rect
+	berserkSpeed60Bounds  Rect
+	berserkSpeed80Bounds  Rect
+	berserkSpeed100Bounds Rect
+	berserkSpeed120Bounds Rect
+	aiBusToggleBounds     Rect
+	themeToggleBounds     Rect
+	langToggleBounds      Rect
+	menuButtonBounds      Rect
+	closeButtonBounds     Rect
 }
 
 type Rect struct {
@@ -62,11 +67,74 @@ func NewSettings() *Settings {
 		LaneWidthLevel:      1,                  // Default: 52px (宽敞市区 Comfortable Wide)
 		CameraViewMode:      CameraModeNorthUp,  // Default: North-Up standard
 		MapTheme:            MapThemeMetropolis, // Default: Modern Metropolis
-		AutopilotEnabled:    false,              // Manual driving by default
-		AutopilotBerserk:    false,              // Standard mode by default
-		AIBusCount:          0,                  // 0 AI buses by default
-		Language:            CurrentLanguage,    // Default to CurrentLanguage
+		AutopilotEnabled:         false,              // Manual driving by default
+		AutopilotBerserk:         false,              // Standard mode by default
+		AutopilotBerserkMaxSpeed: 80,                 // Default: 80 km/h (445 px/s)
+		AIBusCount:               0,                  // 0 AI buses by default
+		Language:                 CurrentLanguage,    // Default to CurrentLanguage
 	}
+}
+
+func (s *Settings) GetBerserkCruiseSpeed() float64 {
+	switch s.AutopilotBerserkMaxSpeed {
+	case 60:
+		return 333.0
+	case 80:
+		return 445.0
+	case 100:
+		return 555.0
+	case 120:
+		return 667.0
+	default:
+		return 445.0
+	}
+}
+
+// GetBusMaxSpeed returns the vehicle physics max forward speed in px/s based on the configured speed limit.
+// In manual driving mode, the bus accelerates up to this limit (reaching 60, 80, 100, or 120 km/h).
+func (s *Settings) GetBusMaxSpeed() float64 {
+	switch s.AutopilotBerserkMaxSpeed {
+	case 60:
+		return 334.0 // 334 * 0.18 = 60.12 km/h
+	case 80:
+		return 445.0 // 445 * 0.18 = 80.1 km/h
+	case 100:
+		return 556.0 // 556 * 0.18 = 100.08 km/h
+	case 120:
+		return 667.0 // 667 * 0.18 = 120.06 km/h
+	default:
+		return 445.0
+	}
+}
+
+func (s *Settings) SetBerserkMaxSpeed(speed int) {
+	if speed == 60 || speed == 80 || speed == 100 || speed == 120 {
+		s.AutopilotBerserkMaxSpeed = speed
+	}
+}
+
+func (s *Settings) SetMaxSpeed(speed int) {
+	s.SetBerserkMaxSpeed(speed)
+}
+
+func (s *Settings) CycleBerserkMaxSpeed() int {
+	switch s.AutopilotBerserkMaxSpeed {
+	case 60:
+		s.AutopilotBerserkMaxSpeed = 80
+	case 80:
+		s.AutopilotBerserkMaxSpeed = 100
+	case 100:
+		s.AutopilotBerserkMaxSpeed = 120
+	case 120:
+		s.AutopilotBerserkMaxSpeed = 60
+	default:
+		s.AutopilotBerserkMaxSpeed = 80
+	}
+	return s.AutopilotBerserkMaxSpeed
+}
+
+func (s *Settings) CycleMaxSpeed() int {
+	return s.CycleBerserkMaxSpeed()
 }
 
 func (s *Settings) GetLaneWidth() float64 {
@@ -133,6 +201,14 @@ func (s *Settings) Update(cam ...*Camera) {
 				s.AutopilotEnabled = false
 				s.AutopilotBerserk = false
 			}
+		} else if s.berserkSpeed60Bounds.Contains(mPos) {
+			s.AutopilotBerserkMaxSpeed = 60
+		} else if s.berserkSpeed80Bounds.Contains(mPos) {
+			s.AutopilotBerserkMaxSpeed = 80
+		} else if s.berserkSpeed100Bounds.Contains(mPos) {
+			s.AutopilotBerserkMaxSpeed = 100
+		} else if s.berserkSpeed120Bounds.Contains(mPos) {
+			s.AutopilotBerserkMaxSpeed = 120
 		} else if s.aiBusToggleBounds.Contains(mPos) {
 			s.AIBusCount = (s.AIBusCount + 1) % 9
 			s.AIBusFleetChanged = true
@@ -255,7 +331,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 		apText = T("【👤 手动驾驶模式: 已关闭 (P)】", "【👤 Manual Mode: OFF (P)】")
 		apColor = RGBA(148, 163, 184, 255)
 	} else if s.AutopilotBerserk {
-		apText = T("【⚡ AI自动驾驶: 狂暴极速 (P)】", "【⚡ Autopilot: BERSERK (P)】")
+		apText = Tf("【⚡ AI狂暴极速: %d km/h (P)】", "【⚡ Autopilot: BSK %d (P)】", s.AutopilotBerserkMaxSpeed)
 		apColor = RGBA(249, 115, 22, 255)
 	}
 	vector.DrawFilledRect(screen, float32(s.autopilotBounds.X), float32(s.autopilotBounds.Y),
@@ -264,8 +340,45 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 		float32(s.autopilotBounds.W), float32(s.autopilotBounds.H), 1.5, apColor, true)
 	DrawText(screen, apText, s.autopilotBounds.X+12, s.autopilotBounds.Y+6, 12, apColor)
 
+	// Option 4b: Player Bus Top Speed Limit (Manual Driving & Berserk Mode: 60, 80, 100, 120 km/h)
+	opt4bY := modalY + 188
+	speedLabelCol := RGBA(226, 232, 240, 255)
+	DrawText(screen, T("   └ 公交最高限速 (手动极速/狂暴模式):", "   └ Bus Top Speed (Manual & Berserk):"), modalX+26, opt4bY+7, 13, speedLabelCol)
+
+	speeds := []int{60, 80, 100, 120}
+	btnW := 48.0
+	btnH := 28.0
+	gap := 6.0
+	for idx, spd := range speeds {
+		bx := modalX + 340 + float64(idx)*(btnW+gap)
+		bRect := Rect{X: bx, Y: opt4bY, W: btnW, H: btnH}
+		switch spd {
+		case 60:
+			s.berserkSpeed60Bounds = bRect
+		case 80:
+			s.berserkSpeed80Bounds = bRect
+		case 100:
+			s.berserkSpeed100Bounds = bRect
+		case 120:
+			s.berserkSpeed120Bounds = bRect
+		}
+
+		isSelected := (s.AutopilotBerserkMaxSpeed == spd)
+		bgCol := RGBA(30, 41, 59, 255)
+		borderCol := RGBA(71, 85, 105, 200)
+		textCol := RGBA(148, 163, 184, 255)
+		if isSelected {
+			bgCol = RGBA(234, 88, 12, 230)
+			borderCol = RGBA(253, 186, 116, 255)
+			textCol = RGBA(255, 255, 255, 255)
+		}
+		vector.DrawFilledRect(screen, float32(bx), float32(opt4bY), float32(btnW), float32(btnH), bgCol, true)
+		vector.StrokeRect(screen, float32(bx), float32(opt4bY), float32(btnW), float32(btnH), 1.5, borderCol, true)
+		DrawText(screen, fmt.Sprintf("%d", spd), bx+14, opt4bY+6, 12, textCol)
+	}
+
 	// Option 5: Configurable Route AI Buses Count
-	opt5Y := modalY + 188
+	opt5Y := modalY + 222
 	DrawText(screen, T("5. 路线 AI 公交车数量配置:", "5. Route AI Bus Fleet Size:"), modalX+26, opt5Y+7, 13, RGBA(226, 232, 240, 255))
 	s.aiBusToggleBounds = Rect{X: modalX + 340, Y: opt5Y, W: 210, H: 28}
 
@@ -282,7 +395,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 	DrawText(screen, fleetBtnText, s.aiBusToggleBounds.X+36, s.aiBusToggleBounds.Y+6, 12, fleetBtnColor)
 
 	// Option 6: Map Theme & City Selection
-	opt6Y := modalY + 222
+	opt6Y := modalY + 256
 	DrawText(screen, T("6. 城市地图与风貌 (Map Theme):", "6. City Map & Theme:"), modalX+26, opt6Y+7, 13, RGBA(226, 232, 240, 255))
 	s.themeToggleBounds = Rect{X: modalX + 340, Y: opt6Y, W: 210, H: 28}
 
@@ -305,7 +418,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 	DrawText(screen, T("🏠 退入主菜单更换", "🏠 Return to Menu to Change"), s.themeToggleBounds.X+24, s.themeToggleBounds.Y+6, 12, themeBtnColor)
 
 	// Option 7: Interface Language (Chinese / English)
-	opt7Y := modalY + 256
+	opt7Y := modalY + 290
 	DrawText(screen, T("7. 界面语言 / Language:", "7. Interface Language:"), modalX+26, opt7Y+7, 13, RGBA(226, 232, 240, 255))
 	s.langToggleBounds = Rect{X: modalX + 340, Y: opt7Y, W: 210, H: 28}
 
@@ -321,8 +434,8 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 	DrawText(screen, langBtnText, s.langToggleBounds.X+20, s.langToggleBounds.Y+6, 12, langBtnColor)
 
 	// Rules & Customization Explanation Info Box
-	infoY := modalY + 296
-	infoH := 272.0
+	infoY := modalY + 328
+	infoH := 240.0
 	vector.DrawFilledRect(screen, float32(modalX+26), float32(infoY), float32(modalW-52), float32(infoH),
 		RGBA(15, 23, 42, 200), true)
 	vector.StrokeRect(screen, float32(modalX+26), float32(infoY), float32(modalW-52), float32(infoH),
@@ -331,7 +444,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 	if s.Language == LanguageEN {
 		DrawText(screen, "• Traffic Network, Autopilot & Operating Rules:", modalX+36, infoY+10, 12, RGBA(148, 163, 184, 255))
 		DrawText(screen, fmt.Sprintf("  - Active Map: [%s] (6 distinct city themes, return to menu to switch);", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, RGBA(192, 132, 252, 255))
-		DrawText(screen, "  - Autopilot (P/B): Standard cruises safely; Berserk (B) speeds up on straightaways while obeying rules;", modalX+36, infoY+46, 11, RGBA(6, 182, 212, 255))
+		DrawText(screen, "  - Top Speed (60/80/100/120 km/h): Unified limit for manual driving and Berserk mode; Shift+B to cycle;", modalX+36, infoY+46, 11, RGBA(6, 182, 212, 255))
 		DrawText(screen, "  - Route AI Fleet: 0-8 autonomous buses operating routes and serving passengers;", modalX+36, infoY+64, 12, RGBA(52, 211, 153, 255))
 		DrawText(screen, "  - Camera Perspectives: Heading-Up Follow / Fixed North-Up / Fixed South-Up ([V]);", modalX+36, infoY+82, 12, RGBA(251, 146, 60, 255))
 		DrawText(screen, "  - Road Hierarchy: 4-lane avenues, 2-lane streets, grade-separated overpasses;", modalX+36, infoY+100, 12, RGBA(203, 213, 225, 255))
@@ -349,7 +462,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*Camera) {
 	} else {
 		DrawText(screen, "• 交通网络调度、自动驾驶与车辆规则说明:", modalX+36, infoY+10, 12, RGBA(148, 163, 184, 255))
 		DrawText(screen, fmt.Sprintf("  - 当前地图: 【%s】 (6大独立城市风貌，含自定义地图，需退入主菜单切换)；", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, RGBA(192, 132, 252, 255))
-		DrawText(screen, "  - 自动驾驶 (P/B): 标准巡航平稳跟车；狂暴模式(B)在直行路段极速狂飙，同时严守交规避障靠站；", modalX+36, infoY+46, 11, RGBA(6, 182, 212, 255))
+		DrawText(screen, "  - 公交最高限速 (60/80/100/120 km/h): 手动极速与AI狂暴巡航均生效，支持按 Shift+B 快速切速；", modalX+36, infoY+46, 11, RGBA(6, 182, 212, 255))
 		DrawText(screen, "  - 路线 AI 公交: 调度 0~8 辆独立 AI 公交车，在城市环线自主运营、上下客流；", modalX+36, infoY+64, 12, RGBA(52, 211, 153, 255))
 		DrawText(screen, "  - 视角切换: 支持【车头朝上跟随】/【固定正北标准】/【固定正南倒置】，按 [V] 键切换；", modalX+36, infoY+82, 12, RGBA(251, 146, 60, 255))
 		DrawText(screen, "  - 城市支持4车道快速路、2车道城市路、立体跨线桥及大江大湖水道；", modalX+36, infoY+100, 12, RGBA(203, 213, 225, 255))

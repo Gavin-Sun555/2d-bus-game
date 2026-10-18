@@ -3971,6 +3971,189 @@ func TestAIBusDestinationBasedExchange(t *testing.T) {
 	}
 }
 
+func TestAIBusFleetCapacityAndBoardingLogic(t *testing.T) {
+	world := NewWorld(52.0, MapThemeMetropolis)
+	abm := NewAIBusManager()
+	abm.SetLineCount(4, world, 52.0)
+
+	if len(abm.Buses) != 4 {
+		t.Fatalf("Expected 4 AI buses, got %d", len(abm.Buses))
+	}
+
+	// 1. Verify every AI bus has 45 capacity
+	for _, ab := range abm.Buses {
+		if ab.Bus.Capacity != 45 {
+			t.Fatalf("AI Bus #%d capacity expected 45, got %d", ab.ID, ab.Bus.Capacity)
+		}
+	}
+
+	// 2. Test AI Bus boarding all waiting passengers when space is available (no 6-passenger cap)
+	ab := abm.Buses[0]
+	targetStopID := ab.Route.GetCurrentTargetStopID()
+	st := world.Stops[targetStopID]
+	st.WaitingPassengers = 25
+	ab.Bus.Pos = st.Pos
+	ab.Bus.Heading = st.Heading
+	ab.Bus.Speed = 0
+	ab.Bus.DoorsOpen = true
+	ab.Bus.DoorProgress = 1.0
+	ab.LastExchangedStopID = -1
+	ab.Driver.State = AutopilotStateDocked
+	ab.Driver.DockedStopID = targetStopID
+	ab.Driver.DwellTimer = 3.0
+	ab.Driver.DwellFinished = false
+
+	// Run AI bus update when docked at station
+	abm.Update(0.1, nil, world, nil, nil, 52.0)
+
+	// Since capacity is 45 and bus was empty, all 25 waiting passengers must board
+	if ab.Bus.PassengerCount != 25 {
+		t.Fatalf("Expected all 25 passengers to board AI bus, got %d", ab.Bus.PassengerCount)
+	}
+	if st.WaitingPassengers != 0 {
+		t.Fatalf("Expected 0 passengers remaining at stop, got %d", st.WaitingPassengers)
+	}
+	if ab.PassengersCarried != 25 {
+		t.Fatalf("Expected PassengersCarried to be 25, got %d", ab.PassengersCarried)
+	}
+
+	// 3. Test boarding when waiting passengers exceed empty capacity
+	// Now bus has 25 passengers, so empty capacity is 45 - 25 = 20.
+	// Put 30 waiting passengers at next stop.
+	ab.Route.AdvanceToNextStop()
+	nextStopID := ab.Route.GetCurrentTargetStopID()
+	nextStop := world.Stops[nextStopID]
+	nextStop.WaitingPassengers = 45
+	ab.Bus.Pos = nextStop.Pos
+	ab.Bus.Heading = nextStop.Heading
+	ab.Bus.DoorsOpen = true
+	ab.Bus.DoorProgress = 1.0
+	ab.LastExchangedStopID = -1
+	ab.Driver.DockedStopID = nextStopID
+	ab.Driver.DwellTimer = 3.0
+	ab.Driver.DwellFinished = false
+
+	abm.Update(0.1, nil, world, nil, nil, 52.0)
+
+	// The bus alights passengers destined for nextStop, then boards up to full 45 capacity
+	if ab.Bus.PassengerCount != 45 {
+		t.Fatalf("Expected AI bus to reach full 45 capacity, got %d", ab.Bus.PassengerCount)
+	}
+	boardedAtNext := ab.PassengersCarried - 25
+	if nextStop.WaitingPassengers != 45-boardedAtNext {
+		t.Fatalf("Expected %d passengers remaining at stop, got %d", 45-boardedAtNext, nextStop.WaitingPassengers)
+	}
+}
+
+func TestRepeatedDockingAtSameStopBoardsPassengers(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.Bus.ClearPassengers()
+	g.Bus.Capacity = 45
+
+	s0 := g.World.Stops[0]
+	g.Bus.Pos = s0.Pos
+	g.Bus.Heading = s0.Heading
+	g.Bus.Speed = 0
+	s0.WaitingPassengers = 15
+
+	// 1. First docking: open doors -> passengers board
+	g.Bus.DoorsOpen = true
+	g.boardedThisStop = false
+	g.updateDriverMode(0.016)
+
+	if g.Bus.PassengerCount != 15 {
+		t.Fatalf("Expected 15 passengers on board after first docking, got %d", g.Bus.PassengerCount)
+	}
+	if s0.WaitingPassengers != 0 {
+		t.Fatalf("Expected 0 passengers waiting after boarding, got %d", s0.WaitingPassengers)
+	}
+
+	// 2. Close doors at the same station
+	g.Bus.DoorsOpen = false
+	g.updateDriverMode(0.016)
+
+	// More passengers arrive while parked at the station (e.g. 10 waiting)
+	s0.WaitingPassengers = 10
+
+	// Reopen doors at the SAME station -> all 10 must board!
+	g.Bus.DoorsOpen = true
+	g.updateDriverMode(0.016)
+
+	if g.Bus.PassengerCount != 25 {
+		t.Fatalf("Expected 25 passengers on board after reopening doors at same stop, got %d", g.Bus.PassengerCount)
+	}
+	if s0.WaitingPassengers != 0 {
+		t.Fatalf("Expected 0 passengers waiting after second boarding, got %d", s0.WaitingPassengers)
+	}
+
+	// 3. Keep doors open, new passengers arrive while parked
+	s0.WaitingPassengers = 8
+	g.updateDriverMode(0.016)
+
+	if g.Bus.PassengerCount != 33 {
+		t.Fatalf("Expected 33 passengers on board after continuous open door boarding, got %d", g.Bus.PassengerCount)
+	}
+	if s0.WaitingPassengers != 0 {
+		t.Fatalf("Expected 0 passengers waiting, got %d", s0.WaitingPassengers)
+	}
+}
+
+func TestOnlyPlannedRouteStopsGeneratePassengersAndDestinationsStrictlyOnRoute(t *testing.T) {
+	g := NewGame(1280, 720)
+
+	// Replan route to only include stops [0, 2, 4, 0]
+	g.ReplanRoute([]int{0, 2, 4, 0})
+
+	// 1. Verify stops on the route have passengers, while stops NOT on the route have 0 passengers
+	routeSet := map[int]bool{0: true, 2: true, 4: true}
+	for _, s := range g.World.Stops {
+		if routeSet[s.ID] {
+			if s.WaitingPassengers <= 0 {
+				t.Fatalf("Stop #%d on route expected > 0 waiting passengers, got %d", s.ID, s.WaitingPassengers)
+			}
+		} else {
+			if s.WaitingPassengers != 0 {
+				t.Fatalf("Stop #%d NOT on route expected 0 waiting passengers, got %d", s.ID, s.WaitingPassengers)
+			}
+		}
+	}
+
+	// 2. Simulate 100 seconds of world updates (passenger generation)
+	for i := 0; i < 200; i++ {
+		g.World.Update(0.5, g.Route)
+	}
+
+	// Non-route stops must strictly remain at 0 passengers!
+	for _, s := range g.World.Stops {
+		if !routeSet[s.ID] {
+			if s.WaitingPassengers != 0 {
+				t.Fatalf("Stop #%d NOT on route must NOT spawn passengers, got %d", s.ID, s.WaitingPassengers)
+			}
+		}
+	}
+
+	// 3. Verify boarding passenger destinations are strictly stops that the route reaches
+	s0 := g.World.Stops[0]
+	g.Bus.Pos = s0.Pos
+	g.Bus.Heading = s0.Heading
+	g.Bus.Speed = 0
+	g.Bus.ClearPassengers()
+	g.Bus.DoorsOpen = true
+	g.boardedThisStop = false
+	s0.WaitingPassengers = 20
+
+	g.updateDriverMode(0.016)
+
+	if g.Bus.PassengerCount != 20 {
+		t.Fatalf("Expected 20 passengers on board, got %d", g.Bus.PassengerCount)
+	}
+	for i, p := range g.Bus.Passengers {
+		if !routeSet[p.TargetStopID] {
+			t.Fatalf("Passenger #%d target stop %d is NOT on the planned route [0, 2, 4, 0]!", i, p.TargetStopID)
+		}
+	}
+}
+
 func TestCleanStationName(t *testing.T) {
 	stop := &BusStop{
 		Name: "中央枢纽 (Central Terminal)",
@@ -4647,3 +4830,997 @@ func TestRouteRemoveLastStopAndUndo(t *testing.T) {
 	}
 }
 
+func TestStopBoardingToastMessages(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(MapThemeMetropolis)
+
+	stop := g.World.Stops[0]
+	g.Bus.Pos = stop.Pos
+	g.Bus.Heading = stop.Heading
+	g.Bus.Speed = 0
+	g.Bus.DoorsOpen = true
+
+	// Scenario 1: Stop has 0 waiting passengers, bus is not full (passengerCount = 0).
+	// Must NOT say "当前车厢已满载！". Must say "本站无乘客上下车！".
+	stop.WaitingPassengers = 0
+	g.Bus.ClearPassengers()
+	g.HUD.Toasts = nil
+	g.boardedThisStop = false
+	_ = g.Update()
+
+	if len(g.HUD.Toasts) == 0 {
+		t.Fatal("Expected toast to be added")
+	}
+	lastToast := g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
+	if strings.Contains(lastToast, "已满载") {
+		t.Fatalf("Bus is empty and no passengers boarded, but toast said full! got: %s", lastToast)
+	}
+	if !strings.Contains(lastToast, "无乘客") {
+		t.Fatalf("Expected toast to mention no passengers, got: %s", lastToast)
+	}
+
+	// Scenario 2: 2 passengers alight, but 0 passengers waiting, bus is not full.
+	// Must say "下客 2 人，本站无乘客上车！", NOT "当前车厢已满载！".
+	stop.WaitingPassengers = 0
+	g.Bus.ClearPassengers()
+	g.Bus.Passengers = append(g.Bus.Passengers, Passenger{TargetStopID: stop.ID}, Passenger{TargetStopID: stop.ID})
+	g.Bus.PassengerCount = len(g.Bus.Passengers)
+	g.HUD.Toasts = nil
+	g.boardedThisStop = false
+	_ = g.Update()
+
+	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
+	if strings.Contains(lastToast, "已满载") {
+		t.Fatalf("Bus has space and no one boarded, but toast said full! got: %s", lastToast)
+	}
+	if !strings.Contains(lastToast, "下客 2 人") || !strings.Contains(lastToast, "无乘客上车") {
+		t.Fatalf("Expected toast to say alighted 2, no boarding, got: %s", lastToast)
+	}
+
+	// Scenario 3: Bus is truly at full capacity, and 4 passengers are waiting.
+	// Must say "当前车厢已满载，无法上客！".
+	stop.WaitingPassengers = 4
+	g.Bus.ClearPassengers()
+	for i := 0; i < g.Bus.Capacity; i++ {
+		g.Bus.Passengers = append(g.Bus.Passengers, Passenger{TargetStopID: 9999})
+	}
+	g.Bus.PassengerCount = len(g.Bus.Passengers)
+	g.HUD.Toasts = nil
+	g.boardedThisStop = false
+	_ = g.Update()
+
+	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
+	if !strings.Contains(lastToast, "已满载") || !strings.Contains(lastToast, "无法上客") {
+		t.Fatalf("Expected toast to say full capacity cannot board, got: %s", lastToast)
+	}
+
+	// Scenario 4: Normal boarding (bus has space, 3 passengers waiting).
+	// Must say "上客 3 人，营收 +$9！".
+	stop.WaitingPassengers = 3
+	g.Bus.ClearPassengers()
+	g.HUD.Toasts = nil
+	g.boardedThisStop = false
+	_ = g.Update()
+
+	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
+	if !strings.Contains(lastToast, "上客 3 人") || !strings.Contains(lastToast, "营收 +$9") {
+		t.Fatalf("Expected toast to say boarded 3 and revenue, got: %s", lastToast)
+	}
+}
+
+// TestAIMissedStopOvershootPenalizesAndSkips verifies that when an AI-driven bus overshoots a mandatory
+// bus stop (passengers waiting or alighting) without docking, it directly advances to the next stop and
+// deducts a $50 fine. In manual driving mode, it does NOT automatically fine or skip.
+func TestAIMissedStopOvershootPenalizesAndSkips(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.State = StatePlaying
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	targetStop := g.World.Stops[targetStopID]
+
+	// 1. Setup mandatory stop with waiting passengers
+	targetStop.WaitingPassengers = 4
+	g.stopBellRung = false
+	g.passengersAlighting = 0
+	g.Cash = 100
+	g.Settings.TrafficFinesEnabled = true
+
+	// Position bus past the stop along targetStop.Heading by 75px, out in the road travel lane
+	cosH := math.Cos(targetStop.Heading)
+	sinH := math.Sin(targetStop.Heading)
+	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+	g.Bus.Pos = targetStop.Pos.Add(Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
+	g.Bus.Heading = targetStop.Heading
+	g.Bus.Speed = 20.0
+
+	// Case A: Manual driving mode (AutopilotEnabled = false)
+	g.Settings.AutopilotEnabled = false
+	prevRouteIdx := g.Route.CurrentIndex
+	_ = g.Update()
+
+	if g.Route.CurrentIndex != prevRouteIdx {
+		t.Fatalf("Expected manual mode NOT to auto-skip missed stop, got new index %d", g.Route.CurrentIndex)
+	}
+	if g.Cash != 100 {
+		t.Fatalf("Expected manual mode NOT to fine for overshooting, got cash %d", g.Cash)
+	}
+
+	// Case B: AI Autopilot driving mode (AutopilotEnabled = true)
+	g.Settings.AutopilotEnabled = true
+	g.skipCooldown = 0.0
+	_ = g.Update()
+
+	if g.Cash != 50 {
+		t.Fatalf("Expected AI missed stop to deduct $50 fine, got cash %d", g.Cash)
+	}
+	if g.Route.CurrentIndex == prevRouteIdx {
+		t.Fatalf("Expected AI missed stop to advance route to next stop, remained at %d", g.Route.CurrentIndex)
+	}
+
+	// Verify toast notification mentions fine and missed stop
+	foundFineToast := false
+	for _, toast := range g.HUD.Toasts {
+		if strings.Contains(toast.Text, "漏站罚款 -$50") || strings.Contains(toast.Text, "Missed Stop Fine -$50") {
+			foundFineToast = true
+			break
+		}
+	}
+	if !foundFineToast {
+		t.Fatalf("Expected warning toast for missed stop fine, got toasts: %+v", g.HUD.Toasts)
+	}
+}
+
+// TestAIMissedStopOppositeRoadNoFalseOvershoot verifies that when driving past on the opposite side of
+// the road (e.g. oncoming lanes or parallel roads) or driving in the opposite direction, the game never
+// prematurely identifies it as overshooting or skipping the bus stop.
+func TestAIMissedStopOppositeRoadNoFalseOvershoot(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.State = StatePlaying
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	targetStop := g.World.Stops[targetStopID]
+
+	// Target stop with waiting passengers
+	targetStop.WaitingPassengers = 4
+	g.stopBellRung = false
+	g.Cash = 100
+	g.Settings.TrafficFinesEnabled = true
+	g.Settings.AutopilotEnabled = true
+	g.skipCooldown = 0.0
+
+	cosH := math.Cos(targetStop.Heading)
+	sinH := math.Sin(targetStop.Heading)
+	perpX := -sinH
+	perpY := cosH
+
+	// Scenario 1: Bus driving in the OPPOSITE direction along oncoming lanes of the road
+	// Heading is flipped by Pi, position has forwardProj > 55.0 and distToTarget < 350.0
+	oppHeading := NormalizeAngle(targetStop.Heading + math.Pi)
+	g.Bus.Heading = oppHeading
+	g.Bus.Speed = 25.0
+	// Position 80px ahead along stop heading, but on the opposite side of RoadCenter (sideDist < -25)
+	curbDist := targetStop.Pos.Distance(targetStop.RoadCenter)
+	g.Bus.Pos = targetStop.RoadCenter.Add(Vec2{X: cosH * 80.0, Y: sinH * 80.0}).Add(Vec2{X: perpX * (-curbDist * 0.7), Y: perpY * (-curbDist * 0.7)})
+
+	prevRouteIdx := g.Route.CurrentIndex
+	_ = g.Update()
+
+	if g.Route.CurrentIndex != prevRouteIdx {
+		t.Fatalf("Driving past on opposite road should NOT skip stop! Changed from %d to %d", prevRouteIdx, g.Route.CurrentIndex)
+	}
+	if g.Cash != 100 {
+		t.Fatalf("Driving past on opposite road should NOT fine $50! Cash is %d", g.Cash)
+	}
+
+	// Verify no fine toast was posted
+	for _, toast := range g.HUD.Toasts {
+		if strings.Contains(toast.Text, "漏站罚款") || strings.Contains(toast.Text, "Missed Stop") {
+			t.Fatalf("Unexpected missed stop toast posted when on opposite road: %s", toast.Text)
+		}
+	}
+
+	// Scenario 2: Empty station (canSkip == true), driving in opposite direction on opposite road
+	targetStop.WaitingPassengers = 0
+	g.skipCooldown = 0.0
+	_ = g.Update()
+
+	if g.Route.CurrentIndex != prevRouteIdx {
+		t.Fatalf("Driving past empty station on opposite road should NOT trigger drive-by fast skip! Index: %d", g.Route.CurrentIndex)
+	}
+
+	// Scenario 3: Station occupied by another bus (isOccupied == true), bus on opposite road within 380px
+	targetStop.WaitingPassengers = 3
+	g.skipCooldown = 0.0
+	// Add an AI bus docked in the target stop bay
+	aiBus := NewBus(targetStop.Pos.X, targetStop.Pos.Y, targetStop.Heading)
+	aiBus.Speed = 0.0
+	g.AIBusMgr.Buses = []*AIBus{{Bus: aiBus}}
+
+	if !g.IsStopOccupiedByOtherVehicle(targetStop) {
+		t.Fatalf("Expected target stop to be recognized as occupied by docked AI bus")
+	}
+
+	_ = g.Update()
+	if g.Route.CurrentIndex != prevRouteIdx {
+		t.Fatalf("Bus on opposite road should NOT trigger proactive AI skip for occupied stop! Index: %d", g.Route.CurrentIndex)
+	}
+
+	// Scenario 4: Autopilot has a planned path to targetStop but is on an earlier route leg (LastRemaining > 220px)
+	g.AutopilotDriver.pathToID = targetStop.ID
+	g.AutopilotDriver.LastRemaining = 500.0 // 500px away along planned route
+	// Even if bus heading were temporarily aligned, route remaining > 220 blocks premature skip
+	g.Bus.Heading = targetStop.Heading
+	_ = g.Update()
+
+	if g.Route.CurrentIndex != prevRouteIdx {
+		t.Fatalf("Bus on earlier route leg (LastRemaining=500) should NOT trigger skip! Index: %d", g.Route.CurrentIndex)
+	}
+	if g.Cash != 100 {
+		t.Fatalf("Bus on earlier route leg should NOT be fined! Cash: %d", g.Cash)
+	}
+
+	// Scenario 5: Legitimate overshoot after overtaking:
+	// Bus is on correct road side, heading aligned, route arriving (LastRemaining <= 220), past the stop by 75px
+	g.AIBusMgr.Buses = nil // Clear occupying bus
+	targetStop.WaitingPassengers = 4
+	g.AutopilotDriver.LastRemaining = 0.0
+	g.Bus.Heading = targetStop.Heading
+	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+	g.Bus.Pos = targetStop.Pos.Add(Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
+	g.skipCooldown = 0.0
+
+	_ = g.Update()
+
+	if g.Cash != 50 {
+		t.Fatalf("Legitimate overshoot should deduct $50 fine! Cash is %d", g.Cash)
+	}
+	if g.Route.CurrentIndex == prevRouteIdx {
+		t.Fatalf("Legitimate overshoot should advance route! Remained at %d", g.Route.CurrentIndex)
+	}
+
+	initialPos := g.Bus.Pos
+	for frame := 0; frame < 60; frame++ {
+		_ = g.Update()
+	}
+	if g.Bus.Speed <= 1.0 {
+		t.Fatalf("Bus is stopped on the road after missed stop! Speed: %.2f, Pos: %+v (was %+v)", g.Bus.Speed, g.Bus.Pos, initialPos)
+	}
+}
+
+// TestIsStopOccupiedIgnoresOpposingVehicles verifies that stopped or crawling vehicles in the
+// oncoming lane facing the opposite direction do NOT count as occupying the bus stop bay.
+func TestIsStopOccupiedIgnoresOpposingVehicles(t *testing.T) {
+	g := NewGame(1280, 720)
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	targetStop := g.World.Stops[targetStopID]
+
+	// 1. Initially empty
+	g.AIBusMgr.Buses = nil
+	g.TrafficMgr.Cars = nil
+	if g.IsStopOccupiedByOtherVehicle(targetStop) {
+		t.Fatalf("Empty stop should not be occupied")
+	}
+
+	// 2. An oncoming AI bus stopped in the opposing lane near the stop
+	oppHeading := NormalizeAngle(targetStop.Heading + math.Pi)
+	oppBus := NewBus(targetStop.Pos.X+10.0, targetStop.Pos.Y+10.0, oppHeading)
+	oppBus.Speed = 0.0
+	g.AIBusMgr.Buses = []*AIBus{{Bus: oppBus}}
+
+	if g.IsStopOccupiedByOtherVehicle(targetStop) {
+		t.Fatalf("Oncoming bus facing opposite direction should NOT count as occupying the stop bay")
+	}
+
+	// 3. A civilian car crawling in opposing direction near the stop
+	oppCar := &TrafficCar{
+		Pos:     targetStop.Pos.Add(Vec2{X: 15.0, Y: 15.0}),
+		Heading: oppHeading,
+		Speed:   2.0,
+		Length:  48.0,
+		Width:   22.0,
+	}
+	g.TrafficMgr.Cars = []*TrafficCar{oppCar}
+
+	if g.IsStopOccupiedByOtherVehicle(targetStop) {
+		t.Fatalf("Oncoming civilian car facing opposite direction should NOT count as occupying the stop bay")
+	}
+
+	// 4. Same car/bus facing the correct stop heading DOES count as occupying
+	alignedBus := NewBus(targetStop.Pos.X+10.0, targetStop.Pos.Y+10.0, targetStop.Heading)
+	alignedBus.Speed = 0.0
+	g.AIBusMgr.Buses = []*AIBus{{Bus: alignedBus}}
+
+	if !g.IsStopOccupiedByOtherVehicle(targetStop) {
+		t.Fatalf("Vehicle stopped facing the stop heading SHOULD count as occupying the stop bay")
+	}
+}
+
+// TestAutopilotStopBayIgnoresOpposingVehicles verifies that in autopilot functions,
+// vehicles in oncoming traffic do not cause false bay-occupancy or block returning to base lane.
+func TestAutopilotStopBayIgnoresOpposingVehicles(t *testing.T) {
+	lw := 52.0
+	stop := NewBusStop(10, "TestStop", Vec2{X: 500, Y: 300}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+	bus := NewBus(400, 280, 0)
+	cosH, sinH := 1.0, 0.0
+
+	// An oncoming vehicle passing near the stop bay
+	oppObs := VehicleObstacle{
+		Pos:     stop.Pos.Add(Vec2{X: 5.0, Y: 5.0}),
+		Heading: math.Pi, // Oncoming direction
+		Speed:   30.0,
+		Length:  50.0,
+		Width:   25.0,
+	}
+
+	// isBaseLaneClearToReturn should NOT be blocked by this oncoming vehicle
+	clear := isBaseLaneClearToReturn(bus, []VehicleObstacle{oppObs}, cosH, sinH, 0.0, nil, 0, stop)
+	if !clear {
+		t.Fatalf("isBaseLaneClearToReturn should return true when nearby obstacle is oncoming vehicle")
+	}
+}
+
+// TestAIAutopilotProactiveSkipInBerserkAndStandardMode verifies that whenever skip conditions are met
+// (green prompt showing: empty station with no alighting, or occupied station with no alighting),
+// AI mode automatically and proactively skips the station without stopping or docking, in BOTH
+// Berserk mode and Standard mode.
+func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
+	for _, berserk := range []bool{true, false} {
+		modeName := "Standard"
+		if berserk {
+			modeName = "Berserk"
+		}
+
+		// 1. Empty station with no alighting passengers -> AI must skip automatically
+		t.Run(modeName+"_EmptyStationAutoSkip", func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.State = StatePlaying
+			g.Settings.AutopilotEnabled = true
+			g.Settings.AutopilotBerserk = berserk
+			g.skipCooldown = 0.0
+
+			targetStopID := g.Route.GetCurrentTargetStopID()
+			targetStop := g.World.Stops[targetStopID]
+			targetStop.WaitingPassengers = 0
+			g.stopBellRung = false
+			g.passengersAlighting = 0
+
+			// Position bus 300px before the stop along heading, on the stop side of the road
+			cosH := math.Cos(targetStop.Heading)
+			sinH := math.Sin(targetStop.Heading)
+			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+			g.Bus.Pos = targetStop.Pos.Sub(Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Heading = targetStop.Heading
+			g.Bus.Speed = 60.0
+
+			prevRouteIdx := g.Route.CurrentIndex
+			_ = g.Update()
+
+			if g.Route.CurrentIndex == prevRouteIdx {
+				t.Fatalf("[%s] AI mode failed to proactively skip empty station! Index remained at %d", modeName, g.Route.CurrentIndex)
+			}
+
+			// Verify toast
+			foundToast := false
+			for _, toast := range g.HUD.Toasts {
+				if strings.Contains(toast.Text, "AI自主飞站") || strings.Contains(toast.Text, "AI Skip") {
+					foundToast = true
+					break
+				}
+			}
+			if !foundToast {
+				t.Fatalf("[%s] Expected AI proactive skip toast, got toasts: %+v", modeName, g.HUD.Toasts)
+			}
+		})
+
+		// 2. Station occupied by another vehicle with no alighting passengers -> AI must skip automatically
+		t.Run(modeName+"_OccupiedStationAutoSkip", func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.State = StatePlaying
+			g.Settings.AutopilotEnabled = true
+			g.Settings.AutopilotBerserk = berserk
+			g.skipCooldown = 0.0
+
+			targetStopID := g.Route.GetCurrentTargetStopID()
+			targetStop := g.World.Stops[targetStopID]
+			targetStop.WaitingPassengers = 5 // Passengers waiting, but station occupied!
+			g.stopBellRung = false
+			g.passengersAlighting = 0
+
+			// Dock an AI bus in the bay
+			aiBus := NewBus(targetStop.Pos.X, targetStop.Pos.Y, targetStop.Heading)
+			aiBus.Speed = 0.0
+			g.AIBusMgr.Buses = []*AIBus{{Bus: aiBus}}
+
+			cosH := math.Cos(targetStop.Heading)
+			sinH := math.Sin(targetStop.Heading)
+			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+			// Position in the passing lane (e.g. 50px towards road) 300px before the stop
+			g.Bus.Pos = targetStop.Pos.Sub(Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(50.0))
+			g.Bus.Heading = targetStop.Heading
+			g.Bus.Speed = 60.0
+
+			prevRouteIdx := g.Route.CurrentIndex
+			_ = g.Update()
+
+			if g.Route.CurrentIndex == prevRouteIdx {
+				t.Fatalf("[%s] AI mode failed to proactively skip occupied station! Index remained at %d", modeName, g.Route.CurrentIndex)
+			}
+
+			foundToast := false
+			for _, toast := range g.HUD.Toasts {
+				if strings.Contains(toast.Text, "AI自主飞站") || strings.Contains(toast.Text, "AI Skip") {
+					foundToast = true
+					break
+				}
+			}
+			if !foundToast {
+				t.Fatalf("[%s] Expected AI proactive skip toast for occupied station, got: %+v", modeName, g.HUD.Toasts)
+			}
+		})
+
+		// 3. Mandatory stop: Station has waiting passengers and is NOT occupied -> AI must NOT skip
+		t.Run(modeName+"_MandatoryStopWaitingPaxNeverSkipped", func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.State = StatePlaying
+			g.Settings.AutopilotEnabled = true
+			g.Settings.AutopilotBerserk = berserk
+			g.skipCooldown = 0.0
+
+			targetStopID := g.Route.GetCurrentTargetStopID()
+			targetStop := g.World.Stops[targetStopID]
+			targetStop.WaitingPassengers = 5
+			g.stopBellRung = false
+			g.AIBusMgr.Buses = nil
+
+			cosH := math.Cos(targetStop.Heading)
+			sinH := math.Sin(targetStop.Heading)
+			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+			g.Bus.Pos = targetStop.Pos.Sub(Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Heading = targetStop.Heading
+			g.Bus.Speed = 60.0
+
+			prevRouteIdx := g.Route.CurrentIndex
+			_ = g.Update()
+
+			if g.Route.CurrentIndex != prevRouteIdx {
+				t.Fatalf("[%s] AI mode should NEVER skip mandatory stop with waiting passengers! Changed from %d to %d", modeName, prevRouteIdx, g.Route.CurrentIndex)
+			}
+		})
+
+		// 4. Mandatory stop: Passenger pressed stop bell -> AI must NOT skip
+		t.Run(modeName+"_MandatoryStopAlightingNeverSkipped", func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.State = StatePlaying
+			g.Settings.AutopilotEnabled = true
+			g.Settings.AutopilotBerserk = berserk
+			g.skipCooldown = 0.0
+
+			targetStopID := g.Route.GetCurrentTargetStopID()
+			targetStop := g.World.Stops[targetStopID]
+			targetStop.WaitingPassengers = 0
+			g.stopBellRung = true
+			g.passengersAlighting = 2
+
+			cosH := math.Cos(targetStop.Heading)
+			sinH := math.Sin(targetStop.Heading)
+			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+			g.Bus.Pos = targetStop.Pos.Sub(Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Heading = targetStop.Heading
+			g.Bus.Speed = 60.0
+
+			prevRouteIdx := g.Route.CurrentIndex
+			_ = g.Update()
+
+			if g.Route.CurrentIndex != prevRouteIdx {
+				t.Fatalf("[%s] AI mode should NEVER skip stop when passengers are alighting! Changed from %d to %d", modeName, prevRouteIdx, g.Route.CurrentIndex)
+			}
+		})
+	}
+}
+
+func TestTrafficCarAIBusNoOverlap_ApproachingQueue(t *testing.T) {
+	tm := NewTrafficManager(52.0)
+	abm := NewAIBusManager()
+	tm.AIBusMgr = abm
+
+	// AI bus stopped at a stop line heading East in Lane 0 (Y = 26.0)
+	aiBus := NewBus(300.0, 26.0, 0.0)
+	aiBus.Speed = 0.0
+	ab := &AIBus{
+		ID:     1,
+		Bus:    aiBus,
+		Route:  NewRoute(),
+		Driver: NewAutopilotDriver(),
+	}
+	abm.Buses = []*AIBus{ab}
+
+	// Traffic car behind AI bus in the same lane traveling East (Lane 0, Y = 26.0)
+	car := &TrafficCar{
+		Pos:         Vec2{X: 180.0, Y: 26.0},
+		Heading:     0.0,
+		Speed:       120.0,
+		TargetSpeed: 120.0,
+		Length:      48.0,
+		Width:       22.0,
+		IsEW:        true,
+		RoadCenter:  0.0,
+		LaneIndex:   0,
+	}
+	tm.Cars = []*TrafficCar{car}
+
+	// Simulate car approaching AI bus over 2 seconds (120 frames at 60 FPS)
+	dt := 1.0 / 60.0
+	for step := 0; step < 120; step++ {
+		tm.Update(dt, nil, nil, 1, 52.0)
+
+		// Assert that at every single frame, car never overlaps with AI bus
+		busOBB := OBB{Center: aiBus.Pos, HalfLen: aiBus.Length / 2.0, HalfWid: aiBus.Width / 2.0, Heading: aiBus.Heading}
+		carOBB := OBB{Center: car.Pos, HalfLen: car.Length / 2.0, HalfWid: car.Width / 2.0, Heading: car.Heading}
+		collides, _, depth := CheckOBBCollision(busOBB, carOBB)
+		if collides && depth > 0.001 {
+			t.Fatalf("Step %d: Car overlapped with AI bus! Depth: %.2f, Car Pos: %+v, Bus Pos: %+v", step, depth, car.Pos, aiBus.Pos)
+		}
+	}
+
+	// Car should have come to a firm stop behind the AI bus
+	if car.Speed > 1.0 {
+		t.Fatalf("Expected car to be stopped behind AI bus, got speed: %.2f", car.Speed)
+	}
+
+	bumperDist := (aiBus.Pos.X - aiBus.Length/2.0) - (car.Pos.X + car.Length/2.0)
+	if bumperDist < 20.0 {
+		t.Fatalf("Expected bumper distance >= 20px, got: %.2f", bumperDist)
+	}
+}
+
+func TestResolveBusCarSeparation_PushesApart(t *testing.T) {
+	bus := NewBus(200.0, 100.0, 0.0)
+	bus.Speed = 0.0
+
+	// Car forced inside the rear half of the bus
+	car := &TrafficCar{
+		Pos:     Vec2{X: 180.0, Y: 100.0},
+		Heading: 0.0,
+		Speed:   50.0,
+		Length:  48.0,
+		Width:   22.0,
+	}
+
+	busOBB := OBB{Center: bus.Pos, HalfLen: bus.Length / 2.0, HalfWid: bus.Width / 2.0, Heading: bus.Heading}
+	carOBB := OBB{Center: car.Pos, HalfLen: car.Length / 2.0, HalfWid: car.Width / 2.0, Heading: car.Heading}
+	collidesBefore, _, depthBefore := CheckOBBCollision(busOBB, carOBB)
+	if !collidesBefore || depthBefore <= 0 {
+		t.Fatalf("Test setup error: expected initial collision")
+	}
+
+	separated := ResolveBusCarSeparation(bus, car)
+	if !separated {
+		t.Fatalf("Expected ResolveBusCarSeparation to return true")
+	}
+
+	// Check post-separation collision state
+	busOBB.Center = bus.Pos
+	carOBB.Center = car.Pos
+	collidesAfter, _, depthAfter := CheckOBBCollision(busOBB, carOBB)
+	if collidesAfter && depthAfter > 0.001 {
+		t.Fatalf("Expected zero overlap after separation, but collides=%v with depth=%.2f", collidesAfter, depthAfter)
+	}
+	if car.Speed != 0 {
+		t.Fatalf("Expected car speed to be killed to 0 upon rear impact, got: %.2f", car.Speed)
+	}
+}
+
+func TestResolveBusBusSeparation_PushesApart(t *testing.T) {
+	bus1 := NewBus(200.0, 100.0, 0.0)
+	bus1.Speed = 0.0
+	bus2 := NewBus(230.0, 100.0, 0.0)
+	bus2.Speed = 30.0
+
+	obb1 := OBB{Center: bus1.Pos, HalfLen: bus1.Length / 2.0, HalfWid: bus1.Width / 2.0, Heading: bus1.Heading}
+	obb2 := OBB{Center: bus2.Pos, HalfLen: bus2.Length / 2.0, HalfWid: bus2.Width / 2.0, Heading: bus2.Heading}
+	collidesBefore, _, _ := CheckOBBCollision(obb1, obb2)
+	if !collidesBefore {
+		t.Fatalf("Test setup error: expected initial collision")
+	}
+
+	separated := ResolveBusBusSeparation(bus1, bus2)
+	if !separated {
+		t.Fatalf("Expected ResolveBusBusSeparation to return true")
+	}
+
+	obb1.Center = bus1.Pos
+	obb2.Center = bus2.Pos
+	collidesAfter, _, depthAfter := CheckOBBCollision(obb1, obb2)
+	if collidesAfter && depthAfter > 0.001 {
+		t.Fatalf("Expected zero overlap after bus-bus separation, got depth=%.2f", depthAfter)
+	}
+}
+
+func TestResolveCarCarSeparation_PushesApart(t *testing.T) {
+	car1 := &TrafficCar{Pos: Vec2{X: 100.0, Y: 100.0}, Heading: 0.0, Speed: 0.0, Length: 48.0, Width: 22.0}
+	car2 := &TrafficCar{Pos: Vec2{X: 120.0, Y: 100.0}, Heading: 0.0, Speed: 40.0, Length: 48.0, Width: 22.0}
+
+	obb1 := OBB{Center: car1.Pos, HalfLen: car1.Length / 2.0, HalfWid: car1.Width / 2.0, Heading: car1.Heading}
+	obb2 := OBB{Center: car2.Pos, HalfLen: car2.Length / 2.0, HalfWid: car2.Width / 2.0, Heading: car2.Heading}
+	collidesBefore, _, _ := CheckOBBCollision(obb1, obb2)
+	if !collidesBefore {
+		t.Fatalf("Test setup error: expected initial collision")
+	}
+
+	separated := ResolveCarCarSeparation(car1, car2)
+	if !separated {
+		t.Fatalf("Expected ResolveCarCarSeparation to return true")
+	}
+
+	obb1.Center = car1.Pos
+	obb2.Center = car2.Pos
+	collidesAfter, _, depthAfter := CheckOBBCollision(obb1, obb2)
+	if collidesAfter && depthAfter > 0.001 {
+		t.Fatalf("Expected zero overlap after car-car separation, got depth=%.2f", depthAfter)
+	}
+}
+
+func TestGameUpdate_TrafficCarDoesNotOverlapStoppedAIBus(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.State = StatePlaying
+	g.Settings.AIBusCount = 2
+	g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, 52.0, g.Bus)
+
+	if len(g.AIBusMgr.Buses) == 0 {
+		t.Fatalf("Expected AI buses to be spawned in game")
+	}
+
+	// Pick first AI bus and stop it in Lane 0 (Y = 26.0)
+	targetAI := g.AIBusMgr.Buses[0]
+	targetAI.Bus.Pos = Vec2{X: 250.0, Y: 26.0}
+	targetAI.Bus.Heading = 0.0
+	targetAI.Bus.Speed = 0.0
+
+	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
+	if len(activeCars) == 0 {
+		t.Fatalf("Expected active cars in game")
+	}
+
+	// Place active car behind the AI bus heading in same direction in Lane 0 (Y = 26.0)
+	car := activeCars[0]
+	car.Pos = Vec2{X: 160.0, Y: 26.0}
+	car.Heading = 0.0
+	car.Speed = 100.0
+	car.TargetSpeed = 100.0
+	car.IsEW = true
+	car.RoadCenter = 0.0
+	car.LaneIndex = 0
+
+	for frame := 0; frame < 60; frame++ {
+		// Stop AI bus firmly each frame to simulate red light queue wait
+		targetAI.Bus.Speed = 0.0
+
+		_ = g.Update()
+
+		// Verify no overlap
+		busOBB := OBB{Center: targetAI.Bus.Pos, HalfLen: targetAI.Bus.Length / 2.0, HalfWid: targetAI.Bus.Width / 2.0, Heading: targetAI.Bus.Heading}
+		carOBB := OBB{Center: car.Pos, HalfLen: car.Length / 2.0, HalfWid: car.Width / 2.0, Heading: car.Heading}
+		collides, _, depth := CheckOBBCollision(busOBB, carOBB)
+		if collides && depth > 0.001 {
+			t.Fatalf("Frame %d: Traffic car overlapped with stopped AI bus! Depth: %.2f", frame, depth)
+		}
+	}
+}
+
+func TestAIMissedStopOvertakeContinuesDriving(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.State = StatePlaying
+	g.Settings.AutopilotEnabled = true
+	g.Settings.AutopilotBerserk = true
+	g.Settings.TrafficFinesEnabled = true
+
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	targetStop := g.World.Stops[targetStopID]
+	targetStop.WaitingPassengers = 4
+
+	cosH := math.Cos(targetStop.Heading)
+	sinH := math.Sin(targetStop.Heading)
+	laneW := g.Settings.GetLaneWidth()
+
+	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+
+	// Bus is 60px past stop in the passing lane, speed was 20px/s
+	g.Bus.Pos = targetStop.Pos.Add(Vec2{X: cosH * 60.0, Y: sinH * 60.0}).Add(toRoadDir.Mul(laneW))
+	g.Bus.Heading = targetStop.Heading
+	g.Bus.Speed = 20.0
+	g.AutopilotDriver.LaneOffset = -laneW
+	g.AutopilotDriver.TargetLaneOffset = -laneW
+	g.AutopilotDriver.OvertakeState = OvertakePassing
+
+	// Place active car in the curb lane alongside the bus
+	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
+	if len(activeCars) > 0 {
+		activeCars[0].Pos = targetStop.Pos.Add(Vec2{X: cosH * 30.0, Y: sinH * 30.0})
+		activeCars[0].Heading = targetStop.Heading
+		activeCars[0].Speed = 0.0
+		activeCars[0].Length = 32.0
+		activeCars[0].Width = 18.0
+	}
+
+	// Trigger update
+	_ = g.Update()
+
+	// Verify $50 fine was applied and route advanced
+	if g.Route.GetCurrentTargetStopID() == targetStopID {
+		t.Fatalf("Expected route to advance past missed stop %d", targetStopID)
+	}
+
+	// Now run for 60 frames (1 second)
+	for frame := 0; frame < 60; frame++ {
+		_ = g.Update()
+	}
+
+	// Ensure the bus is actively driving forward along the road, not stuck motionless
+	if g.Bus.Speed < 30.0 {
+		t.Fatalf("Expected bus to continue driving at cruise speed, got speed=%.2f, TargetSpd=%.2f",
+			g.Bus.Speed, g.AutopilotDriver.LastTargetSpeed)
+	}
+	if g.Bus.IsBraking || g.Bus.IsHandbraking {
+		t.Fatalf("Expected bus brakes to be released, got IsBraking=%v, IsHandbraking=%v",
+			g.Bus.IsBraking, g.Bus.IsHandbraking)
+	}
+}
+
+func TestAIMissedStopStoppedOutsideBayResumesDriving(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.State = StatePlaying
+	g.Settings.AutopilotEnabled = true
+	g.Settings.AutopilotBerserk = true
+	g.Settings.TrafficFinesEnabled = true
+
+	targetStopID := g.Route.GetCurrentTargetStopID()
+	targetStop := g.World.Stops[targetStopID]
+	targetStop.WaitingPassengers = 4
+
+	cosH := math.Cos(targetStop.Heading)
+	sinH := math.Sin(targetStop.Heading)
+	laneW := g.Settings.GetLaneWidth()
+
+	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+
+	// Bus is stopped on the road outside the bay (25px past stop center, in passing lane, Speed=0)
+	g.Bus.Pos = targetStop.Pos.Add(Vec2{X: cosH * 25.0, Y: sinH * 25.0}).Add(toRoadDir.Mul(laneW))
+	g.Bus.Heading = targetStop.Heading
+	g.Bus.Speed = 0.0
+	g.AutopilotDriver.LaneOffset = -laneW
+
+	// Trigger update: should recognize inability to dock and skip
+	_ = g.Update()
+
+	if g.Route.GetCurrentTargetStopID() == targetStopID {
+		t.Fatalf("Expected route to advance past missed stop when unable to dock")
+	}
+
+	// Run 45 frames
+	for frame := 0; frame < 45; frame++ {
+		_ = g.Update()
+	}
+
+	if g.Bus.Speed < 20.0 {
+		t.Fatalf("Expected bus to resume driving, got speed=%.2f", g.Bus.Speed)
+	}
+}
+
+func TestYellowBoxIntersectionClearanceForTrafficCars(t *testing.T) {
+	lw := 52.0
+	inter := &TrafficIntersection{
+		Center:            Vec2{X: 0, Y: 0},
+		Phase:             PhaseNSGreen, // NS green for northbound vehicle
+		IsMajor:           true,
+		ApproachHasRoad:   [4]bool{true, true, true, true},
+		ApproachLanes:     [4]int{4, 4, 4, 4},
+		ApproachIs4Lane:   [4]bool{true, true, true, true},
+		GreenDuration:     8.0,
+		YellowDuration:    2.5,
+		LeftGreenDuration: 5.5,
+	}
+	tls := NewTrafficLightSystem()
+	tls.Intersections = []*TrafficIntersection{inter}
+
+	tm := NewTrafficManager(lw)
+
+	// Stop line distance for northbound approach (~126px from center)
+	stopLineDist := inter.GetStopLineDistForHeading(-math.Pi/2, lw)
+
+	// AI Car approaching northbound (South of intersection, moving North)
+	// Position car so bumper is 25px before stop line, in lane 1 (straight lane)
+	carPos := Vec2{
+		X: 78.0,
+		Y: stopLineDist + 25.0 + 23.0,
+	}
+	car := &TrafficCar{
+		ID:          99,
+		Pos:         carPos,
+		Heading:     -math.Pi / 2, // Northbound
+		Speed:       80.0,
+		TargetSpeed: 120.0,
+		Length:      46,
+		Width:       22,
+		RoadCenter:  0,
+		IsEW:        false,
+		LaneIndex:   1, // Straight lane
+	}
+	tm.Cars = []*TrafficCar{car}
+
+	// 1. When intersection is clear, car does not brake on green
+	tm.updateSingleCar(0.1, car, 0, nil, tls, 1, lw, nil)
+	if car.IsBraking {
+		t.Fatalf("Car should not brake when intersection box is clear on green light!")
+	}
+
+	// 2. Place an AI bus inside the intersection box (crossing East-West)
+	aiBus := NewBus(0, 0, 0) // Centered in intersection box, heading East
+	aiBus.Speed = 10.0      // Traversing slowly or turning
+
+	// Update car: Yellow Box clearance must activate!
+	tm.updateSingleCar(0.1, car, 0, aiBus, tls, 1, lw, nil)
+
+	if !car.IsBraking {
+		t.Fatalf("Car must brake and yield before stop line when bus is occupying intersection box (Yellow Box rule)!")
+	}
+
+	// Car must decelerate towards stop line
+	if car.Speed > 70.0 {
+		t.Fatalf("Car speed should be decelerated towards stop line, got %.1f", car.Speed)
+	}
+}
+
+func TestIntersectionDeadlockResolutionCarDespawnsAndAIBusResetsToStart(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	route := GetStandardRouteForMap(MapThemeMetropolis, w)
+	abm := NewAIBusManager()
+	abm.ActiveRoute = route
+	abm.SetLineCount(1, w, lw)
+
+	if len(abm.Buses) == 0 {
+		t.Fatalf("Expected at least 1 AI bus in manager")
+	}
+	aiBus := abm.Buses[0]
+	startStopID := route.StopIDs[0]
+	startStop := w.Stops[startStopID]
+
+	// Advance AI bus to stop index 1 and add passengers
+	aiBus.Route.CurrentIndex = 1
+	aiBus.Bus.PassengerCount = 15
+	aiBus.Bus.Passengers = make([]Passenger, 15)
+
+	// Position AI bus on Central Ave Eastbound lane heading East
+	aiBus.Bus.Pos = Vec2{X: -400.0, Y: 26.0}
+	aiBus.Bus.Heading = 0.0
+	aiBus.Bus.Speed = 0.0
+
+	// Position an AI car directly on the road ahead of the bus, facing head-to-head (Westbound)
+	tm := NewTrafficManager(lw)
+	carPos := Vec2{X: -340.0, Y: 26.0}
+	car := &TrafficCar{
+		ID:          42,
+		Pos:         carPos,
+		Heading:     math.Pi, // Facing West towards Eastbound bus
+		Speed:       0.0,
+		TargetSpeed: 100.0,
+		Length:      46,
+		Width:       22,
+		RoadCenter:  52.0,
+		IsEW:        true,
+	}
+	tm.Cars = []*TrafficCar{car}
+	tm.AIBusMgr = abm
+
+	// Verify initial state
+	if aiBus.Route.CurrentIndex == 0 {
+		t.Fatalf("Initial AI bus route index should not be 0 for this test")
+	}
+
+	// Simulate motionless deadlock for > 38.0s (DeadlockDurationThreshold)
+	dt := 0.2
+	for elapsed := 0.0; elapsed < 42.0; elapsed += dt {
+		aiBus.Bus.Speed = 0.0
+		car.Speed = 0.0
+		tm.resolveDeadlockedCars(dt, nil, len(tm.Cars), lw, w)
+		if car.DeadlockTimer == 0 && len(tm.Cars) > 0 && tm.Cars[0].Pos.Distance(carPos) > 10.0 {
+			break
+		}
+	}
+
+	// 1. AI Car must have disappeared/reset from the stuck position
+	if len(tm.Cars) > 0 {
+		if tm.Cars[0].Pos.Distance(carPos) < 10.0 {
+			t.Fatalf("Deadlocked AI car failed to disappear/reset from the deadlock spot!")
+		}
+		if tm.Cars[0].DeadlockTimer != 0 {
+			t.Fatalf("Reset car must have DeadlockTimer=0, got %.2f", tm.Cars[0].DeadlockTimer)
+		}
+	}
+
+	// 2. AI Bus must have reset back to the route's starting station (StopIDs[0])
+	if aiBus.Route.CurrentIndex != 0 {
+		t.Fatalf("AI Bus should be reset to starting station index 0, got %d", aiBus.Route.CurrentIndex)
+	}
+	if aiBus.Bus.Pos.Distance(startStop.Pos) > 1.0 {
+		t.Fatalf("AI Bus position should be reset to starting station Pos %v, got %v", startStop.Pos, aiBus.Bus.Pos)
+	}
+	if aiBus.Bus.PassengerCount != 0 {
+		t.Fatalf("AI Bus passengers should be cleared upon reset to starting station, got %d", aiBus.Bus.PassengerCount)
+	}
+	if aiBus.DeadlockTimer != 0 {
+		t.Fatalf("AI Bus DeadlockTimer should be reset to 0, got %.2f", aiBus.DeadlockTimer)
+	}
+}
+
+func TestAutopilotDeadlockPlayerBusResetsToStartingStation(t *testing.T) {
+	g := NewGame(1920, 1080)
+	g.State = StatePlaying
+	g.Settings.AutopilotEnabled = true
+
+	startStopID := g.Route.StopIDs[0]
+	startStop := g.World.Stops[startStopID]
+
+	// Advance route index and board passengers
+	g.Route.CurrentIndex = 1
+	g.Bus.PassengerCount = 20
+	g.Bus.Passengers = make([]Passenger, 20)
+
+	// Place player bus along Central Ave Eastbound lane (Y=26) heading East
+	g.Bus.Pos = Vec2{X: -400.0, Y: 26.0}
+	g.Bus.Heading = 0.0
+	g.Bus.Speed = 0.0
+
+	// Place an AI car directly ahead facing Westbound in same lane
+	carPos := Vec2{X: -340.0, Y: 26.0}
+	car := &TrafficCar{
+		ID:          88,
+		Pos:         carPos,
+		Heading:     math.Pi, // Facing West towards Eastbound bus
+		Speed:       0.0,
+		TargetSpeed: 0.0,
+		Length:      46,
+		Width:       22,
+		RoadCenter:  52.0,
+		IsEW:        true,
+	}
+	g.TrafficMgr.Cars = []*TrafficCar{car}
+
+	// Simulate motionless deadlock for > 38.0s (at 60 FPS, 40s = 2400 frames)
+	totalFrames := int(40.0 * 60)
+	for i := 0; i < totalFrames; i++ {
+		g.Bus.Speed = 0.0
+		car.Speed = 0.0
+		_ = g.Update()
+		if g.Route.CurrentIndex == 0 {
+			break
+		}
+	}
+
+	// 1. AI Car must have disappeared/reset from stuck spot
+	if len(g.TrafficMgr.Cars) > 0 {
+		if g.TrafficMgr.Cars[0].Pos.Distance(carPos) < 10.0 {
+			t.Fatalf("Deadlocked AI car failed to disappear/reset from the deadlock spot!")
+		}
+	}
+
+	// 2. Player bus in AI autopilot mode must have reset back to starting station
+	if g.Route.CurrentIndex != 0 {
+		t.Fatalf("Player AI Bus should be reset to starting station index 0, got %d", g.Route.CurrentIndex)
+	}
+	if g.Bus.Pos.Distance(startStop.Pos) > 1.0 {
+		t.Fatalf("Player AI Bus position should be reset to starting station Pos %v, got %v", startStop.Pos, g.Bus.Pos)
+	}
+	if g.Bus.PassengerCount > g.Bus.Capacity {
+		t.Fatalf("Player AI Bus passengers exceeded capacity upon reset: %d", g.Bus.PassengerCount)
+	}
+	if g.AutopilotDeadlockTimer != 0 {
+		t.Fatalf("Player AI Bus AutopilotDeadlockTimer should be reset to 0, got %.2f", g.AutopilotDeadlockTimer)
+	}
+}

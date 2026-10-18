@@ -126,7 +126,7 @@ func (h *HUD) HandleAutopilotClick(mousePos Vec2, settings *Settings) (toggled b
 		settings.AutopilotEnabled = !settings.AutopilotEnabled
 		if settings.AutopilotEnabled {
 			if settings.AutopilotBerserk {
-				return true, T("已开启 AI 狂暴模式 (直行狂飙/双车道变道超车, P键关闭/B键切标准)", "AI Berserk Mode ON (Fast straightaways & 2-lane overtaking, P to exit/B for Standard)")
+				return true, fmt.Sprintf(T("已开启 AI 狂暴模式 (最高%d km/h, P键关闭/Shift+B切速/B键切标准)", "AI Berserk Mode ON (%d km/h, P to exit/Shift+B for speed/B for Standard)"), settings.AutopilotBerserkMaxSpeed)
 			}
 			return true, T("已开启 AI 自动巡航驾驶 (P键随时切换, B键开启狂暴模式)", "AI Autopilot ON (Press P anytime, B for Berserk)")
 		}
@@ -461,7 +461,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 	DrawText(screen, "KM/H", dashX+52, dashY+20, 11, RGBA(148, 163, 184, 255))
 
 	// Speed bar
-	barRatio := math.Abs(bus.Speed) / bus.MaxSpeedFwd
+	barRatio := math.Min(1.0, math.Abs(bus.Speed)/math.Max(1.0, bus.MaxSpeedFwd))
 	barColor := RGBA(34, 197, 94, 255)
 	if barRatio > 0.75 {
 		barColor = RGBA(239, 68, 68, 255)
@@ -534,28 +534,33 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 	}
 	DrawText(screen, statusStr, dashX+200, dashY+16, 11, statusCol)
 
-	// Interactive AI Autopilot Badge: [⚡ AI狂暴(P)] / [🤖 AI巡航(P)] / [🤖 手动(P)]
-	apW := 94.0
+	// Interactive AI Autopilot Badge: [⚡ 狂暴80(P)] / [🤖 AI巡航(P)] / [🤖 手动(P)]
+	apW := 96.0
 	apH := 20.0
-	h.AutopilotBounds = Rect{X: dashX + 248, Y: dashY + 12, W: apW, H: apH}
+	h.AutopilotBounds = Rect{X: dashX + 246, Y: dashY + 12, W: apW, H: apH}
 	if settings != nil && settings.AutopilotEnabled {
 		if settings.AutopilotBerserk {
 			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), RGBA(234, 88, 12, 240), true)
 			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, RGBA(253, 186, 116, 255), true)
-			DrawText(screen, T("⚡ 狂暴AI(P)", "⚡ Berserk(P)"), h.AutopilotBounds.X+7, h.AutopilotBounds.Y+4, 11, color.White)
+			bskText := fmt.Sprintf(T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), settings.AutopilotBerserkMaxSpeed)
+			DrawText(screen, bskText, h.AutopilotBounds.X+6, h.AutopilotBounds.Y+4, 11, color.White)
 		} else {
 			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), RGBA(6, 182, 212, 235), true)
 			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, RGBA(165, 243, 252, 255), true)
-			DrawText(screen, T("🤖 AI巡航(P)", "🤖 Autopilot(P)"), h.AutopilotBounds.X+7, h.AutopilotBounds.Y+4, 11, RGBA(15, 23, 42, 255))
+			DrawText(screen, T("🤖 AI巡航(P)", "🤖 Autopilot(P)"), h.AutopilotBounds.X+8, h.AutopilotBounds.Y+4, 11, RGBA(15, 23, 42, 255))
 		}
 	} else {
 		vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), RGBA(30, 41, 59, 200), true)
 		vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.0, RGBA(100, 116, 139, 180), true)
-		DrawText(screen, T("🤖 手动(P)", "🤖 Manual(P)"), h.AutopilotBounds.X+12, h.AutopilotBounds.Y+4, 11, RGBA(148, 163, 184, 255))
+		manText := T("👤 手动(P)", "👤 Manual(P)")
+		if settings != nil {
+			manText = fmt.Sprintf(T("👤 手动%d(P)", "👤 Man%d(P)"), settings.AutopilotBerserkMaxSpeed)
+		}
+		DrawText(screen, manText, h.AutopilotBounds.X+8, h.AutopilotBounds.Y+4, 11, RGBA(148, 163, 184, 255))
 	}
 
 	// Gear shortcut prompt row
-	DrawText(screen, T("换挡: [Shift/Ctrl]升降 [R/N/G]切挡 [P]AI [B]狂暴", "Shift: [Shift/Ctrl] [R/N/G] [P]AI [B]Berserk"), dashX+114, dashY+38, 10, RGBA(148, 163, 184, 220))
+	DrawText(screen, T("换挡: [Shift/Ctrl]升降 [R/N/G]切挡 [P]AI [B]狂暴 [Shift+B]切速", "Shift: [Shift/Ctrl] [R/N/G] [P]AI [B]Berserk [Shift+B]Speed"), dashX+70, dashY+38, 10, RGBA(148, 163, 184, 220))
 
 	// Health and Steering info row
 	durCol := RGBA(34, 197, 94, 255)
@@ -596,7 +601,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *Bus, activeStop *Bus
 		DrawText(screen, promptText, promptX+20, promptY+15, 13, RGBA(250, 204, 21, 255))
 	} else if targetStop != nil {
 		dist := bus.Pos.Distance(targetStop.Pos)
-		if dist <= 320.0 {
+		if dist <= 380.0 {
 			promptH := 46.0
 			promptY := float64(screenH) - 80.0
 

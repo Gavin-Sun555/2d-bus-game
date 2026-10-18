@@ -154,3 +154,226 @@ func CheckOBBCollision(a, b OBB) (bool, Vec2, float64) {
 
 	return true, bestAxis, minOverlap
 }
+
+// ResolveBusCarSeparation checks for OBB collision between a Bus and a TrafficCar,
+// and applies physical positional separation and velocity damping to prevent any visual overlap.
+func ResolveBusCarSeparation(bus *Bus, car *TrafficCar) bool {
+	if bus == nil || car == nil {
+		return false
+	}
+	dist := bus.Pos.Distance(car.Pos)
+	if dist > (bus.Length+car.Length)*0.6 {
+		return false
+	}
+
+	busOBB := OBB{
+		Center:  bus.Pos,
+		HalfLen: bus.Length / 2.0,
+		HalfWid: bus.Width / 2.0,
+		Heading: bus.Heading,
+	}
+	carOBB := OBB{
+		Center:  car.Pos,
+		HalfLen: car.Length / 2.0,
+		HalfWid: car.Width / 2.0,
+		Heading: car.Heading,
+	}
+
+	collides, normal, depth := CheckOBBCollision(busOBB, carOBB)
+	if !collides || depth <= 0 {
+		return false
+	}
+
+	carForward := Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	busForward := Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}
+	toBus := bus.Pos.Sub(car.Pos)
+	isCarFacingBus := carForward.Dot(toBus) > 0
+	isBusFacingCar := busForward.Dot(car.Pos.Sub(bus.Pos)) > 0
+
+	// When both vehicles are aligned in the same road corridor (e.g. queue or car following bus),
+	// physical separation should strictly push longitudinally along the travel lane rather than sideways.
+	headDiff := math.Abs(NormalizeAngle(bus.Heading - car.Heading))
+	if headDiff < 0.7 {
+		fwd := toBus.Dot(carForward)
+		fwdOverlap := (bus.Length/2.0 + car.Length/2.0) - math.Abs(fwd)
+		if fwdOverlap > 0 {
+			depth = fwdOverlap
+			if fwd >= 0 {
+				normal = carForward // points from car to bus
+			} else {
+				normal = carForward.Mul(-1)
+			}
+		}
+	}
+
+	sepDepth := depth + 2.0
+	// normal points from car to bus
+	isBusStopped := math.Abs(bus.Speed) < 8.0
+	if isBusStopped {
+		bus.Pos = bus.Pos.Add(normal.Mul(sepDepth * 0.05))
+		car.Pos = car.Pos.Sub(normal.Mul(sepDepth * 0.95))
+	} else if car.Speed < 5.0 {
+		bus.Pos = bus.Pos.Add(normal.Mul(sepDepth))
+	} else {
+		bus.Pos = bus.Pos.Add(normal.Mul(sepDepth * 0.7))
+		car.Pos = car.Pos.Sub(normal.Mul(sepDepth * 0.3))
+	}
+
+	busVel := Vec2{X: math.Cos(bus.Heading) * bus.Speed, Y: math.Sin(bus.Heading) * bus.Speed}
+	carVel := Vec2{X: math.Cos(car.Heading) * car.Speed, Y: math.Sin(car.Heading) * car.Speed}
+	relVelAlongNormal := busVel.Sub(carVel).Dot(normal)
+
+	if isCarFacingBus && (!isBusFacingCar || car.Speed > math.Abs(bus.Speed)) {
+		car.Speed = 0
+		car.IsBraking = true
+	} else if relVelAlongNormal < 0 {
+		if isBusFacingCar && bus.Speed > 5.0 {
+			car.Speed = math.Max(car.Speed+20.0, math.Abs(bus.Speed)*0.8+15.0)
+			car.IsBraking = false
+		} else {
+			car.Speed = math.Min(car.Speed, 10.0)
+			car.IsBraking = true
+		}
+	}
+
+	return true
+}
+
+// ResolveBusBusSeparation checks for OBB collision between two Buses,
+// and applies physical positional separation to prevent any visual overlap.
+func ResolveBusBusSeparation(busA, busB *Bus) bool {
+	if busA == nil || busB == nil || busA == busB {
+		return false
+	}
+	dist := busA.Pos.Distance(busB.Pos)
+	if dist > (busA.Length+busB.Length)*0.6 {
+		return false
+	}
+
+	obbA := OBB{
+		Center:  busA.Pos,
+		HalfLen: busA.Length / 2.0,
+		HalfWid: busA.Width / 2.0,
+		Heading: busA.Heading,
+	}
+	obbB := OBB{
+		Center:  busB.Pos,
+		HalfLen: busB.Length / 2.0,
+		HalfWid: busB.Width / 2.0,
+		Heading: busB.Heading,
+	}
+
+	collides, normal, depth := CheckOBBCollision(obbA, obbB)
+	if !collides || depth <= 0 {
+		return false
+	}
+
+	headDiff := math.Abs(NormalizeAngle(busA.Heading - busB.Heading))
+	if headDiff < 0.7 {
+		fwdA := Vec2{X: math.Cos(busA.Heading), Y: math.Sin(busA.Heading)}
+		toA := busA.Pos.Sub(busB.Pos)
+		fwd := toA.Dot(fwdA)
+		fwdOverlap := (busA.Length/2.0 + busB.Length/2.0) - math.Abs(fwd)
+		if fwdOverlap > 0 {
+			depth = fwdOverlap
+			if fwd >= 0 {
+				normal = fwdA // points from B to A
+			} else {
+				normal = fwdA.Mul(-1)
+			}
+		}
+	}
+
+	sepDepth := depth + 2.0
+	// normal points from B to A
+	isAStopped := math.Abs(busA.Speed) < 5.0
+	isBStopped := math.Abs(busB.Speed) < 5.0
+
+	if isAStopped && !isBStopped {
+		busA.Pos = busA.Pos.Add(normal.Mul(sepDepth * 0.05))
+		busB.Pos = busB.Pos.Sub(normal.Mul(sepDepth * 0.95))
+		busB.Speed = 0
+	} else if isBStopped && !isAStopped {
+		busA.Pos = busA.Pos.Add(normal.Mul(sepDepth * 0.95))
+		busB.Pos = busB.Pos.Sub(normal.Mul(sepDepth * 0.05))
+		busA.Speed = 0
+	} else {
+		busA.Pos = busA.Pos.Add(normal.Mul(sepDepth * 0.5))
+		busB.Pos = busB.Pos.Sub(normal.Mul(sepDepth * 0.5))
+		busA.Speed = -busA.Speed * 0.25
+		busB.Speed = -busB.Speed * 0.25
+	}
+
+	return true
+}
+
+// ResolveCarCarSeparation checks for OBB collision between two TrafficCars,
+// and applies physical positional separation to prevent any visual overlap.
+func ResolveCarCarSeparation(carA, carB *TrafficCar) bool {
+	if carA == nil || carB == nil || carA == carB {
+		return false
+	}
+	dist := carA.Pos.Distance(carB.Pos)
+	if dist > (carA.Length+carB.Length)*0.6 {
+		return false
+	}
+
+	obbA := OBB{
+		Center:  carA.Pos,
+		HalfLen: carA.Length / 2.0,
+		HalfWid: carA.Width / 2.0,
+		Heading: carA.Heading,
+	}
+	obbB := OBB{
+		Center:  carB.Pos,
+		HalfLen: carB.Length / 2.0,
+		HalfWid: carB.Width / 2.0,
+		Heading: carB.Heading,
+	}
+
+	collides, normal, depth := CheckOBBCollision(obbA, obbB)
+	if !collides || depth <= 0 {
+		return false
+	}
+
+	headDiff := math.Abs(NormalizeAngle(carA.Heading - carB.Heading))
+	if headDiff < 0.7 {
+		fwdA := Vec2{X: math.Cos(carA.Heading), Y: math.Sin(carA.Heading)}
+		toA := carA.Pos.Sub(carB.Pos)
+		fwd := toA.Dot(fwdA)
+		fwdOverlap := (carA.Length/2.0 + carB.Length/2.0) - math.Abs(fwd)
+		if fwdOverlap > 0 {
+			depth = fwdOverlap
+			if fwd >= 0 {
+				normal = fwdA // points from B to A
+			} else {
+				normal = fwdA.Mul(-1)
+			}
+		}
+	}
+
+	sepDepth := depth + 2.0
+	// normal points from B to A
+	isAStopped := math.Abs(carA.Speed) < 5.0
+	isBStopped := math.Abs(carB.Speed) < 5.0
+
+	if isAStopped && !isBStopped {
+		carA.Pos = carA.Pos.Add(normal.Mul(sepDepth * 0.05))
+		carB.Pos = carB.Pos.Sub(normal.Mul(sepDepth * 0.95))
+		carB.Speed = 0
+		carB.IsBraking = true
+	} else if isBStopped && !isAStopped {
+		carA.Pos = carA.Pos.Add(normal.Mul(sepDepth * 0.95))
+		carB.Pos = carB.Pos.Sub(normal.Mul(sepDepth * 0.05))
+		carA.Speed = 0
+		carA.IsBraking = true
+	} else {
+		carA.Pos = carA.Pos.Add(normal.Mul(sepDepth * 0.5))
+		carB.Pos = carB.Pos.Sub(normal.Mul(sepDepth * 0.5))
+		carA.Speed = math.Min(carA.Speed, 10.0)
+		carB.Speed = math.Min(carB.Speed, 10.0)
+	}
+
+	return true
+}
+

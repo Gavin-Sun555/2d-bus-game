@@ -42,7 +42,7 @@ test:
 ## test-qualify: 运行发布前全地图全场景验收测试 (发布到 GitHub 前必跑)
 test-qualify:
 	@echo "🏆 正在运行全地图多轮 Release Qualification 验收测试..."
-	go test -v -run TestReleaseQualification ./...
+	go test -v -run "TestReleaseQualification|TestRelease" ./...
 
 ## test-all: 运行包含基础测试与全量验收测试的所有用例
 test-all:

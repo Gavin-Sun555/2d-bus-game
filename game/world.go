@@ -1434,8 +1434,19 @@ func (w *World) UpdateLaneWidth(laneWidth float64) {
 	}
 }
 
-func (w *World) Update(dt float64) {
+func (w *World) Update(dt float64, route ...*Route) {
+	var r *Route
+	if len(route) > 0 {
+		r = route[0]
+	}
 	for _, s := range w.Stops {
+		// Only bus stops on the planned route generate passengers.
+		// Stops not on the route must not spawn passengers and remain at 0 waiting.
+		if r != nil && !r.ContainsStop(s.ID) {
+			s.WaitingPassengers = 0
+			s.SpawnTimer = 0
+			continue
+		}
 		s.Update(dt)
 	}
 }

@@ -22,6 +22,28 @@ type AIBus struct {
 	LastExchangedStopID int     // Prevents re-exchanging passengers on every frame of the same station dwell
 }
 
+// ResetToStartingStation resets an AI bus back to its route's starting station (StopIDs[0])
+func (ab *AIBus) ResetToStartingStation(world *World) {
+	if ab == nil || ab.Bus == nil || ab.Route == nil || len(ab.Route.StopIDs) == 0 || world == nil || len(world.Stops) == 0 {
+		return
+	}
+	ab.DeadlockTimer = 0
+	ab.Route.CurrentIndex = 0
+	startID := ab.Route.StopIDs[0]
+	if startID >= 0 && startID < len(world.Stops) {
+		st := world.Stops[startID]
+		ab.Bus.Pos = st.Pos
+		ab.Bus.Heading = st.Heading
+		ab.Bus.Speed = 0
+		ab.Bus.SteeringAngle = 0
+		ab.Bus.ClearPassengers()
+		ab.LastExchangedStopID = -1
+		if ab.Driver != nil {
+			ab.Driver.Reset()
+		}
+	}
+}
+
 // AIBusManager oversees all AI buses operating on the active city route
 type AIBusManager struct {
 	Buses       []*AIBus
@@ -217,6 +239,7 @@ func (abm *AIBusManager) RebuildFleet(world *World, laneWidth float64, playerBus
 		bus.TransmissionMode = TransmissionAuto
 		bus.Speed = 0
 		bus.SteeringAngle = 0
+		bus.Capacity = DefaultBusCapacity
 
 		aiColor := busColors[i%len(busColors)]
 		newBuses = append(newBuses, &AIBus{
@@ -324,23 +347,34 @@ func (abm *AIBusManager) Update(
 		// Passenger exchange simulation when parked at station
 		if isDocked && ab.Bus.DoorsOpen {
 			targetStopID := ab.Route.GetCurrentTargetStopID()
-			if targetStopID >= 0 && targetStopID < len(world.Stops) && ab.LastExchangedStopID != targetStopID {
-				ab.LastExchangedStopID = targetStopID
+			if targetStopID >= 0 && targetStopID < len(world.Stops) {
 				st := world.Stops[targetStopID]
 
-				// 1. Alight passengers destined for this stop
-				ab.Bus.RemovePassengersAlightingAt(targetStopID)
-				if ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
-					ab.Bus.ClearPassengers()
+				if ab.LastExchangedStopID != targetStopID {
+					ab.LastExchangedStopID = targetStopID
+					// 1. Alight passengers destined for this stop
+					ab.Bus.RemovePassengersAlightingAt(targetStopID)
+					if ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
+						ab.Bus.ClearPassengers()
+					}
 				}
 
-				// 2. Board waiting passengers with downstream destinations
-				if st.WaitingPassengers > 0 && len(ab.Bus.Passengers) < ab.Bus.Capacity {
-					candidates := ab.Route.GetUpcomingCandidateStopIDs(ab.Route.CurrentIndex)
-					boardSpace := ab.Bus.Capacity - len(ab.Bus.Passengers)
-					take := int(math.Min(float64(st.WaitingPassengers), float64(boardSpace)))
-					if take > 6 {
-						take = 6
+				// 2. Board waiting passengers with downstream destinations:
+				// Because only 1 route is planned per map, passengers board any bus that arrives.
+				// As long as there is available capacity on the bus, all waiting passengers board.
+				boardSpace := ab.Bus.Capacity - len(ab.Bus.Passengers)
+				if st.WaitingPassengers > 0 && boardSpace > 0 {
+					candidates := ab.Route.GetUpcomingCandidateStopIDsForStop(targetStopID)
+					if len(candidates) == 0 && len(ab.Route.StopIDs) > 0 {
+						for _, id := range ab.Route.StopIDs {
+							if id != targetStopID {
+								candidates = append(candidates, id)
+							}
+						}
+					}
+					take := st.WaitingPassengers
+					if take > boardSpace {
+						take = boardSpace
 					}
 					actualBoarded := ab.Bus.BoardPassengers(take, candidates)
 					st.WaitingPassengers -= actualBoarded
@@ -368,7 +402,10 @@ func (abm *AIBusManager) Update(
 				sinH := math.Sin(ab.Bus.Heading)
 				fwd := toBus.X*cosH + toBus.Y*sinH
 				lat := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
-				if fwd > -15.0 && lat < laneWidth*1.5 {
+				// Only consider player blocking if player is heading in the same direction ahead of us
+				// (not oncoming traffic waiting in opposite lanes or separated across road center)
+				headDiff := math.Cos(playerBus.Heading - ab.Bus.Heading)
+				if headDiff > 0.3 && fwd > -15.0 && lat < laneWidth*1.5 {
 					playerBlocking = true
 				}
 			}
@@ -397,6 +434,31 @@ func (abm *AIBusManager) Update(
 						}
 					}
 				}
+
+				// ALSO check against motionless civilian AI cars
+				if !isBusDeadlocked {
+					for _, c := range activeCars {
+						if c == nil || math.Abs(c.Speed) >= 3.0 {
+							continue
+						}
+						dist := ab.Bus.Pos.Distance(c.Pos)
+						if dist < (ab.Bus.Length+c.Length)*0.5+40.0 {
+							toCar := c.Pos.Sub(ab.Bus.Pos)
+							cosH := math.Cos(ab.Bus.Heading)
+							sinH := math.Sin(ab.Bus.Heading)
+							fwd := toCar.X*cosH + toCar.Y*sinH
+							headDiff := math.Cos(c.Heading - ab.Bus.Heading)
+							// If queued behind car in same direction and car not deadlocked, skip
+							if headDiff > 0.5 && fwd > 10.0 && c.DeadlockTimer == 0 {
+								continue
+							}
+							if fwd > -15.0 || dist < (ab.Bus.Length+c.Length)*0.5+15.0 {
+								isBusDeadlocked = true
+								break
+							}
+						}
+					}
+				}
 			}
 
 			if isBusDeadlocked {
@@ -408,24 +470,42 @@ func (abm *AIBusManager) Update(
 			}
 
 			if ab.DeadlockTimer >= DeadlockDurationThreshold {
-				// Disappear from deadlock zone and reposition to next route stop
-				ab.DeadlockTimer = 0
-				if len(ab.Route.StopIDs) > 0 && len(world.Stops) > 0 {
-					ab.Route.AdvanceToNextStop()
-					nextID := ab.Route.GetCurrentTargetStopID()
-					if nextID >= 0 && nextID < len(world.Stops) {
-						st := world.Stops[nextID]
-						ab.Bus.Pos = st.Pos
-						ab.Bus.Heading = st.Heading
-						ab.Bus.Speed = 0
-						if ab.Driver != nil {
-							ab.Driver.Reset()
+				oldBusPos := ab.Bus.Pos
+
+				// Reset AI bus to the route's starting station (起点站)
+				ab.ResetToStartingStation(world)
+
+				// Also reset the jammed AI car(s) so both the AI car disappears/resets and the AI bus resets
+				if tm != nil {
+					for cIdx, c := range activeCars {
+						if c == nil {
+							continue
+						}
+						dist := oldBusPos.Distance(c.Pos)
+						if dist < (ab.Bus.Length+c.Length)*0.5+40.0 {
+							tm.DespawnAndResetCar(cIdx, world, laneWidth, playerBus)
+							break
 						}
 					}
 				}
 			}
 		} else {
 			ab.DeadlockTimer = 0
+		}
+	}
+
+	// Collision separation between AI buses and active civilian cars, and among AI buses
+	for i, ab := range abm.Buses {
+		if ab.Bus == nil {
+			continue
+		}
+		for _, car := range activeCars {
+			ResolveBusCarSeparation(ab.Bus, car)
+		}
+		for j := i + 1; j < len(abm.Buses); j++ {
+			if abm.Buses[j].Bus != nil {
+				ResolveBusBusSeparation(ab.Bus, abm.Buses[j].Bus)
+			}
 		}
 	}
 }
@@ -450,7 +530,7 @@ func (abm *AIBusManager) Draw(screen *ebiten.Image, cam *Camera) {
 		// Overhead glowing LED Route Badge
 		if cam.Zoom >= 0.28 {
 			sPos := cam.WorldToScreen(ab.Bus.Pos)
-			badgeW := 90.0
+			badgeW := 105.0
 			badgeH := 20.0
 			badgeX := sPos.X - badgeW/2
 			badgeY := sPos.Y - 32.0*cam.Zoom - badgeH
@@ -460,7 +540,7 @@ func (abm *AIBusManager) Draw(screen *ebiten.Image, cam *Camera) {
 			vector.StrokeRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
 				1.2, ab.Color, true)
 
-			badgeText := fmt.Sprintf("[1号线] AI#%d 👥%d", ab.ID, ab.Bus.PassengerCount)
+			badgeText := fmt.Sprintf("[1号线] AI#%d 👥%d/%d", ab.ID, ab.Bus.PassengerCount, ab.Bus.Capacity)
 			DrawText(screen, badgeText, badgeX+6, badgeY+4, 10, color.White)
 		}
 	}

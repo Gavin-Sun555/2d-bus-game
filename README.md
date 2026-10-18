@@ -102,6 +102,7 @@
 | **L** | **切换界面语言 (中文 / English)** | **切换界面语言 (中文 / English)** | **切换界面语言 (中文 / English)** | 语言即时切换 |
 | **P** | - | **开启 / 关闭 AI 自动驾驶巡航** | 开启 / 关闭 AI 自动巡航预设 | AI 自动驾驶切换 |
 | **B** (或 **Shift+P**) | - | **切换 AI 狂暴模式 (直行狂飙/双车道变道超车，遵守交规)** | 预设狂暴极速模式 | 自动驾驶极速模式 |
+| **Shift+B** | - | **循环切换公交最高限速 (60 ➔ 80 ➔ 100 ➔ 120 km/h，手动与狂暴均生效)** | 极速挡位循环切换 | 最高限速调节 |
 | **1 ~ 6** | 快速选中对应 1~6 号城市卡片 | - | - | 快速选择地图 |
 | **C** | 快速选中【06 自定义地图】 | - | 清空当前规划路线 | 选自定义图 / 重置路线 |
 | **Z** / **退格 (Backspace)** / **Del** | - | - | **撤销/取消刚添加进路线的最后一个站点** | 撤销上一个站点避免重画 |
@@ -128,6 +129,7 @@
 3. **AI 私家车交通流密度**：点击切换 `低密度 (12辆)` / `中等密度 (24辆)` / `高密度 (36辆)` / `超高密度 (72辆)` / `极限车流 (128辆)`。
 4. **驾驶摄像机视角 (Camera View)**：点击切换 `【固定正北 (标准)】` / `【车头朝上 (跟随)】` / `【固定正南 (倒置)】`。
 5. **玩家公交 AI 自动驾驶与狂暴模式**：点击循环切换 `【👤 手动驾驶: 关闭】` ➔ `【🤖 AI自动驾驶: 标准巡航】` ➔ `【⚡ AI自动驾驶: 狂暴极速】`（快捷键 `P` 启闭，`B` 切换狂暴）。狂暴模式下直行最高车速飙升至 **80 KM/H ($445\text{px/s}$)**，支持**遇黄灯直接全速冲过（闯黄灯通行不刹停且免罚款）**；且在多车道干道支持**超远距离提前自主变道超车**：距前车 **$380\sim 640\text{px}$** 便已提前规划并敏捷并线，拒绝贴身尾随或刹停顿挫；采用全新**五次/三次 Hermite S型缓动（SmootherStep）动态横向变道算法**（横向变道速率大幅提至 $65\sim 95\text{px/s}$ 并具零加速度平滑过渡），尤其是 6 车道干道从行车道并入左转车道配置 **$350\sim 450\text{px}$** 超长自然柔和 S 曲线渐变段，彻底告别直角急甩与速度骤降，变道姿态如丝般顺滑；全城路口间距延长约 3 倍（`MapGridScale = 3.0`），长街区为极速行驶与变道超车提供超长直道舞台；弯道与红灯避障依然智能减速停稳。同时所有模式下均支持**自适应路口间距的智能提前左转变道**。
+   - **公交最高限速统一设置 (手动极速 / 狂暴模式一致生效)**：提供 **60 / 80 / 100 / 120 KM/H** 四档最高限速（默认 80 KM/H）。无论是玩家**手动驾驶全油门极速狂奔**，还是 **AI 狂暴模式直行飞驰**，均共享并严格遵循该限速档位；可在设置面板直接点选或在驾驶时按 **`Shift+B`** 随心秒切。
    - **超车安全变回与防撞回退机制**：彻底根除“还未完全超过就急于变回导致碰撞”的物理缺陷，在变回原车道前强制执行**严密纵向安全距离校验**（要求被超车辆完全落入大巴车尾后方至少 **$75\text{px}$** 缓冲净空，且原车道前后死角 $100\%$ 无障碍物），变回并线全程保持极速巡航不发生刹车顿挫；变回途中若原车道突发险情可即刻安全反向回切至超车道避险。
    - **六车道（单向三车道）直行自适应车道选择**：当大巴在每方向 3 车道的 6 车道干道直行通过路口时，狂暴模式不再死板地强制并回最右侧车道（原偏移 0.0），而是实时评估两个直行车道（中间内侧直行道偏移 `-lw` 与外侧直行道偏移 `0.0`）的前方排队车流与红灯拥堵分，智能选择或保持在车少通畅的直行道全速通过路口，直行绿灯通行无阻。
 6. **线路 AI 公交车队配置 (除玩家车外)**：点击循环调节 `【AI公交车队: 0~8 辆】`，即时在城市路网中调度和运行 AI 公交车队（其他 AI 车保持标准模式）。
@@ -349,7 +351,24 @@ make test-all           # 或: go test -v ./...
 
 ### 🏷️ 版本记录与发布说明 (Release Notes)
 
-- **v0.0.3** (当前最新):
+- **v0.0.4** (当前最新):
+  - **🚍 统一 45 人大容量与贪婪全员上客机制 (Greedy Boarding & Unified 45-Pax Capacity)**：
+    - 针对全图单主干闭环运营机制，全面标准化玩家公交车及全线 8 辆 AI 公交车队容量为 45 人。
+    - 乘客到站“能上尽上”，只要车内有空位且站台有候车乘客即全员上车，不再受选线偏好阻碍；车满即止。
+    - 完美支持同站连续/多次停靠上客：在同一站台再次停靠或接续开门时，若站台有新候车乘客且车厢未满，继续响应并执行上客。
+  - **📍 线路专属乘客生成与闭环下游目的地约束 (Route-Constrained Passenger Generation)**：
+    - 重新规划路线（或重置开局）时，乘客仅在已规划路线停靠的公交车站台生成，未规划站点清零且不聚集候车客流。
+    - 候车乘客的目的地严格约束为当前公交车路线可实际送达的下游车站，彻底杜绝生成无法到达的盲流乘客。
+  - **🚦 十字路口黄网格通行净空与防占道避让 (Yellow Box Clearance / Intersection Box Protection)**：
+    - AI 社会车辆新增“黄网格禁入 / Don't Block the Box”防御性驾驶感知。
+    - 绿灯驶向交叉路口前，若探测到路口中央区域（Intersection Box）内有正在转弯、跨道或低速穿越的公交车，小车必须在停止线前保持制动等待，严禁在绿灯时强行冲入已被大车占满的路口中心，从源头消灭路口中央恶性死锁。
+  - **⏱️ 道路死锁超时双向安全重置机制 (Severe Gridlock Timeout & Self-Healing)**：
+    - 设定基于最长红绿灯周期（37秒）的超时自愈阈值 `DeadlockDurationThreshold = 38.0s`。
+    - 智能区分合法车队同向排队与异常死锁对顶；若 AI 小车与 AI 公交车（或开启 AI 托管的玩家车辆）相互卡死超过 38 秒：
+      - AI 小车自动消失并在全图安全空旷、远离路口与站台的直道上平滑重置复生；
+      - AI 公交车/托管车辆平稳重置回线路起点站（`StopIDs[0]`），速度、转向角归零，清空滞留乘客，线路索引归零重新发车，保障城市交通流永久自治自愈。
+
+- **v0.0.3**:
   - **🏆 全地图多轮闭环发布验收测试套件 (Release Qualification Suite)**：
     - 新增面向 GitHub 新版本发布资格认证的端到端集成测试 (`make test-qualify`)。
     - 针对全 6 张地图（都会、海滨、溪谷、翠湖、双城、自定义地图）多圈全流程自动化营运。
@@ -686,9 +705,13 @@ make test-all           # or: go test -v ./...
 
 ---
 
-### 🏷️ Release Notes
+- **v0.0.4** (Current):
+  - **🚍 Unified 45-Pax Capacity & Greedy Boarding**: Standardized 45-passenger capacity across player bus and all 8 AI fleet buses. Passengers board greedily on arrival as long as space remains without route divergence obstacles. Consecutive docking at the same stop continues boarding if capacity exists.
+  - **📍 Route-Constrained Passenger Generation**: Passengers only spawn at stations included in the active route, with destinations strictly restricted to upcoming stops along the planned route.
+  - **🚦 Yellow Box Intersection Clearance ("Don't Block the Box")**: Traffic AI cars yield before stop lines on green if an AI or player bus occupies or turns within the intersection box, preventing junction choke points.
+  - **⏱️ Severe Gridlock Timeout Resolution (> 38s)**: Resolves unyielding deadlocks exceeding one full traffic light cycle (38.0s threshold). Jammed civilian cars disappear and respawn on clear road sections; jammed AI buses reset back to the route's starting terminal (`StopIDs[0]`) with cleared passengers and reset route index. Player bus in AI autopilot mode is fully protected.
 
-- **v0.0.3** (Current):
+- **v0.0.3**:
   - **🏆 Release Qualification Test Suite**: Automated qualification pipeline (`make test-qualify`) across all 6 city maps, multi-lap transit loops, 128 traffic cars + 8 AI bus fleets, and strict safety audits. Routine development tests (`make test`) run in $< 1$s.
   - **⚡ Berserk Mode Overtaking Optimization**: Snappy $0.35\text{s} \sim 0.55\text{s}$ lane transitions using cubic Hermite offset paths, eliminating sluggish deceleration and sustaining $\ge 120\text{px/s}$ cruise speeds during overtakes.
   - **🗺️ Six-Lane Grand Express Corridors**: Fully realized 6-lane expressways across Metropolis, Coastal Bay, River Valley, and Twin Cities with triple-head traffic lights, 4-lens electronic surveillance, and dedicated lane guide arrows.

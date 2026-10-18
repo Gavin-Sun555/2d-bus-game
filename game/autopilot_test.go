@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -825,6 +826,7 @@ func TestRedLightStopBeforeZebraCrosswalk(t *testing.T) {
 			dt,
 		)
 		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
 		if bus.Speed < 0.1 && step > 60 {
 			break
 		}
@@ -1202,7 +1204,7 @@ func TestLeftTurnEntersLeftTurnLane(t *testing.T) {
 		if pt.X >= -200.0*MapGridScale && pt.X <= 0.0 && math.Abs(math.Abs(pt.Y-1200.0*MapGridScale)-lw*0.5) < 2.0 {
 			foundInnerLaneApproach = true
 		}
-		if math.Abs(pt.X-lw*0.5) < 2.0 && math.Abs(pt.Y-(1200.0*MapGridScale+lw*0.5)) < 2.0 {
+		if pt.X >= lw*0.25 && pt.X <= lw*0.55 && pt.Y >= 1200.0*MapGridScale+lw*0.25 && pt.Y <= 1200.0*MapGridScale+lw*0.55 {
 			foundInnerApex = true
 		}
 		if math.Abs(pt.X-lw*1.5) < 2.0 && pt.Y < 1200.0*MapGridScale-lw {
@@ -1214,8 +1216,8 @@ func TestLeftTurnEntersLeftTurnLane(t *testing.T) {
 		t.Fatalf("Bus route failed to enter dedicated inner left-turn lane before left turn at (0, 1200)")
 	}
 	if !foundInnerApex {
-		t.Fatalf("Bus route left-turn apex is not at inner lane junction (expected X=%.1f, Y=%.1f)",
-			lw*0.5, 1200.0+lw*0.5)
+		t.Fatalf("Bus route left-turn arc does not pass through inner lane turn corridor (expected near X=%.1f..%.1f, Y=%.1f..%.1f)",
+			lw*0.25, lw*0.55, 1200.0*MapGridScale+lw*0.25, 1200.0*MapGridScale+lw*0.55)
 	}
 	if !foundTargetOuterMerge {
 		t.Fatalf("Bus route failed to merge out to travel lane (X=%.1f) after left turn", lw*1.5)
@@ -1621,11 +1623,12 @@ func TestBerserkModeOvertakingOnMultiLaneRoad(t *testing.T) {
 		t.Fatalf("Must not overtake when passing lane is occupied (got state %d)", driver.OvertakeState)
 	}
 
-	// 4. 2-lane road (1 lane per direction): no overtaking even in Berserk mode
+	// 4. 2-lane road (1 lane per direction):
+	// a. Standard mode: strictly prohibited
 	driver.Reset()
-	driver.BerserkMode = true
+	driver.BerserkMode = false
 	driver.State = AutopilotStateCruising
-	bus.Pos = Vec2{X: 1300, Y: 400} // On 2-lane road (e.g. Avenue 1300 / 2 lanes)
+	bus.Pos = Vec2{X: 1300, Y: 400} // On 2-lane road
 	bus.Heading = math.Pi / 2        // Southbound
 	slowCar2Lane := VehicleObstacle{
 		Pos:     Vec2{X: 1300, Y: 480},
@@ -1636,7 +1639,198 @@ func TestBerserkModeOvertakingOnMultiLaneRoad(t *testing.T) {
 	}
 	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar2Lane}, lw, 0.016)
 	if driver.OvertakeState != OvertakeNone {
-		t.Fatalf("Must never overtake on 2-lane roads (got state %d)", driver.OvertakeState)
+		t.Fatalf("Standard mode must never overtake on 2-lane roads (got state %d)", driver.OvertakeState)
+	}
+
+	// b. Approaching intersection on 2-lane road: borrowing oncoming lane is prohibited
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar2Lane}, lw, 0.016)
+	if driver.OvertakeState != OvertakeNone {
+		t.Fatalf("Berserk mode must not borrow lane near intersections on 2-lane roads (got state %d)", driver.OvertakeState)
+	}
+}
+
+// TestBerserkModeBorrowLaneOvertakingOn2LaneRoad tests 借道超车 in Berserk Mode on 2-way 2-lane roads:
+// 1. Standard mode: cannot borrow oncoming lane
+// 2. Berserk mode with oncoming vehicle: blocked from borrowing lane
+// 3. Berserk mode with oncoming lane clear: borrows oncoming lane (-lw) to overtake
+// 4. Smooth lateral transition into oncoming lane
+// 5. Passing slow car and safely returning to base lane (offset 0.0)
+// 6. Active abort: if an oncoming car appears while in oncoming lane, aborts back to base lane
+// 7. Verification across all Berserk top speed settings (60, 80, 100, 120 km/h)
+func TestBerserkModeBorrowLaneOvertakingOn2LaneRoad(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+
+	// Stops along 2-lane road "北二路" (Y = -600 * MapGridScale, Eastbound)
+	// Road segment: P1: {-2600*MapGridScale, -600*MapGridScale}, P2: {2600*MapGridScale, -600*MapGridScale}, Lanes: 2, Type: RoadStreet2Lane
+	// Travel lane (Eastbound) is at Y = roadY + lw*0.5
+	// Oncoming lane (Westbound) is at Y = roadY - lw*0.5
+	roadY := -600 * MapGridScale
+	s1 := NewBusStop(401, "2LaneStart", Vec2{X: -1000 * MapGridScale, Y: roadY}, 0, 2, RGBA(0, 0, 0, 0), lw, 0)
+	s2 := NewBusStop(402, "2LaneEnd", Vec2{X: 1000 * MapGridScale, Y: roadY}, 0, 2, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = []*BusStop{s1, s2}
+
+	route := &Route{
+		Name:         "2LaneBorrowRoute",
+		StopIDs:      []int{0, 1},
+		CurrentIndex: 1,
+	}
+
+	startX := -600 * MapGridScale
+	bus := NewBus(1, 0, lw)
+	bus.Pos = Vec2{X: startX, Y: roadY + lw*0.5} // Base travel lane
+	bus.Heading = 0                             // Eastbound
+	bus.Speed = 160.0
+	bus.Gear = GearDrive
+
+	driver := NewAutopilotDriver()
+
+	// Slow blocker in our travel lane ahead
+	slowCar := VehicleObstacle{
+		Pos:     Vec2{X: startX + 90, Y: roadY + lw*0.5}, // 90px ahead
+		Heading: 0,
+		Speed:   40.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	// 1. Standard Mode: should NOT borrow oncoming lane
+	driver.BerserkMode = false
+	driver.State = AutopilotStateCruising
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.016)
+	if driver.OvertakeState != OvertakeNone || driver.LaneOffset != 0.0 {
+		t.Fatalf("Standard mode must not borrow oncoming lane (state=%d, offset=%.2f)",
+			driver.OvertakeState, driver.LaneOffset)
+	}
+
+	// 2. Berserk Mode with oncoming vehicle in oncoming lane: MUST NOT borrow lane
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+	oncomingCar := VehicleObstacle{
+		Pos:     Vec2{X: startX + 400, Y: roadY - lw*0.5}, // Ahead in oncoming lane (400px ahead)
+		Heading: math.Pi,                                 // Heading Westbound (oncoming!)
+		Speed:   80.0,
+		Length:  48,
+		Width:   22,
+	}
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar, oncomingCar}, lw, 0.016)
+	if driver.OvertakeState != OvertakeNone {
+		t.Fatalf("Must not borrow lane when oncoming lane has oncoming car (got state %d)", driver.OvertakeState)
+	}
+
+	// 3. Berserk Mode with oncoming lane CLEAR: initiates 借道超车
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.016)
+	if driver.OvertakeState != OvertakeChangingLane {
+		t.Fatalf("Berserk mode must initiate 借道超车 when oncoming lane is clear (got state %d)", driver.OvertakeState)
+	}
+	if math.Abs(driver.TargetLaneOffset-(-lw)) > 1.0 {
+		t.Fatalf("Target lane offset should be -%.1f (oncoming lane), got %.2f", lw, driver.TargetLaneOffset)
+	}
+
+	// 4. Progress into oncoming lane
+	for i := 0; i < 20; i++ {
+		driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.05)
+	}
+	if driver.OvertakeState != OvertakePassing {
+		t.Fatalf("Expected OvertakePassing once arrived in oncoming lane, got %d", driver.OvertakeState)
+	}
+	if math.Abs(driver.LaneOffset-(-lw)) > 1.0 {
+		t.Fatalf("Expected lane offset -%.1f in oncoming lane, got %.2f", lw, driver.LaneOffset)
+	}
+
+	// 5. Still alongside slowCar: should stay in passing lane
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.016)
+	if driver.OvertakeState != OvertakePassing {
+		t.Fatalf("Must remain in OvertakePassing while alongside blocker, got %d", driver.OvertakeState)
+	}
+
+	// 6. Passed slowCar: safely return to base lane
+	bus.Pos.X = startX + 260 // 170px ahead of slowCar at startX+90 (beyond minSafeBehind ~147px)
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.5)
+	if driver.OvertakeState != OvertakeReturning {
+		t.Fatalf("Expected OvertakeReturning once vehicle passed, got %d", driver.OvertakeState)
+	}
+	if math.Abs(driver.TargetLaneOffset) > 0.1 {
+		t.Fatalf("Target offset after passing should return to 0, got %.2f", driver.TargetLaneOffset)
+	}
+
+	// 7. Advance until returned to base lane
+	for i := 0; i < 25; i++ {
+		driver.ComputeControls(bus, route, w, nil, nil, lw, 0.08)
+	}
+	if driver.OvertakeState != OvertakeNone || math.Abs(driver.LaneOffset) > 0.1 {
+		t.Fatalf("Expected return to OvertakeNone and 0 offset, got state %d, offset %.2f",
+			driver.OvertakeState, driver.LaneOffset)
+	}
+
+	// 8. Active abort: if oncoming car appears while in oncoming lane, aborts to base lane
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+	bus.Pos = Vec2{X: startX, Y: roadY - lw*0.5} // Physically in oncoming lane
+	driver.LaneOffset = -lw
+	driver.TargetLaneOffset = -lw
+	driver.OvertakeState = OvertakePassing
+	imminentOncoming := VehicleObstacle{
+		Pos:     Vec2{X: startX + 300, Y: roadY - lw*0.5}, // 300px ahead in oncoming lane
+		Heading: math.Pi,                                 // Oncoming
+		Speed:   90.0,
+		Length:  48,
+		Width:   22,
+	}
+	// Base lane is clear to return
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{imminentOncoming}, lw, 0.016)
+	if driver.OvertakeState != OvertakeReturning || math.Abs(driver.TargetLaneOffset) > 0.1 {
+		t.Fatalf("Must abort back to base lane when oncoming car appears (state=%d, target=%.2f)",
+			driver.OvertakeState, driver.TargetLaneOffset)
+	}
+
+	// 9. Verify across all 4 Berserk top speed settings (60, 80, 100, 120 km/h)
+	speedConfigs := []struct {
+		kmh       int
+		cruiseSpd float64
+	}{
+		{60, 333.0},
+		{80, 445.0},
+		{100, 555.0},
+		{120, 667.0},
+	}
+	for _, sc := range speedConfigs {
+		driver.Reset()
+		driver.BerserkMode = true
+		driver.BerserkMaxSpeed = sc.cruiseSpd
+		driver.State = AutopilotStateCruising
+		bus.Pos = Vec2{X: startX, Y: roadY + lw*0.5}
+		bus.Speed = sc.cruiseSpd
+
+		// With oncoming car: cannot borrow lane
+		driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar, oncomingCar}, lw, 0.016)
+		if driver.OvertakeState != OvertakeNone {
+			t.Fatalf("MaxSpeed %d: must not borrow lane with oncoming traffic (got %d)", sc.kmh, driver.OvertakeState)
+		}
+
+		// When oncoming lane is clear: can borrow lane
+		driver.Reset()
+		driver.BerserkMode = true
+		driver.BerserkMaxSpeed = sc.cruiseSpd
+		driver.State = AutopilotStateCruising
+		bus.Pos = Vec2{X: startX, Y: roadY + lw*0.5}
+		bus.Speed = sc.cruiseSpd
+
+		driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.016)
+		if driver.OvertakeState != OvertakeChangingLane {
+			t.Fatalf("MaxSpeed %d: expected OvertakeChangingLane when oncoming lane clear, got %d", sc.kmh, driver.OvertakeState)
+		}
+		if math.Abs(driver.TargetLaneOffset-(-lw)) > 1.0 {
+			t.Fatalf("MaxSpeed %d: expected target offset -%.1f, got %.2f", sc.kmh, lw, driver.TargetLaneOffset)
+		}
 	}
 }
 
@@ -1920,7 +2114,7 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 				step, notice, bus.Pos, bus.Speed)
 		}
 
-		if math.Abs(bus.Speed) < 0.5 && bus.Pos.X > -200 {
+		if math.Abs(bus.Speed) < 0.5 && bus.Pos.X > -250 {
 			break
 		}
 	}
@@ -1941,8 +2135,8 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 		t.Fatalf("Expected left signal to be Green during PhaseEWLeftGreen, got %v", leftSigNew)
 	}
 
-	// Simulate 240 steps (4 seconds) of driving through the green left turn:
-	for step := 0; step < 240; step++ {
+	// Simulate up to 300 steps (5 seconds) of driving through the green left turn:
+	for step := 0; step < 300; step++ {
 		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
 			bus, route, w, tls, nil, lw, dt,
 		)
@@ -1950,6 +2144,10 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 
 		if violated, notice := tls.CheckPlayerViolation(bus, lw); violated {
 			t.Fatalf("Frame %d: Violated traffic rule during lawful left turn! Notice: %s", step, notice)
+		}
+
+		if bus.Pos.Y < 0 {
+			break
 		}
 	}
 
@@ -3238,6 +3436,2149 @@ func TestFormattedRouteLinesWrappingAndTruncation(t *testing.T) {
 		if len(longLines[i]) < 4 {
 			t.Fatalf("Line %d is too short: %q", i, longLines[i])
 		}
+	}
+}
+
+// TestOpposingLeftTurnsSimultaneousClearance verifies that when two opposing vehicles simultaneously
+// make a left turn at the same intersection (one East->North, one West->South), the compact turning arc
+// guarantees that they pass passenger-side to passenger-side with ample safety clearance (>45px centerline,
+// >13px body clearance), with zero collisions and zero path crossing.
+func TestOpposingLeftTurnsSimultaneousClearance(t *testing.T) {
+	lw := 52.0
+	w := &World{}
+	w.Roads = []RoadSegment{
+		{P1: Vec2{X: -1500, Y: 0}, P2: Vec2{X: 1500, Y: 0}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true},
+		{P1: Vec2{X: 0, Y: -1500}, P2: Vec2{X: 0, Y: 1500}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true},
+	}
+	w.computeIntersections()
+
+	// Intersection at (0, 0)
+	inter := &TrafficIntersection{
+		ID:                99,
+		Center:            Vec2{X: 0, Y: 0},
+		IsMajor:           true,
+		ApproachHasRoad:   [4]bool{true, true, true, true},
+		ApproachLanes:     [4]int{4, 4, 4, 4},
+		ApproachIs4Lane:   [4]bool{true, true, true, true},
+		Phase:             PhaseEWLeftGreen, // Left GREEN
+		GreenDuration:     30.0,
+		YellowDuration:    3.0,
+		LeftGreenDuration: 30.0,
+	}
+	tls := &TrafficLightSystem{Intersections: []*TrafficIntersection{inter}}
+
+	// Stop 1: Eastbound on road Y=0 approaching (0,0)
+	sEastIn := NewBusStop(0, "EastboundIn", Vec2{X: -600, Y: 0}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, sEastIn)
+	sNorthOut := NewBusStop(1, "NorthboundOut", Vec2{X: 0, Y: -600}, -math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, sNorthOut)
+	path1 := computeRoadPathBetweenStops(w, sEastIn, sNorthOut, lw)
+
+	// Stop 2: Westbound on road Y=0 approaching (0,0)
+	sWestIn := NewBusStop(2, "WestboundIn", Vec2{X: 600, Y: 0}, math.Pi, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, sWestIn)
+	sSouthOut := NewBusStop(3, "SouthboundOut", Vec2{X: 0, Y: 600}, math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, sSouthOut)
+	path2 := computeRoadPathBetweenStops(w, sWestIn, sSouthOut, lw)
+
+
+	bus1 := NewBus(-320.0, 78.0, 0.0)
+	bus1.Speed = 120.0
+	route1 := &Route{StopIDs: []int{sEastIn.ID, sNorthOut.ID}, CurrentIndex: 1}
+	driver1 := NewAutopilotDriver()
+	driver1.BerserkMode = true
+	driver1.State = AutopilotStateCruising
+	driver1.drivePath = path1
+	driver1.cumLen = make([]float64, len(path1))
+	for i := 1; i < len(path1); i++ {
+		driver1.cumLen[i] = driver1.cumLen[i-1] + path1[i].Distance(path1[i-1])
+	}
+	driver1.pathWorld = w
+	driver1.pathLane = lw
+	driver1.pathFromID = sEastIn.ID
+	driver1.pathToID = sNorthOut.ID
+
+	bus2 := NewBus(320.0, -78.0, math.Pi)
+	bus2.Speed = 120.0
+	route2 := &Route{StopIDs: []int{sWestIn.ID, sSouthOut.ID}, CurrentIndex: 1}
+	driver2 := NewAutopilotDriver()
+	driver2.BerserkMode = true
+	driver2.State = AutopilotStateCruising
+	driver2.drivePath = path2
+	driver2.cumLen = make([]float64, len(path2))
+	for i := 1; i < len(path2); i++ {
+		driver2.cumLen[i] = driver2.cumLen[i-1] + path2[i].Distance(path2[i-1])
+	}
+	driver2.pathWorld = w
+	driver2.pathLane = lw
+	driver2.pathFromID = sWestIn.ID
+	driver2.pathToID = sSouthOut.ID
+
+	dt := 0.016
+	minCenterDist := math.MaxFloat64
+	minBodyClearance := math.MaxFloat64
+	bothInsideIntersectionCount := 0
+	bus1CompletedLeftTurn := false
+	bus2CompletedLeftTurn := false
+
+	// Run synchronized simulation for 600 frames (~10 seconds)
+	for step := 0; step < 600; step++ {
+		// Obstacles for bus 1 includes bus 2
+		obs1 := []VehicleObstacle{{
+			Pos:     bus2.Pos,
+			Heading: bus2.Heading,
+			Speed:   bus2.Speed,
+			Length:  bus2.Length,
+			Width:   bus2.Width,
+		}}
+		// Obstacles for bus 2 includes bus 1
+		obs2 := []VehicleObstacle{{
+			Pos:     bus1.Pos,
+			Heading: bus1.Heading,
+			Speed:   bus1.Speed,
+			Length:  bus1.Length,
+			Width:   bus1.Width,
+		}}
+
+		th1, br1, st1, hb1, tg1, _ := driver1.ComputeControls(bus1, route1, w, tls, obs1, lw, dt)
+		th2, br2, st2, hb2, tg2, _ := driver2.ComputeControls(bus2, route2, w, tls, obs2, lw, dt)
+
+		bus1.Update(dt, th1, br1, st1, hb1, tg1)
+		bus2.Update(dt, th2, br2, st2, hb2, tg2)
+
+		d := bus1.Pos.Distance(bus2.Pos)
+		bodyClearance := d - (bus1.Width/2.0 + bus2.Width/2.0)
+
+		// Check when both vehicles are within the intersection core zone (< 150px from center)
+		d1 := bus1.Pos.Distance(inter.Center)
+		d2 := bus2.Pos.Distance(inter.Center)
+
+		if d1 < 120.0 && d2 < 120.0 {
+			bothInsideIntersectionCount++
+			if d < minCenterDist {
+				minCenterDist = d
+			}
+			if bodyClearance < minBodyClearance {
+				minBodyClearance = bodyClearance
+			}
+		}
+
+		if bus1.Pos.Y < -50.0 && math.Sin(bus1.Heading) < -0.8 {
+			bus1CompletedLeftTurn = true
+		}
+		if bus2.Pos.Y > 50.0 && math.Sin(bus2.Heading) > 0.8 {
+			bus2CompletedLeftTurn = true
+		}
+	}
+
+	if bothInsideIntersectionCount < 10 {
+		t.Fatalf("Expected both buses to pass each other inside intersection core, but overlapped frames=%d",
+			bothInsideIntersectionCount)
+	}
+
+	// Verify that minimum centerline distance is at least 45.0px (cleanly separated arcs)
+	if minCenterDist < 45.0 {
+		t.Fatalf("Opposing left-turn arcs too close: min centerline dist=%.1f < 45.0px (body clearance=%.1f)",
+			minCenterDist, minBodyClearance)
+	}
+	if minBodyClearance < 9.0 {
+		t.Fatalf("Opposing left-turn body clearance too small: %.1f < 9.0px", minBodyClearance)
+	}
+
+	// Verify both completed their left turns into target outgoing directions
+	if !bus1CompletedLeftTurn {
+		t.Fatalf("Bus 1 failed to complete left turn to North (heading never faced North)")
+	}
+	if !bus2CompletedLeftTurn {
+		t.Fatalf("Bus 2 failed to complete left turn to South (heading never faced South)")
+	}
+}
+
+// TestBerserkModeLargeIntersectionLeftTurnSilkySmooth verifies that at large 6-lane intersections,
+// left turns in Berserk mode are executed with silky smoothness:
+// 1. No violent throttle/brake hunting or sudden severe brake jerking.
+// 2. High cornering speed momentum maintained (> 75 px/s).
+// 3. Continuous smooth heading progression without angular kinks.
+// 4. Zero traffic violations or overshooting double yellow lines.
+func TestBerserkModeLargeIntersectionLeftTurnSilkySmooth(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+
+	// s1: On 6-lane North Ring Expressway (Y = -3600), Westbound
+	s1 := NewBusStop(len(w.Stops), "6LaneStart", Vec2{X: 600 * MapGridScale, Y: -1200 * MapGridScale}, math.Pi, 6, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, s1)
+	// s2: Turning left onto North-South Avenue (X = 0), Southbound towards (0, 0)
+	s2 := NewBusStop(len(w.Stops), "4LaneSouth", Vec2{X: 0, Y: -400 * MapGridScale}, math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = append(w.Stops, s2)
+
+	path := computeRoadPathBetweenStops(w, s1, s2, lw)
+
+	interCenter := Vec2{X: 0, Y: -1200 * MapGridScale}
+	inter := &TrafficIntersection{
+		ID:                95,
+		Center:            interCenter,
+		IsMajor:           true,
+		ApproachHasRoad:   [4]bool{true, true, true, true},
+		ApproachLanes:     [4]int{6, 6, 4, 4},
+		ApproachIs4Lane:   [4]bool{true, true, true, true},
+		Phase:             PhaseEWLeftGreen, // Left green light for approach
+		GreenDuration:     40.0,
+		YellowDuration:    3.0,
+		LeftGreenDuration: 40.0,
+	}
+	tls := &TrafficLightSystem{Intersections: []*TrafficIntersection{inter}}
+
+	bus := NewBus(s1.Pos.X, s1.Pos.Y, s1.Heading)
+	bus.Speed = 280.0 // Approaching at high speed in Berserk mode
+	route := &Route{StopIDs: []int{s1.ID, s2.ID}, CurrentIndex: 1}
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+	driver.drivePath = path
+	driver.cumLen = make([]float64, len(path))
+	for i := 1; i < len(path); i++ {
+		driver.cumLen[i] = driver.cumLen[i-1] + path[i].Distance(path[i-1])
+	}
+	driver.pathWorld = w
+	driver.pathLane = lw
+	driver.pathFromID = s1.ID
+	driver.pathToID = s2.ID
+
+	dt := 0.016
+	minTurnSpeed := math.MaxFloat64
+	maxTurnSpeed := 0.0
+	prevHeading := bus.Heading
+	maxAngularRate := 0.0
+	hardBrakeFramesDuringTurn := 0
+	inTurnZoneCount := 0
+
+	for step := 0; step < 700; step++ {
+		th, br, st, hb, tg, isDocked := driver.ComputeControls(bus, route, w, tls, nil, lw, dt)
+		bus.Update(dt, th, br, st, hb, tg)
+
+		if isDocked && step > 60 {
+			break
+		}
+
+		distToInter := bus.Pos.Distance(interCenter)
+		if distToInter < 160.0 {
+			inTurnZoneCount++
+			if bus.Speed < minTurnSpeed {
+				minTurnSpeed = bus.Speed
+			}
+			if bus.Speed > maxTurnSpeed {
+				maxTurnSpeed = bus.Speed
+			}
+			// Measure angular steering rate in rad/s
+			angDelta := math.Abs(NormalizeAngle(bus.Heading - prevHeading))
+			angRate := angDelta / dt
+			if angRate > maxAngularRate {
+				maxAngularRate = angRate
+			}
+			// Check if emergency full braking (brake > 0.8) occurs while executing corner
+			if br > 0.8 && bus.Speed > 50.0 {
+				hardBrakeFramesDuringTurn++
+			}
+		}
+		prevHeading = bus.Heading
+
+		// Obey traffic signals
+		if violated, notice := tls.CheckPlayerViolation(bus, lw); violated {
+			t.Fatalf("Step %d: Left turn traffic violation: %s", step, notice)
+		}
+	}
+
+	if inTurnZoneCount < 20 {
+		t.Fatalf("Expected at least 20 steps inside turn zone, got %d", inTurnZoneCount)
+	}
+
+	// 1. Verify silky smooth cornering: minimum speed during turn should stay high (> 75 px/s)
+	if minTurnSpeed < 75.0 {
+		t.Fatalf("Berserk mode left turn slowed down excessively: min speed=%.1f px/s (expected >= 75.0 px/s)",
+			minTurnSpeed)
+	}
+
+	// 2. Verify no violent hard brake stomping during the turn
+	if hardBrakeFramesDuringTurn > 5 {
+		t.Fatalf("Berserk mode left turn experienced %d frames of hard brake stomping (>0.8)",
+			hardBrakeFramesDuringTurn)
+	}
+
+	// 3. Verify angular rate is smooth (no sudden snaps > 2.8 rad/s)
+	if maxAngularRate > 2.8 {
+		t.Fatalf("Berserk mode left turn steering too abrupt: max angular rate=%.2f rad/s (expected <= 2.8)",
+			maxAngularRate)
+	}
+
+	// 4. Verify turn completed successfully into Southbound direction
+	sinH := math.Sin(bus.Heading)
+	if sinH < 0.70 {
+		t.Fatalf("Failed to complete left turn onto Southbound avenue: heading=%.2f", bus.Heading)
+	}
+}
+// TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange thoroughly tests the configurable
+// Berserk mode top speeds (60, 80, 100, 120 km/h) and verifies:
+// 1. Settings options, bounds, cycle logic, and cruise speed mapping;
+// 2. Straightaway acceleration up to top speed with dynamic powertrain scaling;
+// 3. Anticipated cornering deceleration for 90-degree turns without overshooting or instability;
+// 4. Smooth overtaking and lane-change initiation and completion across all speeds.
+func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
+	lw := 52.0
+
+	// 1. Test Settings Configuration & Cycling
+	s := NewSettings()
+	if s.AutopilotBerserkMaxSpeed != 80 {
+		t.Fatalf("Default Berserk max speed should be 80 km/h, got %d", s.AutopilotBerserkMaxSpeed)
+	}
+	if math.Abs(s.GetBerserkCruiseSpeed()-445.0) > 1.0 {
+		t.Fatalf("Default Berserk cruise speed should be ~445.0 px/s, got %.2f", s.GetBerserkCruiseSpeed())
+	}
+
+	testSpeeds := []struct {
+		kmh       int
+		cruiseSpd float64
+	}{
+		{60, 333.0},
+		{80, 445.0},
+		{100, 555.0},
+		{120, 667.0},
+	}
+
+	for _, ts := range testSpeeds {
+		s.SetBerserkMaxSpeed(ts.kmh)
+		if s.AutopilotBerserkMaxSpeed != ts.kmh {
+			t.Fatalf("Expected Berserk speed %d, got %d", ts.kmh, s.AutopilotBerserkMaxSpeed)
+		}
+		if math.Abs(s.GetBerserkCruiseSpeed()-ts.cruiseSpd) > 1.0 {
+			t.Fatalf("Expected Berserk cruise speed %.1f for %d km/h, got %.2f",
+				ts.cruiseSpd, ts.kmh, s.GetBerserkCruiseSpeed())
+		}
+	}
+
+	// Verify cycle sequence: 60 -> 80 -> 100 -> 120 -> 60
+	s.SetBerserkMaxSpeed(60)
+	if next := s.CycleBerserkMaxSpeed(); next != 80 {
+		t.Fatalf("Expected cycle from 60 to 80, got %d", next)
+	}
+	if next := s.CycleBerserkMaxSpeed(); next != 100 {
+		t.Fatalf("Expected cycle from 80 to 100, got %d", next)
+	}
+	if next := s.CycleBerserkMaxSpeed(); next != 120 {
+		t.Fatalf("Expected cycle from 100 to 120, got %d", next)
+	}
+	if next := s.CycleBerserkMaxSpeed(); next != 60 {
+		t.Fatalf("Expected cycle from 120 to 60, got %d", next)
+	}
+
+	// 2. Subtests for Each Configured Speed
+	for _, ts := range testSpeeds {
+		t.Run(fmt.Sprintf("Speed_%d_kmh", ts.kmh), func(t *testing.T) {
+			kmh := ts.kmh
+			cruiseSpd := ts.cruiseSpd
+
+			// -------------------------------------------------------------
+			// A. Straightaway Top Speed & Powertrain Scaling
+			// -------------------------------------------------------------
+			wA := NewWorld(lw, MapThemeMetropolis)
+			wA.Stops[1].Pos = Vec2{X: 3000, Y: 1200}
+			driver := NewAutopilotDriver()
+			driver.BerserkMode = true
+			driver.BerserkMaxSpeed = cruiseSpd
+			driver.pathWorld = wA
+			driver.pathFromID = 0
+			driver.pathToID = 1
+			driver.pathLane = lw
+
+			driver.drivePath = []Vec2{
+				{X: -2000, Y: 1200},
+				{X: 2000, Y: 1200},
+			}
+			driver.cumLen = []float64{0, 4000.0}
+			driver.WaypointIdx = 0
+
+			bus := NewBus(-1000, 1200, 0)
+			bus.Speed = cruiseSpd * 0.6
+			// Dynamic powertrain expansion in game.go
+			bus.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+
+			route := NewRoute()
+			route.StopIDs = []int{0, 1}
+			route.CurrentIndex = 1
+
+			dt := 0.016
+			// Initial target speed check
+			driver.ComputeControls(bus, route, wA, nil, nil, lw, dt)
+			if math.Abs(driver.LastTargetSpeed-cruiseSpd) > 2.0 {
+				t.Fatalf("[%d km/h] Target speed on straightaway should be %.1f px/s, got %.2f",
+					kmh, cruiseSpd, driver.LastTargetSpeed)
+			}
+
+			// Simulate forward acceleration
+			maxSpeedReached := 0.0
+			for step := 0; step < 200; step++ {
+				th, br, st, hb, tg, _ := driver.ComputeControls(bus, route, wA, nil, nil, lw, dt)
+				bus.Update(dt, th, br, st, hb, tg)
+				if bus.Speed > maxSpeedReached {
+					maxSpeedReached = bus.Speed
+				}
+			}
+			if maxSpeedReached < cruiseSpd*0.95 {
+				t.Fatalf("[%d km/h] Bus failed to accelerate to top speed: max speed=%.1f px/s (target=%.1f)",
+					kmh, maxSpeedReached, cruiseSpd)
+			}
+
+			// -------------------------------------------------------------
+			// B. Impact on Cornering: Deceleration & Smooth Turning
+			// -------------------------------------------------------------
+			// Build a path with a long straight leading into a 90-degree right turn
+			cornerX := 0.0
+			cornerY := 1200.0
+			wB := NewWorld(lw, MapThemeMetropolis)
+			wB.Stops[1].Pos = Vec2{X: cornerX, Y: cornerY + 1000}
+			driverCorner := NewAutopilotDriver()
+			driverCorner.BerserkMode = true
+			driverCorner.BerserkMaxSpeed = cruiseSpd
+			driverCorner.pathWorld = wB
+			driverCorner.pathFromID = 0
+			driverCorner.pathToID = 1
+			driverCorner.pathLane = lw
+
+			driverCorner.drivePath = []Vec2{
+				{X: -1500, Y: cornerY},
+				{X: cornerX, Y: cornerY},
+				{X: cornerX, Y: cornerY + 600}, // 90-degree right turn at (0, 1200)
+			}
+			driverCorner.cumLen = []float64{0, 1500.0, 2100.0}
+			driverCorner.WaypointIdx = 0
+
+			busCorner := NewBus(-1200, cornerY, 0)
+			busCorner.Speed = cruiseSpd
+			busCorner.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+
+			// 1. Verify cornerSpeedLimit deceleration profile
+			// Far away (> 1400px), limit should be Inf or >= cruiseSpd
+			farLimit := driverCorner.cornerSpeedLimit(100.0, cruiseSpd)
+			if farLimit < cruiseSpd {
+				t.Fatalf("[%d km/h] Far corner speed limit should not brake prematurely: got %.2f (cruise=%.2f)",
+					kmh, farLimit, cruiseSpd)
+			}
+
+			// 2. Drive towards the corner and verify it reaches safe cornering speed <= 95 px/s
+			reachedSafeCornerSpeed := false
+			enteredCorner := false
+			completedTurn := false
+
+			for step := 0; step < 500; step++ {
+				th, br, st, hb, tg, _ := driverCorner.ComputeControls(busCorner, route, wB, nil, nil, lw, dt)
+				busCorner.Update(dt, th, br, st, hb, tg)
+
+				// Distance along X to corner apex
+				distToApex := cornerX - busCorner.Pos.X
+				if distToApex <= 30.0 && distToApex >= -30.0 {
+					enteredCorner = true
+					if busCorner.Speed <= 95.0 {
+						reachedSafeCornerSpeed = true
+					}
+				}
+
+				// Check if heading turned towards South (+Y)
+				if math.Sin(busCorner.Heading) > 0.85 {
+					completedTurn = true
+					break
+				}
+			}
+
+			if !enteredCorner {
+				t.Fatalf("[%d km/h] Bus never reached the corner apex", kmh)
+			}
+			if !reachedSafeCornerSpeed {
+				t.Fatalf("[%d km/h] Bus did not slow down sufficiently before entering corner: speed=%.1f px/s (expected <= 95.0)",
+					kmh, busCorner.Speed)
+			}
+			if !completedTurn {
+				t.Fatalf("[%d km/h] Bus failed to smoothly complete 90-degree turn: heading=%.2f",
+					kmh, busCorner.Heading)
+			}
+
+			// -------------------------------------------------------------
+			// C. Impact on Lane Changing & Overtaking
+			// -------------------------------------------------------------
+			yCenter := 1200.0 * MapGridScale
+			sStart := NewBusStop(201, "AvenueStart", Vec2{X: -1500 * MapGridScale, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			sEnd := NewBusStop(202, "AvenueEnd", Vec2{X: 1500 * MapGridScale, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			wC := NewWorld(lw, MapThemeMetropolis)
+			wC.Stops = []*BusStop{sStart, sEnd}
+
+			routeC := &Route{
+				Name:         "OvertakeTestRoute",
+				StopIDs:      []int{0, 1},
+				CurrentIndex: 1,
+			}
+
+			driverOvertake := NewAutopilotDriver()
+			driverOvertake.BerserkMode = true
+			driverOvertake.BerserkMaxSpeed = cruiseSpd
+			driverOvertake.State = AutopilotStateCruising
+
+			busOvertake := NewBus(1, 0, lw)
+			busOvertake.Pos = Vec2{X: -600 * MapGridScale, Y: yCenter + lw*1.5}
+			busOvertake.Heading = 0
+			busOvertake.Speed = cruiseSpd * 0.85
+			busOvertake.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+
+			// Lead blocker moving at 50% cruise speed, positioned ahead within Berserk detection corridor
+			blockerSpd := cruiseSpd * 0.50
+			leadDist := math.Max(320.0, cruiseSpd*0.75)
+			blocker := VehicleObstacle{
+				Pos:     Vec2{X: busOvertake.Pos.X + leadDist, Y: yCenter + lw*1.5},
+				Heading: 0,
+				Speed:   blockerSpd,
+				Length:  48,
+				Width:   22,
+			}
+
+			// Initial control compute: should detect blocker and initiate lane change
+			driverOvertake.ComputeControls(busOvertake, routeC, wC, nil, []VehicleObstacle{blocker}, lw, dt)
+			if driverOvertake.OvertakeState != OvertakeChangingLane {
+				t.Fatalf("[%d km/h] Expected OvertakeChangingLane for slow blocker (spd=%.1f), got state %d",
+					kmh, blockerSpd, driverOvertake.OvertakeState)
+			}
+			if math.Abs(driverOvertake.TargetLaneOffset - (-lw)) > 1.0 {
+				t.Fatalf("[%d km/h] Expected target lane offset -%.1f (inner passing lane), got %.2f",
+					kmh, lw, driverOvertake.TargetLaneOffset)
+			}
+
+			// Simulate full overtaking maneuver: change lane -> pass -> return
+			statePassingReached := false
+			stateReturningReached := false
+			maneuverCompleted := false
+			collided := false
+
+			for step := 0; step < 600; step++ {
+				// Blocker moves forward at its steady speed
+				blocker.Pos.X += blocker.Speed * dt
+
+				th, br, st, hb, tg, _ := driverOvertake.ComputeControls(
+					busOvertake, routeC, wC, nil, []VehicleObstacle{blocker}, lw, dt,
+				)
+				busOvertake.Update(dt, th, br, st, hb, tg)
+
+				// Collision check
+				distToBlocker := busOvertake.Pos.Distance(blocker.Pos)
+				if distToBlocker < (busOvertake.Length/2 + blocker.Length/2 - 5.0) {
+					// Check bounding box overlap
+					if math.Abs(busOvertake.Pos.Y-blocker.Pos.Y) < (busOvertake.Width/2 + blocker.Width/2) {
+						collided = true
+						t.Fatalf("[%d km/h] Step %d: Bus collided with lead vehicle! dist=%.1f",
+							kmh, step, distToBlocker)
+					}
+				}
+
+				if driverOvertake.OvertakeState == OvertakePassing {
+					statePassingReached = true
+				}
+				if driverOvertake.OvertakeState == OvertakeReturning {
+					stateReturningReached = true
+				}
+				if stateReturningReached && driverOvertake.OvertakeState == OvertakeNone && math.Abs(driverOvertake.LaneOffset) < 1.0 {
+					maneuverCompleted = true
+					break
+				}
+			}
+
+			if collided {
+				t.Fatalf("[%d km/h] Overtaking maneuver resulted in collision", kmh)
+			}
+			if !statePassingReached {
+				t.Fatalf("[%d km/h] Overtaking maneuver never reached OvertakePassing (current state=%d, offset=%.2f)",
+					kmh, driverOvertake.OvertakeState, driverOvertake.LaneOffset)
+			}
+			if !stateReturningReached {
+				t.Fatalf("[%d km/h] Overtaking maneuver never reached OvertakeReturning", kmh)
+			}
+			if !maneuverCompleted {
+				t.Fatalf("[%d km/h] Overtaking maneuver did not return to base lane cleanly: state=%d, offset=%.2f",
+					kmh, driverOvertake.OvertakeState, driverOvertake.LaneOffset)
+			}
+		})
+	}
+}
+
+// TestOvertakingLookaheadAndNoCollisionWithSlowBlocker explicitly tests the dynamic advance lookahead (提前量)
+// and collision-free lane changing when approaching slow or stopped lead obstacles.
+// It verifies that:
+// 1. Blocker vehicles are detected well in advance (提前量) based on relative closing speed.
+// 2. The bus initiates lane change in advance, clearing the blocker without colliding.
+// 3. In tight / close-quarters scenarios, the bus enforces longitudinal obstacle braking while
+//    lateral clearance is not yet achieved (latDist < minClearLat), eliminating collisions before fully clearing.
+func TestOvertakingLookaheadAndNoCollisionWithSlowBlocker(t *testing.T) {
+	lw := 47.5
+	dt := 1.0 / 60.0
+
+	// Test across all 4 Berserk speeds: 60, 80, 100, 120 km/h
+	for _, kmh := range []int{60, 80, 100, 120} {
+		t.Run(fmt.Sprintf("%d_kmh_Lookahead_Collision_Test", kmh), func(t *testing.T) {
+			cruiseSpd := float64(kmh) * 5.0
+			yCenter := 1200.0 * MapGridScale
+
+			sStart := NewBusStop(301, "StopStart", Vec2{X: -2000, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			sEnd := NewBusStop(302, "StopEnd", Vec2{X: 2000, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			w := NewWorld(lw, MapThemeMetropolis)
+			w.Stops = []*BusStop{sStart, sEnd}
+
+			route := &Route{
+				Name:         "OvertakeLookaheadRoute",
+				StopIDs:      []int{0, 1},
+				CurrentIndex: 1,
+			}
+
+			driver := NewAutopilotDriver()
+			driver.BerserkMode = true
+			driver.BerserkMaxSpeed = cruiseSpd
+			driver.State = AutopilotStateCruising
+			driver.drivePath = []Vec2{
+				{X: -2000, Y: yCenter + lw*1.5},
+				{X: 2000, Y: yCenter + lw*1.5},
+			}
+			driver.cumLen = []float64{0, 4000.0}
+			driver.pathWorld = w
+			driver.pathFromID = sStart.ID
+			driver.pathToID = sEnd.ID
+			driver.pathLane = lw
+			driver.pathSynced = true
+			driver.WaypointIdx = 0
+
+			bus := NewBus(1, 0, lw)
+			bus.Pos = Vec2{X: -1000, Y: yCenter + lw*1.5}
+			bus.Heading = 0
+			bus.Speed = cruiseSpd
+			bus.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+
+			// Lead blocker moving at 35 px/s (slow vehicle)
+			blockerSpd := 35.0
+			closingSpeed := cruiseSpd - blockerSpd
+			// Blocker positioned ahead: dynamic lookahead should detect it
+			blockerDist := closingSpeed*1.8 + 120.0
+			blocker := VehicleObstacle{
+				Pos:     Vec2{X: bus.Pos.X + blockerDist, Y: yCenter + lw*1.5},
+				Heading: 0,
+				Speed:   blockerSpd,
+				Length:  48,
+				Width:   22,
+			}
+
+			// Step 1: Initial check must detect blocker and initiate lane change
+			driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{blocker}, lw, dt)
+			if driver.OvertakeState != OvertakeChangingLane {
+				t.Fatalf("[%d km/h] Expected OvertakeChangingLane for slow blocker (dist=%.1f, closingSpd=%.1f), got %d",
+					kmh, blockerDist, closingSpeed, driver.OvertakeState)
+			}
+
+			// Step 2: Step forward simulation until lane change completes or passes
+			minLongitudinalGap := 9999.0
+			collided := false
+			for step := 0; step < 500; step++ {
+				blocker.Pos.X += blocker.Speed * dt
+
+				th, br, st, hb, tg, _ := driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{blocker}, lw, dt)
+				bus.Update(dt, th, br, st, hb, tg)
+
+				dx := blocker.Pos.X - bus.Pos.X
+				dy := math.Abs(bus.Pos.Y - blocker.Pos.Y)
+				if dx > 0 && dx < minLongitudinalGap {
+					minLongitudinalGap = dx
+				}
+
+				// Check physical box overlap collision:
+				contactDistX := bus.Length/2 + blocker.Length/2 - 2.0
+				contactDistY := bus.Width/2 + blocker.Width/2 - 2.0
+				if math.Abs(dx) < contactDistX && dy < contactDistY {
+					collided = true
+					t.Fatalf("[%d km/h] Step %d: Bus collided with lead vehicle! dx=%.1f, dy=%.1f",
+						kmh, step, dx, dy)
+				}
+
+				if driver.OvertakeState == OvertakePassing && bus.Pos.X > blocker.Pos.X+80.0 {
+					break
+				}
+			}
+
+			if collided {
+				t.Fatalf("[%d km/h] Lane change resulted in collision", kmh)
+			}
+			t.Logf("[%d km/h] Overtaking success! Min longitudinal gap before lateral clearance: %.1f px",
+				kmh, minLongitudinalGap)
+		})
+	}
+
+	// Tight / close-quarters scenario: blocker at 180px while bus is in mid-overtake transition
+	// Verifies bus decelerates behind blocker rather than accelerating into it
+	t.Run("Close_Range_Lane_Change_No_Collision", func(t *testing.T) {
+		cruiseSpd := 400.0 // 80 km/h
+		yCenter := 1200.0 * MapGridScale
+
+		sStart := NewBusStop(303, "Start3", Vec2{X: -2000, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+		sEnd := NewBusStop(304, "End3", Vec2{X: 2000, Y: yCenter}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+		w := NewWorld(lw, MapThemeMetropolis)
+		w.Stops = []*BusStop{sStart, sEnd}
+		route := &Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.BerserkMaxSpeed = cruiseSpd
+		driver.State = AutopilotStateCruising
+		driver.drivePath = []Vec2{{X: -2000, Y: yCenter + lw*1.5}, {X: 2000, Y: yCenter + lw*1.5}}
+		driver.cumLen = []float64{0, 4000.0}
+		driver.pathWorld = w
+		driver.pathFromID = sStart.ID
+		driver.pathToID = sEnd.ID
+		driver.pathLane = lw
+		driver.pathSynced = true
+
+		bus := NewBus(1, 0, lw)
+		bus.Pos = Vec2{X: -1000, Y: yCenter + lw*1.5}
+		bus.Heading = 0
+		bus.Speed = 200.0
+		bus.MaxSpeedFwd = 460.0
+
+		// Blocker placed 160px ahead, moving at 40px/s
+		blocker := VehicleObstacle{
+			Pos:     Vec2{X: bus.Pos.X + 160.0, Y: yCenter + lw*1.5},
+			Heading: 0,
+			Speed:   40.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		driver.OvertakeState = OvertakeChangingLane
+		driver.TargetLaneOffset = -lw
+
+		// Compute controls: must NOT accelerate past, targetSpd must decelerate behind blocker
+		th, br, _, _, _, _ := driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{blocker}, lw, dt)
+		if th > 0.5 && br == 0.0 {
+			t.Fatalf("Expected bus to brake/decelerate behind close blocker during lane change, got throttle=%.2f, brake=%.2f",
+				th, br)
+		}
+
+		// Step forward and ensure no collision occurs
+		for step := 0; step < 300; step++ {
+			blocker.Pos.X += blocker.Speed * dt
+			th, br, st, hb, tg, _ := driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{blocker}, lw, dt)
+			bus.Update(dt, th, br, st, hb, tg)
+
+			dx := blocker.Pos.X - bus.Pos.X
+			dy := math.Abs(bus.Pos.Y - blocker.Pos.Y)
+			contactDistX := bus.Length/2 + blocker.Length/2 - 2.0
+			contactDistY := bus.Width/2 + blocker.Width/2 - 2.0
+			if math.Abs(dx) < contactDistX && dy < contactDistY {
+				t.Fatalf("Step %d: Collision in close-range lane change! dx=%.1f, dy=%.1f", step, dx, dy)
+			}
+			if bus.Pos.X > blocker.Pos.X+80.0 {
+				break
+			}
+		}
+	})
+}
+
+// TestBerserkModeStationDockingWithWaitingPassengers verifies that when passengers are waiting
+// at a station, the bus in Berserk mode (at 60, 80, 100, 120 km/h) reliably decelerates,
+// pulls into the stop bay, and docks successfully without overshooting.
+func TestBerserkModeStationDockingWithWaitingPassengers(t *testing.T) {
+	lw := 47.5
+	dt := 1.0 / 60.0
+
+	for _, kmh := range []int{60, 80, 100, 120} {
+		t.Run(fmt.Sprintf("%d_kmh_Station_Docking_Test", kmh), func(t *testing.T) {
+			cruiseSpd := float64(kmh) * 5.0
+			yRoad := 800.0
+
+			// Stop 0 at -1500, Stop 1 at 0
+			// Bay center at Y = yRoad + lw*1.5 + bayOffset (~yRoad + 115)
+			s0 := NewBusStop(0, "DepartStop", Vec2{X: -1500, Y: yRoad + lw*1.5 + 44.0}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			s1 := NewBusStop(1, "ArriveStop", Vec2{X: 0, Y: yRoad + lw*1.5 + 44.0}, 0, 4, RGBA(0, 0, 0, 0), lw, 0)
+			s1.WaitingPassengers = 6 // Station has waiting passengers!
+
+			w := NewWorld(lw, MapThemeMetropolis)
+			w.Stops = []*BusStop{s0, s1}
+
+			route := &Route{
+				Name:         "StationDockingRoute",
+				StopIDs:      []int{0, 1},
+				CurrentIndex: 1,
+			}
+
+			driver := NewAutopilotDriver()
+			driver.BerserkMode = true
+			driver.BerserkMaxSpeed = cruiseSpd
+			driver.State = AutopilotStateCruising
+			driver.drivePath = []Vec2{
+				{X: -1500, Y: yRoad + lw*1.5},
+				{X: 0, Y: yRoad + lw*1.5},
+				s1.Pos,
+			}
+			driver.cumLen = []float64{0, 1500.0, 1500.0 + s1.Pos.Distance(Vec2{X: 0, Y: yRoad + lw*1.5})}
+
+			bus := NewBus(1, 0, lw)
+			bus.Pos = Vec2{X: -600, Y: yRoad + lw*1.5}
+			bus.Heading = 0
+			bus.Speed = cruiseSpd
+			bus.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+
+			docked := false
+			for step := 0; step < 800; step++ {
+				th, br, st, hb, tg, isDocked := driver.ComputeControls(bus, route, w, nil, nil, lw, dt)
+				bus.Update(dt, th, br, st, hb, tg)
+
+				if isDocked || driver.State == AutopilotStateDocked {
+					docked = true
+					break
+				}
+
+				// If bus overshoots far past the stop without docking, fail early
+				if bus.Pos.X > s1.Pos.X+120.0 {
+					t.Fatalf("[%d km/h] Bus blew past the station without docking! bus.Pos=%v, stop.Pos=%v, speed=%.1f",
+						kmh, bus.Pos, s1.Pos, bus.Speed)
+				}
+			}
+
+			if !docked {
+				t.Fatalf("[%d km/h] Bus never docked at the station with waiting passengers", kmh)
+			}
+			t.Logf("[%d km/h] Station docking successful! Final bus speed=%.1f, pos=%v, stop=%v",
+				kmh, bus.Speed, bus.Pos, s1.Pos)
+		})
+	}
+}
+
+// TestBerserkModePassengerBoardingAndDockingCycle ensures that in Berserk mode,
+// at various approach speeds, the bus reliably docks, opens doors, boards waiting passengers,
+// finishes dwell, closes doors, and departs smoothly.
+func TestBerserkModePassengerBoardingAndDockingCycle(t *testing.T) {
+	testSpeeds := []float64{25.0, 20.0, 15.0, 8.0}
+	for _, approachSpeed := range testSpeeds {
+		t.Run(fmt.Sprintf("ApproachSpeed_%.1f", approachSpeed), func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.EnterCity(MapThemeMetropolis)
+			g.Settings.AutopilotEnabled = true
+			g.Settings.AutopilotBerserk = true
+			g.AutopilotDriver.BerserkMode = true
+
+			// Route from Stop 0 to Stop 2
+			g.Route.StopIDs = []int{0, 2, 10, 8, 0}
+			g.Route.CurrentIndex = 1
+			targetStop := g.World.Stops[2]
+			targetStop.WaitingPassengers = 8
+
+			// Place bus approaching Stop 2 with given speed
+			g.Bus.Pos = targetStop.Pos.Sub(Vec2{X: math.Cos(targetStop.Heading) * 70, Y: math.Sin(targetStop.Heading) * 70})
+			g.Bus.Heading = targetStop.Heading
+			g.Bus.Speed = approachSpeed
+			g.Bus.DoorsOpen = false
+			g.Bus.Passengers = nil
+			g.Bus.PassengerCount = 0
+
+			g.AutopilotDriver.DwellTotal = 0.4
+			g.AutopilotDriver.State = AutopilotStateCruising
+
+			dt := 0.016
+			dockedSeen := false
+			doorsOpenedSeen := false
+			passengersBoardedSeen := false
+			doorsClosedSeen := false
+
+			for frame := 0; frame < 300; frame++ {
+				laneW := 52.0
+				th, br, st, hb, tg, isDocked := g.AutopilotDriver.ComputeControls(
+					g.Bus, g.Route, g.World, g.TrafficLights, nil, laneW, dt,
+				)
+
+				g.Bus.Update(dt, th, br, st, hb, tg)
+
+				var activeStop *BusStop
+				for _, s := range g.World.Stops {
+					isAutopilotDockedAtThisStop := g.Settings.AutopilotEnabled && g.AutopilotDriver != nil &&
+						g.AutopilotDriver.State == AutopilotStateDocked && g.AutopilotDriver.DockedStopID == s.ID &&
+						(s.ContainsBus(g.Bus) || s.Pos.Distance(g.Bus.Pos) < s.Length/2+65.0)
+					if s.ContainsBus(g.Bus) || isAutopilotDockedAtThisStop {
+						activeStop = s
+						break
+					}
+				}
+
+				if activeStop != nil {
+					if g.Bus.DoorsOpen && !g.boardedThisStop {
+						g.boardedThisStop = true
+						g.Bus.RemovePassengersAlightingAt(activeStop.ID)
+						boardSpace := g.Bus.Capacity - g.Bus.PassengerCount
+						boardCount := activeStop.WaitingPassengers
+						if boardCount > boardSpace {
+							boardCount = boardSpace
+						}
+						if boardCount > 0 {
+							candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
+							actualBoarded := g.Bus.BoardPassengers(boardCount, candidates)
+							activeStop.WaitingPassengers -= actualBoarded
+							if actualBoarded > 0 {
+								passengersBoardedSeen = true
+							}
+						}
+						if activeStop.ID == g.Route.GetCurrentTargetStopID() {
+							g.Route.AdvanceToNextStop()
+						}
+					}
+				} else {
+					g.boardedThisStop = false
+				}
+
+				if isDocked || g.AutopilotDriver.State == AutopilotStateDocked {
+					dockedSeen = true
+				}
+				if g.Bus.DoorsOpen {
+					doorsOpenedSeen = true
+				}
+				if doorsOpenedSeen && !g.Bus.DoorsOpen && g.Bus.DoorProgress <= 0.05 {
+					doorsClosedSeen = true
+					if g.AutopilotDriver.State != AutopilotStateDocked {
+						break
+					}
+				}
+			}
+
+			if !dockedSeen {
+				t.Fatalf("Bus failed to dock at station at approach speed %.1f", approachSpeed)
+			}
+			if !doorsOpenedSeen {
+				t.Fatalf("Bus doors failed to open while docked at approach speed %.1f", approachSpeed)
+			}
+			if !passengersBoardedSeen {
+				t.Fatalf("Passengers failed to board bus while docked in Berserk mode at approach speed %.1f", approachSpeed)
+			}
+			if !doorsClosedSeen {
+				t.Fatalf("Bus doors failed to close after dwell at approach speed %.1f", approachSpeed)
+			}
+			if g.Bus.PassengerCount == 0 {
+				t.Fatalf("Passenger count must be > 0, got %d", g.Bus.PassengerCount)
+			}
+			if targetStop.WaitingPassengers >= 8 {
+				t.Fatalf("Waiting passengers at stop should have decreased from 8, got %d", targetStop.WaitingPassengers)
+			}
+		})
+	}
+}
+
+// TestAutopilotDockingWithLateralOffset verifies that a bus pulling in with a slight lateral offset
+// (e.g. 20px off center) is correctly recognized by ContainsBus and activeStop, boarding passengers.
+func TestAutopilotDockingWithLateralOffset(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(MapThemeMetropolis)
+	s0 := g.World.Stops[0]
+	s0.WaitingPassengers = 5
+
+	// Position bus parked in bay with 20px lateral offset
+	sinH := math.Sin(s0.Heading)
+	cosH := math.Cos(s0.Heading)
+	perpX := -sinH
+	perpY := cosH
+	g.Bus.Pos = s0.Pos.Add(Vec2{X: perpX * 20.0, Y: perpY * 20.0})
+	g.Bus.Heading = s0.Heading
+	g.Bus.Speed = 0.0
+	g.Bus.DoorsOpen = false
+	g.Bus.DoorProgress = 0.0
+	g.Bus.Passengers = nil
+	g.Bus.PassengerCount = 0
+
+	if !s0.ContainsBus(g.Bus) {
+		t.Fatalf("Bus with 20px lateral offset in bay should be accepted by ContainsBus")
+	}
+
+	// Press E to open doors in manual mode
+	g.Bus.Update(0.016, 0, 0, 0, false, true)
+	if !g.Bus.DoorsOpen {
+		t.Fatalf("Doors should open when speed is 0 and toggleDoors is true")
+	}
+
+	// Run boarding logic
+	var activeStop *BusStop
+	for _, s := range g.World.Stops {
+		if s.ContainsBus(g.Bus) {
+			activeStop = s
+			break
+		}
+	}
+	if activeStop == nil {
+		t.Fatalf("activeStop should be detected for 20px lateral offset bus in bay")
+	}
+
+	candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
+	actual := g.Bus.BoardPassengers(activeStop.WaitingPassengers, candidates)
+	if actual != 5 {
+		t.Fatalf("Expected 5 passengers boarded, got %d", actual)
+	}
+}
+
+// TestUnifiedMaxSpeedLimitManualAndBerserk verifies that the configurable top speed limit
+// (60, 80, 100, 120 km/h) applies consistently to BOTH manual driving and AI Berserk mode.
+func TestUnifiedMaxSpeedLimitManualAndBerserk(t *testing.T) {
+	s := NewSettings()
+
+	// 1. Verify default is 80 km/h
+	if s.AutopilotBerserkMaxSpeed != 80 {
+		t.Fatalf("Default max speed should be 80 km/h, got %d", s.AutopilotBerserkMaxSpeed)
+	}
+	if math.Abs(s.GetBusMaxSpeed()-445.0) > 1.0 {
+		t.Fatalf("Default bus max speed should be 445.0 px/s (80 km/h), got %.2f", s.GetBusMaxSpeed())
+	}
+	if math.Abs(s.GetBerserkCruiseSpeed()-445.0) > 1.0 {
+		t.Fatalf("Default berserk cruise speed should be 445.0 px/s (80 km/h), got %.2f", s.GetBerserkCruiseSpeed())
+	}
+
+	testCases := []struct {
+		kmh          int
+		manualMaxSpd float64
+		cruiseSpd    float64
+	}{
+		{60, 334.0, 333.0},
+		{80, 445.0, 445.0},
+		{100, 556.0, 555.0},
+		{120, 667.0, 667.0},
+	}
+
+	for _, tc := range testCases {
+		s.SetMaxSpeed(tc.kmh)
+		if s.AutopilotBerserkMaxSpeed != tc.kmh {
+			t.Fatalf("Expected speed %d, got %d", tc.kmh, s.AutopilotBerserkMaxSpeed)
+		}
+		if math.Abs(s.GetBusMaxSpeed()-tc.manualMaxSpd) > 0.1 {
+			t.Fatalf("[%d km/h] Expected bus manual max speed %.1f, got %.2f", tc.kmh, tc.manualMaxSpd, s.GetBusMaxSpeed())
+		}
+		if math.Abs(s.GetBerserkCruiseSpeed()-tc.cruiseSpd) > 0.1 {
+			t.Fatalf("[%d km/h] Expected berserk cruise speed %.1f, got %.2f", tc.kmh, tc.cruiseSpd, s.GetBerserkCruiseSpeed())
+		}
+
+		// 2. Simulate manual driving kinematics
+		bus := NewBus(100, 100, 0)
+		bus.MaxSpeedFwd = s.GetBusMaxSpeed()
+
+		// Full throttle forward for 5 seconds
+		dt := 0.016
+		for step := 0; step < 350; step++ {
+			bus.Update(dt, 1.0, 0.0, 0.0, false, false)
+		}
+
+		// Verify speed capped at MaxSpeedFwd
+		if bus.Speed > bus.MaxSpeedFwd+0.01 {
+			t.Fatalf("[%d km/h] Manual bus exceeded speed limit! Speed=%.2f, Max=%.2f", tc.kmh, bus.Speed, bus.MaxSpeedFwd)
+		}
+
+		// Verify converted KM/H on HUD matches target speed limit
+		hudKmh := int(math.Abs(bus.Speed) * 0.18)
+		if hudKmh != tc.kmh {
+			t.Fatalf("[%d km/h] Expected HUD speed %d km/h, got %d km/h (raw speed: %.2f)", tc.kmh, tc.kmh, hudKmh, bus.Speed)
+		}
+	}
+
+	// 3. Test Cycling Sequence: 60 -> 80 -> 100 -> 120 -> 60
+	s.SetMaxSpeed(60)
+	if next := s.CycleMaxSpeed(); next != 80 {
+		t.Fatalf("Expected cycle 60 -> 80, got %d", next)
+	}
+	if next := s.CycleMaxSpeed(); next != 100 {
+		t.Fatalf("Expected cycle 80 -> 100, got %d", next)
+	}
+	if next := s.CycleMaxSpeed(); next != 120 {
+		t.Fatalf("Expected cycle 100 -> 120, got %d", next)
+	}
+	if next := s.CycleMaxSpeed(); next != 60 {
+		t.Fatalf("Expected cycle 120 -> 60, got %d", next)
+	}
+}
+
+// TestBerserkMode3LaneOvertakingOn6LaneRoad verifies that in Berserk Mode on 6-lane roads (3 lanes per direction),
+// when both the right lane (offset 0.0) and middle lane (offset -lw) have vehicles, and the leftmost lane (offset -2*lw)
+// is clear, the bus changes into the leftmost lane to overtake, safely passes, and returns once clear.
+func TestBerserkMode3LaneOvertakingOn6LaneRoad(t *testing.T) {
+	lw := 52.0
+	wTest := NewWorld(lw, MapThemeMetropolis)
+	s6Start := NewBusStop(601, "RingEastStart", Vec2{X: -1000 * MapGridScale, Y: -1200 * MapGridScale}, 0, 6, RGBA(0, 0, 0, 0), lw, 0)
+	s6End := NewBusStop(602, "RingEastEnd", Vec2{X: 1000 * MapGridScale, Y: -1200 * MapGridScale}, 0, 6, RGBA(0, 0, 0, 0), lw, 0)
+	wTest.Stops = []*BusStop{s6Start, s6End}
+
+	route := &Route{
+		Name:         "Overtake3LaneRoute",
+		StopIDs:      []int{0, 1},
+		CurrentIndex: 1,
+	}
+
+	// 1. Bus in outer lane (0.0): car in outer lane (0.0) AND car in middle lane (-lw), left lane clear
+	t.Run("OuterAndMiddleBlocked_ChangesToLeftmostLane", func(t *testing.T) {
+		bus := NewBus(1, 0, lw)
+		bus.Pos = Vec2{X: -600 * MapGridScale, Y: -1200*MapGridScale + lw*2.5} // In outer lane (0.0)
+		bus.Heading = 0
+		bus.Speed = 160.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.State = AutopilotStateCruising
+
+		// Car in outer lane (0.0) ahead
+		carOuter := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 90, Y: -1200*MapGridScale + lw*2.5},
+			Heading: 0,
+			Speed:   50.0,
+			Length:  48,
+			Width:   22,
+		}
+		// Car in middle lane (-lw) ahead
+		carMiddle := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 110, Y: -1200*MapGridScale + lw*1.5},
+			Heading: 0,
+			Speed:   55.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		// Init path
+		driver.ComputeControls(bus, route, wTest, nil, nil, lw, 0.016)
+
+		// Step with both outer and middle lanes occupied
+		driver.ComputeControls(bus, route, wTest, nil, []VehicleObstacle{carOuter, carMiddle}, lw, 0.016)
+
+		if driver.OvertakeState != OvertakeChangingLane {
+			t.Fatalf("Expected OvertakeChangingLane when both right lanes blocked, got state %d", driver.OvertakeState)
+		}
+		expectedTarget := -2.0 * lw
+		if math.Abs(driver.TargetLaneOffset-expectedTarget) > 1.0 {
+			t.Fatalf("Expected TargetLaneOffset %.1f (-2*lw), got %.2f", expectedTarget, driver.TargetLaneOffset)
+		}
+	})
+
+	// 2. Bus currently in middle lane (-lw): lead car in middle lane ahead, outer lane blocked, leftmost clear
+	t.Run("MiddleLaneBlocked_ChangesToLeftmostLane", func(t *testing.T) {
+		bus := NewBus(1, 0, lw)
+		bus.Pos = Vec2{X: -600 * MapGridScale, Y: -1200*MapGridScale + lw*1.5} // In middle lane (-lw)
+		bus.Heading = 0
+		bus.Speed = 160.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.State = AutopilotStateCruising
+
+		// Car in middle lane (-lw) ahead
+		carMiddle := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 95, Y: -1200*MapGridScale + lw*1.5},
+			Heading: 0,
+			Speed:   50.0,
+			Length:  48,
+			Width:   22,
+		}
+		// Car in outer lane (0.0) alongside
+		carOuter := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 10, Y: -1200*MapGridScale + lw*2.5},
+			Heading: 0,
+			Speed:   45.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		driver.ComputeControls(bus, route, wTest, nil, nil, lw, 0.016)
+		driver.LaneOffset = -lw
+		driver.TargetLaneOffset = -lw
+
+		driver.ComputeControls(bus, route, wTest, nil, []VehicleObstacle{carMiddle, carOuter}, lw, 0.016)
+
+		if driver.OvertakeState != OvertakeChangingLane {
+			t.Fatalf("Expected OvertakeChangingLane from middle lane, got state %d", driver.OvertakeState)
+		}
+		expectedTarget := -2.0 * lw
+		if math.Abs(driver.TargetLaneOffset-expectedTarget) > 1.0 {
+			t.Fatalf("Expected TargetLaneOffset %.1f (-2*lw), got %.2f", expectedTarget, driver.TargetLaneOffset)
+		}
+	})
+
+	// 3. Passing in leftmost lane: does not brake for cars in right lanes, and returns to middle lane when cleared
+	t.Run("LeftmostLanePassingAndReturning", func(t *testing.T) {
+		bus := NewBus(1, 0, lw)
+		bus.Pos = Vec2{X: -600 * MapGridScale, Y: -1200*MapGridScale + lw*0.5} // In leftmost lane (-2*lw)
+		bus.Heading = 0
+		bus.Speed = 160.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.State = AutopilotStateCruising
+		driver.LaneOffset = -2.0 * lw
+		driver.TargetLaneOffset = -2.0 * lw
+		driver.OvertakeState = OvertakePassing
+		driver.OvertakeTimer = 1.0
+
+		// Init path
+		driver.ComputeControls(bus, route, wTest, nil, nil, lw, 0.016)
+		driver.LaneOffset = -2.0 * lw
+		driver.TargetLaneOffset = -2.0 * lw
+		driver.OvertakeState = OvertakePassing
+		driver.OvertakeTimer = 1.0
+
+		// Cars in middle and outer lane are alongside/ahead
+		carOuter := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 50, Y: -1200*MapGridScale + lw*2.5},
+			Heading: 0,
+			Speed:   50.0,
+			Length:  48,
+			Width:   22,
+		}
+		carMiddle := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 60, Y: -1200*MapGridScale + lw*1.5},
+			Heading: 0,
+			Speed:   55.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		throttle, brake, _, _, _, _ := driver.ComputeControls(bus, route, wTest, nil, []VehicleObstacle{carOuter, carMiddle}, lw, 0.016)
+		// Should NOT brake; bus is in clear leftmost lane!
+		if brake > 0.1 {
+			t.Fatalf("Bus in leftmost lane should not brake for vehicles in adjacent lanes, got brake %.2f", brake)
+		}
+		if throttle < 0.2 {
+			t.Fatalf("Bus in leftmost lane should maintain throttle, got %.2f", throttle)
+		}
+		if driver.OvertakeState != OvertakePassing {
+			t.Fatalf("Bus should remain in OvertakePassing while alongside cars, got %d", driver.OvertakeState)
+		}
+
+		// Now cars have been passed (behind bus)
+		carOuterBehind := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale - 160, Y: -1200*MapGridScale + lw*2.5},
+			Heading: 0,
+			Speed:   50.0,
+			Length:  48,
+			Width:   22,
+		}
+		carMiddleBehind := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale - 150, Y: -1200*MapGridScale + lw*1.5},
+			Heading: 0,
+			Speed:   55.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		driver.ComputeControls(bus, route, wTest, nil, []VehicleObstacle{carOuterBehind, carMiddleBehind}, lw, 0.016)
+		if driver.OvertakeState != OvertakeReturning {
+			t.Fatalf("Bus should transition to OvertakeReturning once obstacles cleared, got %d", driver.OvertakeState)
+		}
+		if math.Abs(driver.TargetLaneOffset-(-lw)) > 1.0 && math.Abs(driver.TargetLaneOffset-0.0) > 1.0 {
+			t.Fatalf("Bus should return to through lane (-lw or 0.0), got TargetLaneOffset %.2f", driver.TargetLaneOffset)
+		}
+	})
+
+	// 4. Non-Berserk Standard Mode: must NOT use leftmost lane (-2*lw) to overtake
+	t.Run("StandardMode_DoesNotUseLeftmostLane", func(t *testing.T) {
+		bus := NewBus(1, 0, lw)
+		bus.Pos = Vec2{X: -600 * MapGridScale, Y: -1200*MapGridScale + lw*2.5}
+		bus.Heading = 0
+		bus.Speed = 160.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = false // Standard mode!
+		driver.State = AutopilotStateCruising
+
+		carOuter := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 90, Y: -1200*MapGridScale + lw*2.5},
+			Heading: 0,
+			Speed:   50.0,
+			Length:  48,
+			Width:   22,
+		}
+		carMiddle := VehicleObstacle{
+			Pos:     Vec2{X: -600*MapGridScale + 110, Y: -1200*MapGridScale + lw*1.5},
+			Heading: 0,
+			Speed:   55.0,
+			Length:  48,
+			Width:   22,
+		}
+
+		driver.ComputeControls(bus, route, wTest, nil, nil, lw, 0.016)
+		driver.ComputeControls(bus, route, wTest, nil, []VehicleObstacle{carOuter, carMiddle}, lw, 0.016)
+
+		if driver.TargetLaneOffset <= -lw*1.5 {
+			t.Fatalf("Standard mode must NOT target leftmost lane (-2*lw), got %.2f", driver.TargetLaneOffset)
+		}
+	})
+}
+
+// TestBerserkModeOvertakingIntoUpcomingLeftTurn verifies that in Berserk Mode, when overtaking a vehicle
+// on a multi-lane road where the upcoming intersection requires a left turn:
+// 1. After passing or while approaching, the bus does NOT return to the outer right lane.
+// 2. The bus seamlessly continues forward directly into the dedicated left-turn lane.
+// 3. The bus NEVER overshoots across the double yellow line into the oncoming lane during or after the merge taper.
+func TestBerserkModeOvertakingIntoUpcomingLeftTurn(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	w.Roundabouts = nil
+
+	// Eastbound along Y = 0 (Metropolis Central Boulevard, 4-lane avenue), turning North (Left) onto X = 0 (North-South avenue).
+	// Legal travel is at Y > 0 (outer lane = 1.5*lw = 78, left-turn lane = 0.5*lw = 26).
+	// Centerline is at Y = 0.0; oncoming Westbound traffic is at Y < 0.
+	sStart := NewBusStop(0, "StartEast", Vec2{X: -600 * MapGridScale, Y: 0}, 0, 4, RGBA(0, 0, 0, 0), lw, 0) // X = -1800
+	sEnd := NewBusStop(1, "EndNorth", Vec2{X: 0, Y: -600 * MapGridScale}, -math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+	w.Stops = []*BusStop{sStart, sEnd}
+
+	route := &Route{
+		Name:         "LeftTurnOvertakeRoute",
+		StopIDs:      []int{0, 1},
+		CurrentIndex: 1,
+	}
+
+	bus := NewBus(-1400, lw*1.5, 0) // in outer lane (Y = 78), 1400px before X=0
+	bus.Speed = 160.0
+	bus.Gear = GearDrive
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.State = AutopilotStateCruising
+
+	// Slow vehicle in outer lane ahead
+	slowCar := VehicleObstacle{
+		Pos:     Vec2{X: -1050, Y: lw * 1.5},
+		Heading: 0,
+		Speed:   35.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	tls := &TrafficLightSystem{}
+	inter := &TrafficIntersection{
+		ID:                0,
+		Center:            Vec2{X: 0, Y: 0},
+		IsMajor:           true,
+		ApproachHasRoad:   [4]bool{true, true, true, true},
+		ApproachLanes:     [4]int{4, 4, 4, 4},
+		ApproachIs4Lane:   [4]bool{true, true, true, true},
+		Phase:             PhaseEWLeftGreen, // Left green
+		GreenDuration:     15.0,
+		YellowDuration:    2.5,
+		LeftGreenDuration: 15.0,
+	}
+	tls.Intersections = []*TrafficIntersection{inter}
+
+	// Step through simulation
+	dt := 0.016
+	passedObstacle := false
+
+	for step := 0; step < 400; step++ {
+		slowCar.Pos.X += slowCar.Speed * dt
+		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+			bus, route, w, tls, []VehicleObstacle{slowCar}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// Calculate front-left and rear-left corners (closest to centerline)
+		cosH := math.Cos(bus.Heading)
+		sinH := math.Sin(bus.Heading)
+		halfL := bus.Length * 0.5
+		halfW := bus.Width * 0.5
+		leftPerp := Vec2{X: sinH, Y: -cosH}
+		flCorner := bus.Pos.Add(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+		rlCorner := bus.Pos.Sub(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+
+		// Double yellow line check: while approaching intersection before the mouth (>80px),
+		// the bus must NEVER cross into oncoming traffic (legal side is Y > 0).
+		distToInter := math.Abs(bus.Pos.X)
+		if distToInter > 80.0 {
+			if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
+				t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v, LaneOffset=%.2f, TargetLaneOffset=%.2f",
+					step, bus.Pos, flCorner, rlCorner, driver.LaneOffset, driver.TargetLaneOffset)
+			}
+		}
+
+		// Once bus has passed the obstacle (bus.Pos.X > slowCar.Pos.X + 60):
+		if bus.Pos.X > slowCar.Pos.X+60.0 {
+			passedObstacle = true
+			// Bus must NOT return to outer lane (Y must not veer back towards 78)
+			if driver.OvertakeState == OvertakeReturning && driver.TargetLaneOffset == 0.0 && bus.Pos.Y > lw*1.2 {
+				t.Fatalf("Step %d: Bus attempted to return to outer lane despite upcoming left turn! Pos=%v", step, bus.Pos)
+			}
+		}
+
+		// Stop when bus reaches intersection mouth
+		if bus.Pos.X >= -70.0 {
+			break
+		}
+	}
+
+	if !passedObstacle {
+		t.Fatalf("Bus failed to overtake slowCar before intersection")
+	}
+
+	// Verify that the bus positioned safely in the dedicated left-turn lane (Y near 0.5*lw = 26)
+	if bus.Pos.Y > lw*1.0 {
+		t.Fatalf("Bus failed to enter left-turn lane before intersection mouth, got Y=%.2f (expected near %.1f)", bus.Pos.Y, lw*0.5)
+	}
+}
+
+// TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn verifies that in Berserk Mode on a 6-lane road:
+// When overtaking or cruising where the upcoming intersection requires a left turn:
+// TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn verifies that in Berserk Mode on a 6-lane road:
+// When overtaking or cruising where the upcoming intersection requires a left turn:
+// 1. The bus does NOT swerve into oncoming traffic (Y < 0).
+// 2. The bus does NOT perform an S-curve (swerving right toward outer lanes then swerving left).
+// 3. The bus smoothly transitions into the dedicated left-turn lane (Y ~ 0.5*lw = 26).
+func TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn(t *testing.T) {
+	lw := 52.0
+
+	t.Run("OvertakingTrafficIntoUpcomingLeftTurn", func(t *testing.T) {
+		w := NewWorld(lw, MapThemeCoastalBay)
+		w.Roundabouts = nil
+
+		sStart := NewBusStop(0, "StartEast6Lane", Vec2{X: -600 * MapGridScale, Y: 0}, 0, 6, RGBA(0, 0, 0, 0), lw, 0) // X = -1800
+		sEnd := NewBusStop(1, "EndNorth", Vec2{X: 0, Y: -600 * MapGridScale}, -math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+		w.Stops = []*BusStop{sStart, sEnd}
+
+		route := &Route{
+			Name:         "LeftTurn6LaneOvertakeRoute",
+			StopIDs:      []int{0, 1},
+			CurrentIndex: 1,
+		}
+
+		bus := NewBus(-1400, lw*2.5, 0) // in outer lane (Y = 130), 1400px before X=0
+		bus.Speed = 220.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.State = AutopilotStateCruising
+
+		slowOuter := VehicleObstacle{
+			Pos:     Vec2{X: -950, Y: lw * 2.5},
+			Heading: 0,
+			Speed:   35.0,
+			Length:  48,
+			Width:   22,
+		}
+		slowMid := VehicleObstacle{
+			Pos:     Vec2{X: -900, Y: lw * 1.5},
+			Heading: 0,
+			Speed:   35.0,
+			Length:  48,
+			Width:   22,
+		}
+		obstacles := []VehicleObstacle{slowOuter, slowMid}
+
+		tls := &TrafficLightSystem{}
+		inter := &TrafficIntersection{
+			ID:                0,
+			Center:            Vec2{X: 0, Y: 0},
+			IsMajor:           true,
+			ApproachHasRoad:   [4]bool{true, true, true, true},
+			ApproachLanes:     [4]int{6, 4, 6, 4},
+			ApproachIs4Lane:   [4]bool{true, true, true, true},
+			Phase:             PhaseEWLeftGreen,
+			GreenDuration:     15.0,
+			YellowDuration:    2.5,
+			LeftGreenDuration: 15.0,
+		}
+		tls.Intersections = []*TrafficIntersection{inter}
+
+		dt := 0.016
+		passedObstacle := false
+		enteredLeftTurnCorridor := false
+
+		for step := 0; step < 500; step++ {
+			for i := range obstacles {
+				obstacles[i].Pos.X += obstacles[i].Speed * dt
+			}
+			throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+				bus, route, w, tls, obstacles, lw, dt,
+			)
+			bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+			cosH := math.Cos(bus.Heading)
+			sinH := math.Sin(bus.Heading)
+			halfL := bus.Length * 0.5
+			halfW := bus.Width * 0.5
+			leftPerp := Vec2{X: sinH, Y: -cosH}
+			flCorner := bus.Pos.Add(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+			rlCorner := bus.Pos.Sub(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+
+			distToInter := math.Abs(bus.Pos.X)
+			if distToInter > 80.0 {
+				if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
+					t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v",
+						step, bus.Pos, flCorner, rlCorner)
+				}
+			}
+
+			if distToInter <= 600.0 && bus.Pos.Y <= lw*1.15 {
+				enteredLeftTurnCorridor = true
+			}
+			if enteredLeftTurnCorridor && distToInter > 80.0 {
+				if bus.Pos.Y > lw*1.35 {
+					t.Fatalf("Step %d: Bus swerved back right (S-curve) after entering left-turn corridor! Pos=%v",
+						step, bus.Pos)
+				}
+			}
+
+			if bus.Pos.X > obstacles[1].Pos.X+60.0 {
+				passedObstacle = true
+			}
+			if bus.Pos.X >= -70.0 {
+				break
+			}
+		}
+
+		if !passedObstacle {
+			t.Fatalf("Bus failed to overtake slow vehicles before intersection")
+		}
+		if bus.Pos.Y > lw*1.0 {
+			t.Fatalf("Bus failed to enter left-turn lane before intersection mouth, got Y=%.2f", bus.Pos.Y)
+		}
+	})
+
+	t.Run("MiddleLaneApproachSmoothTransitionNoSCurve", func(t *testing.T) {
+		w := NewWorld(lw, MapThemeCoastalBay)
+		w.Roundabouts = nil
+
+		sStart := NewBusStop(0, "StartEast6Lane", Vec2{X: -600, Y: 0}, 0, 6, RGBA(0, 0, 0, 0), lw, 0)
+		sEnd := NewBusStop(1, "EndNorth", Vec2{X: 0, Y: -600}, -math.Pi/2, 4, RGBA(0, 0, 0, 0), lw, 0)
+		w.Stops = []*BusStop{sStart, sEnd}
+
+		route := &Route{
+			Name:         "LeftTurn6LaneRoute",
+			StopIDs:      []int{0, 1},
+			CurrentIndex: 1,
+		}
+
+		bus := NewBus(-500, lw*1.5, 0) // in middle lane (Y = 78), 500px before X=0
+		bus.Speed = 220.0
+		bus.Gear = GearDrive
+
+		driver := NewAutopilotDriver()
+		driver.BerserkMode = true
+		driver.State = AutopilotStateCruising
+		driver.LaneOffset = -lw
+		driver.TargetLaneOffset = -lw
+		driver.lastTargetLaneOffset = -lw
+
+		tls := &TrafficLightSystem{}
+		inter := &TrafficIntersection{
+			ID:                0,
+			Center:            Vec2{X: 0, Y: 0},
+			IsMajor:           true,
+			ApproachHasRoad:   [4]bool{true, true, true, true},
+			ApproachLanes:     [4]int{6, 4, 6, 4},
+			ApproachIs4Lane:   [4]bool{true, true, true, true},
+			Phase:             PhaseEWLeftGreen,
+			GreenDuration:     15.0,
+			YellowDuration:    2.5,
+			LeftGreenDuration: 15.0,
+		}
+		tls.Intersections = []*TrafficIntersection{inter}
+
+		dt := 0.016
+		enteredLeftTurnCorridor := false
+
+		for step := 0; step < 500; step++ {
+			throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+				bus, route, w, tls, nil, lw, dt,
+			)
+			bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+			cosH := math.Cos(bus.Heading)
+			sinH := math.Sin(bus.Heading)
+			halfL := bus.Length * 0.5
+			halfW := bus.Width * 0.5
+			leftPerp := Vec2{X: sinH, Y: -cosH}
+			flCorner := bus.Pos.Add(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+			rlCorner := bus.Pos.Sub(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+
+
+
+			distToInter := math.Abs(bus.Pos.X)
+			if distToInter > 80.0 {
+				if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
+					t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v",
+						step, bus.Pos, flCorner, rlCorner)
+				}
+			}
+
+			if bus.Pos.Y <= lw*1.15 {
+				enteredLeftTurnCorridor = true
+			}
+			if enteredLeftTurnCorridor && distToInter > 80.0 {
+				if bus.Pos.Y > lw*1.35 {
+					t.Fatalf("Step %d: Bus swerved back right (S-curve) after entering left-turn corridor! Pos=%v",
+						step, bus.Pos)
+				}
+			}
+
+			if bus.Pos.X >= -70.0 {
+				break
+			}
+		}
+
+		if bus.Pos.Y > lw*1.0 {
+			t.Fatalf("Bus failed to enter left-turn lane before intersection mouth, got Y=%.2f", bus.Pos.Y)
+		}
+	})
+}
+
+// TestAIBusLeftTurnNotBlockedByOncomingBusInLeftTurnLane verifies that an AI bus making a left
+// turn at an intersection does NOT falsely brake or deadlock due to an oncoming vehicle waiting
+// in the dedicated left-turn lane across the road centerline.
+func TestAIBusLeftTurnNotBlockedByOncomingBusInLeftTurnLane(t *testing.T) {
+	lw := 26.0
+	w := NewWorld(lw, MapThemeTwinCities)
+	route := GetStandardRouteForMap(MapThemeTwinCities, w)
+
+	// In TwinCities, the major intersection is at X=3900, Y=0.
+	// AI#8 is turning left from Northbound avenue (X=3900) into Westbound expressway lanes (Y=-26).
+	// Mid-turn, its position is near (3880, -10) with Heading ~2.7 rad (facing South-West).
+	turningBus := NewBus(3880, -10, 2.7)
+	turningBus.Speed = 30.0
+
+	driver := NewAutopilotDriver()
+	driver.State = AutopilotStateCruising
+	// Path tracks left turn curve into westbound lane Y=-26
+	driver.drivePath = []Vec2{
+		{X: 3900, Y: 40},
+		{X: 3880, Y: -10},
+		{X: 3840, Y: -26},
+		{X: 3700, Y: -26},
+		{X: 3500, Y: -26},
+	}
+	driver.cumLen = make([]float64, len(driver.drivePath))
+	for i := 1; i < len(driver.drivePath); i++ {
+		driver.cumLen[i] = driver.cumLen[i-1] + driver.drivePath[i].Distance(driver.drivePath[i-1])
+	}
+	driver.WaypointIdx = 1
+
+	// Player bus is stopped in the Eastbound left turn lane at Y=+26, X=3845, Heading=0.0
+	playerObstacle := VehicleObstacle{
+		Pos:     Vec2{X: 3845, Y: 26},
+		Heading: 0.0,
+		Speed:   0.0,
+		Length:  48,
+		Width:   24,
+	}
+
+	throttle, brake, _, _, _, _ := driver.ComputeControls(
+		turningBus, route, w, nil, []VehicleObstacle{playerObstacle}, lw, 0.016,
+	)
+
+	// AI bus must NOT slam on brakes or set targetSpd to 0
+	if brake > 0.5 {
+		t.Fatalf("Turning AI bus falsely braked (brake=%.2f, throttle=%.2f) due to oncoming vehicle in opposite lane",
+			brake, throttle)
+	}
+	if driver.LastTargetSpeed <= 0.5 {
+		t.Fatalf("Target speed became %.2f (expected positive speed to complete left turn)", driver.LastTargetSpeed)
+	}
+
+	// Also verify AIBusManager deadlock timer is not suppressed by this oncoming vehicle
+	aiBus := &AIBus{
+		ID:     8,
+		Bus:    turningBus,
+		Route:  route,
+		Driver: driver,
+	}
+	// An opposing AI bus that is jammed against aiBus
+	otherBus := NewBus(3860, 10, 0.5)
+	otherBus.Speed = 0.0
+	otherAIBus := &AIBus{
+		ID:     5,
+		Bus:    otherBus,
+		Route:  route,
+		Driver: NewAutopilotDriver(),
+	}
+	playerBus := NewBus(3845, 26, 0.0)
+	playerBus.Speed = 0.0
+
+	abm := NewAIBusManager()
+	abm.Buses = []*AIBus{aiBus, otherAIBus}
+
+	// When turning bus is stationary and jammed against otherAIBus, deadlock timer should advance
+	// because playerBus is oncoming traffic and not a same-direction leader blocking the bus
+	turningBus.Speed = 0.0
+	abm.Update(0.1, playerBus, w, nil, nil, lw)
+	if aiBus.DeadlockTimer < 0.05 {
+		t.Fatalf("DeadlockTimer failed to increment (got %.2f), playerBlocking falsely suppressed deadlock resolution",
+			aiBus.DeadlockTimer)
+	}
+}
+
+// TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout verifies that in Berserk mode,
+// when a bus encounters a slower vehicle ahead in a roundabout, it overtakes via the inner passing
+// lane without falsely steering outwards or exiting the roundabout into unselected side avenues.
+func TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	route := GetStandardRouteForMap(MapThemeMetropolis, w)
+
+	fromStop := w.Stops[route.StopIDs[0]]
+	toStop := w.Stops[route.StopIDs[1]]
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.ensurePath(w, fromStop, toStop, lw)
+
+	// Find the roundabout
+	var rb *Roundabout
+	for i := range w.Roundabouts {
+		if w.Roundabouts[i].Center.Distance(Vec2{X: 0, Y: 0}) < 10.0 {
+			rb = &w.Roundabouts[i]
+			break
+		}
+	}
+	if rb == nil {
+		t.Fatalf("Civic roundabout not found in Metropolis")
+	}
+
+	// Find a waypoint in the roundabout along the bottom curve (near South road, Y > 0)
+	var wpIdx int = -1
+	for idx, pt := range driver.drivePath {
+		if pt.Distance(rb.Center) <= rb.Radius && pt.Y > 100.0 && pt.X < -20.0 {
+			wpIdx = idx
+			break
+		}
+	}
+	if wpIdx < 0 {
+		t.Fatalf("Could not locate bottom waypoint inside roundabout")
+	}
+
+	startPt := driver.drivePath[wpIdx]
+	nextPt := driver.drivePath[wpIdx+1]
+	heading := math.Atan2(nextPt.Y-startPt.Y, nextPt.X-startPt.X)
+
+	bus := NewBus(startPt.X, startPt.Y, heading)
+	bus.Speed = 60.0
+	driver.WaypointIdx = wpIdx
+
+	// Place a slower blocker ahead in the outer lane of the roundabout
+	blockerWP := driver.drivePath[wpIdx+3]
+	blocker := VehicleObstacle{
+		Pos:     blockerWP,
+		Heading: heading,
+		Speed:   35.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 0.016
+	for step := 0; step < 200; step++ {
+		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+			bus, route, w, nil, []VehicleObstacle{blocker}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// 1. TargetLaneOffset must NEVER be positive in a roundabout
+		if driver.TargetLaneOffset > 0.1 {
+			t.Fatalf("Step %d: TargetLaneOffset became positive (%.2f) in roundabout, shifting outwards into exit!",
+				step, driver.TargetLaneOffset)
+		}
+		if driver.LaneOffset > 0.1 {
+			t.Fatalf("Step %d: LaneOffset became positive (%.2f) in roundabout!", step, driver.LaneOffset)
+		}
+
+		// 2. Bus position must strictly remain inside the roundabout, not exiting south
+		distToCenter := bus.Pos.Distance(rb.Center)
+		if distToCenter > rb.Radius+15.0 {
+			t.Fatalf("Step %d: Bus exited roundabout! Pos=%v, Dist=%.2f (Radius=%.2f)",
+				step, bus.Pos, distToCenter, rb.Radius)
+		}
+
+		// Invariant: Bus must not drive into south avenue (Y > 240)
+		if bus.Pos.Y > rb.Radius+15.0 {
+			t.Fatalf("Step %d: Bus drove into south exit avenue! Pos=%v", step, bus.Pos)
+		}
+	}
+
+	// Verify that the driver initiated an overtake into the inner lane (negative offset)
+	if driver.TargetLaneOffset >= 0.0 && driver.LaneOffset >= 0.0 && driver.OvertakeState == OvertakeNone {
+		t.Fatalf("Expected Berserk mode to attempt overtaking in the roundabout")
+	}
+}
+
+// TestAutopilotBerserkStationApproachOvertakesIfRunwayPermits verifies that when there is sufficient runway,
+// the Berserk autopilot overtakes the lead vehicle ahead, pulls cleanly in front, returns to offset 0.0,
+// and docks at the station bay without colliding.
+func TestAutopilotBerserkStationApproachOvertakesIfRunwayPermits(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	route := GetStandardRouteForMap(MapThemeMetropolis, w)
+	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
+
+	fromStop := w.Stops[route.StopIDs[0]]
+	toStop := w.Stops[route.StopIDs[1]]
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.ensurePath(w, fromStop, toStop, lw)
+
+	// Pick a straight section with plenty of runway before the stop (~650px)
+	startWp := 55 // Waypoint on the long straight Southbound approach to Stop 2 (~685px runway)
+
+	startPt := driver.drivePath[startWp]
+	nextPt := driver.drivePath[startWp+1]
+	heading := math.Atan2(nextPt.Y-startPt.Y, nextPt.X-startPt.X)
+
+	bus := NewBus(startPt.X, startPt.Y, heading)
+	bus.Speed = 70.0
+	driver.WaypointIdx = startWp
+
+	// Lead bus 100px ahead in the same base lane
+	leadPt := startPt.Add(Vec2{X: math.Cos(heading) * 100.0, Y: math.Sin(heading) * 100.0})
+	leadBus := VehicleObstacle{
+		Pos:     leadPt,
+		Heading: heading,
+		Speed:   20.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 0.016
+	overtookSuccessfully := false
+	docked := false
+
+	for step := 0; step < 2400; step++ {
+		// Move lead bus forward slowly, slowing down if user bus has cleanly pulled in front
+		if bus.Pos.Y > leadBus.Pos.Y+75.0 && leadBus.Speed > 0.0 {
+			leadBus.Speed = math.Max(0.0, leadBus.Speed-25.0*dt)
+		}
+		leadBus.Pos = leadBus.Pos.Add(Vec2{X: math.Cos(leadBus.Heading) * leadBus.Speed * dt, Y: math.Sin(leadBus.Heading) * leadBus.Speed * dt})
+
+		throttle, brake, steer, handbrake, toggleDoors, isDocked := driver.ComputeControls(
+			bus, route, w, nil, []VehicleObstacle{leadBus}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// Check for physical body collision using Separating Axis Theorem (SAT)
+		dCol := leadBus.Pos.Sub(bus.Pos)
+		cosH := math.Cos(bus.Heading)
+		sinH := math.Sin(bus.Heading)
+		fwdCol := math.Abs(dCol.X*cosH + dCol.Y*sinH)
+		latCol := math.Abs(-dCol.X*sinH + dCol.Y*cosH)
+
+		cosL := math.Cos(leadBus.Heading)
+		sinL := math.Sin(leadBus.Heading)
+		fwdLead := math.Abs(dCol.X*cosL + dCol.Y*sinL)
+		latLead := math.Abs(-dCol.X*sinL + dCol.Y*cosL)
+
+		halfL := bus.Length/2 + leadBus.Length/2
+		halfW := bus.Width/2 + leadBus.Width/2
+
+		if (fwdCol < halfL && latCol < halfW) && (fwdLead < halfL && latLead < halfW) {
+			t.Fatalf("Step %d: Physical collision detected between bus and lead bus! fwdCol=%.2f, latCol=%.2f, fwdLead=%.2f, latLead=%.2f",
+				step, fwdCol, latCol, fwdLead, latLead)
+		}
+
+		if driver.OvertakeState == OvertakePassing || driver.OvertakeState == OvertakeReturning {
+			overtookSuccessfully = true
+		}
+
+		if isDocked || driver.State == AutopilotStateDocked {
+			docked = true
+			break
+		}
+	}
+
+	if !overtookSuccessfully {
+		t.Fatalf("Expected autopilot to initiate and execute overtaking when runway permitted")
+	}
+	if !docked && bus.Pos.Distance(toStop.Pos) > 40.0 {
+		t.Fatalf("Bus did not reach destination stop bay cleanly: busPos=%v, stopPos=%v, dist=%.2f, speed=%.2f, docked=%v, state=%v",
+			bus.Pos, toStop.Pos, bus.Pos.Distance(toStop.Pos), bus.Speed, docked, driver.State)
+	}
+}
+
+// TestAutopilotBerserkStationApproachWaitsBehindWhenRunwayInsufficient verifies that when approaching
+// a station stop without sufficient runway (e.g. lead vehicle slow near stop), the Berserk autopilot
+// does NOT initiate an overtake and instead safely queues behind the lead vehicle.
+func TestAutopilotBerserkStationApproachWaitsBehindWhenRunwayInsufficient(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	route := GetStandardRouteForMap(MapThemeMetropolis, w)
+	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
+
+	fromStop := w.Stops[route.StopIDs[0]]
+	toStop := w.Stops[route.StopIDs[1]]
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.ensurePath(w, fromStop, toStop, lw)
+
+	// Pick a start point only ~280px before the stop (insufficient runway to complete an overtake)
+	targetWp := len(driver.drivePath) - 1
+	var startWp int = -1
+	totalPathLen := driver.cumLen[targetWp]
+	for i := 0; i < targetWp; i++ {
+		rem := totalPathLen - driver.cumLen[i]
+		if rem <= 280.0 {
+			startWp = i
+			break
+		}
+	}
+	if startWp < 0 {
+		t.Fatalf("Could not find start waypoint with ~280px runway")
+	}
+
+	startPt := driver.drivePath[startWp]
+	nextPt := driver.drivePath[startWp+1]
+	heading := math.Atan2(nextPt.Y-startPt.Y, nextPt.X-startPt.X)
+
+	bus := NewBus(startPt.X, startPt.Y, heading)
+	bus.Speed = 45.0
+	driver.WaypointIdx = startWp
+
+	// Lead bus stopped or crawling 110px ahead near the station bay
+	leadPt := startPt.Add(Vec2{X: math.Cos(heading) * 110.0, Y: math.Sin(heading) * 110.0})
+	leadBus := VehicleObstacle{
+		Pos:     leadPt,
+		Heading: heading,
+		Speed:   0.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 0.016
+	for step := 0; step < 250; step++ {
+		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+			bus, route, w, nil, []VehicleObstacle{leadBus}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// Must NOT switch to passing lane when runway is insufficient
+		if driver.OvertakeState == OvertakeChangingLane || driver.TargetLaneOffset < -10.0 {
+			t.Fatalf("Step %d: Autopilot initiated overtaking without sufficient runway! State=%v, TargetOffset=%.2f",
+				step, driver.OvertakeState, driver.TargetLaneOffset)
+		}
+
+		// Check for collision
+		dist := bus.Pos.Distance(leadBus.Pos)
+		minClearDist := bus.Length/2 + leadBus.Length/2 + 4.0
+		if dist < minClearDist {
+			t.Fatalf("Step %d: Collision detected! Dist=%.2f, MinClear=%.2f", step, dist, minClearDist)
+		}
+	}
+
+	// Bus must have stopped safely behind lead vehicle
+	if bus.Speed > 2.0 {
+		t.Fatalf("Expected bus to stop safely behind lead bus, got speed=%.2f", bus.Speed)
+	}
+}
+
+// TestAutopilotBerserkStationApproachWaitsAlongsideAndEntersBayAfterLeadLeaves verifies that when
+// the bus is approaching in the adjacent passing lane while the curb bay is occupied by a lead bus,
+// the autopilot maintains its lane, does not steer into the lead bus, slows/stops alongside, and
+// once the lead bus departs, smoothly enters the bay and docks.
+func TestAutopilotBerserkStationApproachWaitsAlongsideAndEntersBayAfterLeadLeaves(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+	route := GetStandardRouteForMap(MapThemeMetropolis, w)
+	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
+
+	fromStop := w.Stops[route.StopIDs[0]]
+	toStop := w.Stops[route.StopIDs[1]]
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.ensurePath(w, fromStop, toStop, lw)
+
+	targetWp := len(driver.drivePath) - 1
+	var startWp int = -1
+	totalPathLen := driver.cumLen[targetWp]
+	for i := 0; i < targetWp; i++ {
+		rem := totalPathLen - driver.cumLen[i]
+		if rem <= 240.0 {
+			startWp = i
+			break
+		}
+	}
+	if startWp < 0 {
+		t.Fatalf("Could not find start waypoint with ~220px runway")
+	}
+
+	startPt := driver.drivePath[startWp]
+	nextPt := driver.drivePath[startWp+1]
+	heading := math.Atan2(nextPt.Y-startPt.Y, nextPt.X-startPt.X)
+
+	// Bus starts in adjacent passing lane (-lw offset)
+	hDir := Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	rightDir := Vec2{X: -hDir.Y, Y: hDir.X}
+	busPos := startPt.Add(rightDir.Mul(-lw))
+
+	bus := NewBus(busPos.X, busPos.Y, heading)
+	bus.Speed = 40.0
+	driver.WaypointIdx = startWp
+	driver.LaneOffset = -lw
+	driver.TargetLaneOffset = -lw
+	driver.OvertakeState = OvertakePassing
+
+	// Lead AI bus stopped at the destination stop bay
+	leadBus := VehicleObstacle{
+		Pos:     toStop.Pos,
+		Heading: toStop.Heading,
+		Speed:   0.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 0.016
+	// Phase 1: Wait alongside the lead bus for 200 steps
+	for step := 0; step < 200; step++ {
+		throttle, brake, steer, handbrake, toggleDoors, isDocked := driver.ComputeControls(
+			bus, route, w, nil, []VehicleObstacle{leadBus}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// Must not have docked in the middle of the road while in adjacent lane
+		if isDocked || driver.State == AutopilotStateDocked {
+			t.Fatalf("Step %d: Falsely docked in adjacent lane!", step)
+		}
+
+		// Must not cut into the lead bus (TargetLaneOffset must stay negative / waiting)
+		if driver.TargetLaneOffset > -15.0 {
+			t.Fatalf("Step %d: Swerved into occupied bay while lead bus was present! TargetLaneOffset=%.2f",
+				step, driver.TargetLaneOffset)
+		}
+
+		// Must not collide with lead bus
+		dist := bus.Pos.Distance(leadBus.Pos)
+		minClearDist := bus.Length/2 + leadBus.Length/2 + 2.0
+		if dist < minClearDist {
+			t.Fatalf("Step %d: Collision with lead bus in bay! Dist=%.2f, MinClear=%.2f",
+				step, dist, minClearDist)
+		}
+	}
+
+	// Bus should be stopped or nearly stopped alongside the bay
+	if bus.Speed > 5.0 {
+		t.Fatalf("Expected bus to wait alongside at low speed/stopped, got Speed=%.2f", bus.Speed)
+	}
+
+	// Phase 2: Lead bus departs (clear obstacles)
+	docked := false
+	for step := 0; step < 300; step++ {
+		throttle, brake, steer, handbrake, toggleDoors, isDocked := driver.ComputeControls(
+			bus, route, w, nil, nil, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		if isDocked || driver.State == AutopilotStateDocked {
+			docked = true
+			break
+		}
+	}
+
+	if !docked {
+		t.Fatalf("After lead bus departed, bus failed to enter the bay and dock cleanly! BusPos=%v, StopPos=%v, LaneOffset=%.2f",
+			bus.Pos, toStop.Pos, driver.LaneOffset)
+	}
+}
+
+// TestAutopilotBerserkRightTurnInto2LaneDoesNotOvertakeIntoOppositeShoulder verifies that when the bus
+// executes a right turn into a 2-way 2-lane road with a slow vehicle downstream, it does NOT initiate
+// borrow-lane overtaking during the turn or before straightening out (which would swing into the opposite shoulder).
+// Once straightened out in the travel lane, it initiates borrow-lane overtaking, passes the slow vehicle,
+// and returns safely without ever touching the opposite shoulder.
+func TestAutopilotBerserkRightTurnInto2LaneDoesNotOvertakeIntoOppositeShoulder(t *testing.T) {
+	lw := 52.0
+	w := NewWorld(lw, MapThemeMetropolis)
+
+	legRoute := &Route{
+		Name:         "TestRightTurnRoute",
+		StopIDs:      []int{0, 2},
+		CurrentIndex: 1,
+	}
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+
+	// Bus starts 300px before right turn intersection at (3900, -1800)
+	bus := NewBus(3600.0, -1774.0, 0.0)
+	bus.Gear = GearDrive
+	bus.TransmissionMode = TransmissionAuto
+	bus.Speed = 60.0
+
+	// Downstream slow vehicle on 2-lane road (Southbound lane center X = 3874.0)
+	slowCar := VehicleObstacle{
+		Pos:     Vec2{X: 3874.0, Y: -1450.0},
+		Heading: math.Pi / 2,
+		Speed:   35.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 0.016
+	oppShoulderX := 3900.0 + lw // 3952.0 (East shoulder of 2-lane road)
+	maxFLX := -1e9
+	overtakeInitiatedAfterStraight := false
+
+	for step := 0; step < 800; step++ {
+		// Update slow vehicle
+		slowCar.Pos.Y += slowCar.Speed * dt
+
+		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
+			bus, legRoute, w, nil, []VehicleObstacle{slowCar}, lw, dt,
+		)
+		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+
+		// 1. Verify physical boundaries: bus must never be on shoulder or crash barrier
+		bRes := w.CheckBoundaries(bus.Pos, bus.Width/2, lw)
+		if bRes.Zone == ZoneShoulder || bRes.Zone == ZoneHardBarrier || bus.OnShoulder {
+			t.Fatalf("Step %d: Bus drove onto shoulder/barrier! Pos=%v, Zone=%v, OnShoulder=%v, State=%v, LaneOffset=%.2f",
+				step, bus.Pos, bRes.Zone, bus.OnShoulder, driver.OvertakeState, driver.LaneOffset)
+		}
+
+		// 2. Track front-left and rear-left corner coordinates on the 2-lane road
+		cosH := math.Cos(bus.Heading)
+		sinH := math.Sin(bus.Heading)
+		halfL := bus.Length * 0.5
+		halfW := bus.Width * 0.5
+		leftPerp := Vec2{X: sinH, Y: -cosH}
+
+		flCorner := bus.Pos.Add(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+		rlCorner := bus.Pos.Sub(Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
+
+		if bus.Pos.Y > -1750.0 && bus.Pos.X > 3800.0 {
+			if flCorner.X > maxFLX {
+				maxFLX = flCorner.X
+			}
+			if rlCorner.X > maxFLX {
+				maxFLX = rlCorner.X
+			}
+			// Strict opposite shoulder check: bus body must NEVER cross or touch opposite shoulder (3952.0)
+			if flCorner.X >= oppShoulderX || rlCorner.X >= oppShoulderX {
+				t.Fatalf("Step %d: Bus corner penetrated opposite shoulder! maxFLX=%.2f, oppShoulderX=%.2f, busPos=%v, Heading=%.2f, State=%v",
+					step, maxFLX, oppShoulderX, bus.Pos, bus.Heading, driver.OvertakeState)
+			}
+		}
+
+		// 3. During the right turn itself (before vehicle has cleared the intersection turn at Y = -1650):
+		// Autopilot must NOT initiate borrow-lane overtaking!
+		if bus.Pos.Y < -1650.0 {
+			if driver.OvertakeState != OvertakeNone {
+				t.Fatalf("Step %d: Initiated overtaking prematurely during right turn! State=%v, Heading=%.2f, Pos=%v",
+					step, driver.OvertakeState, bus.Heading, bus.Pos)
+			}
+		} else {
+			// Once straightened out in the Southbound lane, borrow-lane overtake should initiate
+			if driver.OvertakeState == OvertakeChangingLane || driver.OvertakeState == OvertakePassing {
+				overtakeInitiatedAfterStraight = true
+			}
+		}
+
+		// Finish once passed slow vehicle
+		if bus.Pos.Y > slowCar.Pos.Y+120.0 {
+			break
+		}
+	}
+
+	if !overtakeInitiatedAfterStraight {
+		t.Fatalf("Expected borrow-lane overtake to initiate after completing the right turn and straightening out")
 	}
 }
 

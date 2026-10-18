@@ -53,8 +53,9 @@ type TrafficCar struct {
 }
 
 type TrafficManager struct {
-	Cars     []*TrafficCar
-	AIBusMgr *AIBusManager
+	Cars                     []*TrafficCar
+	AIBusMgr                 *AIBusManager
+	OnPlayerBusDeadlockReset func()
 }
 
 const MaxTrafficCars = 128
@@ -271,6 +272,130 @@ func (tm *TrafficManager) DespawnCar(index int) {
 	tm.Cars = append(tm.Cars[:index], tm.Cars[index+1:]...)
 }
 
+// DespawnAndResetCar resets a deadlocked car by repositioning it to a clear section of road,
+// or despawns it if no world or valid position is available.
+func (tm *TrafficManager) DespawnAndResetCar(index int, w *World, laneWidth float64, bus *Bus) {
+	if tm == nil || index < 0 || index >= len(tm.Cars) {
+		return
+	}
+	car := tm.Cars[index]
+	if w == nil || len(w.Roads) == 0 {
+		tm.DespawnCar(index)
+		return
+	}
+
+	// Try to find a clear road position away from intersections, stops, roundabouts, bus, and other cars
+	resetSuccess := false
+	for attempt := 0; attempt < 25; attempt++ {
+		rIdx := simRand.Intn(len(w.Roads))
+		r := w.Roads[rIdx]
+		dir := r.P2.Sub(r.P1)
+		lenR := dir.Length()
+		if lenR < 350 {
+			continue
+		}
+		unitDir := dir.Mul(1.0 / lenR)
+		isEW := math.Abs(r.P1.Y-r.P2.Y) < 1.0
+		var roadCoord float64
+		if isEW {
+			roadCoord = r.P1.Y
+		} else {
+			roadCoord = r.P1.X
+		}
+
+		numLanesPerDir := 1
+		if r.Lanes >= 6 {
+			numLanesPerDir = 3
+		} else if r.Lanes >= 4 {
+			numLanesPerDir = 2
+		}
+
+		lane := simRand.Intn(numLanesPerDir)
+		offset := (float64(lane) + 0.5) * laneWidth
+		dist := 260.0 + simRand.Float64()*(lenR-520.0)
+		pt := r.P1.Add(unitDir.Mul(dist))
+
+		var testPos Vec2
+		var heading float64
+		if simRand.Float64() < 0.5 {
+			if isEW {
+				testPos = Vec2{X: pt.X, Y: roadCoord + offset}
+				heading = 0
+			} else {
+				testPos = Vec2{X: roadCoord - offset, Y: pt.Y}
+				heading = math.Pi / 2
+			}
+		} else {
+			if isEW {
+				testPos = Vec2{X: pt.X, Y: roadCoord - offset}
+				heading = math.Pi
+			} else {
+				testPos = Vec2{X: roadCoord + offset, Y: pt.Y}
+				heading = -math.Pi / 2
+			}
+		}
+
+		// Ensure clear of intersections
+		nearInter := false
+		for _, ipt := range w.Intersections {
+			if testPos.Distance(ipt) < 220 {
+				nearInter = true
+				break
+			}
+		}
+		if nearInter {
+			continue
+		}
+
+		// Ensure clear of stops
+		nearStop := false
+		for _, st := range w.Stops {
+			if testPos.Distance(st.Pos) < 160 {
+				nearStop = true
+				break
+			}
+		}
+		if nearStop {
+			continue
+		}
+
+		// Ensure clear of bus
+		if bus != nil && testPos.Distance(bus.Pos) < 200 {
+			continue
+		}
+
+		// Ensure clear of other cars
+		nearOtherCar := false
+		for _, oc := range tm.Cars {
+			if oc != car && testPos.Distance(oc.Pos) < 120 {
+				nearOtherCar = true
+				break
+			}
+		}
+		if nearOtherCar {
+			continue
+		}
+
+		// Found valid clear position! Reset car here.
+		car.Pos = testPos
+		car.Heading = heading
+		car.RoadCenter = roadCoord
+		car.IsEW = isEW
+		car.LaneIndex = lane
+		car.Speed = car.TargetSpeed
+		car.DeadlockTimer = 0
+		car.IsBraking = false
+		car.InRoundabout = false
+		car.RoundaboutCooldown = 0
+		resetSuccess = true
+		break
+	}
+
+	if !resetSuccess {
+		tm.DespawnCar(index)
+	}
+}
+
 func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCount int, laneWidth float64, w *World) {
 	if tm == nil || len(tm.Cars) == 0 {
 		return
@@ -288,8 +413,11 @@ func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCoun
 			continue
 		}
 
-		// 2. EXCLUDE user bus: if car is stopped because of player bus, do NOT count as deadlock
-		if bus != nil {
+		isJammed := false
+		jammedWithPlayerBus := false
+
+		// 2. Check relation to player bus
+		if bus != nil && math.Abs(bus.Speed) < 8.0 {
 			distToBus := car.Pos.Distance(bus.Pos)
 			if distToBus < 180.0 {
 				toBus := bus.Pos.Sub(car.Pos)
@@ -297,40 +425,49 @@ func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCoun
 				sinH := math.Sin(car.Heading)
 				fwdBus := toBus.X*cosH + toBus.Y*sinH
 				latBus := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
-				if fwdBus > -15.0 && latBus < laneWidth*1.5 {
+				headDiff := math.Cos(car.Heading - bus.Heading)
+				// If car is queued behind player bus heading in the same direction, it's normal queueing, not a deadlock
+				if headDiff > 0.5 && fwdBus > 10.0 && latBus < laneWidth*1.5 {
 					car.DeadlockTimer = 0
 					continue
 				}
-			}
-		}
-
-		// 3. Check if jammed against another non-player vehicle
-		isJammed := false
-
-		// Check against other civilian AI cars
-		for j := 0; j < activeCount; j++ {
-			if j == i {
-				continue
-			}
-			other := tm.Cars[j]
-			if math.Abs(other.Speed) >= 3.0 {
-				continue
-			}
-			dist := car.Pos.Distance(other.Pos)
-			maxJamDist := (car.Length + other.Length)*0.5 + 35.0
-			if dist < maxJamDist {
-				toOther := other.Pos.Sub(car.Pos)
-				cosH := math.Cos(car.Heading)
-				sinH := math.Sin(car.Heading)
-				fwd := toOther.X*cosH + toOther.Y*sinH
-				if fwd > -15.0 || dist < (car.Length+other.Length)*0.5+10.0 {
+				// If car is jammed against player bus (crosswise, oncoming, or trapped against front bumper):
+				maxJamDist := (car.Length + bus.Length)*0.5 + 40.0
+				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) {
 					isJammed = true
-					break
+					jammedWithPlayerBus = true
 				}
 			}
 		}
 
-		// Check against AI route buses
+		// 3. Check against other civilian AI cars
+		if !isJammed {
+			for j := 0; j < activeCount; j++ {
+				if j == i {
+					continue
+				}
+				other := tm.Cars[j]
+				if math.Abs(other.Speed) >= 3.0 {
+					continue
+				}
+				dist := car.Pos.Distance(other.Pos)
+				maxJamDist := (car.Length + other.Length)*0.5 + 35.0
+				if dist < maxJamDist {
+					toOther := other.Pos.Sub(car.Pos)
+					cosH := math.Cos(car.Heading)
+					sinH := math.Sin(car.Heading)
+					fwd := toOther.X*cosH + toOther.Y*sinH
+					if fwd > -15.0 || dist < (car.Length+other.Length)*0.5+10.0 {
+						isJammed = true
+						break
+					}
+				}
+			}
+		}
+
+		var jammedAIBus *AIBus
+
+		// 4. Check against AI route buses
 		if !isJammed && tm.AIBusMgr != nil {
 			for _, ab := range tm.AIBusMgr.Buses {
 				if ab.Bus == nil || math.Abs(ab.Bus.Speed) >= 3.0 {
@@ -343,8 +480,14 @@ func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCoun
 					cosH := math.Cos(car.Heading)
 					sinH := math.Sin(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
+					headDiff := math.Cos(car.Heading - ab.Bus.Heading)
+					// If car is queued behind the AI bus heading in the same direction, it's normal queueing, not a deadlock
+					if headDiff > 0.5 && fwd > 10.0 {
+						continue
+					}
 					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
 						isJammed = true
+						jammedAIBus = ab
 						break
 					}
 				}
@@ -358,14 +501,17 @@ func (tm *TrafficManager) resolveDeadlockedCars(dt float64, bus *Bus, activeCoun
 				car.DeadlockTimer = math.Max(0, car.DeadlockTimer-dt*2.0)
 			}
 		}
-	}
 
-	// 4. Remove / despawn car if deadlock timer exceeds threshold
-	for i := activeCount - 1; i >= 0; i-- {
-		car := tm.Cars[i]
+		// 5. Remove / reset car (and reset jammed AI bus to starting station) if deadlock timer exceeds threshold
 		if car.DeadlockTimer >= DeadlockDurationThreshold {
-			tm.DespawnCar(i)
-			break // Despawning one vehicle breaks the deadlock for others in the jam
+			if jammedAIBus != nil {
+				jammedAIBus.ResetToStartingStation(w)
+			}
+			if jammedWithPlayerBus && tm.OnPlayerBusDeadlockReset != nil {
+				tm.OnPlayerBusDeadlockReset()
+			}
+			tm.DespawnAndResetCar(i, w, laneWidth, bus)
+			break // Resetting breaks the deadlock for others in the jam
 		}
 	}
 }
@@ -377,6 +523,18 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 
 	if car.RoundaboutCooldown > 0 {
 		car.RoundaboutCooldown -= dt
+	}
+
+	var busesToCheck []*Bus
+	if bus != nil {
+		busesToCheck = append(busesToCheck, bus)
+	}
+	if tm.AIBusMgr != nil {
+		for _, ab := range tm.AIBusMgr.Buses {
+			if ab != nil && ab.Bus != nil && ab.Bus != bus {
+				busesToCheck = append(busesToCheck, ab.Bus)
+			}
+		}
 	}
 
 	// A. Check Traffic Light ahead & Stop Line
@@ -410,23 +568,71 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 				// Smooth deceleration towards the stop line
 				targetSpd = math.Min(targetSpd, math.Max(0, (distToLine-10.0)*1.8))
 			}
+		} else {
+			// Yellow Box Intersection Clearance ("Don't Block the Box" / 绿灯禁入被堵塞路口):
+			// Even if signal is green, do NOT enter if an AI/Player bus is currently occupying or traversing this intersection box!
+			for _, inter := range tls.Intersections {
+				stopLineDist := inter.GetStopLineDistForHeading(car.Heading, laneWidth)
+				toInter := inter.Center.Sub(bumperPos)
+				fwdToInter := toInter.X*cosH + toInter.Y*sinH
+				latToInter := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
+
+				// Approaching intersection before crossing stop line:
+				if fwdToInter > 0 && fwdToInter < stopLineDist+lookAheadLight && latToInter < laneWidth*3.6 {
+					distToLine := fwdToInter - stopLineDist
+					if distToLine > -8.0 {
+						boxRadius := stopLineDist + 20.0
+						busInBox := false
+						for _, b := range busesToCheck {
+							if b == nil {
+								continue
+							}
+							if b.Pos.Distance(inter.Center) < boxRadius {
+								headDiff := math.Cos(b.Heading - car.Heading)
+								toBus := b.Pos.Sub(car.Pos)
+								latBus := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
+								// Bus is crossing crosswise, turning, or slow/stopped inside the intersection:
+								if math.Abs(headDiff) < 0.707 || latBus > laneWidth*0.5 || math.Abs(b.Speed) < 15.0 {
+									busInBox = true
+									break
+								}
+							}
+						}
+						if busInBox {
+							car.IsBraking = true
+							if distToLine <= 14.0 {
+								targetSpd = 0
+								if distToLine <= 6.0 && car.Speed > 0 {
+									car.Speed = 0
+								}
+							} else {
+								targetSpd = math.Min(targetSpd, math.Max(0, (distToLine-10.0)*1.8))
+							}
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 
-	// B. Check Player Bus ahead
+	// B. Check Buses ahead (Player Bus & AI Route Buses)
 	if !car.InRoundabout {
-		distToBus := car.Pos.Distance(bus.Pos)
-		if distToBus < 260.0 {
-			toBus := bus.Pos.Sub(car.Pos)
+		for _, b := range busesToCheck {
+			distToBus := car.Pos.Distance(b.Pos)
+			if distToBus >= 260.0 {
+				continue
+			}
+			toBus := b.Pos.Sub(car.Pos)
 			cosH := math.Cos(car.Heading)
 			sinH := math.Sin(car.Heading)
 			forwardProj := toBus.X*cosH + toBus.Y*sinH
 			lateralProj := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
 
 			// Oriented extent of bus projected onto car coordinate axes
-			angleDiff := bus.Heading - car.Heading
-			busHalfLen := bus.Length / 2.0 // 48.0
-			busHalfWid := bus.Width / 2.0  // 18.0
+			angleDiff := b.Heading - car.Heading
+			busHalfLen := b.Length / 2.0 // 48.0
+			busHalfWid := b.Width / 2.0  // 18.0
 			hLat := busHalfLen*math.Abs(math.Sin(angleDiff)) + busHalfWid*math.Abs(math.Cos(angleDiff))
 			hFwd := busHalfLen*math.Abs(math.Cos(angleDiff)) + busHalfWid*math.Abs(math.Sin(angleDiff))
 
@@ -436,8 +642,8 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 			// Bumper-to-bumper distance along car forward axis
 			bumperDist := forwardProj - carHalfLen - hFwd
 
-			isBusStopped := math.Abs(bus.Speed) < 8.0
-			isWrongWay := IsBusFacingWrongWay(bus)
+			isBusStopped := math.Abs(b.Speed) < 8.0
+			isWrongWay := IsBusFacingWrongWay(b)
 
 			// Required lateral clearance to pass safely without clipping
 			lateralMargin := 6.0
@@ -446,8 +652,8 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 			}
 			lateralClearanceNeeded := carHalfWid + hLat + lateralMargin
 
-			// If bus is in front of the car and in car's travel corridor
-			if forwardProj > 0 && forwardProj < 240.0 && lateralProj < lateralClearanceNeeded {
+			// If bus is in front of the car (or overlapping) and in car's travel corridor
+			if forwardProj > -(carHalfLen+hFwd) && forwardProj < 240.0 && lateralProj < lateralClearanceNeeded {
 				if isBusStopped && !isWrongWay {
 					// Lawfully stopped bus (at bus stop bay, red light, or traffic queue):
 					// SOCIAL VEHICLES MUST NOT ACTIVELY HIT IT!
@@ -509,10 +715,13 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 				fProj := toOther.X*cosH + toOther.Y*sinH
 				lProj := math.Abs(-toOther.X*sinH + toOther.Y*cosH)
 
-				if fProj > 0 && fProj < 110 && lProj < laneWidth*0.65 {
+				if fProj > -15.0 && fProj < 110 && lProj < laneWidth*0.65 {
 					car.IsBraking = true
 					if fProj < 60 {
 						targetSpd = 0
+						if fProj < 40 && car.Speed > 0 {
+							car.Speed = 0
+						}
 					} else {
 						targetSpd = math.Min(targetSpd, math.Max(0, (fProj-52)*1.8))
 					}
@@ -521,23 +730,50 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 		}
 	}
 
-	// D. Check Left-Turn Intersection Yielding to Stopped Bus
-	if car.LaneIndex == 0 && tls != nil && !car.InRoundabout {
+	// D. Check Intersection Yielding to Bus Traversing/Stopped inside Intersection
+	if tls != nil && !car.InRoundabout {
 		for _, inter := range tls.Intersections {
-			if inter.ApproachHasDedicatedLanes(car.IsEW) && car.Pos.Distance(inter.Center) < 120.0 {
-				// If a lawfully stopped bus is inside this intersection:
-				if inter.Center.Distance(bus.Pos) < 110.0 && math.Abs(bus.Speed) < 8.0 && !IsBusFacingWrongWay(bus) {
-					distToInter := car.Pos.Distance(inter.Center)
-					car.IsBraking = true
-					if distToInter <= 32.0 {
-						targetSpd = 0
-						if distToInter <= 15.0 && car.Speed > 0 {
-							car.Speed = 0
+			if car.Pos.Distance(inter.Center) < 140.0 {
+				stopLineDist := inter.GetStopLineDistForHeading(car.Heading, laneWidth)
+				toInter := inter.Center.Sub(bumperPos)
+				fwdToInter := toInter.X*cosH + toInter.Y*sinH
+				latToInter := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
+				if fwdToInter > -15.0 && latToInter < laneWidth*3.6 {
+					distToLine := fwdToInter - stopLineDist
+					for _, b := range busesToCheck {
+						if b == nil || IsBusFacingWrongWay(b) {
+							continue
 						}
-					} else {
-						targetSpd = math.Min(targetSpd, math.Max(0, (distToInter-30.0)*1.5))
+						if inter.Center.Distance(b.Pos) < stopLineDist+15.0 {
+							headDiff := math.Cos(b.Heading - car.Heading)
+							// If bus is crossing crosswise, turning, or stopped/slow:
+							if math.Abs(headDiff) < 0.707 || math.Abs(b.Speed) < 15.0 {
+								car.IsBraking = true
+								if distToLine > 0 {
+									if distToLine <= 14.0 {
+										targetSpd = 0
+										if distToLine <= 6.0 && car.Speed > 0 {
+											car.Speed = 0
+										}
+									} else {
+										targetSpd = math.Min(targetSpd, math.Max(0, (distToLine-10.0)*1.8))
+									}
+								} else {
+									// Already crossed stop line into intersection: firm stop before colliding
+									distToBus := car.Pos.Distance(b.Pos)
+									if distToBus <= 45.0 {
+										targetSpd = 0
+										if distToBus <= 25.0 && car.Speed > 0 {
+											car.Speed = 0
+										}
+									} else {
+										targetSpd = math.Min(targetSpd, math.Max(0, (distToBus-35.0)*1.5))
+									}
+								}
+								break
+							}
+						}
 					}
-					break
 				}
 			}
 		}
@@ -550,7 +786,7 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 			targetSpd = math.Min(targetSpd, 115.0)
 
 			// Check if bus is ahead inside the roundabout or in direct proximity
-			if w.IsAtRoundabout(bus.Pos) || bus.Pos.Distance(car.RoundaboutCenter) <= car.RoundaboutOuterRadius+25.0 {
+			if bus != nil && (w.IsAtRoundabout(bus.Pos) || bus.Pos.Distance(car.RoundaboutCenter) <= car.RoundaboutOuterRadius+25.0) {
 				directDist := car.Pos.Distance(bus.Pos)
 				if directDist < 85.0 {
 					car.IsBraking = true
@@ -642,7 +878,7 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 						needYield := false
 
 						// Check if player bus is circulating approaching this entry or crossing the entry mouth
-						if w.IsAtRoundabout(bus.Pos) || bus.Pos.Distance(rb.Center) <= rb.Radius+25.0 {
+						if bus != nil && (w.IsAtRoundabout(bus.Pos) || bus.Pos.Distance(rb.Center) <= rb.Radius+25.0) {
 							busAng := math.Atan2(bus.Pos.Y-rb.Center.Y, bus.Pos.X-rb.Center.X)
 							diff := NormalizeAngle(busAng - myAngle)
 							if (diff > -0.40 && diff < 1.15) || car.Pos.Distance(bus.Pos) < 140.0 {
@@ -698,7 +934,7 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 						canEnter := !needYield && distToCenter <= rb.Radius+12.0
 						if canEnter {
 							// Strict safety clearance: cannot enter if any bus/car is within 85px of entrance mouth
-							if car.Pos.Distance(bus.Pos) < 85.0 {
+							if bus != nil && car.Pos.Distance(bus.Pos) < 85.0 {
 								canEnter = false
 							} else if tm.AIBusMgr != nil {
 								for _, ab := range tm.AIBusMgr.Buses {
@@ -905,8 +1141,15 @@ func (tm *TrafficManager) updateSingleCar(dt float64, car *TrafficCar, index int
 				}
 
 				if shouldTurn {
-					// Yield to stopped player bus inside the intersection
-					if inter.Center.Distance(bus.Pos) < 110.0 && math.Abs(bus.Speed) < 8.0 && !IsBusFacingWrongWay(bus) {
+					// Yield to stopped bus inside the intersection
+					busInside := false
+					for _, b := range busesToCheck {
+						if inter.Center.Distance(b.Pos) < 110.0 && math.Abs(b.Speed) < 8.0 && !IsBusFacingWrongWay(b) {
+							busInside = true
+							break
+						}
+					}
+					if busInside {
 						car.Speed = 0
 						car.IsBraking = true
 						break

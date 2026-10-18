@@ -76,6 +76,11 @@ const (
 	TransmissionManual                       // 手动挡模式 (预留 1~5, N, R)
 )
 
+const (
+	// DefaultBusCapacity specifies standard passenger capacity for all city buses (Player & AI)
+	DefaultBusCapacity = 45
+)
+
 // Bus represents our driveable city bus
 type Bus struct {
 	Pos           Vec2    // Center position in world coordinates
@@ -154,9 +159,9 @@ func NewBus(x, y float64, heading float64) *Bus {
 		MaxSteerAngle:    0.68, // ~39.0 degrees (agile cornering at intersections)
 		SteerTurnSpeed:   2.4,  // steering response speed
 		SteerReturnSpd:   3.5,  // auto-center return speed
-		Capacity:         45,
+		Capacity:         DefaultBusCapacity,
 		PassengerCount:   0,
-		Passengers:       make([]Passenger, 0, 45),
+		Passengers:       make([]Passenger, 0, DefaultBusCapacity),
 		Durability:       100.0,
 		OnShoulder:       false,
 		CrashCooldown:    0,
@@ -364,8 +369,8 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 	}
 	// 1. Doors control
 	if toggleDoors {
-		// Only allow door opening if bus is stopped or nearly stopped (< 5 px/s)
-		if math.Abs(b.Speed) < 5 {
+		// Only allow door opening if bus is stopped or crawling into bay (< 15 px/s)
+		if math.Abs(b.Speed) < 15.0 {
 			b.DoorsOpen = !b.DoorsOpen
 			if b.DoorsOpen {
 				b.Speed = 0 // Full stop when doors open

@@ -74,7 +74,7 @@ func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes
 		Length:            140,
 		Width:             44,
 		WaitingPassengers: waitPax,
-		MaxWaiting:        35,
+		MaxWaiting:        45,
 		SpawnInterval:     20.0 + simRand.Float64()*15.0, // 20-35s passenger arrival rate
 		AccentColor:       accent,
 	}
@@ -120,21 +120,21 @@ func (s *BusStop) ContainsBus(bus *Bus) bool {
 
 	// Longitudinal offset along road/bay heading (length of bay is 140, bus is 96)
 	longitudinal := dx*cosH + dy*sinH
-	if math.Abs(longitudinal) > (s.Length/2 - 10.0) { // Within ±60 px along bay length
+	if math.Abs(longitudinal) > (s.Length/2 - 2.0) { // Within ±68 px along bay length (bay half-length is 70)
 		return false
 	}
 
 	// Lateral offset perpendicular to road/bay heading (width of bay is 44, bus width is 36)
 	// Positive lateral is towards the curb/shelter, negative lateral is towards the road.
-	// Bus must be squarely inside the yellow bay box, NOT out on the road travel lanes!
+	// Bus must be squarely inside or along the yellow bay box, NOT out on the road travel lanes!
 	lateral := -dx*sinH + dy*cosH
-	if math.Abs(lateral) > (s.Width*0.5 - 4.0) { // Within ±18 px (bay box half-width is 22)
+	if math.Abs(lateral) > (s.Width*0.5 + 4.0) { // Within ±26 px (bay box half-width is 22)
 		return false
 	}
 
-	// Check heading alignment: must be parked parallel to the curb (within 30 degrees)
+	// Check heading alignment: must be parked parallel to the curb (within 36 degrees)
 	angleDiff := math.Abs(NormalizeAngle(bus.Heading - s.Heading))
-	if angleDiff > math.Pi/6 {
+	if angleDiff > math.Pi*0.20 {
 		return false
 	}
 
