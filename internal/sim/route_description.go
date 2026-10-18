@@ -38,7 +38,7 @@ func (r *Route) GetRouteDescription(world *World) string {
 // Long routes are wrapped onto multiple lines with clear arrow indicators (➔) and sequence numbering.
 func (r *Route) GetFormattedRouteLines(world *World, maxWidth float64, fontSize float64) []string {
 	if world == nil || len(r.StopIDs) == 0 {
-		return []string{locale.T("未规划站点 (点击地图站点图标添加)", "No stations planned (Click station icons to add)")}
+		return []string{fitRouteLine(locale.T("未规划站点 (点击地图站点图标添加)", "No stations planned (Click station icons to add)"), maxWidth, fontSize)}
 	}
 
 	prefix := locale.Tf("当前路线 (%d站): ", "Active Route (%d stops): ", len(r.StopIDs))
@@ -102,6 +102,11 @@ func (r *Route) GetFormattedRouteLines(world *World, maxWidth float64, fontSize 
 				lastIdx := strings.LastIndex(currentLine, " ➔ ")
 				currentLine = currentLine[:lastIdx]
 			}
+			if width, _ := textui.MeasureText(currentLine+summary, fontSize); width > maxWidth {
+				// The final remaining stop can itself be too wide. Keep the
+				// destination summary instead of appending it to an oversized line.
+				currentLine = "   ↳ "
+			}
 			currentLine += summary
 			break
 		}
@@ -115,5 +120,30 @@ func (r *Route) GetFormattedRouteLines(world *World, maxWidth float64, fontSize 
 		lines = append(lines, currentLine)
 	}
 
+	for i := range lines {
+		lines[i] = fitRouteLine(lines[i], maxWidth, fontSize)
+	}
 	return lines
+}
+
+// Single long names and compact summaries must fit even with fallback fonts.
+func fitRouteLine(line string, maxWidth, fontSize float64) string {
+	if width, _ := textui.MeasureText(line, fontSize); width <= maxWidth {
+		return line
+	}
+	suffix := "..."
+	if width, _ := textui.MeasureText(suffix, fontSize); width > maxWidth {
+		return ""
+	}
+	runes := []rune(line)
+	low, high := 0, len(runes)
+	for low < high {
+		mid := (low + high + 1) / 2
+		if width, _ := textui.MeasureText(string(runes[:mid])+suffix, fontSize); width <= maxWidth {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	return string(runes[:low]) + suffix
 }

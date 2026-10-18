@@ -1,7 +1,10 @@
 package sim
 
 import (
+	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // TestFormattedRouteLinesWrappingAndTruncation verifies the multi-line wrapping and ellipsis summarization
@@ -38,6 +41,29 @@ func TestFormattedRouteLinesWrappingAndTruncation(t *testing.T) {
 	for i := 1; i < len(longLines); i++ {
 		if len(longLines[i]) < 4 {
 			t.Fatalf("Line %d is too short: %q", i, longLines[i])
+		}
+	}
+}
+
+func TestFormattedRouteLinesFitLongStationNames(t *testing.T) {
+	w := NewWorld(52, MapThemeMetropolis)
+	for _, stop := range w.Stops {
+		stop.Name = strings.Repeat("超长站名", 20) + " (" + strings.Repeat("Long station name ", 20) + ")"
+	}
+	for _, width := range []float64{10, 120, 350} {
+		for _, route := range []*Route{NewRoute(), NewDefaultRoute()} {
+			lines := route.GetFormattedRouteLines(w, width, 12)
+			if len(lines) > 3 {
+				t.Fatalf("too many lines: %d", len(lines))
+			}
+			for _, line := range lines {
+				if got, _ := textui.MeasureText(line, 12); got > width {
+					t.Fatalf("line exceeds %.0f: %.0f %q", width, got, line)
+				}
+				if !utf8.ValidString(line) {
+					t.Fatalf("truncated a UTF-8 character: %q", line)
+				}
+			}
 		}
 	}
 }
