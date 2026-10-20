@@ -28,8 +28,13 @@ jobs:
           fi
       - run: go mod verify
       - run: go vet ./...
-      - name: Full tests, race detection and coverage
-        run: xvfb-run -a go test -race -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
+      # Atomic coverage counters combined with race instrumentation make the
+      # long simulation matrix exceed Go's default ten-minute timeout.
+      # Run both complete checks independently without skipping test cases.
+      - name: Full tests and race detection
+        run: xvfb-run -a go test -race -timeout=30m -count=1 ./...
+      - name: Full tests and coverage
+        run: xvfb-run -a go test -timeout=20m -count=1 -coverprofile=coverage.out ./...
       - name: Release qualification
         run: xvfb-run -a make test-qualify
       - name: Full-load release soak
