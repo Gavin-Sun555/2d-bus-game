@@ -22,6 +22,10 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 			continue
 		}
 
+		if canPassWaitingDepartureBus(f, b) {
+			continue
+		}
+
 		// If bus is safely parked inside an off-road bus stop bay, traffic vehicles in travel lanes drive past normally
 		if f.world != nil {
 			isParkedInBay := false
@@ -31,7 +35,7 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 					break
 				}
 			}
-			if isParkedInBay {
+			if isParkedInBay && busClearsCarLane(f.car, b) {
 				continue
 			}
 		}
@@ -169,6 +173,7 @@ func (tm *TrafficManager) carFollowingSpeed(f carFrame, targetSpd float64) float
 	if f.car.InRoundabout {
 		return targetSpd
 	}
+	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
 	for j := 0; j < f.activeCount; j++ {
 		if j == f.index {
 			continue
@@ -177,11 +182,8 @@ func (tm *TrafficManager) carFollowingSpeed(f carFrame, targetSpd float64) float
 		if other.InRoundabout {
 			continue // Other is in roundabout; entry yield check in Section E handles right of way
 		}
-		dist := f.car.Pos.Distance(other.Pos)
-		if dist < 120 {
-			toOther := other.Pos.Sub(f.car.Pos)
-			cosH := math.Cos(f.car.Heading)
-			sinH := math.Sin(f.car.Heading)
+		toOther := other.Pos.Sub(f.car.Pos)
+		if toOther.Dot(toOther) < 120*120 {
 			fProj := toOther.X*cosH + toOther.Y*sinH
 			lProj := math.Abs(-toOther.X*sinH + toOther.Y*cosH)
 

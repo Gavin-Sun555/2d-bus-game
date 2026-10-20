@@ -8,6 +8,7 @@ import (
 
 func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) float64 {
 	targetSpd = math.Min(targetSpd, ad.innerEntryObstacleSpeed(f))
+	targetSpd = ad.stationDepartureTrafficSpeed(f, targetSpd)
 	// E. Forward Vehicle Obstacle Avoidance
 	cosH := math.Cos(f.bus.Heading)
 	sinH := math.Sin(f.bus.Heading)
@@ -20,7 +21,15 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 		fwdDist := delta.X*cosH + delta.Y*sinH
 		latDist := math.Abs(-delta.X*sinH + delta.Y*cosH)
 
-		if ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		// A straight departure can run beside the occupied bay. Use the
+		// route corridor instead of treating every nearby car as a frontal block.
+		if ad.State == AutopilotStateDeparting && math.Cos(obs.Heading-f.bus.Heading) > 0.98 &&
+			roadSideClearance(f.bus, obs) > 2 && len(ad.drivePath) >= 2 &&
+			minDistanceToPath(obs.Pos, ad.drivePath, ad.WaypointIdx) > f.bus.Width/2+obs.Width/2+2 {
+			continue
+		}
+
+		if ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
 			continue
 		}
 
@@ -180,7 +189,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			if fwdDist < safeStopDist {
 				targetSpd = 0.0
 			} else {
-				leadSpd := math.Max(0.0, obs.Speed)
+				leadSpd := math.Max(0.0, obs.Speed*cosHeadDiff)
 				decelRate := 135.0
 				if ad.BerserkMode {
 					decelRate = 180.0
@@ -245,4 +254,11 @@ func roundaboutLanesSeparated(f autopilotFrame, obs VehicleObstacle, cosH, sinH,
 		}
 	}
 	return false
+}
+
+func roadSideClearance(bus *sim.Bus, obs VehicleObstacle) float64 {
+	normal := sim.Vec2{X: -math.Sin(obs.Heading), Y: math.Cos(obs.Heading)}
+	angle := bus.Heading - obs.Heading
+	halfWidth := math.Abs(math.Cos(angle))*bus.Width/2 + math.Abs(math.Sin(angle))*bus.Length/2
+	return math.Abs(bus.Pos.Sub(obs.Pos).Dot(normal)) - halfWidth - obs.Width/2
 }

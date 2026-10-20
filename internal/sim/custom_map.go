@@ -13,10 +13,11 @@ import (
 
 // CustomRoadData represents a serializable road segment in JSON
 type CustomRoadData struct {
-	P1    [2]float64 `json:"p1"`
-	P2    [2]float64 `json:"p2"`
-	Lanes int        `json:"lanes"` // 2, 4, or 6
-	Name  string     `json:"name"`
+	BusLane bool       `json:"bus_lane,omitempty"` // Outermost lane reserved for buses, shared with right turns at junctions.
+	P1      [2]float64 `json:"p1"`
+	P2      [2]float64 `json:"p2"`
+	Lanes   int        `json:"lanes"` // 2, 4, 6, or 8
+	Name    string     `json:"name"`
 }
 
 // CustomStopData represents a serializable bus stop in JSON
@@ -25,7 +26,7 @@ type CustomStopData struct {
 	Name     string     `json:"name"`
 	Pos      [2]float64 `json:"pos"`
 	Heading  float64    `json:"heading"` // in radians (e.g. 0=East, 1.57=South, 3.14=West, -1.57=North)
-	Lanes    int        `json:"lanes"`   // 2, 4, or 6
+	Lanes    int        `json:"lanes"`   // 2, 4, 6, or 8
 	Color    string     `json:"color"`   // Hex string like "#3B82F6"
 	Capacity int        `json:"capacity"`
 }
@@ -153,6 +154,9 @@ func ValidateCustomMapData(data *CustomMapData) error {
 
 	// Validate road orthogonality
 	for i, r := range data.Roads {
+		if r.BusLane && r.Lanes != 8 {
+			return fmt.Errorf("道路 #%d: 公交专用道需要双向八车道道路 (lanes: 8)", i)
+		}
 		isEW := math.Abs(r.P1[1]-r.P2[1]) < 1.0
 		isNS := math.Abs(r.P1[0]-r.P2[0]) < 1.0
 		if !isEW && !isNS {

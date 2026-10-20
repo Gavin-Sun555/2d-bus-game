@@ -17,13 +17,14 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 	isUpcomingRight := false
 
 	defaultStopLineDist := f.laneWidth*1.6 + 18.0
-	cosH := math.Cos(f.bus.Heading)
-	sinH := math.Sin(f.bus.Heading)
+	heading := approachRoadHeading(f.bus.Heading)
+	cosH := math.Cos(heading)
+	sinH := math.Sin(heading)
 
 	// 1. Direct intersection route analysis:
 	// Check the intersection that the bus is approaching within lookahead distance
 	for _, inter := range f.tls.Intersections {
-		stopLineDist := inter.GetStopLineDistForHeading(f.bus.Heading, f.laneWidth)
+		stopLineDist := inter.GetStopLineDistForHeading(heading, f.laneWidth)
 		toInter := inter.Center.Sub(f.bus.Pos)
 		forwardDist := toInter.X*cosH + toInter.Y*sinH
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
@@ -37,6 +38,9 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 				}
 			}
 
+			if inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)] >= 8 {
+				exitLatThreshold = f.laneWidth * 4.2
+			}
 			// Check ad.drivePath points through and beyond this intersection
 			turn, hasRouteExit := ad.intersectionExitTurn(inter.Center, cosH, sinH, stopLineDist, exitLatThreshold)
 			isUpcomingLeft = turn == routeTurnLeft
@@ -91,9 +95,9 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 		isUpcomingRight = false
 	}
 
-	bumperPos := f.bus.Pos.Add(sim.Vec2{X: cosH * (f.bus.Length * 0.5), Y: sinH * (f.bus.Length * 0.5)})
+	bumperPos := f.bus.Pos.Add(sim.Vec2{X: math.Cos(f.bus.Heading) * (f.bus.Length * 0.5), Y: math.Sin(f.bus.Heading) * (f.bus.Length * 0.5)})
 
-	shouldStop, distToLine := f.tls.CheckStopForVehicle(bumperPos, f.bus.Heading, lookaheadTL, f.laneWidth, isUpcomingLeft, isUpcomingRight, ad.BerserkMode)
+	shouldStop, distToLine := f.tls.CheckStopForVehicle(bumperPos, heading, lookaheadTL, f.laneWidth, isUpcomingLeft, isUpcomingRight, ad.BerserkMode)
 	if !shouldStop {
 		return targetSpd
 	}

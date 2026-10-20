@@ -79,6 +79,7 @@ func (g *Game) ResetToStartingStation() {
 	}
 
 	g.AutopilotDeadlockTimer = 0
+	g.DeadlockTracker = sim.StationaryTracker{}
 
 	startID := g.Route.StopIDs[0]
 	if startID < 0 || startID >= len(g.World.Stops) {

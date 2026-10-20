@@ -26,6 +26,9 @@
    - **12 个特色城市站点**，覆盖商业、医疗、教育、体育、交通、海港等全方位客流。
 2. **多等级道路系统与动态自定义车道宽度 (Multi-Tier Roads & Customizable Lane Width)**：
    - **内置多等级道路**：包含全新双向6车道（每向3车道）城市快速路/中央干道、双向4车道主干道、双向2车道次干道、立体跨线高架等。
+   - **狂暴模式环岛选道**：已在外侧慢车道时保持车道跟车，不切入内侧超车。从内侧进入时，在完成入环后尽早寻找安全间隙并到外侧；来不及单独并线时，只有连续驶出轨迹满足车身空间、转弯半径和动态避让要求才直接离开，否则继续绕行并保留原定出口。
+   - **双向八车道**：都会核心的西客运大道为普通八车道，每向四车道，路口从内到外依次为左转、直行、直行、右转；东高新大道为公交优先八车道，每向三个普通车道和一个最外侧公交专用道。AI 公交与狂暴模式公交优先使用公交专用道；狂暴模式可借普通车道超车，或选择红灯队列更短的合法普通车道。社会车辆仅在临近路口准备右转时借用公交道，并避让道内公交车，转弯后驶入普通车道。公交道使用红色铺装、专用分隔线和 BUS 标识。
+     - 自定义地图普通八车道配置 `"lanes": 8`；公交优先道路增加 `"bus_lane": true`。公交道在路口允许公交车按相应信号直行、左转或右转，社会车辆仅可借道右转。
    - **双向6车道（每个方向3车道 / 共6车道）宏伟干线与全系统支持**：
      - **都会核心 (Metropolis CBD)**：北环快速路全面扩建为双向六车道快速路 (`北环六车道快速路`)。
      - **海滨港湾 (Coastal Bay)**：港城中央大道与跨海湾长堤大桥全面升级为双向六车道景观大道与跨海特大桥 (`港城中央六车道大道`、`跨海湾长堤六车道大桥大道`)，跨海大桥桥面同步拓宽至 140px。
@@ -128,7 +131,7 @@
 按 **`ESC`** 可随时呼出设置菜单：
 1. **返回主菜单 / 更换城市**：点击 `[🏠 返回主菜单 (选择地图)]` 退入主菜单切换不同城市。
 2. **红绿灯违章抓拍与罚款机制**：点击切换 `【已开启 (扣$50)】` 或 `【已关闭 (无罚款)】`。
-3. **AI 私家车交通流密度**：点击切换 `低密度 (12辆)` / `中等密度 (24辆)` / `高密度 (36辆)` / `超高密度 (72辆)` / `极限车流 (128辆)`。
+3. **AI 私家车交通流密度**：点击切换 `低 (36辆)` / `中 (72辆)` / `高 (144辆)` / `拥堵 (288辆)`。
 4. **驾驶摄像机视角 (Camera View)**：点击切换 `【固定正北 (标准)】` / `【车头朝上 (跟随)】` / `【固定正南 (倒置)】`。
 5. **玩家公交 AI 自动驾驶与狂暴模式**：点击循环切换 `【👤 手动驾驶: 关闭】` ➔ `【🤖 AI自动驾驶: 标准巡航】` ➔ `【⚡ AI自动驾驶: 狂暴极速】`（快捷键 `P` 启闭，`B` 切换狂暴）。狂暴模式下直行最高车速飙升至 **80 KM/H ($445\text{px/s}$)**，支持**遇黄灯直接全速冲过（闯黄灯通行不刹停且免罚款）**；且在多车道干道支持**超远距离提前自主变道超车**：距前车 **$380\sim 640\text{px}$** 便已提前规划并敏捷并线，拒绝贴身尾随或刹停顿挫；采用全新**五次/三次 Hermite S型缓动（SmootherStep）动态横向变道算法**（横向变道速率大幅提至 $65\sim 95\text{px/s}$ 并具零加速度平滑过渡），尤其是 6 车道干道从行车道并入左转车道配置 **$350\sim 450\text{px}$** 超长自然柔和 S 曲线渐变段，彻底告别直角急甩与速度骤降，变道姿态如丝般顺滑；全城路口间距延长约 3 倍（`MapGridScale = 3.0`），长街区为极速行驶与变道超车提供超长直道舞台；弯道与红灯避障依然智能减速停稳。同时所有模式下均支持**自适应路口间距的智能提前左转变道**。
    - **公交最高限速统一设置 (手动极速 / 狂暴模式一致生效)**：提供 **60 / 80 / 100 / 120 KM/H** 四档最高限速（默认 80 KM/H）。无论是玩家**手动驾驶全油门极速狂奔**，还是 **AI 狂暴模式直行飞驰**，均共享并严格遵循该限速档位；可在设置面板直接点选或在驾驶时按 **`Shift+B`** 随心秒切。
@@ -353,7 +356,14 @@ make test-all           # 或: go test -v ./...
 
 ### 🏷️ 版本记录与发布说明 (Release Notes)
 
-- **v0.0.4** (当前最新):
+- **v0.0.5**:
+  - 新增普通及公交专用道双向八车道，四档车流 36 / 72 / 144 / 288 辆，以及五城差异化风貌。
+  - 修复环岛进出、转弯车道、红灯右转误判、靠站/飞站和小车礼让公交的相关问题。
+  - 解卡改为连续原地停住至少 1.5 个完整信号周期；小车驶出地图后从其他路口安全补充。
+  - 降低车流内存分配和屏幕外绘制开销，新增性能基准、长测与真实图形检查工具。
+  - [发布说明](docs/releases/0.0.5.md) · [详细测试报告](docs/releases/0.0.5-testing.md)。
+
+- **v0.0.4**:
   - **代码架构与自动驾驶修复**：按仿真、自动驾驶、交通、渲染和界面拆分包；修复狂暴模式内侧车道进入环岛、汇入让行及进入左转车道时的误停。
   - 发布说明与验证记录：[0.0.4](docs/releases/0.0.4.md)。
   - **🚍 统一 45 人大容量与贪婪全员上客机制 (Greedy Boarding & Unified 45-Pax Capacity)**：
@@ -502,7 +512,7 @@ An expansive top-down metropolitan bus simulation and route planning game built 
 Press **`ESC`** at any time to open the Settings modal:
 1. **Return to Main Menu / Switch City**: Click `[🏠 Main Menu (Select City)]` to return to the city selection menu.
 2. **Traffic Light Cameras & Fines**: Toggle between `[Enabled (-$50 fine)]` and `[Disabled (No fine)]`.
-3. **AI Private Vehicle Traffic Density**: Cycle between `Low (12 cars)`, `Medium (24 cars)`, and `High (36 cars)`.
+3. **AI Private Vehicle Traffic Density**: Cycle between `Low (36 cars)`, `Medium (72 cars)`, `High (144 cars)`, and `Congested (288 cars)`.
 4. **Custom Citywide Lane Width**: Cycle between `Compact (42px)`, `Standard (52px)`, `Boulevard (64px)`, and `Expressway (78px)`.
 5. **Camera Perspective**: Switch between `[North-Up (Classic)]`, `[Heading-Up (Follow)]`, and `[South-Up (Inverted)]`.
 6. **Player Bus AI Autopilot & Berserk Mode**: Cycle between `[👤 Manual: OFF]`, `[🤖 Autopilot: Standard]`, and `[⚡ Autopilot: BERSERK]` (hotkey `P` to toggle, `B` for Berserk). In Berserk mode, top cruise speed on straight roads is boosted to $310\text{px/s}$, with **autonomous multi-lane overtaking** of slower vehicles on 2-lane roads; corners, red lights, and station stops strictly follow traffic rules. All modes feature **intelligent, block-distance adaptive early left-turn lane merging**.
@@ -709,7 +719,14 @@ make test-all           # or: go test -v ./...
 
 ---
 
-- **v0.0.4** (Current):
+- **v0.0.5**:
+  - Eight-lane roads with optional bus lanes; four traffic densities (36 / 72 / 144 / 288); distinct city scenery.
+  - Roundabout, turn-lane, right-on-red, station merge and skipped-stop fixes.
+  - Independent recovery after 1.5 complete stationary signal cycles; safe replacements for cars leaving the map.
+  - Reduced traffic allocations and offscreen rendering, plus benchmarks, endurance and graphics checks.
+  - [Release notes](docs/releases/0.0.5.md) · [Test report](docs/releases/0.0.5-testing.md).
+
+- **v0.0.4**:
   - **Architecture and autopilot fixes**: Separate simulation, autopilot, traffic, rendering and UI packages; fix inner-lane roundabout entry, yield to circulating vehicles, and eliminate false stops beside through-lane queues.
   - Release notes and validation: [0.0.4](docs/releases/0.0.4.md).
   - **🚍 Unified 45-Pax Capacity & Greedy Boarding**: Standardized 45-passenger capacity across player bus and all 8 AI fleet buses. Passengers board greedily on arrival as long as space remains without route divergence obstacles. Consecutive docking at the same stop continues boarding if capacity exists.

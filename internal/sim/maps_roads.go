@@ -6,7 +6,7 @@ import (
 
 // 1. 都会核心 (Metropolis CBD)
 func (w *World) buildMap1Metropolis(laneWidth float64) {
-	// Avenues: 4-lane Ring & Grid, with 6-lane North Ring Expressway
+	// Four- and six-lane grid, with ordinary eight-lane west and bus-priority east avenues.
 	w.Roads = append(w.Roads,
 		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: 2600, Y: -1200}, Lanes: 6, Type: RoadExpressway6Lane, HasLines: true, Name: "北环六车道快速路"},
 		RoadSegment{P1: Vec2{X: -2600, Y: -600}, P2: Vec2{X: 2600, Y: -600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "北二路"},
@@ -14,11 +14,11 @@ func (w *World) buildMap1Metropolis(laneWidth float64) {
 		RoadSegment{P1: Vec2{X: -2600, Y: 600}, P2: Vec2{X: 2600, Y: 600}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "南二路"},
 		RoadSegment{P1: Vec2{X: -2600, Y: 1200}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "南环快速路"},
 
-		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: -2600, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "西客运大道"},
+		RoadSegment{P1: Vec2{X: -2600, Y: -1200}, P2: Vec2{X: -2600, Y: 1200}, Lanes: 8, Type: RoadBoulevard8Lane, HasLines: true, Name: "西客运八车道大道"},
 		RoadSegment{P1: Vec2{X: -1300, Y: -1200}, P2: Vec2{X: -1300, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "西公园大道"},
 		RoadSegment{P1: Vec2{X: 0, Y: -1200}, P2: Vec2{X: 0, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "城市中轴大道"},
 		RoadSegment{P1: Vec2{X: 1300, Y: -1200}, P2: Vec2{X: 1300, Y: 1200}, Lanes: 2, Type: RoadStreet2Lane, HasLines: true, Name: "东市民大道"},
-		RoadSegment{P1: Vec2{X: 2600, Y: -1200}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 4, Type: RoadAvenue4Lane, HasLines: true, Name: "东高新大道"},
+		RoadSegment{P1: Vec2{X: 2600, Y: -1200}, P2: Vec2{X: 2600, Y: 1200}, Lanes: 8, Type: RoadBusBoulevard8Lane, HasLines: true, Name: "东高新公交八车道大道"},
 	)
 
 	// Central Canal & Bridges

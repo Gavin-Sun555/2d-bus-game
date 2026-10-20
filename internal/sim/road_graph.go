@@ -202,6 +202,28 @@ func RoadLaneOffset(roadCoord float64, isEW bool, lw float64, w *World, posOptio
 		}
 	}
 
+	if lanes == 8 && w != nil {
+		pos := Vec2{X: roadCoord, Y: roadCoord}
+		if len(posOptional) > 0 {
+			pos = posOptional[0]
+		} else {
+			for _, road := range w.Roads {
+				if (math.Abs(road.P1.Y-road.P2.Y) < 1) == isEW {
+					coord := road.P1.Y
+					if !isEW {
+						coord = road.P1.X
+					}
+					if math.Abs(coord-roadCoord) < 25 {
+						pos = road.P1.Add(road.P2).Mul(.5)
+						break
+					}
+				}
+			}
+		}
+		if road, ok := w.RoadAt(roadCoord, isEW, pos); ok && road.HasBusLane() {
+			return lw * 3.5
+		}
+	}
 	if lanes >= 6 {
 		return lw * 2.5
 	}

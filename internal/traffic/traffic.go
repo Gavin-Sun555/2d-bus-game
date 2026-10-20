@@ -8,12 +8,13 @@ import (
 )
 
 type TrafficManager struct {
-	Cars                     []*sim.TrafficCar
-	AIBusMgr                 *AIBusManager
-	OnPlayerBusDeadlockReset func()
+	Cars         []*sim.TrafficCar
+	pendingExits []sim.Vec2
+	nextCarID    int
+	AIBusMgr     *AIBusManager
 }
 
-const MaxTrafficCars = 128
+const MaxTrafficCars = sim.MaxTrafficCars
 
 func NewTrafficManager(initialLaneWidth float64) *TrafficManager {
 	tm := &TrafficManager{
@@ -28,19 +29,7 @@ func (tm *TrafficManager) GetActiveCars(densityLevel int) []*sim.TrafficCar {
 	if tm == nil {
 		return nil
 	}
-	activeCount := 24
-	switch densityLevel {
-	case 1:
-		activeCount = 12
-	case 2:
-		activeCount = 24
-	case 3:
-		activeCount = 36
-	case 4:
-		activeCount = 72
-	case 5:
-		activeCount = 128
-	}
+	activeCount := sim.TrafficCarCount(densityLevel)
 	if activeCount > len(tm.Cars) {
 		activeCount = len(tm.Cars)
 	}
@@ -68,6 +57,8 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 		return
 	}
 	tm.Cars = make([]*sim.TrafficCar, 0)
+	tm.pendingExits = nil
+	tm.nextCarID = count
 
 	type spawnDef struct {
 		pos     sim.Vec2
@@ -93,12 +84,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 			roadCoord = r.P1.X
 		}
 
-		numLanesPerDir := 1
-		if r.Lanes >= 6 {
-			numLanesPerDir = 3
-		} else if r.Lanes >= 4 {
-			numLanesPerDir = 2
-		}
+		numLanesPerDir := r.GeneralTrafficLanes()
 
 		step := 220.0
 		for dist := 260.0; dist <= lenR-260.0; dist += step {
@@ -117,7 +103,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 
 			nearRb := false
 			for _, rb := range w.Roundabouts {
-				if pt.Distance(rb.Center) < rb.Radius+60 {
+				if pt.Distance(rb.Center) < rb.YieldLineDistance()+60 {
 					nearRb = true
 					break
 				}
@@ -212,5 +198,6 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 	}
 
 	// Deadlock prevention: when two non-player vehicles are jammed motionless for > 1 traffic light cycle, disappear
-	tm.ResolveDeadlocks(dt, bus, activeCount, laneWidth, w)
+	tm.ResolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls)
+	tm.updateBoundaryTraffic(bus, densityLevel, laneWidth, w)
 }

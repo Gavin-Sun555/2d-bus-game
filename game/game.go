@@ -43,6 +43,8 @@ type Game struct {
 	AutopilotDriver        *autopilot.AutopilotDriver
 	AIBusMgr               *traffic.AIBusManager
 	AutopilotDeadlockTimer float64
+	DeadlockTracker        sim.StationaryTracker
+	obstacles              []autopilot.VehicleObstacle
 
 	IsPlanMode bool
 	Cash       int
@@ -101,11 +103,6 @@ func NewGame(width, height int) *Game {
 
 	// Adapt traffic lights and civilian AI traffic to active world network
 	g.TrafficMgr.AIBusMgr = g.AIBusMgr
-	g.TrafficMgr.OnPlayerBusDeadlockReset = func() {
-		if g.Settings.AutopilotEnabled {
-			g.ResetToStartingStation()
-		}
-	}
 	g.TrafficLights.BuildForWorld(g.World)
 	g.TrafficMgr.BuildForWorld(g.World, traffic.MaxTrafficCars, initLaneWidth)
 

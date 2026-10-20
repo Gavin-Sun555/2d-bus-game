@@ -15,7 +15,7 @@ func TestTrafficLightApproachingSignalInfoAndStopDecision(t *testing.T) {
 
 	inter := tls.Intersections[0]
 	// Position a vehicle approaching from the west heading East (heading = 0)
-	stopLineDist := 52.0*1.6 + 18.0
+	stopLineDist := inter.GetStopLineDistForHeading(0, 52)
 	// Outer through lane is at Y = inter.Center.Y + 52.0 * 1.5
 	throughApproachPos := Vec2{X: inter.Center.X - stopLineDist - 60.0, Y: inter.Center.Y + 52.0*1.5}
 	// Inner left-turn lane is at Y = inter.Center.Y + 52.0 * 0.5
@@ -81,7 +81,7 @@ func TestTrafficLightApproachingSignalInfoAndStopDecision(t *testing.T) {
 	}
 
 	// Wrapper method ShouldVehicleStop
-	if !tls.ShouldVehicleStop(throughApproachPos, 0, 120.0) {
+	if !tls.ShouldVehicleStop(throughApproachPos, 0, 200.0) {
 		t.Errorf("ShouldVehicleStop should return true under red phase")
 	}
 }
@@ -189,14 +189,14 @@ func TestMajorIntersectionDedicatedLeftTurnSignals(t *testing.T) {
 	// 3. Approach signal check for dedicated left turn lane vs through lane:
 	// Eastbound approach (heading = 0, X < 0)
 	// Outer lane (Y = 0 + laneW*1.5 = 63.0) -> Through lane
-	thruCarBumper := Vec2{X: -140, Y: 63.0}
+	thruCarBumper := Vec2{X: -majorInter.GetStopLineDistForHeading(0, laneW) - 40, Y: 63.0}
 	stopThru, _ := tls.CheckStopForVehicle(thruCarBumper, 0, 150.0, laneW, false)
 	if !stopThru {
 		t.Fatalf("During PhaseEWLeftGreen, Through lane vehicle must stop for Red through light")
 	}
 
 	// Inner lane (Y = 0 + laneW*0.5 = 21.0) -> Dedicated Left-turn lane
-	leftCarBumper := Vec2{X: -140, Y: 21.0}
+	leftCarBumper := Vec2{X: -majorInter.GetStopLineDistForHeading(0, laneW) - 40, Y: 21.0}
 	stopLeft, _ := tls.CheckStopForVehicle(leftCarBumper, 0, 150.0, laneW, true)
 	if stopLeft {
 		t.Fatalf("During PhaseEWLeftGreen, Left-turn lane vehicle must NOT stop (it has dedicated Green light)")
@@ -375,14 +375,14 @@ func TestSingleLaneMeetsThreeLaneIntersectionStopLinePosition(t *testing.T) {
 
 	// Verify vehicle stopping on red:
 	// A bus traveling North towards the intersection on the 2-lane road
-	bayInter.Phase = PhaseEWGreen                     // NS is RED!
-	busBumperPos := Vec2{X: -1950.0 + 26.0, Y: 250.0} // approaching from South, bumper at Y = 250
+	bayInter.Phase = PhaseEWGreen                            // NS is RED!
+	busBumperPos := Vec2{X: -1950.0 + 26.0, Y: bNSStop + 40} // approaching from South, bumper at Y = 250
 	shouldStop, distToLine := tls.CheckStopForVehicle(busBumperPos, -math.Pi/2, 100.0, laneWidth)
 	if !shouldStop {
 		t.Fatal("Bus approaching red light on 2-lane road must stop")
 	}
 	// Distance to line should be relative to bNSStop (e.g. 250 - 211 = 39.0)
-	expectedDist := 250.0 - bNSStop
+	expectedDist := 40.0
 	if math.Abs(distToLine-expectedDist) > 1.0 {
 		t.Fatalf("Expected distance to stop line around %.2f, got %.2f", expectedDist, distToLine)
 	}

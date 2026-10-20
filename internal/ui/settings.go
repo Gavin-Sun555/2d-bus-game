@@ -13,7 +13,7 @@ type Settings struct {
 	IsOpen                bool
 	TrafficFinesEnabled   bool
 	FineAmount            int
-	TrafficDensity        int            // 1: Low (12), 2: Med (24), 3: High (36), 4: Very High (72), 5: Extreme Jam (128)
+	TrafficDensity        int            // 1: Low (36), 2: Medium (72), 3: High (144), 4: Congested (288)
 	LaneWidthLevel        int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
 	CameraViewMode        sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
 	MapTheme              sim.MapTheme   // Active city map
@@ -164,7 +164,7 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		} else if s.fineToggleBounds.Contains(mPos) {
 			s.TrafficFinesEnabled = !s.TrafficFinesEnabled
 		} else if s.densityToggleBounds.Contains(mPos) {
-			s.TrafficDensity = (s.TrafficDensity % 5) + 1
+			s.TrafficDensity = (s.TrafficDensity % sim.TrafficDensityLevels) + 1
 		} else if s.cameraToggleBounds.Contains(mPos) {
 			switch s.CameraViewMode {
 			case sim.CameraModeNorthUp:

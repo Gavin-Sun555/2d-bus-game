@@ -96,6 +96,12 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 			infoText += " [空站无候车]"
 		}
 	}
+	if planMode && cam.Zoom < 0.2 && !isTarget && !isHovered {
+		infoText = fmt.Sprintf("#%d %s", s.ID+1, s.CleanName())
+	}
+	labelX, labelY := shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4)
+	labelW, labelH := textui.MeasureText(infoText, 12)
+	vector.DrawFilledRect(screen, float32(labelX-5), float32(labelY-3), float32(labelW+10), float32(labelH+6), sim.RGBA(15, 25, 35, 218), true)
 	textui.DrawText(screen, infoText, shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4), 12, color.White)
 }
 

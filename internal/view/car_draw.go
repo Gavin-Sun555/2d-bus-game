@@ -21,6 +21,10 @@ func DrawTraffic(tm *traffic.TrafficManager, screen *ebiten.Image, cam *sim.Came
 }
 
 func drawSingleCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
+	// Keep the full headlight cone visible when the vehicle itself is offscreen.
+	if !cam.IsPointVisible(c.Pos, math.Hypot(c.Length, c.Width)/2+150) {
+		return
+	}
 	cosH := math.Cos(c.Heading)
 	sinH := math.Sin(c.Heading)
 

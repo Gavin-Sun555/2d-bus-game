@@ -1,0 +1,123 @@
+package traffic
+
+import (
+	"math"
+	"sort"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+)
+
+func configureRoundaboutExit(car *sim.TrafficCar, w *sim.World, rb *sim.Roundabout, lw, heading float64) {
+	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	car.RoundaboutExitHeading = heading
+	car.RoundaboutExitEW = math.Abs(forward.X) > .5
+	car.RoundaboutExitRC = rb.Center.Y
+	if !car.RoundaboutExitEW {
+		car.RoundaboutExitRC = rb.Center.X
+	}
+	lanes := w.GetRoadLanes(car.RoundaboutExitRC, car.RoundaboutExitEW, rb.Center.Add(forward.Mul(rb.Radius+160)))
+	lane := math.Min(float64(car.LaneIndex), math.Max(0, float64(min(2, lanes/2-1))))
+	car.RoundaboutExitOffset = (lane + .5) * lw
+	car.RoundaboutExitLane = int(lane)
+	car.RoundaboutExitAngle = sim.NormalizeAngle(heading + math.Asin(math.Min(.8, car.RoundaboutExitOffset/car.RoundaboutTargetR)))
+}
+
+func beginRoundaboutEntry(car *sim.TrafficCar) {
+	theta := car.RoundaboutAngle - .85
+	goal := car.RoundaboutCenter.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(car.RoundaboutTargetR))
+	incoming := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	tangent := sim.Vec2{X: math.Sin(theta), Y: -math.Cos(theta)}
+	// Keep the initial reach long enough for the rear to clear a stopped
+	// neighbor before yawing; join farther around the circle without a corner.
+	handle := math.Min(120, math.Max(110, 25+.6*math.Abs(car.RoundaboutRadius-car.RoundaboutTargetR)))
+	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(incoming.Mul(handle)), goal.Sub(tangent.Mul(math.Min(60, car.RoundaboutTargetR*.3))), goal, false)
+}
+
+func beginRoundaboutExit(car *sim.TrafficCar) {
+	out := sim.Vec2{X: math.Cos(car.RoundaboutExitHeading), Y: math.Sin(car.RoundaboutExitHeading)}
+	right := sim.Vec2{X: -out.Y, Y: out.X}
+	offset := car.RoundaboutExitOffset
+	if offset == 0 {
+		offset = car.RoundaboutTargetR * math.Sin(car.RoundaboutExitAngle-car.RoundaboutExitHeading)
+	}
+	goal := car.RoundaboutCenter.Add(out.Mul(car.RoundaboutOuterRadius + 80)).Add(right.Mul(offset))
+	tangent := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	handle := math.Min(120, car.Pos.Distance(goal)*.4)
+	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(tangent.Mul(handle)), goal.Sub(out.Mul(handle)), goal, true)
+}
+
+func newRoundaboutCurve(start, c1, c2, end sim.Vec2, exiting bool) *sim.CarRoundaboutCurve {
+	curve := &sim.CarRoundaboutCurve{Start: start, Control1: c1, Control2: c2, End: end, Exiting: exiting}
+	previous := start
+	for i := 1; i < len(curve.ArcLengths); i++ {
+		point, _ := roundaboutCurveAt(curve, float64(i)/64)
+		curve.ArcLengths[i] = curve.ArcLengths[i-1] + point.Distance(previous)
+		previous = point
+	}
+	return curve
+}
+
+func roundaboutCurveAt(c *sim.CarRoundaboutCurve, u float64) (sim.Vec2, sim.Vec2) {
+	v := 1 - u
+	point := c.Start.Mul(v * v * v).Add(c.Control1.Mul(3 * v * v * u)).Add(c.Control2.Mul(3 * v * u * u)).Add(c.End.Mul(u * u * u))
+	tangent := c.Control1.Sub(c.Start).Mul(3 * v * v).Add(c.Control2.Sub(c.Control1).Mul(6 * v * u)).Add(c.End.Sub(c.Control2).Mul(3 * u * u))
+	return point, tangent
+}
+
+func moveCarRoundabout(car *sim.TrafficCar, dt float64) {
+	if car.RoundaboutCurve == nil {
+		diff := sim.NormalizeAngle(car.RoundaboutAngle - car.RoundaboutExitAngle)
+		if diff < 0 {
+			diff += 2 * math.Pi
+		}
+		if car.RoundaboutTraveled >= 1 && diff <= .65 {
+			beginRoundaboutExit(car)
+		}
+	}
+	if car.RoundaboutCurve != nil {
+		c := car.RoundaboutCurve
+		total := c.ArcLengths[64]
+		advance := math.Abs(car.Speed) * dt
+		used := math.Min(advance, math.Max(0, total-c.Distance))
+		c.Distance += used
+		index := sort.Search(len(c.ArcLengths), func(i int) bool { return c.ArcLengths[i] >= c.Distance })
+		index = int(sim.Clamp(float64(index), 1, 64))
+		fraction := (c.Distance - c.ArcLengths[index-1]) / math.Max(1e-9, c.ArcLengths[index]-c.ArcLengths[index-1])
+		point, tangent := roundaboutCurveAt(c, (float64(index-1)+fraction)/64)
+		previous := car.RoundaboutAngle
+		car.Pos = point
+		car.Heading = math.Atan2(tangent.Y, tangent.X)
+		car.RoundaboutRadius = point.Distance(car.RoundaboutCenter)
+		car.RoundaboutAngle = math.Atan2(point.Y-car.RoundaboutCenter.Y, point.X-car.RoundaboutCenter.X)
+		car.RoundaboutTraveled += math.Max(0, sim.NormalizeAngle(previous-car.RoundaboutAngle))
+		if c.Distance < total-1e-6 {
+			return
+		}
+		car.RoundaboutCurve = nil
+		remaining := (advance - used) / math.Max(math.Abs(car.Speed), 1e-9)
+		if c.Exiting {
+			car.InRoundabout = false
+			car.Heading = car.RoundaboutExitHeading
+			car.IsEW = car.RoundaboutExitEW
+			car.RoadCenter = car.RoundaboutExitRC
+			car.LaneIndex = car.RoundaboutExitLane
+			car.RoundaboutCooldown = 6
+			car.Pos = car.Pos.Add(sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}.Mul(car.Speed * remaining))
+			return
+		}
+		if remaining <= 1e-6 {
+			return
+		}
+		dt = remaining
+	}
+	// Once joined, hold the circle and its tangent exactly. Radial convergence is
+	// retained only for loaded/legacy states that did not start an entry curve.
+	previous := car.RoundaboutAngle
+	radius := car.RoundaboutRadius
+	car.RoundaboutAngle = sim.NormalizeAngle(previous - car.Speed/math.Max(radius, 1)*dt)
+	car.RoundaboutTraveled += car.Speed / math.Max(radius, 1) * dt
+	change := sim.Clamp(car.RoundaboutTargetR-radius, -math.Abs(car.Speed)*.45*dt, math.Abs(car.Speed)*.45*dt)
+	car.RoundaboutRadius += change
+	car.Pos = car.RoundaboutCenter.Add(sim.Vec2{X: math.Cos(car.RoundaboutAngle), Y: math.Sin(car.RoundaboutAngle)}.Mul(car.RoundaboutRadius))
+	car.Heading = sim.RotateTowards(car.Heading, sim.NormalizeAngle(car.RoundaboutAngle-math.Pi/2), math.Min(5, math.Abs(car.Speed)/35)*dt)
+}

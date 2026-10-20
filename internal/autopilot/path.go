@@ -11,19 +11,31 @@ import (
 // the bus merges diagonally out of the departure bay and pulls into the target bay along a
 // tapered entry that ends in a straight, curb-aligned run-in.
 func BuildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64) []sim.Vec2 {
+	return buildAutopilotDrivePath(w, from, to, lw, false, false)
+}
+
+func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, skipDeparture, skipArrival bool, options ...sim.RoadPathOptions) []sim.Vec2 {
 	if to == nil {
 		return nil
 	}
 	h2 := sim.Vec2{X: math.Cos(to.Heading), Y: math.Sin(to.Heading)}
-	bayEntry := to.Pos.Sub(h2.Mul(apBayStraight))
+	destination := to.Pos
+	if skipArrival {
+		destination = stopRoadPoint(to, lw, w)
+	}
+	bayEntry := destination.Sub(h2.Mul(apBayStraight))
 	if w == nil || from == nil || from.ID == to.ID {
-		return []sim.Vec2{to.Pos.Sub(h2.Mul(650)), bayEntry, to.Pos}
+		return []sim.Vec2{destination.Sub(h2.Mul(650)), bayEntry, destination}
 	}
 
-	raw := sim.ComputeRoadPathBetweenStops(w, from, to, lw)
+	raw := sim.ComputeRoadPathBetweenStops(w, from, to, lw, options...)
 	if len(raw) < 4 {
 		// Unreachable on the grid: best-effort direct approach into the bay
-		return dedupePath([]sim.Vec2{from.Pos, bayEntry, to.Pos})
+		origin := from.Pos
+		if skipDeparture {
+			origin = stopRoadPoint(from, lw, w)
+		}
+		return dedupePath([]sim.Vec2{origin, bayEntry, destination})
 	}
 
 	h1 := sim.Vec2{X: math.Cos(from.Heading), Y: math.Sin(from.Heading)}
@@ -34,7 +46,10 @@ func BuildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64) []
 	start := 1
 	out = append(out, raw[0])
 	lane1 := raw[1]
-	if math.Abs(lane1.Sub(raw[0]).Dot(h1)) < 10.0 {
+	if skipDeparture {
+		out = []sim.Vec2{lane1}
+		start = 2
+	} else if math.Abs(lane1.Sub(raw[0]).Dot(h1)) < 10.0 {
 		seg := raw[2].Sub(lane1)
 		segLen := seg.Length()
 		if segLen > 1e-6 && seg.Mul(1/segLen).Dot(h1) > 0.9 {
@@ -48,7 +63,10 @@ func BuildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64) []
 	end := n - 1 // exclusive index of the raw points copied verbatim
 	lane2 := raw[n-2]
 	tail := []sim.Vec2{to.Pos}
-	if math.Abs(lane2.Sub(to.Pos).Dot(h2)) < 10.0 && n-3 >= 0 {
+	if skipArrival {
+		tail = []sim.Vec2{lane2}
+		end = n - 2
+	} else if math.Abs(lane2.Sub(to.Pos).Dot(h2)) < 10.0 && n-3 >= 0 {
 		seg := lane2.Sub(raw[n-3])
 		segLen := seg.Length()
 		if segLen > 1e-6 && seg.Mul(1/segLen).Dot(h2) > 0.9 {
@@ -62,7 +80,7 @@ func BuildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64) []
 		out = append(out, raw[i])
 	}
 	out = append(out, tail...)
-	return dedupePath(out)
+	return smoothRoundaboutDepartures(w, dedupePath(out), lw)
 }
 
 func dedupePath(pts []sim.Vec2) []sim.Vec2 {
@@ -87,16 +105,40 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 				ad.pathToID = to.ID
 			}
 			ad.pathLane = lw
+			ad.pathOrdinaryBusLeft = ad.ordinaryBusLeft
+			ad.pathSkipTarget = ad.CanSkipTargetStop
 			return
 		}
 		if from != nil && to != nil && ad.pathWorld != nil &&
 			(ad.pathWorld == w || ad.pathWorld.Theme == w.Theme) &&
-			ad.pathFromID == from.ID && ad.pathToID == to.ID && ad.pathLane == lw {
+			ad.pathFromID == from.ID && ad.pathToID == to.ID && ad.pathLane == lw && ad.pathSkipTarget == ad.CanSkipTargetStop && ad.pathOrdinaryBusLeft == ad.ordinaryBusLeft {
 			ad.pathWorld = w
 			return
 		}
 	}
-	ad.drivePath = BuildAutopilotDrivePath(w, from, to, lw)
+	if ad.pathFromID != from.ID || ad.pathToID != to.ID {
+		ad.ordinaryBusLeft = false
+		ad.busLaneJunction = nil
+		ad.rightTurnJunction = nil
+		ad.rightTurnWaiting = false
+		ad.busJunctionEntered = false
+	}
+	if ad.stationDock != nil && ad.stationDock.stopID != to.ID {
+		ad.departureFromDock = from != nil && from.ID == ad.stationDock.stopID && ad.stationDock.rank > 0
+		ad.stationDock = nil
+	}
+	if ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID != from.ID {
+		ad.skippedDeparture = nil
+	}
+	skipFrom := ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID == from.ID
+	ad.directRoundaboutExit = nil
+	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft})
+	if skipFrom {
+		ad.prependSkippedDeparture(lw, w)
+	}
+	ad.pathOrdinaryBusLeft = ad.ordinaryBusLeft
+	ad.pathSkipTarget = ad.CanSkipTargetStop
+	ad.bypassStopID = -1
 	ad.cumLen = make([]float64, len(ad.drivePath))
 	for i := 1; i < len(ad.drivePath); i++ {
 		ad.cumLen[i] = ad.cumLen[i-1] + ad.drivePath[i].Distance(ad.drivePath[i-1])
@@ -302,7 +344,7 @@ func (ad *AutopilotDriver) basePathPosition(pos sim.Vec2, world *sim.World, head
 			segDir := seg.Mul(1.0 / segLen)
 			segRight := sim.Vec2{X: -segDir.Y, Y: segDir.X}
 			effOffset := ad.LaneOffset
-			if world != nil {
+			if world != nil && !world.InsideJunction(pos, laneWidth, 0) {
 				wpt := ad.drivePath[wIdx]
 				roadCenter, isEW, isMultiLane, is6Lane := sim.CurrentRoadInfo(world, wpt, heading, laneWidth)
 				if isMultiLane || is6Lane {

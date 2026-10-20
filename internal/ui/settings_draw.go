@@ -69,19 +69,16 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 	textui.DrawText(screen, locale.T("2. AI 私家车交通流密度:", "2. AI Traffic Flow Density:"), modalX+26, opt2Y+7, 13, sim.RGBA(226, 232, 240, 255))
 	s.densityToggleBounds = sim.Rect{X: modalX + 340, Y: opt2Y, W: 210, H: 28}
 
-	densityText := locale.T("中等密度 (24辆)", "Medium (24 vehicles)")
-	switch s.TrafficDensity {
-	case 1:
-		densityText = locale.T("低密度 (12辆)", "Low (12 vehicles)")
-	case 2:
-		densityText = locale.T("中等密度 (24辆)", "Medium (24 vehicles)")
-	case 3:
-		densityText = locale.T("高密度 (36辆)", "High (36 vehicles)")
-	case 4:
-		densityText = locale.T("超高密度 (72辆)", "Very High (72 vehicles)")
-	case 5:
-		densityText = locale.T("极限车流 (128辆)", "Extreme Jam (128 vehicles)")
+	labels := [sim.TrafficDensityLevels]string{
+		locale.T("低", "Low"), locale.T("中", "Medium"),
+		locale.T("高", "High"), locale.T("拥堵", "Congested"),
 	}
+	level := s.TrafficDensity
+	if level < 1 || level > sim.TrafficDensityLevels {
+		level = 2
+	}
+	densityText := fmt.Sprintf(locale.T("%s (%d辆)", "%s (%d vehicles)"), labels[level-1], sim.TrafficCarCount(level))
+
 	vector.DrawFilledRect(screen, float32(s.densityToggleBounds.X), float32(s.densityToggleBounds.Y),
 		float32(s.densityToggleBounds.W), float32(s.densityToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
 	vector.StrokeRect(screen, float32(s.densityToggleBounds.X), float32(s.densityToggleBounds.Y),
@@ -232,11 +229,11 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 
 	if s.Language == locale.LanguageEN {
 		textui.DrawText(screen, "• Traffic Network, Autopilot & Operating Rules:", modalX+36, infoY+10, 12, sim.RGBA(148, 163, 184, 255))
-		textui.DrawText(screen, fmt.Sprintf("  - Active Map: [%s] (6 distinct city themes, return to menu to switch);", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
-		textui.DrawText(screen, "  - Top Speed (60/80/100/120 km/h): Unified limit for manual driving and Berserk mode; Shift+B to cycle;", modalX+36, infoY+46, 11, sim.RGBA(6, 182, 212, 255))
+		textui.DrawText(screen, fmt.Sprintf("  - Map: %s; change city from the main menu.", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
+		textui.DrawText(screen, "  - Top speed: 60 / 80 / 100 / 120 km/h (manual + Berserk). [Shift+B]", modalX+36, infoY+46, 11, sim.RGBA(6, 182, 212, 255))
 		textui.DrawText(screen, "  - Route AI Fleet: 0-8 autonomous buses operating routes and serving passengers;", modalX+36, infoY+64, 12, sim.RGBA(52, 211, 153, 255))
-		textui.DrawText(screen, "  - Camera Perspectives: Heading-Up Follow / Fixed North-Up / Fixed South-Up ([V]);", modalX+36, infoY+82, 12, sim.RGBA(251, 146, 60, 255))
-		textui.DrawText(screen, "  - Road Hierarchy: 4-lane avenues, 2-lane streets, grade-separated overpasses;", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
+		textui.DrawText(screen, "  - Camera: Heading-Up / North-Up / South-Up. [V]", modalX+36, infoY+82, 12, sim.RGBA(251, 146, 60, 255))
+		textui.DrawText(screen, "  - Roads: 2 / 4 / 6 / 8 lanes, bus lanes, bridges and waterways.", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - Standard 52px wide city roadway lanes provide comfortable clearance and turning;", modalX+36, infoY+118, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - Wide intersection geometries allow realistic turning without barrier clipping;", modalX+36, infoY+136, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - Press [L] anytime to quickly toggle interface language (English / Chinese);", modalX+36, infoY+154, 12, sim.RGBA(56, 189, 248, 255))
@@ -250,11 +247,11 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		textui.DrawText(screen, descFine, modalX+36, infoY+176, 12, descFineColor)
 	} else {
 		textui.DrawText(screen, "• 交通网络调度、自动驾驶与车辆规则说明:", modalX+36, infoY+10, 12, sim.RGBA(148, 163, 184, 255))
-		textui.DrawText(screen, fmt.Sprintf("  - 当前地图: 【%s】 (6大独立城市风貌，含自定义地图，需退入主菜单切换)；", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
+		textui.DrawText(screen, fmt.Sprintf("  - 当前地图: 【%s】（主菜单换图）；", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
 		textui.DrawText(screen, "  - 公交最高限速 (60/80/100/120 km/h): 手动极速与AI狂暴巡航均生效，支持按 Shift+B 快速切速；", modalX+36, infoY+46, 11, sim.RGBA(6, 182, 212, 255))
 		textui.DrawText(screen, "  - 路线 AI 公交: 调度 0~8 辆独立 AI 公交车，在城市环线自主运营、上下客流；", modalX+36, infoY+64, 12, sim.RGBA(52, 211, 153, 255))
 		textui.DrawText(screen, "  - 视角切换: 支持【车头朝上跟随】/【固定正北标准】/【固定正南倒置】，按 [V] 键切换；", modalX+36, infoY+82, 12, sim.RGBA(251, 146, 60, 255))
-		textui.DrawText(screen, "  - 城市支持4车道快速路、2车道城市路、立体跨线桥及大江大湖水道；", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
+		textui.DrawText(screen, "  - 支持双向2/4/6/8车道、公交专用道、跨线桥及水景；", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - 默认采用 52px 宽敞市区物理车道，提供充裕的行驶与平稳转弯空间；", modalX+36, infoY+118, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - 全城道路与路口几何尺寸全面加宽，显著降低公交转弯难度；", modalX+36, infoY+136, 12, sim.RGBA(203, 213, 225, 255))
 		textui.DrawText(screen, "  - 随时按键盘 [L] 键可快速在中文与英文界面之间一键切换；", modalX+36, infoY+154, 12, sim.RGBA(56, 189, 248, 255))

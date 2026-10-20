@@ -17,14 +17,15 @@ func drawIntersectionPads(screen *ebiten.Image, cam *sim.Camera, w *sim.World, l
 			continue // Roundabouts render their own circular roadway, apron, and center plaza
 		}
 		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(c, laneWidth)
-		shoulderHalfX := nsHalf + sim.ShoulderWidth + 14.0
-		shoulderHalfY := ewHalf + sim.ShoulderWidth + 14.0
+		geometry := sim.NewJunctionGeometry(ewHalf, nsHalf, laneWidth)
+		shoulderHalfX := geometry.HalfX + sim.ShoulderWidth
+		shoulderHalfY := geometry.HalfY + sim.ShoulderWidth
 		if !cam.IsPointVisible(c, math.Max(shoulderHalfX, shoulderHalfY)*1.5) {
 			continue
 		}
 		// In plan mode, skip shoulder backing apron at intersections
 		if !planMode {
-			drawRotatedBox(screen, cam, c, 1, 0, shoulderHalfX*2, shoulderHalfY*2, sim.RGBA(51, 65, 85, 255))
+			drawRotatedBox(screen, cam, c, 1, 0, shoulderHalfX*2, shoulderHalfY*2, sceneColors(w.Theme).paving)
 		}
 	}
 }
@@ -35,26 +36,29 @@ func drawIntersectionAsphalt(screen *ebiten.Image, cam *sim.Camera, w *sim.World
 			continue // Roundabouts render their own circular roadway, apron, and center plaza
 		}
 		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(c, laneWidth)
-		padHalfX := nsHalf + 18.0
-		padHalfY := ewHalf + 18.0
+		geometry := sim.NewJunctionGeometry(ewHalf, nsHalf, laneWidth)
+		padHalfX := geometry.HalfX
+		padHalfY := geometry.HalfY
 		if !cam.IsPointVisible(c, math.Max(padHalfX, padHalfY)*1.5) {
 			continue
 		}
-		drawRotatedBox(screen, cam, c, 1, 0, padHalfX*2, padHalfY*2, sim.RGBA(30, 41, 59, 255))
+		cornerRadius := math.Min(36, math.Min(padHalfX, padHalfY)*.2)
+		drawRotatedBox(screen, cam, c, 1, 0, padHalfX*2-2*cornerRadius, padHalfY*2, sceneColors(w.Theme).asphalt)
+		drawRotatedBox(screen, cam, c, 1, 0, padHalfX*2, padHalfY*2-2*cornerRadius, sceneColors(w.Theme).asphalt)
 
 		// Draw smooth curved curb return fillets at all 4 corners of the intersection
 		// so turning vehicles have broad, sweeping asphalt connecting the perpendicular roads
-		curbR := 36.0 * cam.Zoom
+		curbR := cornerRadius * cam.Zoom
 		if curbR >= 2.0 {
 			quads := [4][2]float64{
-				{-padHalfX + 16.0, -padHalfY + 16.0},
-				{padHalfX - 16.0, -padHalfY + 16.0},
-				{-padHalfX + 16.0, padHalfY - 16.0},
-				{padHalfX - 16.0, padHalfY - 16.0},
+				{-padHalfX + cornerRadius, -padHalfY + cornerRadius},
+				{padHalfX - cornerRadius, -padHalfY + cornerRadius},
+				{-padHalfX + cornerRadius, padHalfY - cornerRadius},
+				{padHalfX - cornerRadius, padHalfY - cornerRadius},
 			}
 			for _, q := range quads {
 				cornerPt := cam.WorldToScreen(c.Add(sim.Vec2{X: q[0], Y: q[1]}))
-				vector.DrawFilledCircle(screen, float32(cornerPt.X), float32(cornerPt.Y), float32(curbR), sim.RGBA(30, 41, 59, 255), true)
+				vector.DrawFilledCircle(screen, float32(cornerPt.X), float32(cornerPt.Y), float32(curbR), sceneColors(w.Theme).asphalt, true)
 			}
 		}
 	}
@@ -70,8 +74,8 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 	roadW := r.GetWidth(laneWidth)
 
 	// Frustum culling check for road segment
-	boundRadius := len*0.5 + roadW*1.5 + sim.ShoulderWidth*2
-	if !cam.IsPointVisible(center, boundRadius) {
+	margin := roadW/2 + sim.ShoulderWidth + 20
+	if !cam.IsBoxVisible(math.Min(r.P1.X, r.P2.X)-margin, math.Min(r.P1.Y, r.P2.Y)-margin, math.Max(r.P1.X, r.P2.X)+margin, math.Max(r.P1.Y, r.P2.Y)+margin) {
 		return
 	}
 
@@ -82,17 +86,24 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 	// 1. Soft Shoulder (drivable buffer with deceleration, ShoulderWidth = 40px)
 	if !planMode && cam.Zoom >= 0.35 {
 		shoulderTotalW := roadW + sim.ShoulderWidth*2
-		drawRotatedBox(screen, cam, center, cosH, sinH, len, shoulderTotalW, sim.RGBA(51, 65, 85, 255)) // Slate sidewalk / shoulder
+		drawRotatedBox(screen, cam, center, cosH, sinH, len, shoulderTotalW, sceneColors(w.Theme).paving) // Slate sidewalk / shoulder
 	}
 
 	// 2. Asphalt Road Surface (#1e293b)
-	drawRotatedBox(screen, cam, center, cosH, sinH, len, roadW, sim.RGBA(30, 41, 59, 255))
+	drawRotatedBox(screen, cam, center, cosH, sinH, len, roadW, sceneColors(w.Theme).asphalt)
+
+	if r.HasBusLane() {
+		drawBusLaneSurface(screen, cam, r, center, cosH, sinH, len, laneWidth)
+	}
+	if !planMode && cam.Zoom >= 0.5 {
+		drawPavingJoints(screen, cam, center, dir.Mul(1/len), len, roadW, sceneColors(w.Theme))
+	}
 
 	// 3. Road Curb dividing lines & Hard Crash Barrier along outer edge of shoulder (skip in plan mode / low zoom)
 	if !planMode && cam.Zoom >= 0.35 {
 		curbOffset := roadW / 2
-		drawParallelLine(screen, cam, center, cosH, sinH, len, curbOffset, sim.RGBA(148, 163, 184, 180), 2)
-		drawParallelLine(screen, cam, center, cosH, sinH, len, -curbOffset, sim.RGBA(148, 163, 184, 180), 2)
+		drawParallelLine(screen, cam, center, cosH, sinH, len, curbOffset, sceneColors(w.Theme).curb, 2)
+		drawParallelLine(screen, cam, center, cosH, sinH, len, -curbOffset, sceneColors(w.Theme).curb, 2)
 
 		var splits []float64
 		isEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
@@ -112,29 +123,26 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 		sort.Float64s(splits)
 
 		barrierOffset := roadW/2 + sim.ShoulderWidth
-		drawHazardBarrier(screen, cam, r, center, cosH, sinH, len, barrierOffset, laneWidth, splits)
-		drawHazardBarrier(screen, cam, r, center, cosH, sinH, len, -barrierOffset, laneWidth, splits)
+		drawHazardBarrier(screen, cam, w, r, center, cosH, sinH, len, barrierOffset, laneWidth, splits)
+		drawHazardBarrier(screen, cam, w, r, center, cosH, sinH, len, -barrierOffset, laneWidth, splits)
 	}
 
 	// 5. Center Dividers & Lane Markings
 	if r.HasLines {
-		if r.Lanes >= 6 || r.Type == sim.RoadExpressway6Lane {
-			drawCenterDividers(screen, cam, center, cosH, sinH, len, 6.0, sim.RGBA(250, 204, 21, 240))
-			drawCenterDividers(screen, cam, center, cosH, sinH, len, -6.0, sim.RGBA(250, 204, 21, 240))
+		if r.LaneCount() >= 4 {
+			drawCenterDividers(screen, cam, center, cosH, sinH, len, 6, sim.RGBA(250, 204, 21, 240))
+			drawCenterDividers(screen, cam, center, cosH, sinH, len, -6, sim.RGBA(250, 204, 21, 240))
+			for lane := 1; lane < r.LaneCount()/2; lane++ {
+				for _, sign := range []float64{-1, 1} {
+					offset := sign * float64(lane) * laneWidth
+					if r.HasBusLane() && lane == 3 {
+						drawParallelLine(screen, cam, center, cosH, sinH, len, offset, sim.RGBA(250, 204, 21, 230), 2.5)
+					} else {
+						drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, offset, planMode)
+					}
+				}
+			}
 
-			laneOffset1 := laneWidth * 1.0
-			laneOffset2 := laneWidth * 2.0
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, laneOffset1, planMode)
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, -laneOffset1, planMode)
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, laneOffset2, planMode)
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, -laneOffset2, planMode)
-		} else if r.Lanes == 4 || r.Type == sim.RoadAvenue4Lane {
-			drawCenterDividers(screen, cam, center, cosH, sinH, len, 6.0, sim.RGBA(250, 204, 21, 240))
-			drawCenterDividers(screen, cam, center, cosH, sinH, len, -6.0, sim.RGBA(250, 204, 21, 240))
-
-			laneOffset1 := laneWidth
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, laneOffset1, planMode)
-			drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, -laneOffset1, planMode)
 		} else {
 			drawDashedYellowLine(screen, cam, center, cosH, sinH, len, planMode)
 		}
@@ -149,20 +157,30 @@ func drawParallelLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, co
 	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), stroke*float32(cam.Zoom), c, true)
 }
 
-func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, r sim.RoadSegment, center sim.Vec2, cosH, sinH, len, offset, laneWidth float64, splits []float64) {
+func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSegment, center sim.Vec2, cosH, sinH, len, offset, laneWidth float64, splits []float64) {
 	isEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
-	gapRadius := math.Max(245.0, laneWidth*4.2+50.0) // generous opening at all road intersections for comfortable turning
+	gapAt := func(along float64) float64 {
+		at := sim.Vec2{X: along, Y: r.P1.Y}
+		if !isEW {
+			at = sim.Vec2{X: r.P1.X, Y: along}
+		}
+		geometry := w.JunctionAt(at, laneWidth)
+		if isEW {
+			return geometry.HalfX + sim.ShoulderWidth
+		}
+		return geometry.HalfY + sim.ShoulderWidth
+	}
 
 	if isEW {
 		minX := math.Min(r.P1.X, r.P2.X)
 		maxX := math.Max(r.P1.X, r.P2.X)
 		prevX := minX
 		for _, ix := range splits {
-			segStart := prevX + gapRadius
+			segStart := prevX + gapAt(prevX)
 			if prevX == minX {
 				segStart = minX
 			}
-			segEnd := ix - gapRadius
+			segEnd := ix - gapAt(ix)
 			if segEnd > segStart {
 				p1 := sim.Vec2{X: segStart, Y: r.P1.Y + offset}
 				p2 := sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
@@ -174,7 +192,7 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, r sim.RoadSegment,
 			prevX = ix
 		}
 		// Final segment to road end
-		segStart := prevX + gapRadius
+		segStart := prevX + gapAt(prevX)
 		if prevX == minX {
 			segStart = minX
 		}
@@ -192,11 +210,11 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, r sim.RoadSegment,
 		maxY := math.Max(r.P1.Y, r.P2.Y)
 		prevY := minY
 		for _, iy := range splits {
-			segStart := prevY + gapRadius
+			segStart := prevY + gapAt(prevY)
 			if prevY == minY {
 				segStart = minY
 			}
-			segEnd := iy - gapRadius
+			segEnd := iy - gapAt(iy)
 			if segEnd > segStart {
 				p1 := sim.Vec2{X: r.P1.X - offset, Y: segStart}
 				p2 := sim.Vec2{X: r.P1.X - offset, Y: segEnd}
@@ -208,7 +226,7 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, r sim.RoadSegment,
 			prevY = iy
 		}
 		// Final segment to road end
-		segStart := prevY + gapRadius
+		segStart := prevY + gapAt(prevY)
 		if prevY == minY {
 			segStart = minY
 		}
@@ -242,8 +260,8 @@ func drawDashedYellowLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2
 	dashLen := 26.0
 	gapLen := 20.0
 	step := dashLen + gapLen
-	numDashes := int(len / step)
-	for i := 0; i < numDashes; i++ {
+	first, last := visibleDashRange(cam, center, sim.Vec2{X: cosH, Y: sinH}, len, dashLen, step)
+	for i := first; i < last; i++ {
 		dStart := -len/2 + float64(i)*step
 		dEnd := dStart + dashLen
 		da := center.Add(sim.Vec2{X: cosH * dStart, Y: sinH * dStart})
@@ -264,8 +282,9 @@ func drawDashedWhiteLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2,
 	dashLen := 24.0
 	gapLen := 22.0
 	step := dashLen + gapLen
-	numDashes := int(len / step)
-	for i := 0; i < numDashes; i++ {
+	lineCenter := center.Add(sim.Vec2{X: -sinH * perpOffset, Y: cosH * perpOffset})
+	first, last := visibleDashRange(cam, lineCenter, sim.Vec2{X: cosH, Y: sinH}, len, dashLen, step)
+	for i := first; i < last; i++ {
 		dStart := -len/2 + float64(i)*step
 		dEnd := dStart + dashLen
 		da := center.Add(sim.Vec2{X: cosH*dStart - sinH*perpOffset, Y: sinH*dStart + cosH*perpOffset})
@@ -284,9 +303,10 @@ func drawCrosswalks(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWid
 		}
 
 		ewHalf, nsHalf := w.GetIntersectionRoadDimensions(pt, laneWidth)
-		ewStopLineDist := nsHalf + 43.0
+		geometry := sim.NewJunctionGeometry(ewHalf, nsHalf, laneWidth)
+		ewStopLineDist := geometry.HalfX + sim.JunctionStopInset
 		ewCrosswalkDist := ewStopLineDist - 25.0
-		nsStopLineDist := ewHalf + 43.0
+		nsStopLineDist := geometry.HalfY + sim.JunctionStopInset
 		nsCrosswalkDist := nsStopLineDist - 25.0
 
 		maxBound := math.Max(ewStopLineDist, nsStopLineDist) + 60.0
@@ -348,118 +368,53 @@ func drawCrosswalks(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWid
 			drawZebraBranch(screen, cam, pt.Add(sim.Vec2{X: ewCrosswalkDist, Y: 0}), false, eastLanes, laneWidth)
 		}
 
-		// 2. Draw dedicated turning lane markings & pavement arrows for multi-lane avenues
-		if westLanes >= 6 {
-			// West approach: 6-lane express avenue (Lane 0 left-turn, Lane 1 through, Lane 2 through/turn)
-			wCenter := pt.X - ewStopLineDist
-			wLane0Y := pt.Y + 4 + laneWidth*0.5
-			wLane1Y := pt.Y + 4 + laneWidth*1.5
-			wLane2Y := pt.Y + 4 + laneWidth*2.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 45, Y: wLane0Y}, 0, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 110, Y: wLane0Y}, 0, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 45, Y: wLane1Y}, 0, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 110, Y: wLane1Y}, 0, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 45, Y: wLane2Y}, 0, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 110, Y: wLane2Y}, 0, false)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: wCenter - 60, Y: pt.Y + 4 + laneWidth*1.0}, 1, 0, 120)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: wCenter - 60, Y: pt.Y + 4 + laneWidth*2.0}, 1, 0, 120)
-		} else if westLanes >= 4 {
-			wCenter := pt.X - ewStopLineDist
-			wInnerY := pt.Y + 4 + laneWidth*0.5
-			wOuterY := pt.Y + 4 + laneWidth*1.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 45, Y: wInnerY}, 0, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 110, Y: wInnerY}, 0, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 45, Y: wOuterY}, 0, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: wCenter - 110, Y: wOuterY}, 0, false)
-			wLineY := pt.Y + 4 + laneWidth
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: wCenter - 60, Y: wLineY}, 1, 0, 120)
+		// All approaches share the same per-lane arrow policy.
+		for approach, lanes := range []int{westLanes, eastLanes, northLanes, southLanes} {
+			if lanes < 4 {
+				continue
+			}
+			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
+			fwd := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
+			stop := ewStopLineDist
+			if approach >= 2 {
+				stop = nsStopLineDist
+			}
+			for lane := 0; lane < lanes/2; lane++ {
+				for _, back := range []float64{45, 110} {
+					pos := pt.Sub(fwd.Mul(stop + back)).Add(right.Mul((float64(lane) + .5) * laneWidth))
+					if lanes == 8 && lane == 3 {
+						drawGroundTurnArrow(screen, cam, pos, heading, true)
+						road, ok := w.RoadAt(func() float64 {
+							if approach < 2 {
+								return pt.Y
+							}
+							return pt.X
+						}(), approach < 2, pt.Sub(fwd.Mul(stop+50)))
+						if ok && road.HasBusLane() {
+							drawGroundArrow(screen, cam, pos, heading, true)
+							drawGroundArrow(screen, cam, pos, heading, false)
+						}
+					} else {
+						drawGroundArrow(screen, cam, pos, heading, lane == 0)
+					}
+				}
+				if lane > 0 {
+					drawSolidWhiteDivider(screen, cam, pt.Sub(fwd.Mul(stop+60)).Add(right.Mul(float64(lane)*laneWidth)), fwd.X, fwd.Y, 120)
+				}
+			}
 		}
 
-		if eastLanes >= 6 {
-			// East approach: 6-lane express avenue
-			eCenter := pt.X + ewStopLineDist
-			eLane0Y := pt.Y - 4 - laneWidth*0.5
-			eLane1Y := pt.Y - 4 - laneWidth*1.5
-			eLane2Y := pt.Y - 4 - laneWidth*2.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 45, Y: eLane0Y}, math.Pi, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 110, Y: eLane0Y}, math.Pi, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 45, Y: eLane1Y}, math.Pi, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 110, Y: eLane1Y}, math.Pi, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 45, Y: eLane2Y}, math.Pi, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 110, Y: eLane2Y}, math.Pi, false)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: eCenter + 60, Y: pt.Y - 4 - laneWidth*1.0}, -1, 0, 120)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: eCenter + 60, Y: pt.Y - 4 - laneWidth*2.0}, -1, 0, 120)
-		} else if eastLanes >= 4 {
-			eCenter := pt.X + ewStopLineDist
-			eInnerY := pt.Y - 4 - laneWidth*0.5
-			eOuterY := pt.Y - 4 - laneWidth*1.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 45, Y: eInnerY}, math.Pi, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 110, Y: eInnerY}, math.Pi, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 45, Y: eOuterY}, math.Pi, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: eCenter + 110, Y: eOuterY}, math.Pi, false)
-			eLineY := pt.Y - 4 - laneWidth
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: eCenter + 60, Y: eLineY}, -1, 0, 120)
-		}
-
-		if northLanes >= 6 {
-			// North approach: 6-lane express avenue
-			nCenter := pt.Y - nsStopLineDist
-			nLane0X := pt.X - 4 - laneWidth*0.5
-			nLane1X := pt.X - 4 - laneWidth*1.5
-			nLane2X := pt.X - 4 - laneWidth*2.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane0X, Y: nCenter - 45}, math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane0X, Y: nCenter - 110}, math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane1X, Y: nCenter - 45}, math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane1X, Y: nCenter - 110}, math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane2X, Y: nCenter - 45}, math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nLane2X, Y: nCenter - 110}, math.Pi/2, false)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: pt.X - 4 - laneWidth*1.0, Y: nCenter - 60}, 0, 1, 120)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: pt.X - 4 - laneWidth*2.0, Y: nCenter - 60}, 0, 1, 120)
-		} else if northLanes >= 4 {
-			nCenter := pt.Y - nsStopLineDist
-			nInnerX := pt.X - 4 - laneWidth*0.5
-			nOuterX := pt.X - 4 - laneWidth*1.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: nInnerX, Y: nCenter - 45}, math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nInnerX, Y: nCenter - 110}, math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nOuterX, Y: nCenter - 45}, math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: nOuterX, Y: nCenter - 110}, math.Pi/2, false)
-			nLineX := pt.X - 4 - laneWidth
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: nLineX, Y: nCenter - 60}, 0, 1, 120)
-		}
-
-		if southLanes >= 6 {
-			// South approach: 6-lane express avenue
-			sCenter := pt.Y + nsStopLineDist
-			sLane0X := pt.X + 4 + laneWidth*0.5
-			sLane1X := pt.X + 4 + laneWidth*1.5
-			sLane2X := pt.X + 4 + laneWidth*2.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane0X, Y: sCenter + 45}, -math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane0X, Y: sCenter + 110}, -math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane1X, Y: sCenter + 45}, -math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane1X, Y: sCenter + 110}, -math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane2X, Y: sCenter + 45}, -math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sLane2X, Y: sCenter + 110}, -math.Pi/2, false)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: pt.X + 4 + laneWidth*1.0, Y: sCenter + 60}, 0, -1, 120)
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: pt.X + 4 + laneWidth*2.0, Y: sCenter + 60}, 0, -1, 120)
-		} else if southLanes >= 4 {
-			sCenter := pt.Y + nsStopLineDist
-			sInnerX := pt.X + 4 + laneWidth*0.5
-			sOuterX := pt.X + 4 + laneWidth*1.5
-			drawGroundArrow(screen, cam, sim.Vec2{X: sInnerX, Y: sCenter + 45}, -math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sInnerX, Y: sCenter + 110}, -math.Pi/2, true)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sOuterX, Y: sCenter + 45}, -math.Pi/2, false)
-			drawGroundArrow(screen, cam, sim.Vec2{X: sOuterX, Y: sCenter + 110}, -math.Pi/2, false)
-			sLineX := pt.X + 4 + laneWidth
-			drawSolidWhiteDivider(screen, cam, sim.Vec2{X: sLineX, Y: sCenter + 60}, 0, -1, 120)
-		}
 	}
 }
 
 func drawZebraBranch(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, horizontal bool, lanes int, laneWidth float64) {
 	numStripes := 6
 	step := 15.0
-	if lanes >= 6 {
-		numStripes = 18
+	if lanes >= 8 {
+		numStripes = int(float64(lanes)*laneWidth/step) - 1
+	} else if lanes >= 6 {
+		numStripes = lanes * 3
 	} else if lanes >= 4 {
 		numStripes = 12
 	}
@@ -492,6 +447,12 @@ func drawSolidWhiteDivider(screen *ebiten.Image, cam *sim.Camera, center sim.Vec
 }
 
 func drawGroundArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, isLeftTurn bool) {
+	drawGroundLaneArrow(screen, cam, pos, heading, isLeftTurn, false)
+}
+func drawGroundTurnArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, right bool) {
+	drawGroundLaneArrow(screen, cam, pos, heading, true, right)
+}
+func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, isLeftTurn, rightTurn bool) {
 	scale := float32(cam.Zoom)
 	if scale < 0.28 {
 		return
@@ -501,6 +462,9 @@ func drawGroundArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, headin
 	fwd := sim.Vec2{X: cosH, Y: sinH}
 	left := sim.Vec2{X: sinH, Y: -cosH} // In screen coords (+Y is down), driver's left is (sinH, -cosH)
 
+	if rightTurn {
+		left = left.Mul(-1)
+	}
 	col := sim.RGBA(248, 250, 252, 225)
 	lw := float32(2.8 * scale)
 

@@ -101,16 +101,7 @@ func (g *Game) updateStopApproach() {
 				newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 				g.rollAlightingForNextStop()
 				if g.AutopilotDriver != nil {
-					prevOffset := g.AutopilotDriver.LaneOffset
-					prevTargetOffset := g.AutopilotDriver.TargetLaneOffset
-					prevOvertakeState := g.AutopilotDriver.OvertakeState
-					g.AutopilotDriver.Reset()
-					if math.Abs(prevOffset) > 5.0 || math.Abs(prevTargetOffset) > 5.0 {
-						g.AutopilotDriver.LaneOffset = prevOffset
-						g.AutopilotDriver.TargetLaneOffset = prevTargetOffset // Maintain outer lane cruise
-						g.AutopilotDriver.OvertakeState = prevOvertakeState
-					}
-					g.AutopilotDriver.State = autopilot.AutopilotStateCruising
+					g.AutopilotDriver.ContinuePastSkippedStop(g.Bus, targetStop, currentLaneW)
 				}
 				g.Bus.IsBraking = false
 				g.Bus.IsHandbraking = false
@@ -133,14 +124,7 @@ func (g *Game) updateStopApproach() {
 					newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 					g.rollAlightingForNextStop()
 					if g.AutopilotDriver != nil {
-						prevOffset := g.AutopilotDriver.LaneOffset
-						g.AutopilotDriver.Reset()
-						if math.Abs(prevOffset) > 5.0 {
-							g.AutopilotDriver.LaneOffset = prevOffset
-							g.AutopilotDriver.TargetLaneOffset = prevOffset
-							g.AutopilotDriver.OvertakeState = autopilot.OvertakePassing
-						}
-						g.AutopilotDriver.State = autopilot.AutopilotStateCruising
+						g.AutopilotDriver.ContinuePastSkippedStop(g.Bus, targetStop, currentLaneW)
 					}
 					g.Bus.IsBraking = false
 					g.Bus.IsHandbraking = false
@@ -189,14 +173,7 @@ func (g *Game) updateStopApproach() {
 				newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 				g.rollAlightingForNextStop()
 				if g.AutopilotDriver != nil {
-					prevOffset := g.AutopilotDriver.LaneOffset
-					g.AutopilotDriver.Reset()
-					if math.Abs(prevOffset) > 5.0 {
-						g.AutopilotDriver.LaneOffset = prevOffset
-						g.AutopilotDriver.TargetLaneOffset = prevOffset
-						g.AutopilotDriver.OvertakeState = autopilot.OvertakePassing
-					}
-					g.AutopilotDriver.State = autopilot.AutopilotStateCruising
+					g.AutopilotDriver.ContinuePastSkippedStop(g.Bus, targetStop, currentLaneW)
 				}
 				g.Bus.IsBraking = false
 				g.Bus.IsHandbraking = false
@@ -224,13 +201,10 @@ func (g *Game) updateStopApproach() {
 				}
 				g.rollAlightingForNextStop()
 				if g.AutopilotDriver != nil {
-					prevOffset := g.AutopilotDriver.LaneOffset
-					g.AutopilotDriver.Reset()
-					if math.Abs(prevOffset) > 5.0 {
-						g.AutopilotDriver.LaneOffset = prevOffset
-						g.AutopilotDriver.TargetLaneOffset = prevOffset
-						g.AutopilotDriver.OvertakeState = autopilot.OvertakePassing
-					}
+					// A missed stop is also a through passage. Re-anchor the
+					// next leg to the actual lane instead of applying an old
+					// bay-relative offset to its new departure taper.
+					g.AutopilotDriver.ContinuePastSkippedStop(g.Bus, targetStop, currentLaneW)
 					g.AutopilotDriver.State = autopilot.AutopilotStateCruising
 				}
 				g.Bus.IsBraking = false

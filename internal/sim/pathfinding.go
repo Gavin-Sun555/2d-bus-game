@@ -4,8 +4,11 @@ import (
 	"math"
 )
 
+// RoadPathOptions selects the legal approach corridor for bus-lane left turns.
+type RoadPathOptions struct{ OrdinaryBusLaneLeft bool }
+
 // ComputeRoadPathBetweenStops builds an uncached driving-lane path in the supplied world.
-func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
+func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64, options ...RoadPathOptions) []Vec2 {
 	if s1 == nil || s2 == nil {
 		return nil
 	}
@@ -212,7 +215,9 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					segLen = interPt.Distance(pts[len(pts)-1])
 				}
 
-				if turn == 1 {
+				if turn == 1 && w.GetRoadLanes(prevCoord, isPrevEW, pPrev) == 8 {
+					pts = appendEightLaneRightTurn(pts, w, interPt, uPrev, uCurr, prevCoord, currCoord, isPrevEW, isCurrEW, pPrev, pCurr, lw)
+				} else if turn == 1 {
 					// 90-degree right turn from outer lane into outer lane
 					var corner Vec2
 					if isPrevEW {
@@ -226,12 +231,14 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					}
 
 					outOff := RoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
+					rightGeometry := w.JunctionAt(interPt, lw)
+					inOff := RoadLaneOffset(prevCoord, isPrevEW, lw, w, pPrev)
 					if outOff <= lw*0.6 {
 						// Destination road is a 2-lane road (1 lane per direction, 52px wide).
 						// With enlarged intersections, start the cubic Bezier transition earlier
 						// and sweep smoothly with generous turning radius:
-						dIn := 130.0
-						dOut := 115.0
+						dIn := math.Max(130, rightGeometry.TurnRadius-outOff+70)
+						dOut := math.Max(115, rightGeometry.TurnRadius-inOff+70)
 						dCurbShift := 8.5 // Shift towards right curb for oncoming clearance
 
 						b0 := corner.Sub(uPrev.Mul(dIn)).Add(rPrev.Mul(dCurbShift * 0.35))
@@ -258,8 +265,8 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					} else {
 						// Destination is a 4-lane or 6-lane road:
 						// Smooth cubic Bezier right turn curve into target outer lane instead of harsh 90-degree corner
-						dIn := 105.0
-						dOut := 105.0
+						dIn := math.Max(105, rightGeometry.TurnRadius-outOff+70)
+						dOut := math.Max(105, rightGeometry.TurnRadius-inOff+70)
 						b0 := corner.Sub(uPrev.Mul(dIn))
 						b1 := corner.Sub(uPrev.Mul(dIn * 0.38))
 						b2 := corner.Add(uCurr.Mul(dOut * 0.38))
@@ -280,32 +287,18 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					}
 				} else if turn == 3 || turn == 2 {
 					// Left turn (turn == 3) or U-turn (turn == 2)
-					crossLanes := 2
-					if w != nil {
-						crossLanes = w.GetRoadLanes(currCoord, isCurrEW, interPt)
+					geometry := w.JunctionAt(interPt, lw)
+					inStopDist := geometry.HalfY + JunctionStopInset
+					crossStopDist := geometry.HalfX + JunctionStopInset
+					if !isPrevEW {
+						inStopDist, crossStopDist = crossStopDist, inStopDist
 					}
-					crossHalfWidth := lw*1.0 + 6.0
-					if crossLanes >= 6 {
-						crossHalfWidth = lw*3.0 + 12.0
-					} else if crossLanes >= 4 {
-						crossHalfWidth = lw*2.0 + 12.0
-					}
-
-					inLanes := 2
-					if w != nil {
-						inLanes = w.GetRoadLanes(prevCoord, isPrevEW, interPt)
-					}
-					inHalfWidth := lw*1.0 + 6.0
-					if inLanes >= 6 {
-						inHalfWidth = lw*3.0 + 12.0
-					} else if inLanes >= 4 {
-						inHalfWidth = lw*2.0 + 12.0
-					}
-					inStopDist := math.Max(lw*1.6+18.0, inHalfWidth+43.0)
 
 					// Intelligently scale merge distance based on block length (segLen, distance between intersections):
 					// Finish merge before the intersection mouth so vehicle is stabilized in dedicated left-turn lane
-					dFinish := math.Max(lw*2.5, 130.0)
+					// Finish far enough before the stop line for the whole bus and
+					// steering actuator to settle, especially across two through lanes.
+					dFinish := math.Max(crossStopDist+120, geometry.TurnRadius-lw/2+70)
 
 					var dMerge float64
 					if segLen <= 320.0 {
@@ -318,12 +311,17 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					if dMerge < lw*2.5 {
 						dMerge = lw * 2.5
 					}
-					if dMerge > segLen*0.75 {
-						dMerge = segLen * 0.75
-					}
-
 					inOff := RoadLaneOffset(prevCoord, isPrevEW, lw, w, pPrev)
-					if inOff > lw*0.6 {
+					minimumTaper := lw * 5
+					if inOff > lw*1.6 {
+						minimumTaper = math.Max(minimumTaper, 450)
+					}
+					dMerge = math.Min(segLen*.92, math.Max(dMerge, dFinish+minimumTaper))
+					dFinish = math.Max(geometry.TurnRadius-lw/2, math.Min(dFinish, dMerge-60))
+
+					approachRoad, roadFound := w.RoadAt(prevCoord, isPrevEW, pPrev)
+					busLaneLeft := turn == 3 && roadFound && approachRoad.HasBusLane() && (len(options) == 0 || !options[0].OrdinaryBusLaneLeft)
+					if inOff > lw*0.6 && !busLaneLeft {
 						// Multi-lane avenue (4-lane or 6-lane): merge smoothly via cubic Hermite S-curve
 						// from travel lane (inOff) into dedicated left-turn lane (targetOff = 0.5*lw)
 						targetOff := lw * 0.5
@@ -364,43 +362,23 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 					}
 
 					if turn == 3 {
-						// Left turn: corner apex at inner lane junction
-						// Shifted outward (3.5px) within the inner lane to guarantee safe opposing clearance
-						dShift := 3.5
-						pCornerInner := interPt.Add(rPrev.Mul(lw*0.5 + dShift)).Add(rCurr.Mul(lw*0.5 + dShift))
-
-						// Straight approach corridor through crosswalk into the turn
-						pApproachStraight := interPt.Sub(uPrev.Mul(math.Max(crossHalfWidth+12.0, 48.0))).Add(rPrev.Mul(lw * 0.5))
-						pts = append(pts, pApproachStraight)
-
-						// Smooth cubic Bezier left turn curve:
-						// To avoid collision between two opposing left-turning vehicles (Requirement 2),
-						// the turning arc must remain compact (dIn=18.0, dOut=18.0), maintaining >48px clearance
-						// between vehicle centerlines (~15-20px body daylight), passing passenger-side to passenger-side.
-						dIn := 18.0
-						dOut := 18.0
-						b0 := pCornerInner.Sub(uPrev.Mul(dIn))
-						b1 := pCornerInner.Sub(uPrev.Mul(dIn * 0.38))
-						b2 := pCornerInner.Add(uCurr.Mul(dOut * 0.38))
-						b3 := pCornerInner.Add(uCurr.Mul(dOut))
-
-						const nTurnSteps = 7
-						for m := 0; m <= nTurnSteps; m++ {
-							u := float64(m) / float64(nTurnSteps)
-							u1 := 1.0 - u
-							pt := b0.Mul(u1 * u1 * u1).
-								Add(b1.Mul(3.0 * u1 * u1 * u)).
-								Add(b2.Mul(3.0 * u1 * u * u)).
-								Add(b3.Mul(u * u * u))
-							if len(pts) == 0 || pts[len(pts)-1].Distance(pt) > 3.0 {
-								pts = append(pts, pt)
+						if busLaneLeft {
+							pts = append(pts, QuarterTurnPath(interPt, uPrev, uCurr, 3.5*lw, lw/2, geometry.TurnRadius)...)
+						} else {
+							// Finish the lane taper before entering the enlarged junction.
+							approachDist := math.Min(dFinish, geometry.TurnRadius-lw/2+35)
+							approachPoint := interPt.Sub(uPrev.Mul(approachDist)).Add(rPrev.Mul(lw / 2))
+							if len(pts) == 0 || approachPoint.Sub(pts[len(pts)-1]).Dot(uPrev) >= 0 {
+								pts = append(pts, approachPoint)
+							}
+							for _, point := range LeftTurnPath(interPt, math.Atan2(uPrev.Y, uPrev.X), lw, geometry.TurnRadius) {
+								if len(pts) == 0 || point.Sub(pts[len(pts)-1]).Dot(uPrev) >= -.01 {
+									pts = append(pts, point)
+								}
 							}
 						}
-
-						// Straight departure corridor through exit crosswalk
-						dExitMouth := math.Max(inHalfWidth+12.0, 60.0)
-						pExitMouth := interPt.Add(uCurr.Mul(dExitMouth)).Add(rCurr.Mul(lw * 0.5))
-						pts = append(pts, pExitMouth)
+						dExitMouth := math.Max(inStopDist+15, geometry.TurnRadius-lw/2+35)
+						pts = append(pts, interPt.Add(uCurr.Mul(dExitMouth)).Add(rCurr.Mul(lw/2)))
 
 						outOff := RoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
 						if outOff > lw*0.6 {
@@ -418,7 +396,7 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64) []Vec2 {
 								}
 							}
 
-							dExitStart := math.Max(inStopDist+25.0, 130.0)
+							dExitStart := dExitMouth + 35
 							deltaOut := math.Abs(outOff - lw*0.5)
 							availExit := math.Max(0.0, availDist*0.88-dExitStart)
 							if availExit > 50.0 {

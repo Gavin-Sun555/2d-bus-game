@@ -231,8 +231,8 @@ func TestBerserkModeNoPrematureReturnCollision(t *testing.T) {
 		Width:   18.0,
 	}
 	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{dangerCar}, lw, 0.016)
-	if driver.TargetLaneOffset != -lw || driver.OvertakeState != OvertakePassing {
-		t.Fatalf("Expected bus to abort return and pull back to passing lane upon detecting danger, got state %d target %.1f",
+	if math.Abs(driver.TargetLaneOffset+lw*.5) > .01 || driver.OvertakeState != OvertakePassing {
+		t.Fatalf("Expected bus to hold its current corridor when the return gap closes, got state %d target %.1f",
 			driver.OvertakeState, driver.TargetLaneOffset)
 	}
 }

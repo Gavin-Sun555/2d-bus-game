@@ -18,12 +18,22 @@ jobs:
           go-version-file: go.mod
       - name: Install graphics and audio build dependencies
         run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev xvfb
+      - name: Validate release metadata
+        shell: bash
+        run: |
+          version="$(cat VERSION)"
+          test -f "docs/releases/$version.md"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
       - run: go mod verify
       - run: go vet ./...
       - name: Full tests, race detection and coverage
         run: xvfb-run -a go test -race -count=1 -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Release qualification
         run: xvfb-run -a make test-qualify
+      - name: Full-load release soak
+        run: xvfb-run -a make test-soak
       - uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -60,7 +70,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev
       - name: Build release archive
-        run: python scripts/package_release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }} --version 0.0.4
+        run: python scripts/package_release.py --os ${{ matrix.os }} --arch ${{ matrix.arch }}
+      - name: Verify archive metadata and checksums
+        shell: bash
+        run: python scripts/verify_release.py dist/*.zip
       - uses: actions/upload-artifact@v4
         with:
           name: busgame-${{ matrix.os }}-${{ matrix.arch }}
@@ -85,4 +98,6 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title '0.0.4' --notes-file docs/releases/0.0.4.md --latest
+        run: |
+          version="$(cat VERSION)"
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "$version" --notes-file "docs/releases/$version.md" --latest

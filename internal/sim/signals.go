@@ -27,16 +27,18 @@ const (
 
 // TrafficIntersection manages signal phases and stop lines for an intersection
 type TrafficIntersection struct {
-	ID       int
-	Center   Vec2
-	Phase    LightPhase
-	Timer    float64
-	Cooldown float64 // Cooldown for player violation detection
-	IsMajor  bool    // true for major avenue intersections with dedicated left-turn lanes & signals
+	approachDimensions approachDimensionsCache
+	ID                 int
+	Center             Vec2
+	Phase              LightPhase
+	Timer              float64
+	Cooldown           float64 // Cooldown for player violation detection
+	IsMajor            bool    // true for major avenue intersections with dedicated left-turn lanes & signals
 
 	// Per-approach road configurations (0: West, 1: East, 2: North, 3: South)
 	ApproachHasRoad [4]bool
-	ApproachLanes   [4]int  // Total lanes of the road (2 or 4)
+	ApproachBusLane [4]bool
+	ApproachLanes   [4]int  // Total lanes of the road (2, 4, 6 or 8)
 	ApproachIs4Lane [4]bool // True if the road entering this approach has 4 lanes (dual carriageway / 2 incoming lanes)
 
 	// Durations
@@ -50,8 +52,11 @@ type TrafficIntersection struct {
 	PlayerCrossedOnRed        bool
 	PlayerTurnedRight         bool // true if executed a lawful right turn (exempt from red light fines)
 	PlayerTurnedLeft          bool // true if executed a lawful left turn (exempt from through red light fines if left arrow is green)
-	PlayerEntryLane           int  // 0 = inner/left-turn lane, 1 = outer/straight-right lane
-	PlayerEntryHeading        float64
+	PlayerEntryBusLane        bool
+	PlayerEntryBusLeftOnly    bool
+	PlayerEntryRightTurnLane  bool    // Wide-junction right turn may start well after the rear crosses the line.
+	PlayerEntryLane           int     // 0 = inner/left-turn lane, 1 = outer/straight-right lane
+	PlayerEntryHeading        float64 // Fixed approach road axis; lane-change yaw must not rotate the stop line.
 	PlayerEntryPos            Vec2
 	PlayerEntryIsEW           bool // true if vehicle entered along East-West corridor
 	PassageCompleted          bool // true once vehicle reached exit/completed traversal, prevents cross-street re-entry

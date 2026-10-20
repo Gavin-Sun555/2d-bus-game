@@ -6,13 +6,9 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
-// DeadlockDurationThreshold defines the duration in seconds of deadlock (exceeding one full 37s traffic light cycle)
-// before an unresolvable jammed non-player car disappears on open roads.
-const DeadlockDurationThreshold = 38.0
-
-// IntersectionDeadlockThreshold defines the fast-timeout threshold (4.0s) for clearing civilian traffic jams
-// inside or near intersections, or when wedged against a turning bus, so turning buses never get stuck.
-const IntersectionDeadlockThreshold = 4.0
+// Legacy exported names share the full default timeout; intersections have no shortcut.
+const DeadlockDurationThreshold = 1.5 * sim.DefaultSignalCycle
+const IntersectionDeadlockThreshold = DeadlockDurationThreshold
 
 // DespawnCar removes a car from active traffic
 func (tm *TrafficManager) DespawnCar(index int) {
@@ -53,12 +49,7 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 			roadCoord = r.P1.X
 		}
 
-		numLanesPerDir := 1
-		if r.Lanes >= 6 {
-			numLanesPerDir = 3
-		} else if r.Lanes >= 4 {
-			numLanesPerDir = 2
-		}
+		numLanesPerDir := r.GeneralTrafficLanes()
 
 		lane := sim.RandomIntn(numLanesPerDir)
 		offset := (float64(lane) + 0.5) * laneWidth
@@ -97,6 +88,15 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 			continue
 		}
 
+		for _, rb := range w.Roundabouts {
+			if testPos.Distance(rb.Center) < rb.YieldLineDistance()+60 {
+				nearInter = true
+				break
+			}
+		}
+		if nearInter {
+			continue
+		}
 		// Ensure clear of stops
 		nearStop := false
 		for _, st := range w.Stops {
@@ -134,7 +134,11 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 		car.LaneIndex = lane
 		car.Speed = car.TargetSpeed
 		car.DeadlockTimer = 0
+		car.DeadlockTracker = sim.StationaryTracker{}
 		car.IsBraking = false
+		car.JunctionTurn = nil
+		car.YieldingToBus = nil
+		car.RoundaboutCurve = nil
 		car.InRoundabout = false
 		car.RoundaboutCooldown = 0
 		resetSuccess = true
@@ -146,7 +150,11 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 	}
 }
 
-func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount int, laneWidth float64, w *sim.World) {
+func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount int, laneWidth float64, w *sim.World, signals ...*sim.TrafficLightSystem) {
+	var tls *sim.TrafficLightSystem
+	if len(signals) > 0 {
+		tls = signals[0]
+	}
 	if tm == nil || len(tm.Cars) == 0 {
 		return
 	}
@@ -159,6 +167,10 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 
 		// 1. Moving vehicles are never deadlocked
 		if math.Abs(car.Speed) >= 3.0 {
+			car.DeadlockTimer = 0
+			continue
+		}
+		if yielding := car.YieldingToBus; yielding != nil && yielding.StationMergeRequest != nil && yielding.StationMergeRequest.Remaining > 0 {
 			car.DeadlockTimer = 0
 			continue
 		}
@@ -175,7 +187,6 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 		}
 
 		isJammed := false
-		jammedWithPlayerBus := false
 
 		// 2. Check relation to player bus
 		if bus != nil && math.Abs(bus.Speed) < 8.0 {
@@ -196,7 +207,6 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				maxJamDist := (car.Length+bus.Length)*0.5 + 40.0
 				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) {
 					isJammed = true
-					jammedWithPlayerBus = true
 				}
 			}
 		}
@@ -226,8 +236,6 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 			}
 		}
 
-		var jammedAIBus *AIBus
-
 		// 4. Check against AI route buses
 		if !isJammed && tm.AIBusMgr != nil {
 			for _, ab := range tm.AIBusMgr.Buses {
@@ -248,38 +256,16 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 					}
 					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
 						isJammed = true
-						jammedAIBus = ab
 						break
 					}
 				}
 			}
 		}
 
-		if isJammed {
-			car.DeadlockTimer += dt
-		} else {
-			if car.DeadlockTimer > 0 {
-				car.DeadlockTimer = math.Max(0, car.DeadlockTimer-dt*2.0)
-			}
-		}
-
-		// 5. Threshold determination:
-		// Normal open-road deadlock threshold is DeadlockDurationThreshold (38.0s)
-		// Near intersection or jammed with turning/stopping bus is IntersectionDeadlockThreshold (4.0s)
-		threshold := DeadlockDurationThreshold
-		if isNearIntersection {
-			threshold = IntersectionDeadlockThreshold
-		}
-
-		if car.DeadlockTimer >= threshold {
-			if jammedAIBus != nil {
-				jammedAIBus.ResetToStartingStation(w)
-			}
-			if jammedWithPlayerBus && !isNearIntersection && tm.OnPlayerBusDeadlockReset != nil {
-				tm.OnPlayerBusDeadlockReset()
-			}
-			tm.DespawnAndResetCar(i, w, laneWidth, bus)
-			break // Resetting breaks the deadlock for others in the jam
+		car.DeadlockTimer = car.DeadlockTracker.Update(car.DeadlockTimer, dt, car.Pos, car.Speed, isJammed)
+		if car.DeadlockTimer >= tls.DeadlockTimeoutAt(car.Pos) {
+			tm.DespawnCar(i)
+			break
 		}
 	}
 }

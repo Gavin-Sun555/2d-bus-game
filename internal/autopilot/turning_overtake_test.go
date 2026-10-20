@@ -85,7 +85,7 @@ func TestBerserkModeOvertakingIntoUpcomingLeftTurn(t *testing.T) {
 		// Double yellow line check: while approaching intersection before the mouth (>80px),
 		// the bus must NEVER cross into oncoming traffic (legal side is Y > 0).
 		distToInter := math.Abs(bus.Pos.X)
-		if distToInter > 80.0 {
+		if distToInter > 80.0 && !w.InsideJunction(bus.Pos, lw, 0) {
 			if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
 				t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v, LaneOffset=%.2f, TargetLaneOffset=%.2f",
 					step, bus.Pos, flCorner, rlCorner, driver.LaneOffset, driver.TargetLaneOffset)
@@ -202,7 +202,7 @@ func TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn(t *testing.T) {
 			rlCorner := bus.Pos.Sub(sim.Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
 
 			distToInter := math.Abs(bus.Pos.X)
-			if distToInter > 80.0 {
+			if distToInter > 80.0 && !w.InsideJunction(bus.Pos, lw, 0) {
 				if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
 					t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v",
 						step, bus.Pos, flCorner, rlCorner)
@@ -228,7 +228,7 @@ func TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn(t *testing.T) {
 		}
 
 		if !passedObstacle {
-			t.Fatalf("Bus failed to overtake slow vehicles before intersection")
+			t.Fatalf("Bus failed to overtake slow vehicles before intersection: pos%v speed%.1f offset%.1f target%.1f", bus.Pos, bus.Speed, driver.LaneOffset, driver.TargetLaneOffset)
 		}
 		if bus.Pos.Y > lw*1.0 {
 			t.Fatalf("Bus failed to enter left-turn lane before intersection mouth, got Y=%.2f", bus.Pos.Y)
@@ -293,7 +293,7 @@ func TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn(t *testing.T) {
 			rlCorner := bus.Pos.Sub(sim.Vec2{X: cosH * halfL, Y: sinH * halfL}).Add(leftPerp.Mul(halfW))
 
 			distToInter := math.Abs(bus.Pos.X)
-			if distToInter > 80.0 {
+			if distToInter > 80.0 && !w.InsideJunction(bus.Pos, lw, 0) {
 				if flCorner.Y < 0.0 || rlCorner.Y < 0.0 {
 					t.Fatalf("Step %d: Bus crossed double yellow line into oncoming lane! Pos=%v, fl=%v, rl=%v",
 						step, bus.Pos, flCorner, rlCorner)

@@ -211,7 +211,8 @@ func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 // isOncomingLaneClear checks whether the oncoming lane on a 2-way 2-lane road
 // (typically at targetOffset = -laneWidth) is completely free of oncoming traffic
 // and any obstacles within safe sight distance before borrowing the lane to overtake.
-func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, currentOffset, targetOffset, laneWidth, speedAbs float64) bool {
+func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, currentOffset, targetOffset, laneWidth, speedAbs, cruiseSpeed float64) bool {
+	passingSpeed := math.Max(speedAbs, cruiseSpeed)
 	corridorBase := bus.Width/2 + 12.0
 	for _, obs := range obstacles {
 		d := obs.Pos.Sub(bus.Pos)
@@ -231,7 +232,9 @@ func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 			// 2. Oncoming vehicle heading towards the bus (closing speed = bus.Speed + obs.Speed)
 			if cosDiff < -0.2 {
 				// Must have ample clear sight distance ahead
-				reqClearDist := math.Max(700.0, (speedAbs+200.0)*2.4)
+				// Reserve time for acceleration, the pass and a safe return; use
+				// actual opposing speed rather than treating it as a fixed 200.
+				reqClearDist := math.Max(700.0, (passingSpeed+math.Abs(obs.Speed))*4.5)
 				if fwd >= -40.0 && fwd < reqClearDist {
 					return false
 				}

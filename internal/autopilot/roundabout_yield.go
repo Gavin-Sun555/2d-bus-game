@@ -30,9 +30,9 @@ func (ad *AutopilotDriver) innerEntryObstacleSpeed(f autopilotFrame) float64 {
 		yieldDistance := -rb.Radius - f.bus.Length/2 - 16 - f.bus.Pos.Sub(rb.Center).Dot(forward)
 		traffic := make([]sim.OBB, 0, len(f.obstacles))
 		for _, obstacle := range f.obstacles {
-			if math.Abs(obstacle.Speed) < 5 {
-				traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
-			}
+			// Keep local body clearance while an adjacent car clears the mouth,
+			// including the first frames after it starts moving.
+			traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
 		}
 		if yieldDistance >= -2 && entryHasMovingConflict(f, rb, points, forward, s) {
 			limit = math.Min(limit, math.Sqrt(2*135*math.Max(0, yieldDistance-20)))

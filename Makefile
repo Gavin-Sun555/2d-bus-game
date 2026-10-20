@@ -6,7 +6,7 @@ APP_NAME := busgame
 
 BUNDLE_NAME := 2D Bus Simulator.app
 
-.PHONY: all build run dev app open test test-qualify test-all cross clean help
+.PHONY: all build run dev app open test test-qualify test-all test-soak bench cross clean help
 
 all: build
 
@@ -49,6 +49,14 @@ test-all:
 	@echo "🧪 正在运行全部测试用例..."
 	go test -v ./...
 
+## test-soak: 六地图普通/狂暴模式各运行两分钟，288 辆小车与 8 辆 AI 公交
+test-soak:
+	BUSGAME_SOAK=1 go test ./game -run TestRelease005TrafficSoak -count=1 -v -timeout=15m
+
+## bench: 固定车流场景性能基准，报告每帧耗时与内存分配
+bench:
+	go test ./internal/traffic -run '^$$' -bench BenchmarkTrafficFrame -benchmem -count=3
+
 ## cross: 跨平台交叉编译 (macOS ARM64/Intel, Windows, Linux)
 cross:
 	@mkdir -p dist
@@ -78,5 +86,7 @@ help:
 	@echo "  make test         - 运行基础快速测试 (日常开发秒级通过)"
 	@echo "  make test-qualify - 运行全地图全场景发布验收测试 (发布到 GitHub 前必跑)"
 	@echo "  make test-all     - 运行全量测试套件"
+	@echo "  make test-soak    - 六地图满负载普通/狂暴模式长测"
+	@echo "  make bench        - 固定车流场景耗时与分配基准"
 	@echo "  make cross        - 跨平台编译至 dist/ 目录"
 	@echo "  make clean        - 清理编译产物"

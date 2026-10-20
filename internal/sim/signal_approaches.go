@@ -42,6 +42,15 @@ func (inter *TrafficIntersection) GetApproachIndexForHeading(heading float64) in
 // the narrower approach's stop line and crosswalk are pushed back outside the crossing road corridor,
 // aligning precisely with the world crosswalk markings.
 func (inter *TrafficIntersection) GetApproachDimensions(laneWidth float64) (ewStopLineDist, ewCrosswalkDist, nsStopLineDist, nsCrosswalkDist float64) {
+	key := approachDimensionsKey{laneWidth, inter.ApproachLanes, inter.ApproachHasRoad}
+	if cached := inter.approachDimensions; cached.valid && cached.key == key {
+		return cached.values[0], cached.values[1], cached.values[2], cached.values[3]
+	}
+	defer func() {
+		inter.approachDimensions = approachDimensionsCache{key: key, valid: true,
+			values: [4]float64{ewStopLineDist, ewCrosswalkDist, nsStopLineDist, nsCrosswalkDist}}
+	}()
+
 	defaultStop := laneWidth*1.6 + 18.0
 	defaultCross := defaultStop - 25.0
 
@@ -72,25 +81,26 @@ func (inter *TrafficIntersection) GetApproachDimensions(laneWidth float64) (ewSt
 
 	ewHalf := laneWidth*1.0 + 6.0
 	if ewLanes >= 6 {
-		ewHalf = laneWidth*3.0 + 12.0
+		ewHalf = laneWidth*float64(ewLanes)/2 + 12.0
 	} else if ewLanes >= 4 {
 		ewHalf = laneWidth*2.0 + 12.0
 	}
 
 	nsHalf := laneWidth*1.0 + 6.0
 	if nsLanes >= 6 {
-		nsHalf = laneWidth*3.0 + 12.0
+		nsHalf = laneWidth*float64(nsLanes)/2 + 12.0
 	} else if nsLanes >= 4 {
 		nsHalf = laneWidth*2.0 + 12.0
 	}
 
 	// Push stop line and crosswalk outside the crossing road corridor:
 	// EW approaches cross the NS road (width 2*nsHalf):
-	ewStopLineDist = math.Max(defaultStop, nsHalf+43.0)
+	geometry := NewJunctionGeometry(ewHalf, nsHalf, laneWidth)
+	ewStopLineDist = geometry.HalfX + JunctionStopInset
 	ewCrosswalkDist = ewStopLineDist - 25.0
 
 	// NS approaches cross the EW road (width 2*ewHalf):
-	nsStopLineDist = math.Max(defaultStop, ewHalf+43.0)
+	nsStopLineDist = geometry.HalfY + JunctionStopInset
 	nsCrosswalkDist = nsStopLineDist - 25.0
 
 	return
@@ -113,6 +123,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 		return
 	}
 	center := inter.Center
+	inter.ApproachBusLane = [4]bool{}
 	inter.ApproachHasRoad = [4]bool{false, false, false, false}
 	inter.ApproachLanes = [4]int{0, 0, 0, 0}
 	inter.ApproachIs4Lane = [4]bool{false, false, false, false}
@@ -125,6 +136,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			// West approach: traffic oncoming from West (X < center.X)
 			if minX < center.X-15.0 && maxX >= center.X-15.0 {
 				inter.ApproachHasRoad[0] = true
+				inter.ApproachBusLane[0] = r.HasBusLane()
 				if r.Lanes > inter.ApproachLanes[0] {
 					inter.ApproachLanes[0] = r.Lanes
 				}
@@ -133,6 +145,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			// East approach: traffic oncoming from East (X > center.X)
 			if minX <= center.X+15.0 && maxX > center.X+15.0 {
 				inter.ApproachHasRoad[1] = true
+				inter.ApproachBusLane[1] = r.HasBusLane()
 				if r.Lanes > inter.ApproachLanes[1] {
 					inter.ApproachLanes[1] = r.Lanes
 				}
@@ -147,6 +160,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			// North approach: traffic oncoming from North (Y < center.Y)
 			if minY < center.Y-15.0 && maxY >= center.Y-15.0 {
 				inter.ApproachHasRoad[2] = true
+				inter.ApproachBusLane[2] = r.HasBusLane()
 				if r.Lanes > inter.ApproachLanes[2] {
 					inter.ApproachLanes[2] = r.Lanes
 				}
@@ -155,6 +169,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			// South approach: traffic oncoming from South (Y > center.Y)
 			if minY <= center.Y+15.0 && maxY > center.Y+15.0 {
 				inter.ApproachHasRoad[3] = true
+				inter.ApproachBusLane[3] = r.HasBusLane()
 				if r.Lanes > inter.ApproachLanes[3] {
 					inter.ApproachLanes[3] = r.Lanes
 				}
@@ -211,4 +226,16 @@ func (inter *TrafficIntersection) ApproachHasDedicatedLanesForHeading(heading fl
 	cosH := math.Abs(math.Cos(heading))
 	sinH := math.Abs(math.Sin(heading))
 	return inter.ApproachHasDedicatedLanes(cosH > sinH)
+}
+
+// Project crossings onto the road's axis even while the bus is countersteering
+// after a lane change. An instantaneous body heading creates a tilted stop line.
+func intersectionApproachHeading(heading float64) float64 {
+	return NormalizeAngle(math.Round(heading/(math.Pi/2)) * (math.Pi / 2))
+}
+
+// ApproachRoadHalfWidth includes every lane in the incoming corridor.
+func (inter *TrafficIntersection) ApproachRoadHalfWidth(heading, lw float64) float64 {
+	lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)]
+	return float64(lanes)*lw/2 + 12
 }

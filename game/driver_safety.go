@@ -6,7 +6,6 @@ import (
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
-	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 )
 
 func (g *Game) applyRoadBoundaries(currentLaneW float64) {
@@ -65,103 +64,27 @@ func (g *Game) applyRoadBoundaries(currentLaneW float64) {
 }
 
 func (g *Game) updateAutopilotDeadlock(dt, currentLaneW float64, obs []autopilot.VehicleObstacle, activeCars []*sim.TrafficCar) {
-	// Deadlock detection for AI Autopilot: if motionless and blocked by obstacle for > 1 traffic light cycle,
-	// reset the bus back to the route's starting station (起点站)
-	if math.Abs(g.Bus.Speed) < 8.0 {
-		isJammed := false
-		jammedCarIdx := -1
-		var jammedAIBus *traffic.AIBus
-		isNearInter := false
-		if g.World != nil {
-			for _, pt := range g.World.Intersections {
-				if g.Bus.Pos.Distance(pt) < 130.0 {
-					isNearInter = true
-					break
-				}
-			}
-		}
+	jammed := false
+	if !g.Bus.DoorsOpen && math.Abs(g.Bus.Speed) < 3 {
 		for _, ob := range obs {
-			if math.Abs(ob.Speed) >= 8.0 {
+			if math.Abs(ob.Speed) >= 3 {
 				continue
 			}
-			dist := g.Bus.Pos.Distance(ob.Pos)
-			if dist < (g.Bus.Length+ob.Length)*0.5+40.0 {
-				toOb := ob.Pos.Sub(g.Bus.Pos)
-				cosH := math.Cos(g.Bus.Heading)
-				sinH := math.Sin(g.Bus.Heading)
-				fwd := toOb.X*cosH + toOb.Y*sinH
-				lat := math.Abs(-toOb.X*sinH + toOb.Y*cosH)
-				headDiff := math.Cos(ob.Heading - g.Bus.Heading)
-				if headDiff > 0.96 && lat < currentLaneW*0.45 && fwd > 0 {
-					continue // Normal queueing behind vehicle in front
-				}
-				if fwd > -15.0 || dist < (g.Bus.Length+ob.Length)*0.5+15.0 {
-					isJammed = true
-					if g.TrafficMgr != nil {
-						for cIdx, c := range activeCars {
-							if c != nil && c.Pos.Distance(ob.Pos) < 2.0 {
-								jammedCarIdx = cIdx
-								break
-							}
-						}
-					}
-					if g.AIBusMgr != nil {
-						for _, ab := range g.AIBusMgr.Buses {
-							if ab != nil && ab.Bus != nil && ab.Bus.Pos.Distance(ob.Pos) < 5.0 {
-								jammedAIBus = ab
-								break
-							}
-						}
-					}
-					break
-				}
+			delta := ob.Pos.Sub(g.Bus.Pos)
+			fwd := delta.X*math.Cos(g.Bus.Heading) + delta.Y*math.Sin(g.Bus.Heading)
+			lat := math.Abs(-delta.X*math.Sin(g.Bus.Heading) + delta.Y*math.Cos(g.Bus.Heading))
+			if math.Cos(ob.Heading-g.Bus.Heading) > 0.96 && lat < currentLaneW*0.45 && fwd > 0 {
+				continue
+			}
+			dist := delta.Length()
+			if dist < (g.Bus.Length+ob.Length)*0.5+40 && (fwd > -15 || dist < (g.Bus.Length+ob.Length)*0.5+15) {
+				jammed = true
+				break
 			}
 		}
-		if isJammed {
-			g.AutopilotDeadlockTimer += dt
-			// Point 1: Fast deadlock resolution (4.0s) applies ONLY at intersections.
-			// Stations and open roads use the full traffic light cycle (38.0s) before resetting.
-			if isNearInter && g.AutopilotDeadlockTimer >= traffic.IntersectionDeadlockThreshold {
-				if jammedCarIdx >= 0 && g.TrafficMgr != nil {
-					g.TrafficMgr.DespawnAndResetCar(jammedCarIdx, g.World, currentLaneW, g.Bus)
-					g.AutopilotDeadlockTimer = 0
-				} else if jammedAIBus != nil {
-					jammedAIBus.ResetToStartingStation(g.World)
-					g.AutopilotDeadlockTimer = 0
-				}
-			} else if g.AutopilotDeadlockTimer >= traffic.DeadlockDurationThreshold {
-				if jammedCarIdx >= 0 && g.TrafficMgr != nil {
-					g.TrafficMgr.DespawnAndResetCar(jammedCarIdx, g.World, currentLaneW, g.Bus)
-					g.AutopilotDeadlockTimer = 0
-				} else if jammedAIBus != nil {
-					jammedAIBus.ResetToStartingStation(g.World)
-					g.AutopilotDeadlockTimer = 0
-				} else {
-					g.AutopilotDeadlockTimer = 0
-					oldBusPos := g.Bus.Pos
-					g.ResetToStartingStation()
-					// Also reset the jammed AI car(s) so both vehicles are cleared
-					if g.TrafficMgr != nil {
-						activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
-						for cIdx, c := range activeCars {
-							if c == nil {
-								continue
-							}
-							dist := oldBusPos.Distance(c.Pos)
-							if dist < (g.Bus.Length+c.Length)*0.5+40.0 {
-								g.TrafficMgr.DespawnAndResetCar(cIdx, g.World, currentLaneW, g.Bus)
-								break
-							}
-						}
-					}
-				}
-			}
-		} else {
-			if g.AutopilotDeadlockTimer > 0 {
-				g.AutopilotDeadlockTimer = math.Max(0, g.AutopilotDeadlockTimer-dt*2.0)
-			}
-		}
-	} else {
-		g.AutopilotDeadlockTimer = 0
+	}
+	g.AutopilotDeadlockTimer = g.DeadlockTracker.Update(g.AutopilotDeadlockTimer, dt, g.Bus.Pos, g.Bus.Speed, jammed)
+	if g.AutopilotDeadlockTimer >= g.TrafficLights.DeadlockTimeoutAt(g.Bus.Pos) {
+		g.ResetToStartingStation()
 	}
 }

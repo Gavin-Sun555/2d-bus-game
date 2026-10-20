@@ -137,7 +137,7 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 
 	playerBus := sim.NewBus(5000, 5000, 0) // Far away player bus
 
-	// Simulate 10 seconds of motionless deadlock (less than 38s traffic light cycle threshold)
+	// Simulate 10 seconds of motionless deadlock (less than 55.5s traffic light cycle threshold)
 	dt := 0.5
 	for elapsed := 0.0; elapsed < 10.0; elapsed += dt {
 		tm.ResolveDeadlocks(dt, playerBus, len(tm.Cars), 52.0, nil)
@@ -158,9 +158,9 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 	}
 	car1.Speed = 0
 
-	// Now simulate until deadlock timer exceeds DeadlockDurationThreshold (38.0s)
+	// Now simulate until deadlock timer exceeds DeadlockDurationThreshold (55.5s)
 	// (Simulate 39s more)
-	for elapsed := 0.0; elapsed < 39.0; elapsed += dt {
+	for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
 		tm.ResolveDeadlocks(dt, playerBus, len(tm.Cars), 52.0, nil)
 		if len(tm.Cars) < 2 {
 			break
@@ -168,7 +168,7 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 	}
 
 	if len(tm.Cars) != 1 {
-		t.Fatalf("Expected one car to directly disappear after > 38s deadlock, remaining: %d", len(tm.Cars))
+		t.Fatalf("Expected one car to directly disappear after > 55.5s deadlock, remaining: %d", len(tm.Cars))
 	}
 
 	// 2. Verify AI car stopped behind player bus NEVER despawns
@@ -211,19 +211,19 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 
 		oldPos1 := bus1.Bus.Pos
 
-		// Simulate 40s (> DeadlockDurationThreshold)
-		for elapsed := 0.0; elapsed < 40.0; elapsed += dt {
+		// Simulate beyond the default stationary recovery threshold.
+		for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
 			abm.Update(dt, playerBus, w, nil, tm, 52.0, 2)
 		}
 
 		// At least one AI bus must have repositioned to its next route stop to clear the jam
 		if bus1.Bus.Pos == oldPos1 && bus2.Bus.Pos.Distance(oldPos1) < 100.0 {
-			t.Fatalf("Expected AI buses to resolve deadlock after > 38s by advancing stop")
+			t.Fatalf("Expected AI buses to resolve deadlock after > 55.5s by advancing stop")
 		}
 	}
 }
 
-func TestIntersectionDeadlockResolutionCarDespawnsAndAIBusResetsToStart(t *testing.T) {
+func TestCarTimeoutDoesNotResetAnotherBus(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
@@ -235,8 +235,6 @@ func TestIntersectionDeadlockResolutionCarDespawnsAndAIBusResetsToStart(t *testi
 		t.Fatalf("Expected at least 1 AI bus in manager")
 	}
 	aiBus := abm.Buses[0]
-	startStopID := route.StopIDs[0]
-	startStop := w.Stops[startStopID]
 
 	// Advance AI bus to stop index 1 and add passengers
 	aiBus.Route.CurrentIndex = 1
@@ -270,9 +268,9 @@ func TestIntersectionDeadlockResolutionCarDespawnsAndAIBusResetsToStart(t *testi
 		t.Fatalf("Initial AI bus route index should not be 0 for this test")
 	}
 
-	// Simulate motionless deadlock for > 38.0s (DeadlockDurationThreshold)
+	// Simulate motionless deadlock for > 55.5s (DeadlockDurationThreshold)
 	dt := 0.2
-	for elapsed := 0.0; elapsed < 42.0; elapsed += dt {
+	for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
 		aiBus.Bus.Speed = 0.0
 		car.Speed = 0.0
 		tm.ResolveDeadlocks(dt, nil, len(tm.Cars), lw, w)
@@ -291,88 +289,13 @@ func TestIntersectionDeadlockResolutionCarDespawnsAndAIBusResetsToStart(t *testi
 		}
 	}
 
-	// 2. AI Bus must have reset back to the route's starting station (StopIDs[0])
-	if aiBus.Route.CurrentIndex != 0 {
-		t.Fatalf("AI Bus should be reset to starting station index 0, got %d", aiBus.Route.CurrentIndex)
-	}
-	if aiBus.Bus.Pos.Distance(startStop.Pos) > 1.0 {
-		t.Fatalf("AI Bus position should be reset to starting station Pos %v, got %v", startStop.Pos, aiBus.Bus.Pos)
-	}
-	if aiBus.Bus.PassengerCount != 0 {
-		t.Fatalf("AI Bus passengers should be cleared upon reset to starting station, got %d", aiBus.Bus.PassengerCount)
-	}
-	if aiBus.DeadlockTimer != 0 {
-		t.Fatalf("AI Bus DeadlockTimer should be reset to 0, got %.2f", aiBus.DeadlockTimer)
+	// Another vehicle's timeout must never reset this bus's independent clock.
+	if aiBus.Route.CurrentIndex != 1 || aiBus.Bus.PassengerCount != 15 || aiBus.DeadlockTimer != 0 {
+		t.Fatal("Car timeout changed the bus without its own stationary timeout")
 	}
 }
 
-func TestAutopilotDeadlockPlayerBusResetsToStartingStation(t *testing.T) {
-	g := game.NewGame(1920, 1080)
-	g.State = game.StatePlaying
-	g.Settings.AutopilotEnabled = true
-
-	startStopID := g.Route.StopIDs[0]
-	startStop := g.World.Stops[startStopID]
-
-	// Advance route index and board passengers
-	g.Route.CurrentIndex = 1
-	g.Bus.PassengerCount = 20
-	g.Bus.Passengers = make([]sim.Passenger, 20)
-
-	// Place player bus along Central Ave Eastbound lane (Y=26) heading East
-	g.Bus.Pos = sim.Vec2{X: -400.0, Y: 26.0}
-	g.Bus.Heading = 0.0
-	g.Bus.Speed = 0.0
-
-	// Place an AI car directly ahead facing Westbound in same lane
-	carPos := sim.Vec2{X: -340.0, Y: 26.0}
-	car := &sim.TrafficCar{
-		ID:          88,
-		Pos:         carPos,
-		Heading:     math.Pi, // Facing West towards Eastbound bus
-		Speed:       0.0,
-		TargetSpeed: 0.0,
-		Length:      46,
-		Width:       22,
-		RoadCenter:  52.0,
-		IsEW:        true,
-	}
-	g.TrafficMgr.Cars = []*sim.TrafficCar{car}
-
-	// Simulate motionless deadlock for > 38.0s (at 60 FPS, 40s = 2400 frames)
-	totalFrames := int(40.0 * 60)
-	for i := 0; i < totalFrames; i++ {
-		g.Bus.Speed = 0.0
-		car.Speed = 0.0
-		_ = g.Update()
-		if g.Route.CurrentIndex == 0 {
-			break
-		}
-	}
-
-	// 1. AI Car must have disappeared/reset from stuck spot
-	if len(g.TrafficMgr.Cars) > 0 {
-		if g.TrafficMgr.Cars[0].Pos.Distance(carPos) < 10.0 {
-			t.Fatalf("Deadlocked AI car failed to disappear/reset from the deadlock spot!")
-		}
-	}
-
-	// 2. Player bus in AI autopilot mode must have reset back to starting station
-	if g.Route.CurrentIndex != 0 {
-		t.Fatalf("Player AI Bus should be reset to starting station index 0, got %d", g.Route.CurrentIndex)
-	}
-	if g.Bus.Pos.Distance(startStop.Pos) > 1.0 {
-		t.Fatalf("Player AI Bus position should be reset to starting station Pos %v, got %v", startStop.Pos, g.Bus.Pos)
-	}
-	if g.Bus.PassengerCount > g.Bus.Capacity {
-		t.Fatalf("Player AI Bus passengers exceeded capacity upon reset: %d", g.Bus.PassengerCount)
-	}
-	if g.AutopilotDeadlockTimer != 0 {
-		t.Fatalf("Player AI Bus AutopilotDeadlockTimer should be reset to 0, got %.2f", g.AutopilotDeadlockTimer)
-	}
-}
-
-func TestIntersectionTurnDeadlockFastResolution(t *testing.T) {
+func TestIntersectionTurnHasNoFastRemoval(t *testing.T) {
 	g := game.NewGame(1920, 1080)
 	g.State = game.StatePlaying
 	g.Settings.AutopilotEnabled = true
@@ -404,7 +327,7 @@ func TestIntersectionTurnDeadlockFastResolution(t *testing.T) {
 	}
 	g.TrafficMgr.Cars = []*sim.TrafficCar{car}
 
-	// Simulate for 5 seconds (which exceeds IntersectionDeadlockThreshold = 4.0s)
+	// A five-second stop is below the recovery threshold.
 	totalFrames := int(5.0 * 60)
 	for i := 0; i < totalFrames; i++ {
 		g.Bus.Speed = 0.0
@@ -415,17 +338,13 @@ func TestIntersectionTurnDeadlockFastResolution(t *testing.T) {
 		}
 	}
 
-	// AI car must have been despawned and safely reset away from the intersection corner!
-	if len(g.TrafficMgr.Cars) > 0 {
-		if g.TrafficMgr.Cars[0].Pos.Distance(carPos) < 10.0 {
-			t.Fatalf("Deadlocked AI car at turning corner failed to despawn within 4.0s! Car is still at %v", g.TrafficMgr.Cars[0].Pos)
-		}
+	if len(g.TrafficMgr.Cars) != 1 || g.TrafficMgr.Cars[0] != car {
+		t.Fatal("Intersection car removed before one and a half signal cycles")
 	}
 }
 
-// TestIntersectionAIBusJamFastResolution verifies that wedged AI traffic jams inside intersections
-// are fast-resolved within 4.0s so turning buses never stay stuck.
-func TestIntersectionAIBusJamFastResolution(t *testing.T) {
+// A short intersection stop must not reset either bus.
+func TestIntersectionBusHasNoFastReset(t *testing.T) {
 	g := game.NewGame(1920, 1080)
 	g.State = game.StatePlaying
 	g.Settings.AutopilotEnabled = true
@@ -456,7 +375,7 @@ func TestIntersectionAIBusJamFastResolution(t *testing.T) {
 	g.Route.CurrentIndex = 1
 	g.Bus.PassengerCount = 10
 
-	// Simulate for 5.0 seconds (> IntersectionDeadlockThreshold = 4.0s)
+	// A five-second stop is below the recovery threshold.
 	totalFrames := int(5.0 * 60)
 	for i := 0; i < totalFrames; i++ {
 		g.Bus.Speed = 0.0
@@ -467,9 +386,8 @@ func TestIntersectionAIBusJamFastResolution(t *testing.T) {
 		}
 	}
 
-	// 1. Inside an intersection, fast deadlock resolution clears the jam after 4.0s
-	if aiBus.Bus.Pos.Distance(aiBusPos) < 20.0 {
-		t.Fatalf("Deadlocked AI bus inside intersection failed to reset within 4.0s! AI Bus is still at %v", aiBus.Bus.Pos)
+	if aiBus.Route.CurrentIndex != 1 {
+		t.Fatal("Fleet bus reset before its own timeout")
 	}
 
 	// 2. The player bus must remain on active leg 1

@@ -9,7 +9,7 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
-func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
+func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth float64) {
 	for _, rb := range w.Roundabouts {
 		if !cam.IsPointVisible(rb.Center, rb.Radius+80) {
 			continue
@@ -24,10 +24,10 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
 
 		// 1. Outer Slate Shoulder / Sidewalk Buffer Ring
 		rShoulder := float32((rb.Radius + 18.0) * cam.Zoom)
-		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rShoulder, sim.RGBA(51, 65, 85, 255), true)
+		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rShoulder, sceneColors(w.Theme).paving, true)
 
 		// 2. Circular Asphalt Rotary Carriageway
-		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, sim.RGBA(30, 41, 59, 255), true)
+		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, sceneColors(w.Theme).asphalt, true)
 		vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, float32(2.5*cam.Zoom), sim.RGBA(148, 163, 184, 200), true)
 
 		// 3. Mountable Truck Apron Ring (环岛卡车围裙) around the central island
@@ -56,14 +56,14 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
 
 		// 5. Entry Yield Markings (让行虚线 & 让行倒三角) on incoming approaches
 		if cam.Zoom >= 0.32 {
-			drawRoundaboutYieldEntrances(screen, cam, rb)
+			drawRoundaboutYieldEntrances(screen, cam, w, rb, laneWidth)
 		}
 
 		// 6. Central Island & Themed Monuments
 		switch rb.Type {
 		case sim.RoundaboutCivic:
 			// Concentric plaza paving
-			vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sim.RGBA(30, 41, 59, 255), true)
+			vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sceneColors(w.Theme).asphalt, true)
 			vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.0*cam.Zoom), sim.RGBA(203, 213, 225, 230), true)
 			if rInner > 15 {
 				vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner*0.75, float32(1.5*cam.Zoom), sim.RGBA(71, 85, 105, 180), true)
@@ -103,22 +103,28 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
 	}
 }
 
-func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, rb sim.Roundabout) {
-	entryOffset := (rb.InnerRadius + rb.Radius) * 0.28
-	entryWidth := (rb.Radius - rb.InnerRadius) * 0.72
+func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, w *sim.World, rb sim.Roundabout, laneWidth float64) {
 	entries := []struct {
-		pos   sim.Vec2
-		dir   sim.Vec2
-		width float64
-	}{
-		// West entry: incoming from -X into roundabout (+X direction)
-		{pos: sim.Vec2{X: rb.Center.X - rb.Radius, Y: rb.Center.Y + entryOffset}, dir: sim.Vec2{X: 1, Y: 0}, width: entryWidth},
-		// East entry: incoming from +X into roundabout (-X direction)
-		{pos: sim.Vec2{X: rb.Center.X + rb.Radius, Y: rb.Center.Y - entryOffset}, dir: sim.Vec2{X: -1, Y: 0}, width: entryWidth},
-		// North entry: incoming from -Y into roundabout (+Y direction)
-		{pos: sim.Vec2{X: rb.Center.X - entryOffset, Y: rb.Center.Y - rb.Radius}, dir: sim.Vec2{X: 0, Y: 1}, width: entryWidth},
-		// South entry: incoming from +Y into roundabout (-Y direction)
-		{pos: sim.Vec2{X: rb.Center.X + entryOffset, Y: rb.Center.Y + rb.Radius}, dir: sim.Vec2{X: 0, Y: -1}, width: entryWidth},
+		pos, dir sim.Vec2
+		width    float64
+	}{}
+	for _, dir := range []sim.Vec2{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} {
+		probe := rb.Center.Sub(dir.Mul(rb.YieldLineDistance() + 60))
+		ew := math.Abs(dir.X) > .5
+		coord := rb.Center.X
+		if ew {
+			coord = rb.Center.Y
+		}
+		road, ok := w.RoadAt(coord, ew, probe)
+		if !ok {
+			continue
+		}
+		width := float64(road.LaneCount()/2) * laneWidth
+		right := sim.Vec2{X: -dir.Y, Y: dir.X}
+		entries = append(entries, struct {
+			pos, dir sim.Vec2
+			width    float64
+		}{rb.Center.Sub(dir.Mul(rb.YieldLineDistance())).Add(right.Mul(width / 2)), dir, width - 12})
 	}
 
 	for _, e := range entries {

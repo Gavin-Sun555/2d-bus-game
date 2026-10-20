@@ -64,6 +64,7 @@ const (
 // AutopilotDriver encapsulates autonomous driving intelligence for both the player's bus
 // (when autopilot is enabled) and background AI route buses.
 type AutopilotDriver struct {
+	roadSafetyHold  bool
 	State           AutopilotState
 	BerserkMode     bool    // true if Berserk mode is active (player bus fast straightaways)
 	BerserkMaxSpeed float64 // Configurable Berserk mode cruise speed in px/s (default: 445.0 / 80 km/h)
@@ -93,7 +94,22 @@ type AutopilotDriver struct {
 	pathLane   float64
 	pathSynced bool // false => next projection performs a global (non-monotonic) search
 
-	CanSkipTargetStop bool // Whether the active target stop can be skipped (no alighting pax and station empty/occupied)
+	stationDock          *stationDockPlan
+	departureFromDock    bool
+	pathSkipTarget       bool
+	bypassStopID         int
+	skippedDeparture     *skippedStopDeparture
+	directRoundaboutExit *sim.Vec2
+
+	busLaneJunction     *sim.Vec2
+	rightTurnJunction   *sim.Vec2
+	rightTurnHeading    float64
+	rightTurnWaiting    bool
+	busJunctionEntered  bool
+	ordinaryBusLeft     bool
+	pathOrdinaryBusLeft bool
+	busTurnHoldDistance float64
+	CanSkipTargetStop   bool // Whether the active target stop can be skipped (no alighting pax and station empty/occupied)
 
 	// Last-frame tracking diagnostics (used by tests and debugging overlays)
 	LastPathS       float64  // Arc-length position of the bus along the drive path
@@ -118,6 +134,7 @@ func NewAutopilotDriver() *AutopilotDriver {
 		LaneOffsetDuration: 1.0,
 		pathFromID:         -1,
 		pathToID:           -1,
+		bypassStopID:       -1,
 	}
 }
 
@@ -132,6 +149,20 @@ func (ad *AutopilotDriver) GetBerserkCruiseSpeed() float64 {
 // Reset clears autonomous driving internal state
 func (ad *AutopilotDriver) Reset() {
 	ad.State = AutopilotStateCruising
+	ad.busLaneJunction = nil
+	ad.rightTurnJunction = nil
+	ad.rightTurnWaiting = false
+	ad.busJunctionEntered = false
+	ad.ordinaryBusLeft = false
+	ad.pathOrdinaryBusLeft = false
+	ad.busTurnHoldDistance = 0
+	ad.roadSafetyHold = false
+	ad.stationDock = nil
+	ad.departureFromDock = false
+	ad.pathSkipTarget = false
+	ad.bypassStopID = -1
+	ad.skippedDeparture = nil
+	ad.directRoundaboutExit = nil
 	ad.DwellTimer = 0
 	ad.DwellFinished = false
 	ad.DockedStopID = -1
@@ -169,6 +200,7 @@ func (ad *AutopilotDriver) ComputeControls(
 	laneWidth float64,
 	dt float64,
 ) (throttle, brake, steer float64, handbrake, toggleDoors bool, isDocked bool) {
+	bus.StationMergeRequest = nil
 	if route == nil || len(route.StopIDs) == 0 || world == nil || len(world.Stops) == 0 {
 		return 0.0, 1.0, 0.0, true, false, false
 	}
@@ -221,6 +253,21 @@ func (ad *AutopilotDriver) ComputeControls(
 		remDist = bus.Pos.Distance(targetStop.Pos)
 	}
 
+	if ad.prepareSkippedStopLane(bus, targetStop, world, laneWidth, remDist) {
+		ad.trackPath(bus.Pos)
+		remDist = ad.cumLen[len(ad.cumLen)-1] - ad.LastPathS
+	}
+
+	if ad.departureFromDock {
+		ad.connectDockDeparture(bus, prevStop)
+		ad.departureFromDock = false
+	}
+	frameForDock := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, targetStop: targetStop, laneWidth: laneWidth, s: ad.LastPathS, speedAbs: speedAbs, remaining: remDist, distToStop: distToStop}
+	ad.requestStationMerge(frameForDock)
+	if inputs, active := ad.stationDockControls(frameForDock); active {
+		return inputs.throttle, inputs.brake, inputs.steer, false, inputs.toggleDoors, inputs.isDocked
+	}
+
 	// Update overtaking controller (Berserk Mode on multi-lane roads)
 	ad.updateOvertaking(bus, world, tls, obstacles, laneWidth, ad.LastPathS, speedAbs, remDist, dt, targetStop)
 
@@ -244,17 +291,11 @@ func (ad *AutopilotDriver) ComputeControls(
 		maxDockSpeed = 26.0 // Snap into docked state smoothly as bus enters the bay
 	}
 	inBaseLane := math.Abs(ad.LaneOffset) < 10.0
-	isBerserkOuterDock := ad.BerserkMode && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
+	isBerserkOuterDock := ad.BerserkMode && ad.stationDock != nil && ad.stationDock.rank > 0 && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
 		(speedAbs < 15.0 || (ad.OvertakeState != OvertakePassing && speedAbs < maxDockSpeed))
 	if !ad.CanSkipTargetStop && ad.State != AutopilotStateDeparting && speedAbs < maxDockSpeed &&
 		(targetStop.ContainsBus(bus) || isBerserkOuterDock || (inBaseLane && (alignedNearBay || restingAtStop))) {
-		ad.State = AutopilotStateDocked
-		ad.DockedStopID = targetStop.ID
-		ad.DwellTimer = ad.DwellTotal
-		if ad.BerserkMode {
-			ad.DwellTimer = 1.0 // 1.0s dwell in Berserk mode: fast, responsive, yet reliably boards passengers
-		}
-		ad.DwellFinished = false
+		ad.beginDocking(targetStop)
 		if speedAbs < 15.0 && !bus.DoorsOpen && bus.DoorProgress <= 0.05 {
 			toggleDoors = true
 		}
@@ -285,6 +326,9 @@ func (ad *AutopilotDriver) ComputeControls(
 	var targetPt sim.Vec2
 	steer, frame.alpha, targetPt, frame.nearRoundabout = ad.pursuitSteering(frame)
 	targetSpd := ad.targetSpeed(frame)
+	if ad.busTurnHoldDistance > 0 {
+		targetSpd = math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, ad.busTurnHoldDistance-10)))
+	}
 
 	throttle, brake = ad.longitudinalControls(bus.Speed, targetSpd)
 

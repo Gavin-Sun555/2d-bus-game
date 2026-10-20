@@ -75,10 +75,11 @@ const (
 
 // Bus represents our driveable city bus
 type Bus struct {
-	Pos           Vec2    // Center position in world coordinates
-	Heading       float64 // Direction in radians (0 = facing +X / East)
-	Speed         float64 // Current speed (pixels per second, positive = forward, negative = reverse)
-	SteeringAngle float64 // Current front wheel angle in radians
+	StationMergeRequest *BusStationMergeRequest
+	Pos                 Vec2    // Center position in world coordinates
+	Heading             float64 // Direction in radians (0 = facing +X / East)
+	Speed               float64 // Current speed (pixels per second, positive = forward, negative = reverse)
+	SteeringAngle       float64 // Current front wheel angle in radians
 
 	// Transmission & Gear
 	Gear             Gear             // Current gear (R, N, D, or M1-M5)

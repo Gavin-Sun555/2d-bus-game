@@ -30,7 +30,11 @@ func (abm *AIBusManager) Update(
 		activeCars = tm.GetActiveCars(density)
 	}
 
-	baseObstacles := make([]autopilot.VehicleObstacle, 0, 1+len(activeCars))
+	// Reuse observations between ticks; controllers consume them synchronously.
+	baseObstacles := abm.baseObstacles[:0]
+	if cap(baseObstacles) < 1+len(activeCars) {
+		baseObstacles = make([]autopilot.VehicleObstacle, 0, 1+len(activeCars))
+	}
 	if playerBus != nil {
 		baseObstacles = append(baseObstacles, autopilot.VehicleObstacle{
 			Pos:     playerBus.Pos,
@@ -50,8 +54,9 @@ func (abm *AIBusManager) Update(
 		})
 	}
 
+	abm.baseObstacles = baseObstacles
 	for _, ab := range abm.Buses {
-		obstacles := append([]autopilot.VehicleObstacle(nil), baseObstacles...)
+		obstacles := append(abm.obstacles[:0], baseObstacles...)
 		for _, other := range abm.Buses {
 			if other.ID == ab.ID {
 				continue
@@ -65,6 +70,7 @@ func (abm *AIBusManager) Update(
 			})
 		}
 
+		abm.obstacles = obstacles
 		throttle, brake, steer, handbrake, toggleDoors, isDocked := ab.Driver.ComputeControls(
 			ab.Bus,
 			ab.Route,
@@ -125,7 +131,7 @@ func (abm *AIBusManager) Update(
 			ab.Bus.Speed = 0
 		}
 
-		// Deadlock prevention between motionless AI buses (> 1 traffic light cycle threshold)
+		// Recover only after this bus has remained jammed for 1.5 full signal cycles.
 		if math.Abs(ab.Bus.Speed) < 3.0 {
 			// If bus is actively docked and exchanging passengers, it is operating normally, NOT deadlocked!
 			if isDocked && ab.Bus.DoorsOpen {
@@ -218,39 +224,8 @@ func (abm *AIBusManager) Update(
 				}
 			}
 
-			if isBusDeadlocked {
-				ab.DeadlockTimer += dt
-			} else {
-				if ab.DeadlockTimer > 0 {
-					ab.DeadlockTimer = math.Max(0, ab.DeadlockTimer-dt*2.0)
-				}
-			}
+			ab.updateDeadlock(dt, isBusDeadlocked, tls, world)
 
-			threshold := DeadlockDurationThreshold
-			if isNearInter {
-				threshold = IntersectionDeadlockThreshold
-			}
-
-			if ab.DeadlockTimer >= threshold {
-				oldBusPos := ab.Bus.Pos
-
-				// Reset AI bus to the route's starting station (起点站)
-				ab.ResetToStartingStation(world)
-
-				// Also reset the jammed AI car(s) so both the AI car disappears/resets and the AI bus resets
-				if tm != nil {
-					for cIdx, c := range activeCars {
-						if c == nil {
-							continue
-						}
-						dist := oldBusPos.Distance(c.Pos)
-						if dist < (ab.Bus.Length+c.Length)*0.5+40.0 {
-							tm.DespawnAndResetCar(cIdx, world, laneWidth, playerBus)
-							break
-						}
-					}
-				}
-			}
 		} else {
 			ab.DeadlockTimer = 0
 		}

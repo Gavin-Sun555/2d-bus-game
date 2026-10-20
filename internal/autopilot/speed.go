@@ -51,7 +51,11 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 	targetSpd = ad.stationSpeed(f, targetSpd)
 	targetSpd = ad.trafficLightSpeed(f, targetSpd)
 	targetSpd = ad.obstacleSpeed(f, targetSpd)
+	targetSpd = math.Min(targetSpd, ad.junctionSweptSpeed(f))
 
+	if ad.roadSafetyHold {
+		return 0
+	}
 	return targetSpd
 }
 

@@ -505,6 +505,14 @@ func TestAIMissedStopOvertakeContinuesDriving(t *testing.T) {
 	// Now run for 60 frames (1 second)
 	for frame := 0; frame < 60; frame++ {
 		_ = g.Update()
+		// Advancing the route must preserve a physical through passage. The
+		// previous bay-relative offset could steer sharply into the median.
+		yaw := sim.NormalizeAngle(g.Bus.Heading - targetStop.Heading)
+		right := sim.Vec2{X: -sinH, Y: cosH}
+		clearance := g.Bus.Pos.Sub(targetStop.RoadCenter).Dot(right) - math.Abs(math.Sin(yaw))*g.Bus.Length/2 - math.Abs(math.Cos(yaw))*g.Bus.Width/2
+		if clearance < 0 || math.Abs(yaw) > .3 {
+			t.Fatalf("missed-stop continuation left its road corridor at frame%d: clearance%.2f yaw%.2f", frame, clearance, yaw)
+		}
 	}
 
 	// Ensure the bus is actively driving forward along the road, not stuck motionless

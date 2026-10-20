@@ -7,27 +7,35 @@ import (
 )
 
 func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
-	if f.tls == nil || f.car.InRoundabout {
+	if f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return targetSpd
 	}
 	lookAhead := f.laneWidth*1.5 + 85.0
 	halfLen := f.car.Length * 0.5
 	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
 	bumper := sim.Vec2{X: f.car.Pos.X + cosH*halfLen, Y: f.car.Pos.Y + sinH*halfLen}
-	roadOffset := math.Abs(f.car.Pos.X - f.car.RoadCenter)
-	if f.car.IsEW {
-		roadOffset = math.Abs(f.car.Pos.Y - f.car.RoadCenter)
-	}
-	wantLeft := roadOffset < f.laneWidth*0.95
-	if stop, distance := f.tls.CheckStopForVehicle(bumper, f.car.Heading, lookAhead, f.laneWidth, wantLeft); stop {
-		f.car.IsBraking = true
-		if distance <= 14.0 {
-			return 0
+	for _, inter := range f.tls.Intersections {
+		stopLine := inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth)
+		delta := inter.Center.Sub(bumper)
+		forward := delta.X*cosH + delta.Y*sinH
+		lateral := math.Abs(-delta.X*sinH + delta.Y*cosH)
+		if forward <= stopLine || forward >= stopLine+lookAhead || lateral >= math.Max(f.laneWidth*3.6, inter.ApproachRoadHalfWidth(f.car.Heading, f.laneWidth)) {
+			continue
 		}
-		return math.Min(targetSpd, math.Max(0, (distance-10.0)*1.8))
+		wantLeft, wantRight := carIntersectionTurns(f, inter)
+		// Apply each junction's own intent so a later right turn cannot exempt
+		// a straight movement through an earlier red light.
+		signal := sim.TrafficLightSystem{Intersections: []*sim.TrafficIntersection{inter}}
+		if stop, distance := signal.CheckStopForVehicle(bumper, f.car.Heading, lookAhead, f.laneWidth, wantLeft, wantRight); stop {
+			f.car.IsBraking = true
+			if distance <= 14.0 {
+				return 0
+			}
+			return math.Min(targetSpd, math.Max(0, (distance-10.0)*1.8))
+		}
 	}
 
-	// A green light still requires an unoccupied intersection box.
+	// Both green-light movements and right turns on red require a clear box.
 	for _, inter := range f.tls.Intersections {
 		stopLine := inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth)
 		delta := inter.Center.Sub(bumper)
@@ -65,7 +73,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 // intersectionYieldSpeed reserves the box for a lawful crossing/turning bus,
 // while allowing a car already inside to clear it if its path is unobstructed.
 func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) float64 {
-	if f.tls == nil || f.car.InRoundabout {
+	if f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return targetSpd
 	}
 	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)

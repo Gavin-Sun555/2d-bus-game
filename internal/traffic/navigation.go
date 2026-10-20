@@ -55,56 +55,12 @@ func hasRoadInDirection(w *sim.World, center sim.Vec2, heading float64) bool {
 }
 
 func (tm *TrafficManager) handleCarNavigation(car *sim.TrafficCar, laneWidth float64, w *sim.World) {
-	if car.InRoundabout {
+	if car.InRoundabout || car.JunctionTurn != nil {
 		return // Do not apply straight lane Lerp while circulating in roundabout!
 	}
 
-	minX, maxX := -2600.0, 2600.0
-	minY, maxY := -1200.0, 1200.0
-	if w != nil && len(w.Roads) > 0 {
-		minX, maxX = 1e9, -1e9
-		minY, maxY = 1e9, -1e9
-		for _, r := range w.Roads {
-			if r.P1.X < minX {
-				minX = r.P1.X
-			}
-			if r.P2.X < minX {
-				minX = r.P2.X
-			}
-			if r.P1.X > maxX {
-				maxX = r.P1.X
-			}
-			if r.P2.X > maxX {
-				maxX = r.P2.X
-			}
-			if r.P1.Y < minY {
-				minY = r.P1.Y
-			}
-			if r.P2.Y < minY {
-				minY = r.P2.Y
-			}
-			if r.P1.Y > maxY {
-				maxY = r.P1.Y
-			}
-			if r.P2.Y > maxY {
-				maxY = r.P2.Y
-			}
-		}
-	}
-
-	// Boundary loop wrapping strictly along road limits
-	if car.IsEW {
-		if car.Pos.X > maxX+30.0 {
-			car.Pos.X = minX - 10.0
-		} else if car.Pos.X < minX-30.0 {
-			car.Pos.X = maxX + 10.0
-		}
-	} else {
-		if car.Pos.Y > maxY+30.0 {
-			car.Pos.Y = minY - 10.0
-		} else if car.Pos.Y < minY-30.0 {
-			car.Pos.Y = maxY + 10.0
-		}
+	if outsideRoadBounds(car, w, 0) {
+		return
 	}
 
 	lanes := 2
@@ -124,24 +80,8 @@ func (tm *TrafficManager) handleCarNavigation(car *sim.TrafficCar, laneWidth flo
 		}
 	}
 
-	laneOffset := laneWidth * 0.5 // Standard 2-lane road: center of travel lane
-	if lanes >= 6 {
-		if car.LaneIndex == 0 {
-			laneOffset = laneWidth * 0.5 // Inner lane (dedicated left turn)
-		} else if car.LaneIndex == 1 {
-			laneOffset = laneWidth * 1.5 // Middle lane (straight through)
-		} else {
-			laneOffset = laneWidth * 2.5 // Outer lane (straight through / slow lane)
-		}
-	} else if lanes >= 4 {
-		if car.LaneIndex == 0 {
-			laneOffset = laneWidth * 0.5 // Inner lane (dedicated left turn)
-		} else {
-			laneOffset = laneWidth * 1.5 // Outer lane (straight through)
-		}
-	} else {
-		car.LaneIndex = 0 // 2-lane road has single lane in each direction
-	}
+	car.LaneIndex = max(0, min(car.LaneIndex, lanes/2-1))
+	laneOffset := (float64(car.LaneIndex) + .5) * laneWidth
 
 	if car.IsEW {
 		targetY := car.RoadCenter

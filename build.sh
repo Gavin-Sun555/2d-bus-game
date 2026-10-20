@@ -8,6 +8,7 @@ set -e
 APP_NAME="busgame"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
+RELEASE_VERSION="$(cat VERSION)"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -107,7 +108,7 @@ cmd_app() {
     cp "${APP_NAME}" "${BUNDLE_NAME}/Contents/MacOS/${APP_NAME}"
     cp "assets/AppIcon.icns" "${BUNDLE_NAME}/Contents/Resources/AppIcon.icns"
     
-    cat << 'EOF' > "${BUNDLE_NAME}/Contents/Info.plist"
+    cat << EOF > "${BUNDLE_NAME}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -123,9 +124,9 @@ cmd_app() {
     <key>CFBundleIdentifier</key>
     <string>com.gavinsun.2dbussimulator</string>
     <key>CFBundleVersion</key>
-    <string>0.0.4</string>
+    <string>${RELEASE_VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.0.4</string>
+    <string>${RELEASE_VERSION}</string>
     <key>CFBundleExecutable</key>
     <string>busgame</string>
     <key>CFBundleIconFile</key>

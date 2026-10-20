@@ -18,7 +18,8 @@ type AIBus struct {
 	Color               color.RGBA
 	PassengersCarried   int
 	DeadlockTimer       float64 // Time accumulated while motionless and jammed against another non-player vehicle
-	LastExchangedStopID int     // Prevents re-exchanging passengers on every frame of the same station dwell
+	DeadlockTracker     sim.StationaryTracker
+	LastExchangedStopID int // Prevents re-exchanging passengers on every frame of the same station dwell
 }
 
 // ResetToStartingStation resets an AI bus back to its route's starting station (StopIDs[0])
@@ -27,6 +28,7 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 		return
 	}
 	ab.DeadlockTimer = 0
+	ab.DeadlockTracker = sim.StationaryTracker{}
 	ab.Route.CurrentIndex = 0
 	startID := ab.Route.StopIDs[0]
 	if startID >= 0 && startID < len(world.Stops) {
@@ -43,13 +45,23 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 	}
 }
 
+// updateDeadlock applies this bus's independent stationary recovery clock.
+func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSystem, world *sim.World) {
+	ab.DeadlockTimer = ab.DeadlockTracker.Update(ab.DeadlockTimer, dt, ab.Bus.Pos, ab.Bus.Speed, jammed)
+	if ab.DeadlockTimer >= tls.DeadlockTimeoutAt(ab.Bus.Pos) {
+		ab.ResetToStartingStation(world)
+	}
+}
+
 // AIBusManager oversees all AI buses operating on the active city route
 type AIBusManager struct {
-	Buses       []*AIBus
-	BusCount    int // Number of AI buses operating on the route (0 ~ 8)
-	CurrentMap  sim.MapTheme
-	CurrentLane float64
-	ActiveRoute *sim.Route
+	baseObstacles []autopilot.VehicleObstacle
+	obstacles     []autopilot.VehicleObstacle
+	Buses         []*AIBus
+	BusCount      int // Number of AI buses operating on the route (0 ~ 8)
+	CurrentMap    sim.MapTheme
+	CurrentLane   float64
+	ActiveRoute   *sim.Route
 }
 
 // NewAIBusManager creates the AI bus manager with default 0 AI buses

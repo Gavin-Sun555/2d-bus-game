@@ -48,7 +48,7 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 	// 3. Roads
 	for _, r := range data.Roads {
 		lanes := r.Lanes
-		if lanes != 2 && lanes != 4 && lanes != 6 {
+		if lanes != 2 && lanes != 4 && lanes != 6 && lanes != 8 {
 			lanes = 4
 		}
 		rType := RoadAvenue4Lane
@@ -56,6 +56,12 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 			rType = RoadStreet2Lane
 		} else if lanes == 6 {
 			rType = RoadExpressway6Lane
+		}
+		if lanes == 8 {
+			rType = RoadBoulevard8Lane
+			if r.BusLane {
+				rType = RoadBusBoulevard8Lane
+			}
 		}
 		w.Roads = append(w.Roads, RoadSegment{
 			P1:       Vec2{X: r.P1[0], Y: r.P1[1]},
@@ -109,7 +115,7 @@ func ApplyCustomMapToWorld(w *World, data *CustomMapData, laneWidth float64) {
 			stopID = i
 		}
 		lanes := s.Lanes
-		if lanes != 2 && lanes != 4 && lanes != 6 {
+		if lanes != 2 && lanes != 4 && lanes != 6 && lanes != 8 {
 			lanes = 4
 		}
 		accent := parseHexColor(s.Color, RGBA(59, 130, 246, 255))

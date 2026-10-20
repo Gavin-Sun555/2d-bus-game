@@ -33,7 +33,12 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	}
 
 	lookahead := sim.Clamp(f.speedAbs*0.55+45.0, 55.0, 140.0)
-	if nearRoundabout {
+	if ad.rightTurnJunction != nil {
+		// Keep tracking the exit closely until the rear has cleared. Restoring
+		// the long berserk lookahead at the last arc point leaves yaw error
+		// large enough for the bus's nose to cross a narrow road's centerline.
+		lookahead = math.Min(lookahead, 60)
+	} else if nearRoundabout {
 		lookahead = sim.Clamp(f.speedAbs*0.35+30.0, 35.0, 52.0)
 	} else if is2LaneRoad && (ad.OvertakeState == OvertakeChangingLane || (ad.LaneOffset != 0 && math.Abs(f.lateralErr) > 6.0)) {
 		// On 2-lane roads borrowing oncoming lane: smooth, longer lookahead prevents steep yaw into opposite shoulder
@@ -100,6 +105,9 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			}
 		}
 	}
+	// Turning inside a junction may cross the incoming road axis. Its
+	// straight-road clamps must not pull a left-turn pursuit point back right.
+	insideJunction := f.world != nil && f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0)
 	baseTargetPt := ad.pointAt(f.s + lookahead)
 	targetPt = baseTargetPt
 	if ad.LaneOffset != 0 && len(ad.drivePath) >= 2 {
@@ -120,7 +128,7 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			effOffset := ad.LaneOffset
 			if nearRb != nil {
 				effOffset = roundaboutLaneOffset(nearRb, f.bus, effOffset)
-			} else if f.world != nil {
+			} else if f.world != nil && !insideJunction {
 				roadCenter, isEW, isMultiLane, is6Lane := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
 				if !isMultiLane && !is6Lane {
 					roadCenter, isEW, isMultiLane, is6Lane = sim.CurrentRoadInfo(f.world, baseTargetPt, f.bus.Heading, f.laneWidth)
@@ -167,7 +175,7 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 						targetPt = nearRb.Center.Add(uTrg.Mul(clampedR))
 					}
 				}
-			} else if f.world != nil {
+			} else if f.world != nil && !insideJunction {
 				roadCenter, isEW, isMultiLane, is6Lane := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
 				if isMultiLane || is6Lane {
 					// Guard targetPt so it never crosses the double yellow line (0.5*laneWidth from roadCenter)
@@ -229,92 +237,49 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		}
 	}
 
-	// Station approach lateral protection:
-	// 1. When bus is waiting alongside or passing in adjacent lane approaching destination stop (TargetLaneOffset < -laneWidth*0.3 || LaneOffset < -laneWidth*0.3), OR
-	// 2. When bus has reached the stop area (remaining < 80.0) but is laterally separated from the bay (distToStop > 25.0 && !targetStop.ContainsBus(bus)), OR
-	// 3. When destination stop can be skipped (ad.CanSkipTargetStop):
-	// Keep targetPt centered on the main roadway travel lane, preventing it from steering into the curb bay!
+	// A bus waiting beside a mandatory stop holds its road lane. Skippable
+	// stops already have a road-only path and must not select another lane here.
 	isOuterLanePassing := ad.TargetLaneOffset < -f.laneWidth*0.3 && f.distToStop < 250.0
-	if nearRb == nil && f.world != nil && f.distToStop < 250.0 && f.remaining < 350.0 && (isOuterLanePassing || ad.CanSkipTargetStop) {
-		roadCenter, isEW, isMultiLane, is6Lane := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
-		if isMultiLane || is6Lane {
-			distAdj := f.laneWidth * 0.5 // Inner lane on 4-lane
-			if isOuterLanePassing {
-				if is6Lane {
-					if ad.TargetLaneOffset <= -f.laneWidth*1.5 || ad.LaneOffset <= -f.laneWidth*1.5 {
-						distAdj = f.laneWidth * 0.5 // Leftmost lane
-					} else {
-						distAdj = f.laneWidth * 1.5 // Middle lane
-					}
-				}
-			} else {
-				// Base through travel lane when skipping the stop
-				distAdj = f.laneWidth * 1.5
-				if is6Lane {
-					distAdj = f.laneWidth * 2.5
-				}
+	if !ad.CanSkipTargetStop && nearRb == nil && f.world != nil && f.distToStop < 250.0 && f.remaining < 350.0 && isOuterLanePassing {
+		roadCenter, isEW, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+		distAdj := f.laneWidth * .5
+		if six && ad.TargetLaneOffset > -f.laneWidth*1.5 && ad.LaneOffset > -f.laneWidth*1.5 {
+			distAdj = f.laneWidth * 1.5
+		} else if !multi && !six {
+			distAdj = -f.laneWidth * .5 // Borrowed opposing lane on a two-lane road.
+		}
+		if f.world.GetRoadLanes(roadCenter, isEW, f.bus.Pos) == 8 {
+			base := ad.pointAt(f.s)
+			offset := math.Abs(base.Y - roadCenter)
+			if !isEW {
+				offset = math.Abs(base.X - roadCenter)
 			}
-			if isEW {
-				if math.Cos(f.bus.Heading) > 0 {
-					targetPt.Y = roadCenter + distAdj
-				} else {
-					targetPt.Y = roadCenter - distAdj
-				}
-			} else {
-				if math.Sin(f.bus.Heading) > 0 {
-					targetPt.X = roadCenter - distAdj
-				} else {
-					targetPt.X = roadCenter + distAdj
-				}
+			distAdj = sim.Clamp(offset+ad.LaneOffset, f.laneWidth*.5, f.laneWidth*3.5)
+		}
+		if isEW {
+			direction := 1.0
+			if math.Cos(f.bus.Heading) < 0 {
+				direction = -1
 			}
+			targetPt.Y = roadCenter + direction*distAdj
 		} else {
-			// 2-lane road
-			if ad.TargetLaneOffset < -f.laneWidth*0.3 {
-				// Borrowed oncoming lane
-				distAdj := f.laneWidth * 0.5
-				if isEW {
-					if math.Cos(f.bus.Heading) > 0 {
-						targetPt.Y = roadCenter - distAdj
-					} else {
-						targetPt.Y = roadCenter + distAdj
-					}
-				} else {
-					if math.Sin(f.bus.Heading) > 0 {
-						targetPt.X = roadCenter + distAdj
-					} else {
-						targetPt.X = roadCenter - distAdj
-					}
-				}
-			} else {
-				// Normal travel lane
-				distAdj := f.laneWidth * 0.5
-				if isEW {
-					if math.Cos(f.bus.Heading) > 0 {
-						targetPt.Y = roadCenter + distAdj
-					} else {
-						targetPt.Y = roadCenter - distAdj
-					}
-				} else {
-					if math.Sin(f.bus.Heading) > 0 {
-						targetPt.X = roadCenter - distAdj
-					} else {
-						targetPt.X = roadCenter + distAdj
-					}
-				}
+			direction := 1.0
+			if math.Sin(f.bus.Heading) < 0 {
+				direction = -1
 			}
+			targetPt.X = roadCenter - direction*distAdj
 		}
-
-		// Longitudinal forward guard:
-		// When bypassing, passing in outer lane, or approaching past the station center without docking,
-		// targetPt must be projected ahead of the bus along the travel heading so the bus drives forward,
-		// never pulling targetPt behind the vehicle!
-		cosH := math.Cos(f.targetStop.Heading)
-		sinH := math.Sin(f.targetStop.Heading)
-		fwdDist := (targetPt.X-f.bus.Pos.X)*cosH + (targetPt.Y-f.bus.Pos.Y)*sinH
-		minFwd := math.Max(lookahead, 35.0)
+		forward := sim.Vec2{X: math.Cos(f.targetStop.Heading), Y: math.Sin(f.targetStop.Heading)}
+		fwdDist := targetPt.Sub(f.bus.Pos).Dot(forward)
+		minFwd := math.Max(lookahead, 35)
 		if fwdDist < minFwd {
-			targetPt = targetPt.Add(sim.Vec2{X: cosH * (minFwd - fwdDist), Y: sinH * (minFwd - fwdDist)})
+			targetPt = targetPt.Add(forward.Mul(minFwd - fwdDist))
 		}
+	}
+
+	if ad.rightTurnWaiting {
+		forward := sim.Vec2{X: math.Cos(ad.rightTurnHeading), Y: math.Sin(ad.rightTurnHeading)}
+		targetPt = f.bus.Pos.Add(forward.Mul(lookahead))
 	}
 	toTarget := targetPt.Sub(f.bus.Pos)
 	alpha = sim.NormalizeAngle(math.Atan2(toTarget.Y, toTarget.X) - f.bus.Heading)
@@ -360,81 +325,6 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	// enforce that vehicle's front corner clearance to the double-yellow line >= margin.
 	if f.world != nil {
 		rCenter, rEW, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
-		if isTransitioningToLeftTurn && (isMulti || is6) && !nearRoundabout {
-			roadHeading := 0.0
-			dCenter := f.bus.Pos.Y - rCenter
-			if rEW {
-				if math.Cos(f.bus.Heading) < 0 {
-					roadHeading = math.Pi
-					dCenter = rCenter - f.bus.Pos.Y
-				}
-			} else {
-				if math.Sin(f.bus.Heading) > 0 {
-					roadHeading = math.Pi / 2.0
-					dCenter = rCenter - f.bus.Pos.X
-				} else {
-					roadHeading = -math.Pi / 2.0
-					dCenter = f.bus.Pos.X - rCenter
-				}
-			}
-
-			// Enforce when bus is on our side of the road and in or near inner/middle lane corridor (<= 1.9*lw)
-			if dCenter > 0 && dCenter <= f.laneWidth*1.9 {
-				isBeforeInterMouth := true
-				if f.tls != nil {
-					for _, inter := range f.tls.Intersections {
-						cosH := math.Cos(f.bus.Heading)
-						sinH := math.Sin(f.bus.Heading)
-						toInter := inter.Center.Sub(f.bus.Pos)
-						fwdDist := toInter.X*cosH + toInter.Y*sinH
-						stopLineOffset := inter.GetStopLineDistForHeading(f.bus.Heading, f.laneWidth)
-						if fwdDist > -30.0 && fwdDist < stopLineOffset*0.35 {
-							isBeforeInterMouth = false
-							break
-						}
-					}
-				}
-
-				if isBeforeInterMouth {
-					psi := sim.NormalizeAngle(roadHeading - f.bus.Heading)
-					halfL := f.bus.Length * 0.5
-					halfW := f.bus.Width * 0.5
-					margin := 1.5
-
-					// Compute maximum safe yaw angle towards oncoming traffic:
-					// While transitioning towards the innermost left-turn lane, yaw should not exceed ~18.3 deg (0.32 rad)
-					// and must dynamically tighten to ensure front-left corner never violates the double-yellow line.
-					avail := (dCenter - halfW - margin) / halfL
-					maxPsi := 0.32
-					if avail <= 0.0 {
-						maxPsi = 0.0
-					} else if avail < 1.0 {
-						geomPsi := math.Asin(avail)
-						if geomPsi < maxPsi {
-							maxPsi = geomPsi
-						}
-					}
-
-					if psi > maxPsi {
-						// Heading is too steep towards double-yellow line!
-						excess := psi - maxPsi
-						correctiveSteer := sim.Clamp(excess*6.0+0.25, 0.30, 1.0)
-						if steer < correctiveSteer {
-							steer = correctiveSteer
-						}
-					} else if psi > maxPsi*0.75 {
-						if steer < 0 {
-							steer = 0.0
-						}
-					}
-					if dCenter < halfW+0.5 && psi > 0 {
-						if steer < 0.20 {
-							steer = 0.20
-						}
-					}
-				}
-			}
-		}
 
 		// Opposite shoulder collision protection on 2-lane roads when borrowing oncoming lane:
 		// When borrowing oncoming lane (LaneOffset < 0) or vehicle position is near oncoming half, enforce clearance to opposite shoulder.
@@ -498,5 +388,6 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		}
 	}
 
+	steer = ad.roadLaneSafeSteering(f, steer)
 	return steer, alpha, targetPt, nearRoundabout
 }

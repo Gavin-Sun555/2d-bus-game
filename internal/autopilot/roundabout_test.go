@@ -170,10 +170,10 @@ func TestRoundaboutAutopilotBrakesForEncroachingCar(t *testing.T) {
 	}
 }
 
-// TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout verifies that in Berserk mode,
-// when a bus encounters a slower vehicle ahead in a roundabout, it overtakes via the inner passing
-// lane without falsely steering outwards or exiting the roundabout into unselected side avenues.
-func TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout(t *testing.T) {
+// TestAutopilotBerserkRoundaboutFollowsSlowCarWithoutPassing verifies that in Berserk mode,
+// a bus stays in its outer circulation lane behind a slow vehicle rather than
+// creating a passing maneuver that must be undone before the exit.
+func TestAutopilotBerserkRoundaboutFollowsSlowCarWithoutPassing(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
@@ -234,6 +234,9 @@ func TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout(t *testing.T)
 		)
 		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
 
+		if driver.TargetLaneOffset < -.01 || driver.LaneOffset < -.01 {
+			t.Fatalf("step%d: bus left its outer lane to pass slow traffic", step)
+		}
 		// 1. TargetLaneOffset must NEVER be positive in a roundabout
 		if driver.TargetLaneOffset > 0.1 {
 			t.Fatalf("Step %d: TargetLaneOffset became positive (%.2f) in roundabout, shifting outwards into exit!",
@@ -256,9 +259,8 @@ func TestAutopilotBerserkRoundaboutOvertakingDoesNotExitRoundabout(t *testing.T)
 		}
 	}
 
-	// Verify that the driver initiated an overtake into the inner lane (negative offset)
-	if driver.TargetLaneOffset >= 0.0 && driver.LaneOffset >= 0.0 && driver.OvertakeState == OvertakeNone {
-		t.Fatalf("Expected Berserk mode to attempt overtaking in the roundabout")
+	if math.Abs(driver.TargetLaneOffset) > .01 || math.Abs(driver.LaneOffset) > .01 || driver.OvertakeState != OvertakeNone {
+		t.Fatalf("slow traffic caused an unnecessary inner-lane pass: %.2f/%.2f state%d", driver.LaneOffset, driver.TargetLaneOffset, driver.OvertakeState)
 	}
 }
 

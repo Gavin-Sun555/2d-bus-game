@@ -23,7 +23,10 @@ func CurrentRoadInfo(w *World, pos Vec2, heading float64, lw float64) (roadCente
 		if pass == 1 {
 			targetIsEW = !busEW
 		}
-		for _, r := range w.Roads {
+		bestDistance := math.Inf(1)
+		var bestRoad *RoadSegment
+		for i := range w.Roads {
+			r := &w.Roads[i]
 			roadIsEW := math.Abs(r.P1.Y-r.P2.Y) < 1.0
 			if roadIsEW != targetIsEW {
 				continue
@@ -39,11 +42,27 @@ func CurrentRoadInfo(w *World, pos Vec2, heading float64, lw float64) (roadCente
 				start, end = r.P1.Y, r.P2.Y
 			}
 			minAlong, maxAlong := math.Min(start, end)-30.0, math.Max(start, end)+30.0
-			if along < minAlong || along > maxAlong || math.Abs(across-c) > r.GetWidth(lw)*0.5+15.0 {
+			if along < minAlong || along > maxAlong || math.Abs(across-c) > r.GetWidth(lw)*0.5+ShoulderWidth+20.0 {
 				continue
 			}
-			is6 := r.Lanes >= 6 || r.Type == RoadExpressway6Lane || w.IsRoad6Lane(c, roadIsEW, pos)
-			isMulti := is6 || r.Lanes >= 4 || r.Type == RoadAvenue4Lane || w.IsRoad4Lane(c, roadIsEW, pos)
+			if distance := math.Abs(across - c); distance < bestDistance {
+				bestDistance = distance
+				bestRoad = r
+			}
+		}
+		if bestRoad != nil {
+			r := bestRoad
+			roadIsEW := math.Abs(r.P1.Y-r.P2.Y) < 1
+			c := r.P1.Y
+			if !roadIsEW {
+				c = r.P1.X
+			}
+			lanes := r.Lanes
+			if lanes <= 0 {
+				lanes = w.GetRoadLanes(c, roadIsEW, pos)
+			}
+			is6 := lanes >= 6
+			isMulti := lanes >= 4
 			return c, roadIsEW, isMulti, is6
 		}
 	}

@@ -335,11 +335,8 @@ func TestAutopilotBerserkStationApproachWaitsBehindWhenRunwayInsufficient(t *tes
 	}
 }
 
-// TestAutopilotBerserkStationApproachWaitsAlongsideAndEntersBayAfterLeadLeaves verifies that when
-// the bus is approaching in the adjacent passing lane while the curb bay is occupied by a lead bus,
-// the autopilot maintains its lane, does not steer into the lead bus, slows/stops alongside, and
-// once the lead bus departs, smoothly enters the bay and docks.
-func TestAutopilotBerserkStationApproachWaitsAlongsideAndEntersBayAfterLeadLeaves(t *testing.T) {
+// A blocked bay permits Berserk boarding in the nearest clear curb lane.
+func TestAutopilotBerserkStationApproachDocksBesideOccupiedBay(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
@@ -391,57 +388,36 @@ func TestAutopilotBerserkStationApproachWaitsAlongsideAndEntersBayAfterLeadLeave
 		Width:   22,
 	}
 
-	dt := 0.016
-	// Phase 1: Wait alongside the lead bus for 200 steps
-	for step := 0; step < 200; step++ {
-		throttle, brake, steer, handbrake, toggleDoors, isDocked := driver.ComputeControls(
-			bus, route, w, nil, []VehicleObstacle{leadBus}, lw, dt,
-		)
-		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
-
-		// Must not have docked in the middle of the road while in adjacent lane
-		if isDocked || driver.State == AutopilotStateDocked {
-			t.Fatalf("Step %d: Falsely docked in adjacent lane!", step)
-		}
-
-		// Must not cut into the lead bus (TargetLaneOffset must stay negative / waiting)
-		if driver.TargetLaneOffset > -15.0 {
-			t.Fatalf("Step %d: Swerved into occupied bay while lead bus was present! TargetLaneOffset=%.2f",
-				step, driver.TargetLaneOffset)
-		}
-
-		// Must not collide with lead bus
-		dist := bus.Pos.Distance(leadBus.Pos)
-		minClearDist := bus.Length/2 + leadBus.Length/2 + 2.0
-		if dist < minClearDist {
-			t.Fatalf("Step %d: Collision with lead bus in bay! Dist=%.2f, MinClear=%.2f",
-				step, dist, minClearDist)
-		}
-	}
-
-	// Bus should be stopped or nearly stopped alongside the bay
-	if bus.Speed > 5.0 {
-		t.Fatalf("Expected bus to wait alongside at low speed/stopped, got Speed=%.2f", bus.Speed)
-	}
-
-	// Phase 2: Lead bus departs (clear obstacles)
+	dt := 1.0 / 60
 	docked := false
-	for step := 0; step < 300; step++ {
-		throttle, brake, steer, handbrake, toggleDoors, isDocked := driver.ComputeControls(
-			bus, route, w, nil, nil, lw, dt,
-		)
-		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
-
-		if isDocked || driver.State == AutopilotStateDocked {
+	for step := 0; step < 900; step++ {
+		th, br, st, hb, doors, dock := driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{leadBus}, lw, dt)
+		bus.Update(dt, th, br, st, hb, doors)
+		body := sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length / 2, HalfWid: bus.Width / 2}
+		other := sim.OBB{Center: leadBus.Pos, Heading: leadBus.Heading, HalfLen: leadBus.Length / 2, HalfWid: leadBus.Width / 2}
+		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+			t.Fatalf("collision at step %d", step)
+		}
+		if dock {
 			docked = true
 			break
 		}
 	}
-
 	if !docked {
-		t.Fatalf("After lead bus departed, bus failed to enter the bay and dock cleanly! BusPos=%v, StopPos=%v, LaneOffset=%.2f",
-			bus.Pos, toStop.Pos, driver.LaneOffset)
+		t.Fatalf("failed to dock beside occupied bay: pos=%v", bus.Pos)
 	}
+	if driver.stationDock == nil || driver.stationDock.rank != 1 {
+		t.Fatalf("did not choose nearest curb lane: %+v", driver.stationDock)
+	}
+	headingAtDock := bus.Heading
+	for step := 0; step < 30; step++ {
+		th, br, st, hb, doors, _ := driver.ComputeControls(bus, route, w, nil, nil, lw, dt)
+		bus.Update(dt, th, br, st, hb, doors)
+		if math.Abs(sim.NormalizeAngle(bus.Heading-headingAtDock)) > 0.01 {
+			t.Fatal("swerved after bay cleared during dwell")
+		}
+	}
+
 }
 
 // TestAutopilotStopBayIgnoresOpposingVehicles verifies that in autopilot functions,

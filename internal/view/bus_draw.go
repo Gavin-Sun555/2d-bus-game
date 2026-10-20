@@ -208,8 +208,9 @@ func drawBusBody(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, heading
 }
 
 func drawRotatedBox(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, cosH, sinH, len, wid float64, c color.RGBA) {
-	radius := math.Hypot(len, wid) * 0.5
-	if !cam.IsPointVisible(center, radius) {
+	halfX := (math.Abs(cosH)*len + math.Abs(sinH)*wid) / 2
+	halfY := (math.Abs(sinH)*len + math.Abs(cosH)*wid) / 2
+	if !cam.IsBoxVisible(center.X-halfX, center.Y-halfY, center.X+halfX, center.Y+halfY) {
 		return
 	}
 

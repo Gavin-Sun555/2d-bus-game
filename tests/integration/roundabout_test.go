@@ -108,7 +108,7 @@ func TestTrafficAICirculatesRoundaboutWithoutCrossingCenterIsland(t *testing.T) 
 
 					// Verify vehicle heading aligns to circle tangent during steady circulation
 					// (permitting smooth gradual steering transition during entry and exit)
-					if car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
+					if car.RoundaboutCurve == nil && car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
 						expectedTangentHeading := sim.NormalizeAngle(car.RoundaboutAngle - math.Pi/2)
 						headingDiff := math.Abs(sim.NormalizeAngle(car.Heading - expectedTangentHeading))
 						if headingDiff > 0.15 {
@@ -254,6 +254,8 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 
 			entered := false
 			exited := false
+			joinedLane := false
+			lastRadialError := math.Inf(1)
 
 			for frame := 0; frame < 400; frame++ {
 				tm.Update(dt, bus, nil, 1, laneW, w)
@@ -261,10 +263,24 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 				if car.InRoundabout {
 					entered = true
 					dist := car.Pos.Distance(center)
+					exiting := car.RoundaboutCurve != nil && car.RoundaboutCurve.Exiting
+					joining := car.RoundaboutCurve != nil && !car.RoundaboutCurve.Exiting
 
-					// 1. Vehicle must strictly maintain its circulating radius within a tight band during circulation (no diagonal curb expansion)
-					if car.RoundaboutTraveled >= 0.40 {
-						if math.Abs(dist-car.RoundaboutTargetR) > 8.0 {
+					// Entry converges over driving distance, so stopped/slow cars
+					// cannot slide sideways. Once joined, hold the circular lane.
+					radialError := math.Abs(dist - car.RoundaboutTargetR)
+					if radialError <= 8 && !joining {
+						joinedLane = true
+					}
+					if !joining && !exiting && !joinedLane && radialError > lastRadialError+.01 {
+						t.Fatal("entry radius moved away from its lane")
+					}
+					if car.RoundaboutTraveled >= 1.2 && !joinedLane {
+						t.Fatal("car failed to converge to its circulating lane")
+					}
+					lastRadialError = radialError
+					if joinedLane && !joining && !exiting {
+						if radialError > 8.0 {
 							t.Fatalf("[%s] Frame %d: Car radius deviated from circular target: dist=%.2f, targetR=%.2f, diff=%.2f > 8px",
 								theme.DisplayName(), frame, dist, car.RoundaboutTargetR, math.Abs(dist-car.RoundaboutTargetR))
 						}
@@ -275,7 +291,7 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 						t.Fatalf("[%s] Frame %d: Car too close to central island: dist=%.2f, innerR=%.2f",
 							theme.DisplayName(), frame, dist, rb.InnerRadius)
 					}
-					if car.RoundaboutTraveled >= 0.40 && dist > rb.Radius-15.0 {
+					if car.RoundaboutTraveled >= 0.40 && !exiting && dist > rb.Radius-15.0 {
 						t.Fatalf("[%s] Frame %d: Car drifted into outer curb obstacle zone: dist=%.2f, outerR=%.2f",
 							theme.DisplayName(), frame, dist, rb.Radius)
 					}
@@ -288,7 +304,7 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 					}
 
 					// 4. During steady rotary travel, heading must align with circle tangent
-					if car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
+					if !joining && !exiting && car.RoundaboutTraveled >= 0.5 && car.RoundaboutTraveled <= 2.0 {
 						expectedTangent := sim.NormalizeAngle(car.RoundaboutAngle - math.Pi/2)
 						headingErr := math.Abs(sim.NormalizeAngle(car.Heading - expectedTangent))
 						if headingErr > 0.12 {

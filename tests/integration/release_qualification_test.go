@@ -11,7 +11,7 @@ import (
 
 // TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency qualifies full multi-vehicle
 // concurrency across all 6 maps under maximum system load:
-// - 128 civilian vehicles (Maximum Traffic Density Level 5)
+// - 288 civilian vehicles (Maximum Traffic Density Level 4)
 // - 8 AI route buses (Maximum Fleet Configuration)
 // - Player bus active in world
 // - Traffic lights cycling through all intersection phases
@@ -38,12 +38,12 @@ func TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency(t *testin
 			tls := sim.NewTrafficLightSystem()
 			tls.BuildForWorld(w)
 
-			// 1. Build maximum civilian traffic (128 cars)
+			// 1. Build maximum civilian traffic (288 cars)
 			tm := traffic.NewTrafficManager(laneWidth)
 			tm.BuildForWorld(w, traffic.MaxTrafficCars, laneWidth)
-			activeCars := tm.GetActiveCars(5)
-			if len(activeCars) != 128 {
-				t.Fatalf("[%s] Expected 128 active cars at density 5, got %d", theme.DisplayName(), len(activeCars))
+			activeCars := tm.GetActiveCars(4)
+			if len(activeCars) != 288 {
+				t.Fatalf("[%s] Expected 288 active cars at density 4, got %d", theme.DisplayName(), len(activeCars))
 			}
 
 			// 2. Build maximum AI bus fleet (8 buses)
@@ -51,6 +51,7 @@ func TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency(t *testin
 			playerBus := sim.NewBus(startStop.Pos.X, startStop.Pos.Y, startStop.Heading)
 			abm := traffic.NewAIBusManager()
 			abm.BuildFleet(w, 8, laneWidth, playerBus)
+			tm.AIBusMgr = abm
 			if len(abm.Buses) != 8 {
 				t.Fatalf("[%s] Expected 8 AI buses, got %d", theme.DisplayName(), len(abm.Buses))
 			}
@@ -58,11 +59,11 @@ func TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency(t *testin
 			// 3. Simulate 150 frames (7.5 seconds of concurrent transit operation)
 			for frame := 0; frame < 150; frame++ {
 				tls.Update(dt)
-				tm.Update(dt, playerBus, tls, 5, laneWidth, w)
-				abm.Update(dt, playerBus, w, tls, nil, laneWidth, 5)
+				tm.Update(dt, playerBus, tls, 4, laneWidth, w)
+				abm.Update(dt, playerBus, w, tls, tm, laneWidth, 4)
 
 				// Verify civilian traffic cars
-				for i, car := range tm.GetActiveCars(5) {
+				for i, car := range tm.GetActiveCars(4) {
 					if math.IsNaN(car.Pos.X) || math.IsNaN(car.Pos.Y) || math.IsNaN(car.Speed) {
 						t.Fatalf("[%s] Civilian car #%d corrupted with NaN at frame %d", theme.DisplayName(), i, frame)
 					}

@@ -31,6 +31,8 @@ func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedA
 		route.AdvanceToNextStop()
 	}
 	ad.LastTargetID = route.GetCurrentTargetStopID()
+	ad.departureFromDock = ad.stationDock != nil && ad.stationDock.rank > 0
+	ad.stationDock = nil
 	ad.State = AutopilotStateDeparting
 	ad.DockedStopID = -1
 	ad.WaypointIdx = 0

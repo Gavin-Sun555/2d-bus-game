@@ -14,6 +14,18 @@ import (
 // Draw renders traffic lights and stop lines in the world with dynamic lane width
 func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim.Camera, laneWidth float64) {
 	for _, inter := range tls.Intersections {
+		// Include the outermost stop line, curb posts and signal heads. Distant
+		// circles must be culled before vector tessellation at large coordinates.
+		ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
+		halfRoad := laneWidth + 12
+		for _, lanes := range inter.ApproachLanes {
+			halfRoad = math.Max(halfRoad, float64(lanes)*laneWidth/2+12)
+		}
+		radius := math.Hypot(math.Max(ewStop, nsStop), halfRoad) + 40/cam.Zoom
+		if !cam.IsPointVisible(inter.Center, radius) {
+			continue
+		}
+
 		// 1. Draw Stop Lines on valid approaches scaled to current lane width
 		drawIntersectionStopLines(screen, cam, inter, laneWidth)
 
@@ -72,6 +84,22 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 			}
 			drawApproachSignal(screen, cam, inter.Center, 3, nsThru, nsLeft, lanes, laneWidth, nsCross)
 		}
+		for approach, reserved := range inter.ApproachBusLane {
+			if !reserved {
+				continue
+			}
+			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
+			fwd := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
+			cross := ewCross
+			if approach >= 2 {
+				cross = nsCross
+			}
+			thru, left := inter.GetSignalForApproach(heading)
+			base := inter.Center.Sub(fwd.Mul(cross))
+			drawSignalHead(screen, cam, base.Add(right.Mul(3.25*laneWidth)), left, true, approach < 2)
+			drawSignalHead(screen, cam, base.Add(right.Mul(3.75*laneWidth)), thru, false, approach < 2)
+		}
 	}
 
 	// 3. Draw straight road surveillance camera gantries
@@ -85,7 +113,7 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 		camOffsets := []float64{-laneWidth * 1.0, laneWidth * 1.0}
 		is6 := (rc.Lanes >= 6) || (rc.IsEW && math.Abs(rc.RoadCoord-(-1200*sim.MapGridScale)) < 15.0)
 		if is6 {
-			roadHalfWidth = laneWidth*3.0 + 12.0
+			roadHalfWidth = laneWidth*float64(max(6, rc.Lanes))/2 + 12.0
 			camOffsets = []float64{-laneWidth * 2.0, -laneWidth * 1.0, laneWidth * 1.0, laneWidth * 2.0}
 		}
 
@@ -190,7 +218,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 	if inter.ApproachHasRoad[0] || !inter.HasConfiguredRoads() {
 		roadHalf := laneWidth*1.0 + 6.0
 		if inter.ApproachLanes[0] >= 6 {
-			roadHalf = laneWidth*3.0 + 12.0
+			roadHalf = laneWidth*float64(inter.ApproachLanes[0])/2 + 12.0
 		} else if inter.ApproachIs4Lane[0] || (!inter.HasConfiguredRoads() && inter.IsMajor) {
 			roadHalf = laneWidth*2.0 + 12.0
 		}
@@ -203,7 +231,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 	if inter.ApproachHasRoad[1] || !inter.HasConfiguredRoads() {
 		roadHalf := laneWidth*1.0 + 6.0
 		if inter.ApproachLanes[1] >= 6 {
-			roadHalf = laneWidth*3.0 + 12.0
+			roadHalf = laneWidth*float64(inter.ApproachLanes[1])/2 + 12.0
 		} else if inter.ApproachIs4Lane[1] || (!inter.HasConfiguredRoads() && inter.IsMajor) {
 			roadHalf = laneWidth*2.0 + 12.0
 		}
@@ -216,7 +244,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 	if inter.ApproachHasRoad[2] || !inter.HasConfiguredRoads() {
 		roadHalf := laneWidth*1.0 + 6.0
 		if inter.ApproachLanes[2] >= 6 {
-			roadHalf = laneWidth*3.0 + 12.0
+			roadHalf = laneWidth*float64(inter.ApproachLanes[2])/2 + 12.0
 		} else if inter.ApproachIs4Lane[2] || (!inter.HasConfiguredRoads() && inter.IsMajor) {
 			roadHalf = laneWidth*2.0 + 12.0
 		}
@@ -229,7 +257,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 	if inter.ApproachHasRoad[3] || !inter.HasConfiguredRoads() {
 		roadHalf := laneWidth*1.0 + 6.0
 		if inter.ApproachLanes[3] >= 6 {
-			roadHalf = laneWidth*3.0 + 12.0
+			roadHalf = laneWidth*float64(inter.ApproachLanes[3])/2 + 12.0
 		} else if inter.ApproachIs4Lane[3] || (!inter.HasConfiguredRoads() && inter.IsMajor) {
 			roadHalf = laneWidth*2.0 + 12.0
 		}
@@ -259,7 +287,7 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 	case 0: // West approach (Eastbound, right curb on +Y side)
 		curbY := c.Y + laneWidth*1.0 + 8.0
 		if is6Lane {
-			curbY = c.Y + laneWidth*3.0 + 12.0
+			curbY = c.Y + laneWidth*float64(approachLanes)/2 + 12.0
 		} else if is4Lane {
 			curbY = c.Y + laneWidth*2.0 + 12.0
 		}
@@ -277,7 +305,7 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 	case 1: // East approach (Westbound, right curb on -Y side)
 		curbY := c.Y - (laneWidth*1.0 + 8.0)
 		if is6Lane {
-			curbY = c.Y - (laneWidth*3.0 + 12.0)
+			curbY = c.Y - (laneWidth*float64(approachLanes)/2 + 12.0)
 		} else if is4Lane {
 			curbY = c.Y - (laneWidth*2.0 + 12.0)
 		}
@@ -295,7 +323,7 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 	case 2: // North approach (Southbound, right curb on -X side)
 		curbX := c.X - (laneWidth*1.0 + 8.0)
 		if is6Lane {
-			curbX = c.X - (laneWidth*3.0 + 12.0)
+			curbX = c.X - (laneWidth*float64(approachLanes)/2 + 12.0)
 		} else if is4Lane {
 			curbX = c.X - (laneWidth*2.0 + 12.0)
 		}
@@ -313,7 +341,7 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 	case 3: // South approach (Northbound, right curb on +X side)
 		curbX := c.X + (laneWidth*1.0 + 8.0)
 		if is6Lane {
-			curbX = c.X + (laneWidth*3.0 + 12.0)
+			curbX = c.X + (laneWidth*float64(approachLanes)/2 + 12.0)
 		} else if is4Lane {
 			curbX = c.X + (laneWidth*2.0 + 12.0)
 		}
@@ -368,6 +396,9 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 }
 
 func drawSignalHead(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, currentSig sim.LightSignal, isLeftArrow bool, isHorizontal bool) {
+	if !cam.IsPointVisible(pos, 30/cam.Zoom) {
+		return
+	}
 	sp := cam.WorldToScreen(pos)
 	scale := cam.Zoom
 	if scale < 0.22 {

@@ -15,7 +15,7 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 	g := game.NewGame(1280, 720)
 	g.EnterCity(sim.MapThemeMetropolis)
 	g.Settings.AutopilotEnabled = true
-	g.Settings.TrafficDensity = 2 // Medium density (24 active cars out of 36)
+	g.Settings.TrafficDensity = 2 // Medium density (72 active cars out of 288)
 
 	// Ensure no spawn definitions coincide directly with road camera locations
 	for _, cam := range g.TrafficLights.RoadCameras {
@@ -26,10 +26,10 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 		}
 	}
 
-	// Inactive cars (index >= 24) must never be added to active obstacle list
+	// Inactive cars (index >= 72) must never be added to active obstacle list
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
-	if len(activeCars) != 24 {
-		t.Fatalf("Expected 24 active cars for density level 2, got %d", len(activeCars))
+	if len(activeCars) != 72 {
+		t.Fatalf("Expected 72 active cars for density level 2, got %d", len(activeCars))
 	}
 
 	// Set active leg Stop 9 -> Stop 10 Eastbound along South Ring (Y=1200*MapGridScale)
@@ -62,8 +62,8 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 	}
 }
 
-// TestTrafficDensity72And128 verifies the 4th (72 cars) and 5th (128 cars) density options across all 6 maps.
-func TestTrafficDensity72And128(t *testing.T) {
+// TestTrafficDensityFourLevels verifies all four density options across all six maps.
+func TestTrafficDensityFourLevels(t *testing.T) {
 	themes := []sim.MapTheme{
 		sim.MapThemeMetropolis,
 		sim.MapThemeCoastalBay,
@@ -80,17 +80,16 @@ func TestTrafficDensity72And128(t *testing.T) {
 			tm := traffic.NewTrafficManager(lw)
 			tm.BuildForWorld(w, traffic.MaxTrafficCars, lw)
 
-			if len(tm.Cars) != 128 {
-				t.Fatalf("[%s] Expected 128 total cars generated, got %d", theme.DisplayName(), len(tm.Cars))
+			if len(tm.Cars) != 288 {
+				t.Fatalf("[%s] Expected 288 total cars generated, got %d", theme.DisplayName(), len(tm.Cars))
 			}
 
-			// Verify density levels: 1:12, 2:24, 3:36, 4:72, 5:128
+			// Verify density levels: low, medium, high, congested.
 			expectedCounts := map[int]int{
-				1: 12,
-				2: 24,
-				3: 36,
-				4: 72,
-				5: 128,
+				1: 36,
+				2: 72,
+				3: 144,
+				4: 288,
 			}
 			for lvl, exp := range expectedCounts {
 				active := tm.GetActiveCars(lvl)
@@ -100,7 +99,7 @@ func TestTrafficDensity72And128(t *testing.T) {
 				}
 			}
 
-			// Verify simulation step with 128 cars runs smoothly without NaN or panic
+			// Verify simulation step with 288 cars runs smoothly without NaN or panic
 			tls := sim.NewTrafficLightSystem()
 			tls.BuildForWorld(w)
 			playerBus := sim.NewBus(w.Stops[0].Pos.X, w.Stops[0].Pos.Y, w.Stops[0].Heading)
@@ -108,8 +107,8 @@ func TestTrafficDensity72And128(t *testing.T) {
 			dt := 0.05
 			for frame := 0; frame < 30; frame++ {
 				tls.Update(dt)
-				tm.Update(dt, playerBus, tls, 5, lw, w)
-				for idx, c := range tm.GetActiveCars(5) {
+				tm.Update(dt, playerBus, tls, 4, lw, w)
+				for idx, c := range tm.GetActiveCars(4) {
 					if math.IsNaN(c.Pos.X) || math.IsNaN(c.Pos.Y) || math.IsNaN(c.Speed) {
 						t.Fatalf("[%s] Car #%d has NaN values at frame %d", theme.DisplayName(), idx, frame)
 					}
@@ -251,7 +250,7 @@ func TestAIVehicleLaneComplianceAndTurnExecution(t *testing.T) {
 	// AI Car in Lane 0 (inner lane, Eastbound, approaching (0,0))
 	car := &sim.TrafficCar{
 		ID:          0,
-		Pos:         sim.Vec2{X: -15, Y: 21.0}, // Right at intersection center
+		Pos:         sim.Vec2{X: -500, Y: 21.0}, // Right at intersection center
 		Heading:     0,
 		Speed:       80,
 		TargetSpeed: 100,
@@ -265,8 +264,15 @@ func TestAIVehicleLaneComplianceAndTurnExecution(t *testing.T) {
 	tm := &traffic.TrafficManager{Cars: []*sim.TrafficCar{car}}
 	bus := sim.NewBus(1000, 1000, 0)
 
-	// Update 1 step
-	tm.Update(0.016, bus, tls, 1, laneW)
+	// A turn is continuous and must clear the arc before adopting the new road.
+	previous := car.Pos
+	for step := 0; step < 1000 && car.IsEW; step++ {
+		tm.Update(.016, bus, tls, 1, laneW)
+		if car.Pos.Distance(previous) > 4 {
+			t.Fatal("car teleported during left turn")
+		}
+		previous = car.Pos
+	}
 
 	// Car must have executed its left turn: heading North (-Pi/2), IsEW=false, RoadCenter=0
 	if car.IsEW {

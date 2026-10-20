@@ -56,11 +56,13 @@ func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane
 	var approachingInter *sim.TrafficIntersection
 	distToStopLine := 999.0
 	isApproachingIntersection, isUpcomingLeft, isUpcomingRight := false, false, false
-	cosH, sinH := math.Cos(f.bus.Heading), math.Sin(f.bus.Heading)
+	// Lane-change yaw must not rotate the approach corridor or its exit.
+	heading := approachRoadHeading(f.bus.Heading)
+	cosH, sinH := math.Cos(heading), math.Sin(heading)
 
 	if f.tls != nil {
 		for _, inter := range f.tls.Intersections {
-			stopLineOffset := inter.GetStopLineDistForHeading(f.bus.Heading, f.laneWidth)
+			stopLineOffset := inter.GetStopLineDistForHeading(heading, f.laneWidth)
 			toInter := inter.Center.Sub(f.bus.Pos)
 			forwardDist := toInter.X*cosH + toInter.Y*sinH
 			lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
@@ -86,6 +88,9 @@ func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane
 				exitLatThreshold := f.laneWidth * 1.6
 				if is6Lane {
 					exitLatThreshold = f.laneWidth * 2.8
+				}
+				if inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)] >= 8 {
+					exitLatThreshold = f.laneWidth * 4.2
 				}
 				turn, foundExit := ad.intersectionExitTurn(inter.Center, cosH, sinH, stopLineOffset, exitLatThreshold)
 				hasRouteExit = foundExit
@@ -213,8 +218,11 @@ func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach int
 						ad.OvertakeState = OvertakeChangingLane
 						ad.OvertakeTimer = 0.0
 					} else {
-						ad.TargetLaneOffset = -f.laneWidth
-						ad.OvertakeState = OvertakeReturning
+						// A lane arrow is not permission to cut through an
+						// occupied lane. Continue in the current corridor and retry.
+						ad.TargetLaneOffset = ad.LaneOffset
+						ad.LaneOffsetProgress = 1
+						ad.OvertakeState = OvertakePassing
 						ad.OvertakeTimer = 0.0
 					}
 				}
@@ -294,4 +302,10 @@ func (ad *AutopilotDriver) preferredThroughLane(f autopilotFrame, distToStopLine
 		return -f.laneWidth
 	}
 	return 0
+}
+
+// The generated road network is orthogonal. Classify its approach by road
+// direction, retaining temporary lane-change yaw only for physical steering.
+func approachRoadHeading(heading float64) float64 {
+	return sim.NormalizeAngle(math.Round(heading/(math.Pi/2)) * (math.Pi / 2))
 }

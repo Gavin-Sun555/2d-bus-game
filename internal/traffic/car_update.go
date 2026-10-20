@@ -15,7 +15,10 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 		car.RoundaboutCooldown -= dt
 	}
 
-	var busesToCheck []*sim.Bus
+	// The supported fleet has eight buses plus the player; keep the
+	// per-car observation list on the stack instead of growing a heap slice.
+	var busStorage [9]*sim.Bus
+	busesToCheck := busStorage[:0]
 	if bus != nil {
 		busesToCheck = append(busesToCheck, bus)
 	}
@@ -28,11 +31,24 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 	}
 
 	frame := carFrame{car: car, bus: bus, tls: tls, world: w, index: index, activeCount: activeCount, laneWidth: laneWidth, buses: busesToCheck}
+	forcedLeftLimit := tm.prepareForcedLeftApproach(frame)
+	if forcedLeftLimit < targetSpd {
+		car.IsBraking = true
+	}
+	targetSpd = math.Min(targetSpd, forcedLeftLimit)
+	if math.IsInf(forcedLeftLimit, 1) {
+		tm.prepareEightLaneApproach(frame)
+	}
 	targetSpd = tm.signalSpeed(frame, targetSpd)
+	targetSpd = tm.stationBusYieldSpeed(frame, targetSpd)
 	targetSpd = tm.busFollowingSpeed(frame, targetSpd)
 	targetSpd = tm.carFollowingSpeed(frame, targetSpd)
 	targetSpd = tm.intersectionYieldSpeed(frame, targetSpd)
 	targetSpd = tm.roundaboutSpeed(frame, targetSpd)
+
+	if car.JunctionTurn != nil {
+		targetSpd = math.Min(targetSpd, 85)
+	}
 
 	// 2. Acceleration / Braking Physics
 	if car.Speed < targetSpd {
@@ -45,7 +61,7 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 
 	tm.turnCarAtIntersection(frame)
 
-	// 4. Map Boundary Wrapping & Lane Tracking with customizable lane width
+	// 4. Preserve lane tracking until the car leaves the map.
 	tm.handleCarNavigation(car, laneWidth, w)
 }
 

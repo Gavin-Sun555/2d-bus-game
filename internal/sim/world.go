@@ -16,6 +16,8 @@ const (
 	RoadAvenue4Lane     RoadType = iota // 4-lane major avenue / ring highway
 	RoadStreet2Lane                     // 2-lane city street
 	RoadExpressway6Lane                 // 6-lane express avenue / trunk highway
+	RoadBoulevard8Lane
+	RoadBusBoulevard8Lane
 )
 
 type RoadZone int
@@ -44,13 +46,12 @@ type RoadSegment struct {
 }
 
 func (r RoadSegment) GetWidth(laneWidth float64) float64 {
-	if r.Lanes >= 6 || r.Type == RoadExpressway6Lane {
-		return float64(r.Lanes)*laneWidth + 24.0 // 6 lanes + central median
+	lanes := r.LaneCount()
+	median := 12.0
+	if lanes >= 4 || r.Type == RoadAvenue4Lane {
+		median = 24
 	}
-	if r.Lanes == 4 || r.Type == RoadAvenue4Lane {
-		return float64(r.Lanes)*laneWidth + 24.0 // 4 lanes + central median
-	}
-	return float64(r.Lanes)*laneWidth + 12.0 // 2 lanes + median divider
+	return float64(lanes)*laneWidth + median
 }
 
 // Building represents decorative scenery blocks
@@ -253,16 +254,7 @@ func (w *World) GetRoadLanes(coord float64, isEW bool, posOptional ...Vec2) int 
 						}
 					}
 				}
-				if r.Lanes > 0 {
-					return r.Lanes
-				}
-				if r.Type == RoadExpressway6Lane {
-					return 6
-				}
-				if r.Type == RoadAvenue4Lane {
-					return 4
-				}
-				return 2
+				return r.LaneCount()
 			}
 		}
 	}
@@ -503,13 +495,13 @@ func (w *World) GetIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf
 	}
 	ewHalf = laneWidth*1.0 + 6.0
 	if maxEW >= 6 {
-		ewHalf = laneWidth*3.0 + 12.0
+		ewHalf = laneWidth*float64(maxEW)/2 + 12.0
 	} else if maxEW >= 4 {
 		ewHalf = laneWidth*2.0 + 12.0
 	}
 	nsHalf = laneWidth*1.0 + 6.0
 	if maxNS >= 6 {
-		nsHalf = laneWidth*3.0 + 12.0
+		nsHalf = laneWidth*float64(maxNS)/2 + 12.0
 	} else if maxNS >= 4 {
 		nsHalf = laneWidth*2.0 + 12.0
 	}

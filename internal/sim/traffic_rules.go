@@ -61,7 +61,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 		}
 
 		// Direction vectors based on current heading (or entry heading if already inside)
-		refHeading := effHeading
+		refHeading := intersectionApproachHeading(effHeading)
 		if inter.PlayerInside {
 			refHeading = inter.PlayerEntryHeading
 		}
@@ -85,7 +85,8 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 
 		// Lateral offset from approach road corridor centerline (checked only before entry)
 		latDist := math.Abs(rLead.X*vRight.X + rLead.Y*vRight.Y)
-		roadHalfWidth := lw*2.5 + 35.0
+		approachLanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(refHeading)]
+		roadHalfWidth := math.Max(lw*2.5+35, float64(approachLanes)*lw/2+12)
 		if !inter.PlayerInside && latDist > roadHalfWidth {
 			continue
 		}
@@ -114,51 +115,38 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				inter.PlayerTurnedRight = false
 				inter.PlayerTurnedLeft = false
 
-				inter.PlayerEntryHeading = effHeading
+				inter.PlayerEntryHeading = refHeading
 				inter.PlayerEntryPos = bus.Pos
 
-				// Robust approach corridor determination:
-				// If heading is clearly aligned (|cos| > 0.707 or |sin| > 0.707), use heading.
-				// If vehicle is already steering into a turn at the stop line, use approach position!
-				cosEntry := math.Abs(math.Cos(effHeading))
-				sinEntry := math.Abs(math.Sin(effHeading))
-				relPos := bus.Pos.Sub(inter.Center)
-				isEW := true
-				if cosEntry > 0.707 {
-					isEW = true
-				} else if sinEntry > 0.707 {
-					isEW = false
-				} else {
-					isEW = math.Abs(relPos.X) >= math.Abs(relPos.Y)
-				}
+				// The stop line belongs to the road axis, not the bus's temporary
+				// lane-change yaw. Keep this axis fixed for the whole passage.
+				isEW := math.Abs(math.Cos(refHeading)) > .5
 				inter.PlayerEntryIsEW = isEW
 
 				// Determine entry lane:
 				// Single-lane roads (2-lane roads with 1 lane in each direction) do NOT have dedicated lanes.
 				// On multi-lane avenues:
 				// 0 = inner (dedicated left-turn lane), 1 = outer (straight/right lane)
-				hasDedicatedLanes := inter.ApproachHasDedicatedLanesForHeading(effHeading)
+				hasDedicatedLanes := inter.ApproachHasDedicatedLanesForHeading(refHeading)
 				inter.PlayerEntryLane = 1
 				if hasDedicatedLanes {
-					distFromCenter := 0.0
-					if isEW {
-						distFromCenter = math.Abs(bus.Pos.Y - inter.Center.Y)
-					} else {
-						distFromCenter = math.Abs(bus.Pos.X - inter.Center.X)
-					}
-					// Lane 0 is inner lane: distFromCenter in [0, 0.95*lw).
-					// If vehicle is in Lane 1 or already steering/turning right, never mark as Lane 0!
-					if distFromCenter < lw*0.95 && bus.SteeringAngle <= 0.01 {
+					// Capture the lane where the leading bumper crosses the line.
+					// The long bus's center may still be in the previous lane.
+					entryLateral := math.Abs(leadingPos.Sub(inter.Center).Dot(vRight))
+					if entryLateral < lw {
 						inter.PlayerEntryLane = 0
 					}
 				}
 
-				// Check initial steering intent at entry
+				entryLat := math.Abs(leadingPos.Sub(inter.Center).Dot(vRight))
+				signedEntryLat := leadingPos.Sub(inter.Center).Dot(vRight)
+				inter.PlayerEntryRightTurnLane = approachLanes >= 8 && signedEntryLat >= 3*lw && signedEntryLat <= 4*lw+12
+				inter.PlayerEntryBusLane = inter.ApproachBusLane[inter.GetApproachIndexForHeading(refHeading)] && entryLat >= 3*lw && entryLat <= 4*lw+12
+				inter.PlayerEntryBusLeftOnly = false
+				// Preserve right-on-red behavior, but a small countersteer must
+				// never select the left arrow instead of the through signal.
 				if bus.SteeringAngle > 0.02 {
 					inter.PlayerTurnedRight = true
-				}
-				if bus.SteeringAngle < -0.015 {
-					inter.PlayerTurnedLeft = true
 				}
 
 				// Retrieve signals of the approach corridor the vehicle entered from:
@@ -170,8 +158,9 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 					leftSig = ewL
 				}
 
+				inter.PlayerEntryBusLeftOnly = inter.PlayerEntryBusLane && (leftSig == SignalGreen || leftSig == SignalYellow) && thruSig == SignalRed
 				movementSig := thruSig
-				if hasDedicatedLanes && (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) {
+				if hasDedicatedLanes && inter.PlayerEntryLane == 0 {
 					movementSig = leftSig
 				}
 
@@ -179,10 +168,12 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				// 1. Right turn is ALWAYS lawful and exempt from red light violations!
 				// 2. Left turn when left signal is Green/Yellow gives lawful right-of-way!
 				// 3. Green or Yellow entry gives lawful right-of-way!
-				if inter.PlayerTurnedRight || movementSig == SignalGreen || movementSig == SignalYellow {
+				if inter.PlayerEntryBusLeftOnly || inter.PlayerTurnedRight || movementSig == SignalGreen || movementSig == SignalYellow {
 					inter.PlayerCrossedBeforeYellow = true
 					inter.PlayerCrossedOnRed = false
-				} else if hasDedicatedLanes && (leftSig == SignalGreen || leftSig == SignalYellow) && (inter.PlayerEntryLane == 0 || inter.PlayerTurnedLeft) {
+				} else if hasDedicatedLanes && (leftSig == SignalGreen || leftSig == SignalYellow) && (inter.PlayerEntryLane == 0 || bus.SteeringAngle < -0.015) {
+					// Keep lenient green-arrow entry for a bus straddling lanes.
+					// Steering may grant this exemption, but cannot choose a red arrow.
 					inter.PlayerCrossedBeforeYellow = true
 					inter.PlayerCrossedOnRed = false
 				} else if !hasDedicatedLanes && (thruSig == SignalGreen || thruSig == SignalYellow) {
@@ -195,13 +186,16 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 			}
 		}
 
+		if !inter.PlayerInside {
+			continue
+		}
+
 		dHead := NormalizeAngle(effHeading - inter.PlayerEntryHeading)
 
 		// Relative lateral movement towards the cross-streets:
 		entryVRight := Vec2{X: -math.Sin(inter.PlayerEntryHeading), Y: math.Cos(inter.PlayerEntryHeading)}
 		disp := bus.Pos.Sub(inter.PlayerEntryPos)
 		latRight := disp.X*entryVRight.X + disp.Y*entryVRight.Y
-		latLeft := -latRight
 
 		// Retrieve signals of the approach corridor entered:
 		ewThru, ewL, nsThru, nsL := inter.GetDetailedSignals()
@@ -221,9 +215,9 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 			inter.PlayerCrossedBeforeYellow = true
 		}
 
-		// Left-Turn Detection (Dynamic & Lenient):
-		// If steering left, heading turned counter-clockwise, or drifted left towards cross street:
-		if bus.SteeringAngle < -0.015 || dHead < -0.05 || (latLeft > 5.0 && dHead < 0.05) {
+		// A turn needs an actual change from the approach road direction.
+		// Steering angle and small lateral corrections also occur while going straight.
+		if dHead < -0.35 {
 			inter.PlayerTurnedLeft = true
 			turnSig := thruSig
 			if inter.ApproachHasDedicatedLanesForHeading(inter.PlayerEntryHeading) {
@@ -259,7 +253,12 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				inter.PlayerCrossedBeforeYellow = true
 			} else if reqSig == SignalRed && math.Abs(bus.Speed) >= 10.0 && inter.Cooldown <= 0 {
 				// 后轮过线判定:
-				if sTrail >= -stopLineDist {
+				// In a wide junction the right-turn tangent can be hundreds of
+				// pixels beyond the line. Wait for the actual movement instead
+				// of fining a legal right turn during its straight approach.
+				// This is a deferral, not immunity for straight/left movements.
+				rightTurnUnresolved := inter.PlayerEntryRightTurnLane && !inter.PlayerTurnedLeft && sLead < stopLineDist && !isPastExit
+				if sTrail >= -stopLineDist && !rightTurnUnresolved {
 					inter.FinedThisPassage = true
 					inter.Cooldown = 6.0
 					return true, fmt.Sprintf("[交通违章抓拍] 车辆在交叉口 #%d 闯红灯（后轮越过停止线）！", inter.ID+1)
@@ -284,6 +283,13 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 			reachedRightExit := sRight >= maxStop-15.0 && dHead > 0.35
 
 			if reachedStraightExit || reachedLeftExit || reachedRightExit {
+				if inter.PlayerEntryBusLeftOnly && reachedStraightExit && math.Abs(dHead) <= .35 && !inter.PlayerTurnedLeft {
+					inter.FinedThisPassage = true
+					inter.Cooldown = 6
+					inter.PassageCompleted = true
+					inter.PlayerInside = false
+					return true, fmt.Sprintf("[交通违章抓拍] 车辆在交叉口 #%d 闯红灯（公交道左转放行时违规直行）！", inter.ID+1)
+				}
 				// Vehicle has reached the opposite side! Now evaluate whether the vehicle obeyed the lane arrow:
 				// Case A: Left-Turn Lane (0) must turn left!
 				if inter.PlayerEntryLane == 0 {
@@ -306,7 +312,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				// Case B: Straight/Right Lane (1) must NOT turn left!
 				// 宽松判定：如果左转灯为绿灯/黄灯，或者只是借道转弯/压线的大巴车，不误判为违规左转。
 				// 只有在左转为红灯（禁止左转）时从直行车道左转，才判定违规！
-				if inter.PlayerEntryLane == 1 {
+				if inter.PlayerEntryLane == 1 && !inter.PlayerEntryBusLeftOnly {
 					if (reachedLeftExit || dHead < -0.35) && leftSig != SignalGreen && leftSig != SignalYellow {
 						inter.FinedThisPassage = true
 						inter.Cooldown = 6.0
@@ -365,7 +371,7 @@ func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lo
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
 
 		// Must be on the approaching corridor heading towards the intersection (accommodates 2, 4, and 6 lane approaches)
-		if forwardDist > -stopLineDist && forwardDist < stopLineDist+lookAhead+60 && lateralDist < laneWidth*3.6 {
+		if forwardDist > -stopLineDist && forwardDist < stopLineDist+lookAhead+60 && lateralDist < math.Max(laneWidth*3.6, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
 			distToLine := forwardDist - stopLineDist
 
 			// If already at or past the stop line into the intersection (distToLine <= 0):
@@ -432,7 +438,7 @@ func (tls *TrafficLightSystem) GetApproachingSignalInfo(pos Vec2, heading float6
 		forwardDist := toInter.X*cosH + toInter.Y*sinH
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
 
-		if forwardDist > 0 && forwardDist < stopLineDist+260 && lateralDist < laneWidth*2.5 {
+		if forwardDist > 0 && forwardDist < stopLineDist+260 && lateralDist < math.Max(laneWidth*2.5, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
 			dist := forwardDist - stopLineDist
 			th, lf := inter.GetSignalForApproach(heading)
 			rem := 0.0

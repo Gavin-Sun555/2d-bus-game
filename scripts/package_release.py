@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,9 +16,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--os', required=True, choices=['darwin', 'windows', 'linux'])
     parser.add_argument('--arch', required=True, choices=['arm64', 'amd64'])
-    parser.add_argument('--version', default='0.0.4')
+    parser.add_argument('--version', help='Release version (defaults to VERSION)')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
+    source_version = (root / 'VERSION').read_text().strip()
+    args.version = args.version or source_version
+    if args.version != source_version:
+        parser.error('version must match VERSION so archive, binary and bundle agree')
+    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?', args.version):
+        parser.error('version must be a semantic version without the v prefix')
     dist = root / 'dist'
     dist.mkdir(exist_ok=True)
     name = f'busgame-{args.version}-{args.os}-{args.arch}'
@@ -49,6 +56,7 @@ def main():
                     'CFBundleIconFile': 'AppIcon',
                     'NSHighResolutionCapable': True,
                 }, output)
+        shutil.copy2(root / 'VERSION', package)
         shutil.copy2(root / 'README.md', package)
         shutil.copy2(root / 'custom_map.json', package)
         shutil.copytree(root / 'docs', package / 'docs')

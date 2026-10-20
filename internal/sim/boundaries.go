@@ -75,13 +75,8 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 
 	// 2.7 Check Intersection Turning Clearances:
 	// Provide generous turning clearance at all intersections of the active map so long buses can comfortably turn
-	interTurnClearance := math.Max(260.0, laneWidth*4.2+55.0)
-	for _, ipt := range w.Intersections {
-		dx := pos.X - ipt.X
-		dy := pos.Y - ipt.Y
-		if dx*dx+dy*dy < interTurnClearance*interTurnClearance {
-			return BoundaryCheckResult{Zone: ZoneRoad}
-		}
+	if w.InsideJunction(pos, laneWidth, 10) {
+		return BoundaryCheckResult{Zone: ZoneRoad}
 	}
 
 	// 2.8 Check Bus Stop Bays, Platforms, and Approach/Exit Transition Tapers:

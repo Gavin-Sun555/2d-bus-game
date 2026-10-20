@@ -249,7 +249,7 @@ func TestLeftTurnEntersLeftTurnLane(t *testing.T) {
 		if pt.X >= -200.0*MapGridScale && pt.X <= 0.0 && math.Abs(math.Abs(pt.Y-1200.0*MapGridScale)-lw*0.5) < 2.0 {
 			foundInnerLaneApproach = true
 		}
-		if pt.X >= lw*0.25 && pt.X <= lw*0.55 && pt.Y >= 1200.0*MapGridScale+lw*0.25 && pt.Y <= 1200.0*MapGridScale+lw*0.55 {
+		if pt.X < 0 && pt.Y < 1200*MapGridScale && pt.Distance(Vec2{Y: 1200 * MapGridScale}) < w.JunctionAt(Vec2{Y: 1200 * MapGridScale}, lw).TurnRadius {
 			foundInnerApex = true
 		}
 		if math.Abs(pt.X-lw*1.5) < 2.0 && pt.Y < 1200.0*MapGridScale-lw {
@@ -261,8 +261,7 @@ func TestLeftTurnEntersLeftTurnLane(t *testing.T) {
 		t.Fatalf("Bus route failed to enter dedicated inner left-turn lane before left turn at (0, 1200)")
 	}
 	if !foundInnerApex {
-		t.Fatalf("Bus route left-turn arc does not pass through inner lane turn corridor (expected near X=%.1f..%.1f, Y=%.1f..%.1f)",
-			lw*0.25, lw*0.55, 1200.0*MapGridScale+lw*0.25, 1200.0*MapGridScale+lw*0.55)
+		t.Fatalf("Bus route left-turn arc must sweep through the enlarged junction before reaching the opposite approach")
 	}
 	if !foundTargetOuterMerge {
 		t.Fatalf("Bus route failed to merge out to travel lane (X=%.1f) after left turn", lw*1.5)
@@ -310,7 +309,7 @@ func TestUTurnEntersLeftTurnLane(t *testing.T) {
 
 // TestEarlyLeftTurnLaneChangeScaleWithBlockDistance verifies that left-turn lane merge
 // distance intelligently scales based on block distance between intersections:
-// - Short blocks (< 320px) maintain compact merge around 110-160px
+// - Short approaches finish their merge within the available block
 // - Long blocks (> 600px) merge early (up to 400-650px) to enter left-turn lane in advance
 func TestEarlyLeftTurnLaneChangeScaleWithBlockDistance(t *testing.T) {
 	lw := 52.0
@@ -334,9 +333,16 @@ func TestEarlyLeftTurnLaneChangeScaleWithBlockDistance(t *testing.T) {
 			}
 		}
 	}
+	// Even a stop already inside the new junction box must not introduce a
+	// backwards segment while joining the left-turn arc.
+	for i := 1; i < len(pathShort); i++ {
+		if pathShort[i].X < pathShort[i-1].X-.01 {
+			t.Fatalf("short left turn reverses between %v and %v", pathShort[i-1], pathShort[i])
+		}
+	}
 	distShort := math.Abs(mergeXShort)
-	if distShort > 180.0 {
-		t.Fatalf("Short block merge distance should be compact (<= 180px), got %.1fpx", distShort)
+	if distShort > 220.0 {
+		t.Fatalf("Short block merge distance should be within the short approach (<= 220px), got %.1fpx", distShort)
 	}
 
 	// Long block setup: s1 at X=-900*MapGridScale, intersection at (0, 1200*MapGridScale)
@@ -412,7 +418,7 @@ func TestSixLaneSmoothLeftTurnMergeTaper(t *testing.T) {
 		}
 
 		// Identify taper points where lateral offset transitions between travel lane (lw*2.5 = 130) and left-turn lane (lw*0.5 = 26)
-		if pA.X > 0 && pB.X >= 0 {
+		if pA.X > w.JunctionAt(interPt, lw).HalfX && pB.X >= w.JunctionAt(interPt, lw).HalfX {
 			latA := math.Abs(pA.Y - interPt.Y)
 			latB := math.Abs(pB.Y - interPt.Y)
 			if (latA > lw*0.6 || latB > lw*0.6) && (latA < lw*2.4 || latB < lw*2.4) {

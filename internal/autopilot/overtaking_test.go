@@ -362,7 +362,7 @@ func TestLeftTurnLaneChangeDoesNotCrossDoubleYellowIntoOncomingLane(t *testing.T
 							}
 						}
 
-						if distToInter > 80.0 {
+						if distToInter > 80.0 && !w.InsideJunction(bus.Pos, lw, 0) {
 							if isEW {
 								if math.Cos(bus.Heading) < -0.5 { // Westbound: legal Y < roadCenter
 									if flCorner.Y > roadCenter-2.0 || rlCorner.Y > roadCenter-2.0 {

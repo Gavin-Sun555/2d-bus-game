@@ -134,7 +134,7 @@ func TestReleaseQualification_AllMapsAutopilotTransitMultiLap(t *testing.T) {
 									}
 								}
 
-								if distToInter > 80.0 {
+								if distToInter > 80.0 && !w.InsideJunction(bus.Pos, laneWidth, 0) {
 									if isEW {
 										if math.Cos(bus.Heading) < -0.5 { // Westbound: legal Y < roadCenter
 											if flCorner.Y > roadCenter-1.0 || rlCorner.Y > roadCenter-1.0 {

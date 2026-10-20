@@ -14,7 +14,7 @@ import (
 func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, steer float64, handbrake, toggleDoors bool) {
 	// Collect dynamic obstacles (civilian traffic cars + route AI buses)
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
-	obs := make([]autopilot.VehicleObstacle, 0, len(activeCars)+len(g.AIBusMgr.Buses))
+	obs := g.obstacles[:0]
 	for _, c := range activeCars {
 		obs = append(obs, autopilot.VehicleObstacle{
 			Pos:     c.Pos,
@@ -36,6 +36,7 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 		}
 	}
 
+	g.obstacles = obs
 	g.AutopilotDriver.BerserkMode = g.Settings.AutopilotBerserk
 	g.AutopilotDriver.BerserkMaxSpeed = g.Settings.GetBerserkCruiseSpeed()
 	if g.Settings.AutopilotBerserk {
@@ -67,6 +68,7 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 
 func (g *Game) manualControls() (throttle, brake, steer float64, handbrake, toggleDoors bool) {
 	g.AutopilotDeadlockTimer = 0
+	g.DeadlockTracker = sim.StationaryTracker{}
 	g.Bus.MaxSpeedFwd = g.Settings.GetBusMaxSpeed()
 	// Driver controls: Separated accelerator throttle and service foot brake
 	if ebiten.IsKeyPressed(ebiten.KeyW) || ebiten.IsKeyPressed(ebiten.KeyUp) {

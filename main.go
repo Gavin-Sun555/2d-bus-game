@@ -6,6 +6,7 @@ import (
 	"image"
 	_ "image/png"
 	"log"
+	"strings"
 
 	"github.com/Gavin-Sun555/2d-bus-game/game"
 	"github.com/hajimehoshi/ebiten/v2"
@@ -20,6 +21,9 @@ var icon128Bytes []byte
 //go:embed assets/icon_64.png
 var icon64Bytes []byte
 
+//go:embed VERSION
+var releaseVersion string
+
 func main() {
 	const (
 		screenWidth  = 1280
@@ -27,7 +31,7 @@ func main() {
 	)
 
 	ebiten.SetWindowSize(screenWidth, screenHeight)
-	ebiten.SetWindowTitle("2D Bus Simulator & Route Planner (Go + Ebitengine)")
+	ebiten.SetWindowTitle("2D Bus Simulator & Route Planner v" + strings.TrimSpace(releaseVersion) + " (Go + Ebitengine)")
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 
 	// Set custom game logo as application window icon (multi-resolution for crisp Retina display)

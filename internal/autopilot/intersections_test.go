@@ -239,20 +239,17 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 	// Eastbound along road (Y = 78 outer -> merges to Y = 26 inner -> turns left at intersection center into Northbound road)
 	driver := NewAutopilotDriver()
 	driver.State = AutopilotStateCruising
-	driver.drivePath = []sim.Vec2{
-		{X: -600, Y: lw * 1.5},
-		{X: -350, Y: lw * 1.5},
-		{X: -350, Y: lw * 0.5},     // Lane-change merge into dedicated left-turn lane
-		{X: lw * 0.5, Y: lw * 0.5}, // Corner apex at inner lane junction
-		{X: lw * 0.5, Y: -400},     // Exiting Northbound
-	}
+	driver.drivePath = []sim.Vec2{{X: -600, Y: lw * 1.5}, {X: -450, Y: lw / 2}}
+	driver.drivePath = append(driver.drivePath, sim.LeftTurnPath(sim.Vec2{}, 0, lw, 190)...)
+	driver.drivePath = append(driver.drivePath, sim.Vec2{X: lw / 2, Y: -400})
+
 	driver.cumLen = make([]float64, len(driver.drivePath))
 	for i := 1; i < len(driver.drivePath); i++ {
 		driver.cumLen[i] = driver.cumLen[i-1] + driver.drivePath[i].Distance(driver.drivePath[i-1])
 	}
 
 	bus := sim.NewBus(1, 0, lw)
-	bus.Pos = sim.Vec2{X: -260, Y: lw * 0.5} // In left-turn lane, 260px before intersection center
+	bus.Pos = sim.Vec2{X: -stopLineDist - 180, Y: lw * 0.5} // Start with enough braking distance before the enlarged stop line
 	bus.Heading = 0
 	bus.Speed = 140.0
 	bus.Gear = sim.GearDrive
@@ -260,9 +257,9 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 0}
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 
-	// Simulate up to 300 steps (5 seconds) of approach:
+	// Simulate the approach and stopped hold:
 	dt := 0.016
-	for step := 0; step < 300; step++ {
+	for step := 0; step < 600; step++ {
 		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
 			bus, route, w, tls, nil, lw, dt,
 		)
@@ -295,8 +292,8 @@ func TestMajorIntersectionAutopilotLeftTurnRedLightStopping(t *testing.T) {
 		t.Fatalf("Expected left signal to be Green during PhaseEWLeftGreen, got %v", leftSigNew)
 	}
 
-	// Simulate up to 300 steps (5 seconds) of driving through the green left turn:
-	for step := 0; step < 300; step++ {
+	// Simulate through the green left turn:
+	for step := 0; step < 600; step++ {
 		throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
 			bus, route, w, tls, nil, lw, dt,
 		)
@@ -414,8 +411,8 @@ func TestAutopilotMetropolisLeftTurnsWithTrafficLightsNoViolations(t *testing.T)
 		bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
 
 		if violated, notice := tls.CheckPlayerViolation(bus, laneW); violated {
-			t.Fatalf("Step %d: Autopilot committed traffic violation: %s, bus pos: %v, speed: %.2f",
-				step, notice, bus.Pos, bus.Speed)
+			t.Fatalf("Step %d: Autopilot committed traffic violation: %s, bus pos: %v, speed: %.2f heading %.2f target %v path %.1f remaining %.1f",
+				step, notice, bus.Pos, bus.Speed, bus.Heading, driver.LastPursuitPt, driver.LastPathS, driver.LastRemaining)
 		}
 	}
 }
@@ -776,8 +773,9 @@ func TestAIBusLeftTurnNotBlockedByOncomingBusInLeftTurnLane(t *testing.T) {
 
 	// In TwinCities, the major intersection is at X=3900, Y=0.
 	// AI#8 is turning left from Northbound avenue (X=3900) into Westbound expressway lanes (Y=-26).
-	// Mid-turn, its position is near (3880, -10) with Heading ~2.7 rad (facing South-West).
-	turningBus := sim.NewBus(3880, -10, 2.7)
+	// Mid-turn, match the west-northwest path tangent. The old +2.7
+	// heading pointed its long nose south into the supposedly separated car.
+	turningBus := sim.NewBus(3880, -10, math.Atan2(-16, -40))
 	turningBus.Speed = 30.0
 
 	driver := NewAutopilotDriver()
