@@ -230,7 +230,10 @@ func TestRelease003ComprehensiveChecklist(t *testing.T) {
 	tlsBay := sim.NewTrafficLightSystem()
 	tlsBay.BuildForWorld(wBay)
 
-	routeBay := sim.GetStandardRouteForMap(sim.MapThemeCoastalBay, wBay)
+	// Preserve this original straight departure scenario independently of the default itinerary.
+	wBay.Stops[1].Heading = 0
+	wBay.Stops[1].UpdateGeometry(laneWidth)
+	routeBay := &sim.Route{StopIDs: []int{0, 1, 0}}
 	// Leg from Stop 0 (Central Terminal) to Stop 1 (West Harbor) traverses a multi-lane left turn
 	s0 := wBay.Stops[routeBay.StopIDs[0]]
 	s1 := wBay.Stops[routeBay.StopIDs[1]]

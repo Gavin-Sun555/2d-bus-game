@@ -8,10 +8,11 @@ import (
 )
 
 type TrafficManager struct {
-	Cars         []*sim.TrafficCar
-	pendingExits []sim.Vec2
-	nextCarID    int
-	AIBusMgr     *AIBusManager
+	Cars          []*sim.TrafficCar
+	CarSpeedRange sim.SpeedRange
+	pendingExits  []sim.Vec2
+	nextCarID     int
+	AIBusMgr      *AIBusManager
 }
 
 const MaxTrafficCars = sim.MaxTrafficCars
@@ -166,7 +167,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 			Pos:         sd.pos,
 			Heading:     sd.h,
 			Speed:       130 + sim.RandomFloat64()*30,
-			TargetSpeed: 150 + sim.RandomFloat64()*40,
+			TargetSpeed: 0,
 			Type:        cType,
 			Color:       cColor,
 			Length:      46,
@@ -175,6 +176,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 			IsEW:        sd.ew,
 			LaneIndex:   sd.laneIdx,
 		}
+		tm.assignCarSpeed(car)
 		if cType == sim.CarSUV {
 			car.Length = 50
 			car.Width = 24
@@ -197,7 +199,15 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 		tm.StepCar(dt, car, i, bus, tls, activeCount, laneWidth, w)
 	}
 
-	// Deadlock prevention: when two non-player vehicles are jammed motionless for > 1 traffic light cycle, disappear
+	// Deadlock prevention: when two non-player vehicles are jammed motionless for at least two complete traffic light cycles, disappear
 	tm.ResolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls)
 	tm.updateBoundaryTraffic(bus, densityLevel, laneWidth, w)
+}
+
+func (tm *TrafficManager) assignCarSpeed(car *sim.TrafficCar) {
+	r := tm.CarSpeedRange.Normalize(60, 100)
+	car.MaxSpeedKPH = r.Sample()
+	car.TargetSpeed = sim.SpeedKPH(car.MaxSpeedKPH)
+	car.CanOvertake = car.MaxSpeedKPH > r.MinKPH
+	car.Speed = math.Min(car.Speed, car.TargetSpeed)
 }

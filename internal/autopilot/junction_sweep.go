@@ -34,11 +34,35 @@ func (ad *AutopilotDriver) junctionSweptSpeed(f autopilotFrame) float64 {
 			body := sim.OBB{Center: pos.Add(errorPos), Heading: heading + errorHeading, HalfLen: f.bus.Length/2 + 6, HalfWid: f.bus.Width/2 + 4}
 			arrival := distance / math.Max(25, f.speedAbs)
 			other := sim.OBB{Center: ob.Pos.Add(sim.Vec2{X: math.Cos(ob.Heading), Y: math.Sin(ob.Heading)}.Mul(ob.Speed * arrival)), Heading: ob.Heading, HalfLen: ob.Length/2 + 4, HalfWid: ob.Width/2 + 2}
+			if predicted, ok := sim.PredictJunctionBody(ob.JunctionCorridor, math.Max(0, ob.Speed)*arrival); ok {
+				other.Center, other.Heading = predicted.Center, predicted.Heading
+			}
+			if ob.JunctionTurn != nil && !ob.JunctionTurn.LaneChange {
+				other.Center, other.Heading = ob.JunctionTurn.Predict(math.Max(0, ob.Speed) * arrival)
+			}
 			if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+				// A queued neighbor may overlap only our extra safety margin.
+				// Let the leading turn clear it when its complete actual sweep
+				// is separated, rather than deadlocking both buses at rest.
+				if distance <= 30 && math.Abs(ob.Speed) < 1 && junctionActualSweepClear(f.bus, ob, pointAt, errorPos, errorHeading, lookahead) {
+					break
+				}
 				limit = math.Min(limit, math.Sqrt(2*180*math.Max(0, distance-30)))
 				break
 			}
 		}
 	}
 	return limit
+}
+
+func junctionActualSweepClear(bus *sim.Bus, ob VehicleObstacle, pointAt func(float64) (sim.Vec2, float64), errorPos sim.Vec2, errorHeading, horizon float64) bool {
+	other := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length / 2, HalfWid: ob.Width / 2}
+	for distance := 0.; distance <= horizon; distance += 4 {
+		pos, heading := pointAt(distance)
+		body := sim.OBB{Center: pos.Add(errorPos), Heading: heading + errorHeading, HalfLen: bus.Length / 2, HalfWid: bus.Width / 2}
+		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+			return false
+		}
+	}
+	return true
 }

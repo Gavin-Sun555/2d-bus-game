@@ -25,6 +25,10 @@ func TestCivilianRightTurnOnRed(t *testing.T) {
 						{P1: forward.Mul(-2200), P2: end, Lanes: lanes},
 						{P1: sim.Vec2{}, P2: right.Mul(2200), Lanes: lanes},
 					}}
+					// The forced right bend is internal; a true outward map edge permits straight exit.
+					if lanes < 8 {
+						w.Roads = append(w.Roads, sim.RoadSegment{P1: forward.Mul(3000).Add(right.Mul(3000)), P2: forward.Mul(3400).Add(right.Mul(3000)), Lanes: 2})
+					}
 					w.RebuildIntersections()
 					phase := sim.PhaseNSGreen
 					if math.Abs(forward.Y) > .5 {

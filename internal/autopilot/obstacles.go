@@ -7,7 +7,7 @@ import (
 )
 
 func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) float64 {
-	targetSpd = math.Min(targetSpd, ad.innerEntryObstacleSpeed(f))
+	targetSpd = math.Min(targetSpd, ad.roundaboutEntryObstacleSpeed(f))
 	targetSpd = ad.stationDepartureTrafficSpeed(f, targetSpd)
 	// E. Forward Vehicle Obstacle Avoidance
 	cosH := math.Cos(f.bus.Heading)
@@ -17,6 +17,11 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 		fwdLimit = math.Max(140.0, f.speedAbs*f.speedAbs/(2*130.0)+80.0)
 	}
 	for _, obs := range f.obstacles {
+		if gap, ok := sim.JunctionLeaderGap(f.bus.JunctionCorridor, obs.JunctionCorridor, sim.OBB{Center: obs.Pos, Heading: obs.Heading, HalfLen: obs.Length / 2, HalfWid: obs.Width / 2}, f.bus.Length, f.bus.Width); ok {
+			targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, obs.Speed, f.speedAbs, 130))
+			continue
+		}
+
 		delta := obs.Pos.Sub(f.bus.Pos)
 		fwdDist := delta.X*cosH + delta.Y*sinH
 		latDist := math.Abs(-delta.X*sinH + delta.Y*cosH)
@@ -29,7 +34,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			continue
 		}
 
-		if ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		if ad.clearsQueueWhileRecentering(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
 			continue
 		}
 
@@ -118,14 +123,20 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			}
 		}
 
+		isMultiLaneRoad := false
+		if f.world != nil {
+			_, _, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+			isMultiLaneRoad = isMulti || is6 || f.nearRoundabout
+		}
+
 		// Immediate physical proximity / collision containment:
 		// If obstacle directly overlaps with or is right against the bus front envelope:
 		directDist := obs.Pos.Distance(f.bus.Pos)
 		collisionDist := f.bus.Length/2 + obs.Length/2 + 8.0
-		if directDist < collisionDist && fwdDist > -(f.bus.Length/2) {
-			isLaneSeparated := (math.Abs(ad.LaneOffset) > 8.0 || ad.OvertakeState != OvertakeNone) &&
-				(latDist >= (f.bus.Width/2+obs.Width/2-2.0) || roadLatDist >= (f.bus.Width/2+obs.Width/2+2.0))
-			if !isLaneSeparated && latDist < (f.bus.Width/2+obs.Width/2+8.0) {
+		if directDist < collisionDist && fwdDist > 2.0 {
+			laneSep := latDist >= (f.bus.Width/2+obs.Width/2-2.0) && roadLatDist >= (f.bus.Width/2+obs.Width/2-2.0)
+			isLaneSeparated := laneSep && (isMultiLaneRoad || math.Abs(ad.LaneOffset) > 8.0 || ad.OvertakeState != OvertakeNone)
+			if !isLaneSeparated && latDist < (f.bus.Width/2+obs.Width/2+2.0) {
 				targetSpd = 0.0
 				continue
 			}
@@ -133,53 +144,61 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 
 		if fwdDist > 2.0 && fwdDist < fwdLimit && (latDist < (f.bus.Width/2+obs.Width/2+18.0) || roadLatDist < (f.bus.Width/2+obs.Width/2+18.0)) {
 			// On multi-lane roads, detect if obstacle is in an adjacent lane corridor
-			isAdjacentLane := false
-			if f.world != nil {
-				_, _, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
-				if (isMulti || is6 || f.nearRoundabout) && (roadLatDist >= (f.bus.Width/2+obs.Width/2+2.0) || latDist >= (f.bus.Width/2+obs.Width/2+2.0)) {
-					isAdjacentLane = true
-				}
-			}
-
-			// For vehicles where we have a valid tracked path: verify obstacle is within our path corridor
+			inAdjacentCorridor := false
 			if len(ad.drivePath) >= 2 {
 				obsPos := ad.basePathPosition(obs.Pos, f.world, f.bus.Heading, f.laneWidth)
 				dPath := minDistanceToPath(obsPos, ad.drivePath, ad.WaypointIdx)
-				if isAdjacentLane || dPath > (f.bus.Width/2+obs.Width/2+10.0) {
-					// Obstacle is in adjacent lane corridor.
-					minClearLat := f.bus.Width/2 + obs.Width/2 + 6.0
-					actualLat := roadLatDist
-					if actualLat < minClearLat && fwdDist > 0 {
-						isPassingCorridor := math.Abs(ad.LaneOffset) > 8.0 || ad.OvertakeState == OvertakePassing || ad.OvertakeState == OvertakeChangingLane
-						roadLatSep := actualLat >= (f.bus.Width/2 + obs.Width/2 - 2.0)
-						if isPassingCorridor && roadLatSep {
-							// Vehicle is in an adjacent lane. The bus is driving forward along its own lane corridor.
-							// Never brake to 0 km/h and freeze next to a stopped vehicle; maintain forward driving speed!
-							minPassingSpd := 35.0
-							if ad.BerserkMode {
-								minPassingSpd = math.Max(minPassingSpd, ad.GetBerserkCruiseSpeed()*0.6)
-							}
-							safeDist := f.bus.Length/2 + obs.Length/2 + 25.0
-							if fwdDist >= safeDist {
-								decelRate := 160.0
-								decelSpd := obs.Speed + math.Sqrt(2*decelRate*math.Max(0, fwdDist-safeDist))
-								targetSpd = math.Min(targetSpd, math.Max(minPassingSpd, decelSpd))
-							} else {
-								targetSpd = math.Min(targetSpd, minPassingSpd)
-							}
+				// If the obstacle is on our tracked path, it is NOT in an adjacent corridor!
+				// It only qualifies as adjacent corridor if:
+				// 1. It is clearly outside our tracked path corridor (dPath >= Width/2 + obs.Width/2 - 2.0)
+				// 2. It has lateral separation in vehicle local frame (latDist >= Width/2 + obs.Width/2 - 2.0)
+				// 3. It has lateral separation in road frame (roadLatDist >= Width/2 + obs.Width/2 - 2.0)
+				// 4. We are on a multi-lane road
+				if dPath >= (f.bus.Width/2+obs.Width/2-2.0) &&
+					latDist >= (f.bus.Width/2+obs.Width/2-2.0) &&
+					roadLatDist >= (f.bus.Width/2+obs.Width/2-2.0) &&
+					isMultiLaneRoad {
+					inAdjacentCorridor = true
+				}
+			} else if isMultiLaneRoad &&
+				latDist >= (f.bus.Width/2+obs.Width/2-2.0) &&
+				roadLatDist >= (f.bus.Width/2+obs.Width/2-2.0) {
+				inAdjacentCorridor = true
+			}
+
+			if inAdjacentCorridor {
+				// Obstacle is in adjacent lane corridor.
+				minClearLat := f.bus.Width/2 + obs.Width/2 + 6.0
+				actualLat := roadLatDist
+				if actualLat < minClearLat && fwdDist > 0 {
+					roadLatSep := actualLat >= (f.bus.Width/2 + obs.Width/2 - 2.0)
+					if roadLatSep {
+						// Vehicle is in an adjacent lane. The bus is driving forward along its own lane corridor.
+						// Never brake to 0 km/h and freeze next to a stopped vehicle; maintain forward driving speed!
+						minPassingSpd := 35.0
+						if ad.BerserkMode {
+							minPassingSpd = math.Max(minPassingSpd, ad.GetBerserkCruiseSpeed()*0.6)
+						}
+						safeDist := f.bus.Length/2 + obs.Length/2 + 25.0
+						if fwdDist >= safeDist {
+							decelRate := 160.0
+							decelSpd := obs.Speed + math.Sqrt(2*decelRate*math.Max(0, fwdDist-safeDist))
+							targetSpd = math.Min(targetSpd, math.Max(minPassingSpd, decelSpd))
 						} else {
-							safeDist := f.bus.Length/2 + obs.Length/2 + 25.0
-							if fwdDist < safeDist {
-								targetSpd = math.Min(targetSpd, math.Max(0.0, obs.Speed-5.0))
-							} else {
-								decelRate := 160.0
-								decelSpd := obs.Speed + math.Sqrt(2*decelRate*math.Max(0, fwdDist-safeDist))
-								targetSpd = math.Min(targetSpd, decelSpd)
-							}
+							targetSpd = math.Min(targetSpd, minPassingSpd)
+						}
+					} else {
+						safeDist := f.bus.Length/2 + obs.Length/2 + 25.0
+						if fwdDist < safeDist {
+							targetSpd = math.Min(targetSpd, math.Max(0.0, obs.Speed-5.0))
+						} else {
+							decelRate := 160.0
+							decelSpd := obs.Speed + math.Sqrt(2*decelRate*math.Max(0, fwdDist-safeDist))
+							targetSpd = math.Min(targetSpd, decelSpd)
 						}
 					}
-					continue
 				}
+				continue
 			}
 
 			safeStopDist := f.bus.Length/2 + obs.Length/2 + 30.0
@@ -207,7 +226,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 		}
 	}
 
-	return targetSpd
+	return math.Min(targetSpd, ad.followingSpeed(f))
 }
 
 // isSafelyWaitingOutsideRoundabout excludes stopped vehicles outside the curb

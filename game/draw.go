@@ -63,4 +63,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	// 8. Draw Settings Modal (on top of everything)
 	g.Settings.Draw(screen, g.Camera)
+	if g.OperationsPanel != nil {
+		g.OperationsPanel.Draw(screen, g.Settings.Fare, g.Operations, g.World)
+	}
 }

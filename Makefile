@@ -49,9 +49,9 @@ test-all:
 	@echo "🧪 正在运行全部测试用例..."
 	go test -v ./...
 
-## test-soak: 六地图普通/狂暴模式各运行两分钟，288 辆小车与 8 辆 AI 公交
+## test-soak: 六地图普通/狂暴及三场最高 AI 限速回放，每场两分钟，288 辆小车与 8 辆 AI 公交
 test-soak:
-	BUSGAME_SOAK=1 go test ./game -run TestRelease005TrafficSoak -count=1 -v -timeout=15m
+	BUSGAME_SOAK=1 BUSGAME_TRAFFIC_SOAK=1 go test ./game -run 'TestRelease005TrafficSoak|TestMixedTrafficSpeedSoak' -count=1 -v -timeout=20m
 
 ## bench: 固定车流场景性能基准，报告每帧耗时与内存分配
 bench:
@@ -86,7 +86,7 @@ help:
 	@echo "  make test         - 运行基础快速测试 (日常开发秒级通过)"
 	@echo "  make test-qualify - 运行全地图全场景发布验收测试 (发布到 GitHub 前必跑)"
 	@echo "  make test-all     - 运行全量测试套件"
-	@echo "  make test-soak    - 六地图满负载普通/狂暴模式长测"
+	@echo "  make test-soak    - 六地图满负载及最高 AI 限速长测"
 	@echo "  make bench        - 固定车流场景耗时与分配基准"
 	@echo "  make cross        - 跨平台编译至 dist/ 目录"
 	@echo "  make clean        - 清理编译产物"

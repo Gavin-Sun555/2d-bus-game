@@ -76,6 +76,10 @@ const (
 // Bus represents our driveable city bus
 type Bus struct {
 	StationMergeRequest *BusStationMergeRequest
+	LaneMergeRequest    *BusLaneMergeRequest
+	YieldingToBus       *Bus // Acknowledged priority for a bus returning ahead of this route bus.
+	RoundaboutEntry     *BusRoundaboutEntry
+	JunctionCorridor    *JunctionCorridor
 	Pos                 Vec2    // Center position in world coordinates
 	Heading             float64 // Direction in radians (0 = facing +X / East)
 	Speed               float64 // Current speed (pixels per second, positive = forward, negative = reverse)
@@ -123,6 +127,7 @@ type Bus struct {
 
 // Passenger represents an onboard passenger with an intended destination stop ID
 type Passenger struct {
+	PaidFare     int // Charged once at boarding; later tariff edits do not reprice this trip.
 	TargetStopID int
 }
 

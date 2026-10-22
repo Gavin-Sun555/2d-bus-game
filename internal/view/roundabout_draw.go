@@ -6,7 +6,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth float64) {
@@ -24,16 +23,16 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWi
 
 		// 1. Outer Slate Shoulder / Sidewalk Buffer Ring
 		rShoulder := float32((rb.Radius + 18.0) * cam.Zoom)
-		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rShoulder, sceneColors(w.Theme).paving, true)
+		filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rShoulder, sceneColors(w.Theme).paving, true)
 
 		// 2. Circular Asphalt Rotary Carriageway
-		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, sceneColors(w.Theme).asphalt, true)
-		vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, float32(2.5*cam.Zoom), sim.RGBA(148, 163, 184, 200), true)
+		filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, sceneColors(w.Theme).asphalt, true)
+		strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rOuter, float32(2.5*cam.Zoom), sim.RGBA(148, 163, 184, 200), true)
 
 		// 3. Mountable Truck Apron Ring (环岛卡车围裙) around the central island
 		rApron := float32((rb.InnerRadius + 16.0) * cam.Zoom)
-		vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rApron, sim.RGBA(71, 85, 105, 240), true)
-		vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rApron, float32(1.8*cam.Zoom), sim.RGBA(100, 116, 139, 180), true)
+		filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rApron, sim.RGBA(71, 85, 105, 240), true)
+		strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rApron, float32(1.8*cam.Zoom), sim.RGBA(100, 116, 139, 180), true)
 
 		// 4. Circulating Lane Dividing Dashed Circle (in middle of carriageway)
 		if cam.Zoom >= 0.25 {
@@ -50,7 +49,7 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWi
 				p2 := rb.Center.Add(sim.Vec2{X: math.Cos(th2) * midR, Y: math.Sin(th2) * midR})
 				s1 := cam.WorldToScreen(p1)
 				s2 := cam.WorldToScreen(p2)
-				vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), dashW, dashCol, true)
+				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), dashW, dashCol, true)
 			}
 		}
 
@@ -63,41 +62,41 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWi
 		switch rb.Type {
 		case sim.RoundaboutCivic:
 			// Concentric plaza paving
-			vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sceneColors(w.Theme).asphalt, true)
-			vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.0*cam.Zoom), sim.RGBA(203, 213, 225, 230), true)
+			filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sceneColors(w.Theme).asphalt, true)
+			strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.0*cam.Zoom), sim.RGBA(203, 213, 225, 230), true)
 			if rInner > 15 {
-				vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner*0.75, float32(1.5*cam.Zoom), sim.RGBA(71, 85, 105, 180), true)
+				strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner*0.75, float32(1.5*cam.Zoom), sim.RGBA(71, 85, 105, 180), true)
 				// Central water fountain
 				fountainR := rInner * 0.45
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR, sim.RGBA(14, 116, 144, 240), true)
-				vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR, float32(2*cam.Zoom), sim.RGBA(56, 189, 248, 220), true)
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR*0.35, sim.RGBA(255, 255, 255, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR, sim.RGBA(14, 116, 144, 240), true)
+				strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR, float32(2*cam.Zoom), sim.RGBA(56, 189, 248, 220), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), fountainR*0.35, sim.RGBA(255, 255, 255, 255), true)
 			}
 
 		case sim.RoundaboutLighthouse:
 			// Coastal green lawn island
-			vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sim.RGBA(22, 101, 52, 255), true)
-			vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.0*cam.Zoom), sim.RGBA(203, 213, 225, 230), true)
+			filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sim.RGBA(22, 101, 52, 255), true)
+			strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.0*cam.Zoom), sim.RGBA(203, 213, 225, 230), true)
 			if rInner > 15 {
 				// Historic Nautical Lighthouse tower
 				towerR := rInner * 0.4
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR, sim.RGBA(248, 250, 252, 255), true)
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.7, sim.RGBA(239, 68, 68, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR, sim.RGBA(248, 250, 252, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.7, sim.RGBA(239, 68, 68, 255), true)
 				// Beacon lamp glow
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.35, sim.RGBA(250, 204, 21, 255), true)
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.8, sim.RGBA(254, 240, 138, 90), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.35, sim.RGBA(250, 204, 21, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), towerR*0.8, sim.RGBA(254, 240, 138, 90), true)
 			}
 
 		case sim.RoundaboutIsland:
 			// Emerald water moat buffer & green island
-			vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sim.RGBA(22, 101, 52, 255), true)
-			vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.5*cam.Zoom), sim.RGBA(4, 120, 87, 230), true)
+			filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, sim.RGBA(22, 101, 52, 255), true)
+			strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), rInner, float32(3.5*cam.Zoom), sim.RGBA(4, 120, 87, 230), true)
 			if rInner > 15 {
 				// Classical Chinese octagonal gazebo/pavilion roof
 				pavR := rInner * 0.42
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR, sim.RGBA(217, 119, 6, 255), true)
-				vector.StrokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR, float32(2*cam.Zoom), sim.RGBA(180, 83, 9, 255), true)
-				vector.DrawFilledCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR*0.28, sim.RGBA(250, 204, 21, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR, sim.RGBA(217, 119, 6, 255), true)
+				strokeCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR, float32(2*cam.Zoom), sim.RGBA(180, 83, 9, 255), true)
+				filledCircle(screen, float32(cScreen.X), float32(cScreen.Y), pavR*0.28, sim.RGBA(250, 204, 21, 255), true)
 			}
 		}
 	}
@@ -141,7 +140,7 @@ func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, w *sim.
 			pt2 := pA.Add(pB.Sub(pA).Mul(t2))
 			s1 := cam.WorldToScreen(pt1)
 			s2 := cam.WorldToScreen(pt2)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 				float32(3.0*cam.Zoom), sim.RGBA(248, 250, 252, 220), true)
 		}
 
@@ -154,8 +153,8 @@ func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, w *sim.
 		sTip := cam.WorldToScreen(triTip)
 		sL := cam.WorldToScreen(triL)
 		sR := cam.WorldToScreen(triR)
-		vector.StrokeLine(screen, float32(sTip.X), float32(sTip.Y), float32(sL.X), float32(sL.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
-		vector.StrokeLine(screen, float32(sTip.X), float32(sTip.Y), float32(sR.X), float32(sR.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
-		vector.StrokeLine(screen, float32(sL.X), float32(sL.Y), float32(sR.X), float32(sR.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
+		strokeLine(screen, float32(sTip.X), float32(sTip.Y), float32(sL.X), float32(sL.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
+		strokeLine(screen, float32(sTip.X), float32(sTip.Y), float32(sR.X), float32(sR.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
+		strokeLine(screen, float32(sL.X), float32(sL.Y), float32(sR.X), float32(sR.Y), float32(2.0*cam.Zoom), sim.RGBA(248, 250, 252, 210), true)
 	}
 }

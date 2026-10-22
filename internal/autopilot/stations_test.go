@@ -173,7 +173,10 @@ func TestBerserkModeStationDockingWithWaitingPassengers(t *testing.T) {
 func TestAutopilotBerserkStationApproachOvertakesIfRunwayPermits(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
-	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
+	// Preserve the original southbound approach regression independently of the default loop.
+	w.Stops[2].Heading = math.Pi / 2
+	w.Stops[2].UpdateGeometry(lw)
+	route := &sim.Route{StopIDs: []int{0, 2, 0}}
 	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
 
 	fromStop := w.Stops[route.StopIDs[0]]
@@ -265,7 +268,10 @@ func TestAutopilotBerserkStationApproachOvertakesIfRunwayPermits(t *testing.T) {
 func TestAutopilotBerserkStationApproachWaitsBehindWhenRunwayInsufficient(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
-	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
+	// Preserve the original southbound approach regression independently of the default loop.
+	w.Stops[2].Heading = math.Pi / 2
+	w.Stops[2].UpdateGeometry(lw)
+	route := &sim.Route{StopIDs: []int{0, 2, 0}}
 	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
 
 	fromStop := w.Stops[route.StopIDs[0]]
@@ -339,7 +345,10 @@ func TestAutopilotBerserkStationApproachWaitsBehindWhenRunwayInsufficient(t *tes
 func TestAutopilotBerserkStationApproachDocksBesideOccupiedBay(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
-	route := sim.GetStandardRouteForMap(sim.MapThemeMetropolis, w)
+	// Preserve the original southbound approach regression independently of the default loop.
+	w.Stops[2].Heading = math.Pi / 2
+	w.Stops[2].UpdateGeometry(lw)
+	route := &sim.Route{StopIDs: []int{0, 2, 0}}
 	route.CurrentIndex = 1 // Target is Stop 2 (toStop)
 
 	fromStop := w.Stops[route.StopIDs[0]]

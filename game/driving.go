@@ -7,6 +7,11 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+// RollAlightingForNextStop determines if any passengers onboard wish to alight at the next stop and rings the bell.
+func (g *Game) RollAlightingForNextStop() {
+	g.rollAlightingForNextStop()
+}
+
 func (g *Game) rollAlightingForNextStop() {
 	g.bellToastShown = false
 	if g.Bus == nil || g.Route == nil {

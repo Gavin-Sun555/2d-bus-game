@@ -10,21 +10,29 @@ import (
 
 // Settings manages user game configuration
 type Settings struct {
-	IsOpen                bool
-	TrafficFinesEnabled   bool
-	FineAmount            int
-	TrafficDensity        int            // 1: Low (36), 2: Medium (72), 3: High (144), 4: Congested (288)
-	LaneWidthLevel        int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
-	CameraViewMode        sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
-	MapTheme              sim.MapTheme   // Active city map
-	ThemeChanged          bool
-	ReturnToMenuRequested bool
+	IsOpen                  bool
+	Fare                    sim.FarePolicy
+	OpenOperationsRequested bool
+	operationsBounds        sim.Rect
+	TrafficFinesEnabled     bool
+	FineAmount              int
+	TrafficDensity          int            // 1: Low (36), 2: Medium (72), 3: High (144), 4: Congested (288)
+	LaneWidthLevel          int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
+	CameraViewMode          sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
+	MapTheme                sim.MapTheme   // Active city map
+	ThemeChanged            bool
+	ReturnToMenuRequested   bool
 
 	// AI Autopilot & Route AI Buses Configurations
 	AutopilotEnabled         bool
 	AutopilotBerserk         bool // Berserk mode: straightaways top speed boost while obeying traffic rules
 	AutopilotBerserkMaxSpeed int  // Berserk top speed in km/h: 60, 80, 100, 120 (default: 80)
-	AIBusCount               int  // Number of AI buses on the route (0 ~ 8)
+	AICarMinSpeed            int
+	AICarMaxSpeed            int
+	AIBusMinSpeed            int
+	AIBusMaxSpeed            int
+	speedRangeBounds         [4][2]sim.Rect // decrement/increment for car min/max, bus min/max
+	AIBusCount               int            // Number of AI buses on the route (0 ~ 8)
 	AIBusFleetChanged        bool
 
 	// UI Localization Language
@@ -49,6 +57,7 @@ type Settings struct {
 func NewSettings() *Settings {
 	return &Settings{
 		IsOpen:                   false,
+		Fare:                     sim.DefaultFarePolicy(),
 		TrafficFinesEnabled:      true,
 		FineAmount:               50,
 		TrafficDensity:           2,                      // Default: Medium
@@ -58,8 +67,9 @@ func NewSettings() *Settings {
 		AutopilotEnabled:         false,                  // Manual driving by default
 		AutopilotBerserk:         false,                  // Standard mode by default
 		AutopilotBerserkMaxSpeed: 80,                     // Default: 80 km/h (445 px/s)
-		AIBusCount:               0,                      // 0 AI buses by default
-		Language:                 locale.CurrentLanguage, // Default to CurrentLanguage
+		AICarMinSpeed:            30, AICarMaxSpeed: 60, AIBusMinSpeed: 30, AIBusMaxSpeed: 50,
+		AIBusCount: 0,                      // 0 AI buses by default
+		Language:   locale.CurrentLanguage, // Default to CurrentLanguage
 	}
 }
 
@@ -158,6 +168,23 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		mx, my := ebiten.CursorPosition()
 		mPos := sim.Vec2{X: float64(mx), Y: float64(my)}
 
+		for field, buttons := range s.speedRangeBounds {
+			for direction, bounds := range buttons {
+				if bounds.Contains(mPos) {
+					delta := -10
+					if direction == 1 {
+						delta = 10
+					}
+					s.AdjustAISpeed(field, delta)
+					return
+				}
+			}
+		}
+		if s.operationsBounds.Contains(mPos) {
+			s.OpenOperationsRequested = true
+			s.IsOpen = false
+			return
+		}
 		if s.menuButtonBounds.Contains(mPos) {
 			s.ReturnToMenuRequested = true
 			s.IsOpen = false
@@ -208,5 +235,19 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		} else if s.closeButtonBounds.Contains(mPos) {
 			s.IsOpen = false
 		}
+	}
+}
+
+// Existing vehicles retain their sampled limit; edits apply to future spawns.
+func (s *Settings) AdjustAISpeed(field, delta int) {
+	switch field {
+	case 0:
+		s.AICarMinSpeed = max(30, min(s.AICarMaxSpeed, s.AICarMinSpeed+delta))
+	case 1:
+		s.AICarMaxSpeed = max(s.AICarMinSpeed, min(100, s.AICarMaxSpeed+delta))
+	case 2:
+		s.AIBusMinSpeed = max(30, min(s.AIBusMaxSpeed, s.AIBusMinSpeed+delta))
+	case 3:
+		s.AIBusMaxSpeed = max(s.AIBusMinSpeed, min(80, s.AIBusMaxSpeed+delta))
 	}
 }

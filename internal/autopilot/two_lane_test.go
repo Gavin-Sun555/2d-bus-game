@@ -77,6 +77,24 @@ func TestBerserkModeBorrowLaneOvertakingOn2LaneRoad(t *testing.T) {
 		t.Fatalf("Must not borrow lane when oncoming lane has oncoming car (got state %d)", driver.OvertakeState)
 	}
 
+	// A fast fleet controller uses Berserk passing on wide roads, but must
+	// follow on two-lane roads even when the opposing lane is empty.
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.DisallowOncomingOvertake = true
+	driver.State = AutopilotStateCruising
+	for i := 0; i < 120; i++ {
+		driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 1./60)
+		if driver.OvertakeState != OvertakeNone || driver.LaneOffset != 0 || driver.TargetLaneOffset != 0 {
+			t.Fatalf("fleet borrowed opposing lane: state=%d offset=%.2f target=%.2f", driver.OvertakeState, driver.LaneOffset, driver.TargetLaneOffset)
+		}
+	}
+	driver.Reset()
+	if !driver.DisallowOncomingOvertake {
+		t.Fatal("reset lost fleet passing restriction")
+	}
+	driver.DisallowOncomingOvertake = false
+
 	// 3. Berserk Mode with oncoming lane CLEAR: initiates 借道超车
 	driver.Reset()
 	driver.BerserkMode = true
@@ -262,6 +280,9 @@ func TestAutopilotRightTurnInto2LaneRoad(t *testing.T) {
 func TestAutopilotBerserkRightTurnInto2LaneDoesNotOvertakeIntoOppositeShoulder(t *testing.T) {
 	lw := 52.0
 	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	// This regression requires the original southbound destination platform.
+	w.Stops[2].Heading = math.Pi / 2
+	w.Stops[2].UpdateGeometry(lw)
 
 	legRoute := &sim.Route{
 		Name:         "TestRightTurnRoute",

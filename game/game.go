@@ -46,8 +46,14 @@ type Game struct {
 	DeadlockTracker        sim.StationaryTracker
 	obstacles              []autopilot.VehicleObstacle
 
-	IsPlanMode bool
-	Cash       int
+	Operations          *sim.TransitOperations
+	OperationsPanel     *ui.OperationsPanel
+	operationsRoute     []int
+	operationsLaneWidth float64
+	greenWaitTimers     map[int]float64
+	greenWaitReports    map[int]greenWaitReport
+	IsPlanMode          bool
+	Cash                int
 
 	// Track lane width changes
 	lastLaneWidth float64
@@ -103,6 +109,7 @@ func NewGame(width, height int) *Game {
 
 	// Adapt traffic lights and civilian AI traffic to active world network
 	g.TrafficMgr.AIBusMgr = g.AIBusMgr
+	g.syncAISpeedRanges()
 	g.TrafficLights.BuildForWorld(g.World)
 	g.TrafficMgr.BuildForWorld(g.World, traffic.MaxTrafficCars, initLaneWidth)
 
@@ -131,6 +138,8 @@ func NewGame(width, height int) *Game {
 	g.HUD.AddToast("【全新机制】路线仅指引至下一站；站内无人且车内无下车铃时可按 [F] 飞站！", false)
 	g.HUD.AddToast("【始发站已就位】公交车已停靠在中央枢纽黄色框内，按 [E] 开门上下客！", false)
 
+	g.OperationsPanel = ui.NewOperationsPanel()
+	g.resetOperations()
 	return g
 }
 
@@ -154,8 +163,24 @@ func (g *Game) Update() error {
 
 	dt := 1.0 / 60.0
 
+	if inpututil.IsKeyJustPressed(ebiten.KeyO) {
+		g.OperationsPanel.IsOpen = !g.OperationsPanel.IsOpen
+		g.Settings.IsOpen = false
+	}
+	if g.OperationsPanel.IsOpen {
+		g.ensureOperations()
+		g.OperationsPanel.Update(&g.Settings.Fare, g.Operations)
+		return nil
+	}
 	// 1. Settings menu takes priority
 	g.Settings.Update(g.Camera)
+	g.syncAISpeedRanges()
+	if g.Settings.OpenOperationsRequested {
+		g.Settings.OpenOperationsRequested = false
+		g.ensureOperations()
+		g.OperationsPanel.IsOpen = true
+		return nil
+	}
 	if g.Settings.ReturnToMenuRequested {
 		g.Settings.ReturnToMenuRequested = false
 		g.State = StateMainMenu
@@ -213,9 +238,11 @@ func (g *Game) Update() error {
 		g.TogglePlanMode()
 	}
 
+	g.ensureOperations()
 	// 3. Game simulation (Traffic lights, AI traffic, AI buses, passenger arrivals, violations)
 	// Fully PAUSED during Planning Mode so the city stops and no new passengers generate while planning!
 	if !g.IsPlanMode {
+		g.trackOperations(0)
 		// Traffic lights update
 		g.TrafficLights.Update(dt)
 
@@ -224,7 +251,9 @@ func (g *Game) Update() error {
 
 		// AI Route buses update
 		if g.AIBusMgr != nil {
+			beforeRevenue := g.Operations.Revenue
 			g.AIBusMgr.Update(dt, g.Bus, g.World, g.TrafficLights, g.TrafficMgr, currentLaneW, g.Settings.TrafficDensity)
+			g.Cash += g.Operations.Revenue - beforeRevenue
 		}
 
 		// Red light & lane discipline violation check on player bus
@@ -247,6 +276,10 @@ func (g *Game) Update() error {
 		g.updateDriverMode(dt)
 	}
 
+	if !g.IsPlanMode {
+		g.trackOperations(dt)
+		g.recordGreenWaits(dt)
+	}
 	// 8. Camera update
 	g.Camera.Update(dt)
 
@@ -270,4 +303,16 @@ func (g *Game) recordTrafficViolation(violated bool, notice string) {
 		return
 	}
 	g.HUD.AddWarningToast(fmt.Sprintf("%s (当前设置已豁免罚款)", notice))
+}
+
+func (g *Game) syncAISpeedRanges() {
+	if g.Settings == nil {
+		return
+	}
+	if g.TrafficMgr != nil {
+		g.TrafficMgr.CarSpeedRange = sim.SpeedRange{MinKPH: g.Settings.AICarMinSpeed, MaxKPH: g.Settings.AICarMaxSpeed}
+	}
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.BusSpeedRange = sim.SpeedRange{MinKPH: g.Settings.AIBusMinSpeed, MaxKPH: g.Settings.AIBusMaxSpeed}
+	}
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Draw renders traffic lights and stop lines in the world with dynamic lane width
@@ -128,9 +127,9 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 		// Draw Camera Flash Flare effect when capturing a violation
 		if rc.FlashTimer > 0 {
 			alpha := float32(math.Min(1.0, rc.FlashTimer/0.4))
-			vector.DrawFilledCircle(screen, float32(sc.X), float32(sc.Y), float32(65*cam.Zoom),
+			filledCircle(screen, float32(sc.X), float32(sc.Y), float32(65*cam.Zoom),
 				sim.RGBA(255, 255, 255, uint8(alpha*160)), true)
-			vector.DrawFilledCircle(screen, float32(sc.X), float32(sc.Y), float32(35*cam.Zoom),
+			filledCircle(screen, float32(sc.X), float32(sc.Y), float32(35*cam.Zoom),
 				sim.RGBA(56, 189, 248, uint8(alpha*220)), true)
 		}
 
@@ -141,16 +140,16 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 
 			// Gantry main overhead beam
 			beamThick := float32(math.Max(2.5, 4.0*cam.Zoom))
-			vector.StrokeLine(screen, float32(pNorth.X), float32(pNorth.Y), float32(pSouth.X), float32(pSouth.Y),
+			strokeLine(screen, float32(pNorth.X), float32(pNorth.Y), float32(pSouth.X), float32(pSouth.Y),
 				beamThick, sim.RGBA(71, 85, 105, 240), true)
-			vector.StrokeLine(screen, float32(pNorth.X+1.5*cam.Zoom), float32(pNorth.Y), float32(pSouth.X+1.5*cam.Zoom), float32(pSouth.Y),
+			strokeLine(screen, float32(pNorth.X+1.5*cam.Zoom), float32(pNorth.Y), float32(pSouth.X+1.5*cam.Zoom), float32(pSouth.Y),
 				float32(math.Max(1.0, 1.5*cam.Zoom)), sim.RGBA(148, 163, 184, 200), true)
 
 			// Support footings with hazard stripes
 			footW := float32(math.Max(4, 7*cam.Zoom))
 			footH := float32(math.Max(5, 9*cam.Zoom))
-			vector.DrawFilledRect(screen, float32(pNorth.X)-footW/2, float32(pNorth.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
-			vector.DrawFilledRect(screen, float32(pSouth.X)-footW/2, float32(pSouth.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
+			filledRect(screen, float32(pNorth.X)-footW/2, float32(pNorth.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
+			filledRect(screen, float32(pSouth.X)-footW/2, float32(pSouth.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
 
 			// Camera boxes mounted across the beam (South lane cam, North lane cam)
 			for _, off := range camOffsets {
@@ -159,13 +158,13 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 				boxH := float32(math.Max(4, 7*cam.Zoom))
 
 				// Camera housing body
-				vector.DrawFilledRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, sim.RGBA(15, 23, 42, 255), true)
-				vector.StrokeRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, 1.0, sim.RGBA(148, 163, 184, 230), true)
+				filledRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, sim.RGBA(15, 23, 42, 255), true)
+				strokeRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, 1.0, sim.RGBA(148, 163, 184, 230), true)
 
 				// Dark camera lens
-				vector.DrawFilledCircle(screen, float32(cp.X), float32(cp.Y), float32(math.Max(1.5, 2.5*cam.Zoom)), sim.RGBA(2, 6, 23, 255), true)
+				filledCircle(screen, float32(cp.X), float32(cp.Y), float32(math.Max(1.5, 2.5*cam.Zoom)), sim.RGBA(2, 6, 23, 255), true)
 				// Pulsing cyan surveillance LED
-				vector.DrawFilledCircle(screen, float32(cp.X)+boxW*0.3, float32(cp.Y)-boxH*0.25, float32(math.Max(1.0, 1.8*cam.Zoom)), sim.RGBA(56, 189, 248, 240), true)
+				filledCircle(screen, float32(cp.X)+boxW*0.3, float32(cp.Y)-boxH*0.25, float32(math.Max(1.0, 1.8*cam.Zoom)), sim.RGBA(56, 189, 248, 240), true)
 			}
 
 			// Road asphalt marking: "📸 电子监控"
@@ -178,15 +177,15 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 			pEast := cam.WorldToScreen(sim.Vec2{X: rc.RoadCoord + roadHalfWidth, Y: rc.Pos.Y})
 
 			beamThick := float32(math.Max(2.5, 4.0*cam.Zoom))
-			vector.StrokeLine(screen, float32(pWest.X), float32(pWest.Y), float32(pEast.X), float32(pEast.Y),
+			strokeLine(screen, float32(pWest.X), float32(pWest.Y), float32(pEast.X), float32(pEast.Y),
 				beamThick, sim.RGBA(71, 85, 105, 240), true)
-			vector.StrokeLine(screen, float32(pWest.X), float32(pWest.Y+1.5*cam.Zoom), float32(pEast.X), float32(pEast.Y+1.5*cam.Zoom),
+			strokeLine(screen, float32(pWest.X), float32(pWest.Y+1.5*cam.Zoom), float32(pEast.X), float32(pEast.Y+1.5*cam.Zoom),
 				float32(math.Max(1.0, 1.5*cam.Zoom)), sim.RGBA(148, 163, 184, 200), true)
 
 			footW := float32(math.Max(5, 9*cam.Zoom))
 			footH := float32(math.Max(4, 7*cam.Zoom))
-			vector.DrawFilledRect(screen, float32(pWest.X)-footW/2, float32(pWest.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
-			vector.DrawFilledRect(screen, float32(pEast.X)-footW/2, float32(pEast.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
+			filledRect(screen, float32(pWest.X)-footW/2, float32(pWest.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
+			filledRect(screen, float32(pEast.X)-footW/2, float32(pEast.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
 
 			camOffsets := []float64{-laneWidth * 1.0, laneWidth * 1.0}
 			for _, off := range camOffsets {
@@ -194,11 +193,11 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 				boxW := float32(math.Max(4, 7*cam.Zoom))
 				boxH := float32(math.Max(5, 9*cam.Zoom))
 
-				vector.DrawFilledRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, sim.RGBA(15, 23, 42, 255), true)
-				vector.StrokeRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, 1.0, sim.RGBA(148, 163, 184, 230), true)
+				filledRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, sim.RGBA(15, 23, 42, 255), true)
+				strokeRect(screen, float32(cp.X)-boxW/2, float32(cp.Y)-boxH/2, boxW, boxH, 1.0, sim.RGBA(148, 163, 184, 230), true)
 
-				vector.DrawFilledCircle(screen, float32(cp.X), float32(cp.Y), float32(math.Max(1.5, 2.5*cam.Zoom)), sim.RGBA(2, 6, 23, 255), true)
-				vector.DrawFilledCircle(screen, float32(cp.X)-boxW*0.25, float32(cp.Y)+boxH*0.3, float32(math.Max(1.0, 1.8*cam.Zoom)), sim.RGBA(56, 189, 248, 240), true)
+				filledCircle(screen, float32(cp.X), float32(cp.Y), float32(math.Max(1.5, 2.5*cam.Zoom)), sim.RGBA(2, 6, 23, 255), true)
+				filledCircle(screen, float32(cp.X)-boxW*0.25, float32(cp.Y)+boxH*0.3, float32(math.Max(1.0, 1.8*cam.Zoom)), sim.RGBA(56, 189, 248, 240), true)
 			}
 
 			if cam.Zoom >= 0.75 {
@@ -224,7 +223,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 		}
 		w1 := cam.WorldToScreen(sim.Vec2{X: c.X - ewStopLineDist, Y: c.Y + 3})
 		w2 := cam.WorldToScreen(sim.Vec2{X: c.X - ewStopLineDist, Y: c.Y + roadHalf})
-		vector.StrokeLine(screen, float32(w1.X), float32(w1.Y), float32(w2.X), float32(w2.Y), lineWidth, stopLineColor, true)
+		strokeLine(screen, float32(w1.X), float32(w1.Y), float32(w2.X), float32(w2.Y), lineWidth, stopLineColor, true)
 	}
 
 	// East approach stop line (1, heading West, incoming lane on -Y)
@@ -237,7 +236,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 		}
 		e1 := cam.WorldToScreen(sim.Vec2{X: c.X + ewStopLineDist, Y: c.Y - 3})
 		e2 := cam.WorldToScreen(sim.Vec2{X: c.X + ewStopLineDist, Y: c.Y - roadHalf})
-		vector.StrokeLine(screen, float32(e1.X), float32(e1.Y), float32(e2.X), float32(e2.Y), lineWidth, stopLineColor, true)
+		strokeLine(screen, float32(e1.X), float32(e1.Y), float32(e2.X), float32(e2.Y), lineWidth, stopLineColor, true)
 	}
 
 	// North approach stop line (2, heading South, incoming lane on -X)
@@ -250,7 +249,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 		}
 		n1 := cam.WorldToScreen(sim.Vec2{X: c.X - 3, Y: c.Y - nsStopLineDist})
 		n2 := cam.WorldToScreen(sim.Vec2{X: c.X - roadHalf, Y: c.Y - nsStopLineDist})
-		vector.StrokeLine(screen, float32(n1.X), float32(n1.Y), float32(n2.X), float32(n2.Y), lineWidth, stopLineColor, true)
+		strokeLine(screen, float32(n1.X), float32(n1.Y), float32(n2.X), float32(n2.Y), lineWidth, stopLineColor, true)
 	}
 
 	// South approach stop line (3, heading North, incoming lane on +X)
@@ -263,7 +262,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 		}
 		s1 := cam.WorldToScreen(sim.Vec2{X: c.X + 3, Y: c.Y + nsStopLineDist})
 		s2 := cam.WorldToScreen(sim.Vec2{X: c.X + roadHalf, Y: c.Y + nsStopLineDist})
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), lineWidth, stopLineColor, true)
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), lineWidth, stopLineColor, true)
 	}
 }
 
@@ -363,8 +362,8 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 	if baseR < 2.0 {
 		baseR = 2.0
 	}
-	vector.DrawFilledCircle(screen, float32(spCurb.X), float32(spCurb.Y), baseR, sim.RGBA(71, 85, 105, 255), true)
-	vector.StrokeCircle(screen, float32(spCurb.X), float32(spCurb.Y), baseR, 1.0, sim.RGBA(148, 163, 184, 255), true)
+	filledCircle(screen, float32(spCurb.X), float32(spCurb.Y), baseR, sim.RGBA(71, 85, 105, 255), true)
+	strokeCircle(screen, float32(spCurb.X), float32(spCurb.Y), baseR, 1.0, sim.RGBA(148, 163, 184, 255), true)
 
 	if is4Lane {
 		// 2. Draw Overhead Cantilever Arm spanning across the incoming lanes
@@ -374,10 +373,10 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 			armLw = 1.5
 		}
 		// Mast shadow
-		vector.StrokeLine(screen, float32(spCurb.X+3), float32(spCurb.Y+3), float32(spEnd.X+3), float32(spEnd.Y+3), armLw, sim.RGBA(2, 6, 23, 100), true)
+		strokeLine(screen, float32(spCurb.X+3), float32(spCurb.Y+3), float32(spEnd.X+3), float32(spEnd.Y+3), armLw, sim.RGBA(2, 6, 23, 100), true)
 		// Mast steel truss beam
-		vector.StrokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw, sim.RGBA(51, 65, 85, 240), true)
-		vector.StrokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw*0.35, sim.RGBA(148, 163, 184, 200), true)
+		strokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw, sim.RGBA(51, 65, 85, 240), true)
+		strokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw*0.35, sim.RGBA(148, 163, 184, 200), true)
 
 		// 3. Mount Left-Turn Signal Head over Inner Lane 0
 		drawSignalHead(screen, cam, leftPos, leftSig, true, isHorizontalHead)
@@ -423,10 +422,10 @@ func drawSignalHead(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, current
 	boxY := float32(sp.Y) - boxH/2
 
 	// Head housing frosted glass: shadow, translucent base, specular sheen & crisp glass border
-	vector.DrawFilledRect(screen, boxX-1, boxY-1, boxW+2, boxH+2, sim.RGBA(2, 6, 23, 110), true)
-	vector.DrawFilledRect(screen, boxX, boxY, boxW, boxH, sim.RGBA(15, 23, 42, 215), true)
-	vector.DrawFilledRect(screen, boxX+0.5, boxY+0.5, boxW-1, boxH*0.45, sim.RGBA(255, 255, 255, 25), true)
-	vector.StrokeRect(screen, boxX, boxY, boxW, boxH, 1.0, sim.RGBA(255, 255, 255, 75), true)
+	filledRect(screen, boxX-1, boxY-1, boxW+2, boxH+2, sim.RGBA(2, 6, 23, 110), true)
+	filledRect(screen, boxX, boxY, boxW, boxH, sim.RGBA(15, 23, 42, 215), true)
+	filledRect(screen, boxX+0.5, boxY+0.5, boxW-1, boxH*0.45, sim.RGBA(255, 255, 255, 25), true)
+	strokeRect(screen, boxX, boxY, boxW, boxH, 1.0, sim.RGBA(255, 255, 255, 75), true)
 
 	if isHorizontal {
 		cy := boxY + boxH/2
@@ -471,11 +470,11 @@ func drawSignalLamp(screen *ebiten.Image, cx, cy, radius float32, lampKind sim.L
 
 	// Glowing halo for active lamp
 	if isActive {
-		vector.DrawFilledCircle(screen, cx, cy, radius*1.8, glowColor, true)
+		filledCircle(screen, cx, cy, radius*1.8, glowColor, true)
 	}
 
 	// Main lamp circle
-	vector.DrawFilledCircle(screen, cx, cy, radius, lampColor, true)
+	filledCircle(screen, cx, cy, radius, lampColor, true)
 
 	// Arrow glyph for directional lenses
 	if scale >= 0.38 {
@@ -490,14 +489,14 @@ func drawSignalLamp(screen *ebiten.Image, cx, cy, radius float32, lampKind sim.L
 
 		if isLeftArrow {
 			// Left arrow (⇦) inside lamp
-			vector.StrokeLine(screen, cx+radius*0.4, cy, cx-radius*0.4, cy, aLw, arrowCol, true)
-			vector.StrokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy-radius*0.4, aLw, arrowCol, true)
-			vector.StrokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy+radius*0.4, aLw, arrowCol, true)
+			strokeLine(screen, cx+radius*0.4, cy, cx-radius*0.4, cy, aLw, arrowCol, true)
+			strokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy-radius*0.4, aLw, arrowCol, true)
+			strokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy+radius*0.4, aLw, arrowCol, true)
 		} else if isActive && lampKind == sim.SignalGreen {
 			// Straight arrow (⬆) inside green lamp
-			vector.StrokeLine(screen, cx, cy+radius*0.4, cx, cy-radius*0.4, aLw, arrowCol, true)
-			vector.StrokeLine(screen, cx, cy-radius*0.4, cx-radius*0.4, cy-radius*0.1, aLw, arrowCol, true)
-			vector.StrokeLine(screen, cx, cy-radius*0.4, cx+radius*0.4, cy-radius*0.1, aLw, arrowCol, true)
+			strokeLine(screen, cx, cy+radius*0.4, cx, cy-radius*0.4, aLw, arrowCol, true)
+			strokeLine(screen, cx, cy-radius*0.4, cx-radius*0.4, cy-radius*0.1, aLw, arrowCol, true)
+			strokeLine(screen, cx, cy-radius*0.4, cx+radius*0.4, cy-radius*0.1, aLw, arrowCol, true)
 		}
 	}
 }

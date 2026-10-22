@@ -43,7 +43,7 @@ func (tls *TrafficLightSystem) DeadlockTimeoutAt(pos Vec2) float64 {
 			}
 		}
 	}
-	return 1.5 * cycle
+	return 2 * cycle
 }
 
 // StationaryTracker prevents intermittent stops or slow creeping from adding up

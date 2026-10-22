@@ -278,7 +278,11 @@ func TestUTurnEntersLeftTurnLane(t *testing.T) {
 	// Stops 0 and 1 in Metropolis CBD require traveling East on Central Blvd (Y=0)
 	// and executing a U-turn at intersection (1300, 0) to head West towards Stop 1.
 	s0 := w.Stops[0]
-	s1 := w.Stops[1]
+	// Keep an opposing platform to exercise U-turns after the default platform moved.
+	s1Copy := *w.Stops[1]
+	s1Copy.Heading = math.Pi
+	s1Copy.UpdateGeometry(lw)
+	s1 := &s1Copy
 
 	path := ComputeRoadPathBetweenStops(w, s0, s1, lw)
 	if len(path) == 0 {
@@ -289,16 +293,18 @@ func TestUTurnEntersLeftTurnLane(t *testing.T) {
 	// the waypoints have merged into the inner left-turn lane (Y = 0.5*lw = 21.0)
 	foundInnerLaneUTurn := false
 	itX := 1300.0 * MapGridScale
-	for _, pt := range path {
-		if pt.X >= (itX-170.0) && pt.X <= itX {
-			latDist := math.Abs(pt.Y - 0.0)
-			if latDist < lw*0.95 {
-				foundInnerLaneUTurn = true
-				if math.Abs(latDist-lw*0.5) > 2.0 {
-					t.Errorf("U-turn approach waypoint %v lateral dist=%.1f, expected inner lane center=%.1f",
-						pt, latDist, lw*0.5)
-				}
-			}
+	// Test the incoming segment at a fixed plane: smoothing may remove a
+	// redundant collinear waypoint without changing the actual lane corridor.
+	for i := 0; i < len(path)-1; i++ {
+		a, b := path[i], path[i+1]
+		plane := itX - 100
+		if a.X > plane || b.X < plane || b.X <= a.X {
+			continue
+		}
+		pt := a.Add(b.Sub(a).Mul((plane - a.X) / (b.X - a.X)))
+		foundInnerLaneUTurn = true
+		if math.Abs(pt.Y-lw/2) > 2 {
+			t.Errorf("U-turn approach %v, expected inner lane %.1f", pt, lw/2)
 		}
 	}
 
@@ -579,6 +585,10 @@ func TestAutopilotMultiMapLeftTurnLaneDiscipline(t *testing.T) {
 
 				// Verify all path waypoints outside roundabouts stay safely away from the center divider
 				for _, pt := range path {
+					// Legal turns cross road centerlines inside the junction box.
+					if w.InsideJunction(pt, lw, 0) {
+						continue
+					}
 					// Roundabouts use circular curves rather than straight-lane offsets
 					inRoundabout := false
 					for _, rb := range w.Roundabouts {

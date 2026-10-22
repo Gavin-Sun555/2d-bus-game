@@ -22,15 +22,32 @@ func configureRoundaboutExit(car *sim.TrafficCar, w *sim.World, rb *sim.Roundabo
 	car.RoundaboutExitAngle = sim.NormalizeAngle(heading + math.Asin(math.Min(.8, car.RoundaboutExitOffset/car.RoundaboutTargetR)))
 }
 
-func beginRoundaboutEntry(car *sim.TrafficCar) {
+func beginRoundaboutEntry(car *sim.TrafficCar, rb sim.Roundabout, lw float64) {
+	forward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	lateral := car.Pos.Sub(car.RoundaboutCenter).Dot(right)
+	join := sim.RoundaboutEntryJoin(rb, forward, lateral, car.RoundaboutTargetR, lw)
+	start, _ := sim.RoundaboutEntryPoint(join, 0)
+	if car.Pos.Sub(start).Dot(forward) > 8 {
+		beginLegacyRoundaboutEntry(car)
+		return
+	}
+	join.StartShift = car.Pos.Sub(start)
+	car.RoundaboutCurve = &sim.CarRoundaboutCurve{Entry: &join}
+	measureRoundaboutCurve(car.RoundaboutCurve)
+
+}
+
+// Fallback for vehicles already inside the mouth and adjacent manually driven
+// buses, whose future path is not a published parallel-entry corridor.
+func beginLegacyRoundaboutEntry(car *sim.TrafficCar) {
+	forward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+
 	theta := car.RoundaboutAngle - .85
 	goal := car.RoundaboutCenter.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(car.RoundaboutTargetR))
-	incoming := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
 	tangent := sim.Vec2{X: math.Sin(theta), Y: -math.Cos(theta)}
-	// Keep the initial reach long enough for the rear to clear a stopped
-	// neighbor before yawing; join farther around the circle without a corner.
 	handle := math.Min(120, math.Max(110, 25+.6*math.Abs(car.RoundaboutRadius-car.RoundaboutTargetR)))
-	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(incoming.Mul(handle)), goal.Sub(tangent.Mul(math.Min(60, car.RoundaboutTargetR*.3))), goal, false)
+	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(forward.Mul(handle)), goal.Sub(tangent.Mul(math.Min(60, car.RoundaboutTargetR*.3))), goal, false)
 }
 
 func beginRoundaboutExit(car *sim.TrafficCar) {
@@ -48,16 +65,23 @@ func beginRoundaboutExit(car *sim.TrafficCar) {
 
 func newRoundaboutCurve(start, c1, c2, end sim.Vec2, exiting bool) *sim.CarRoundaboutCurve {
 	curve := &sim.CarRoundaboutCurve{Start: start, Control1: c1, Control2: c2, End: end, Exiting: exiting}
-	previous := start
+	measureRoundaboutCurve(curve)
+	return curve
+}
+
+func measureRoundaboutCurve(curve *sim.CarRoundaboutCurve) {
+	previous, _ := roundaboutCurveAt(curve, 0)
 	for i := 1; i < len(curve.ArcLengths); i++ {
 		point, _ := roundaboutCurveAt(curve, float64(i)/64)
 		curve.ArcLengths[i] = curve.ArcLengths[i-1] + point.Distance(previous)
 		previous = point
 	}
-	return curve
 }
 
 func roundaboutCurveAt(c *sim.CarRoundaboutCurve, u float64) (sim.Vec2, sim.Vec2) {
+	if c.Entry != nil {
+		return sim.RoundaboutEntryPoint(*c.Entry, u)
+	}
 	v := 1 - u
 	point := c.Start.Mul(v * v * v).Add(c.Control1.Mul(3 * v * v * u)).Add(c.Control2.Mul(3 * v * u * u)).Add(c.End.Mul(u * u * u))
 	tangent := c.Control1.Sub(c.Start).Mul(3 * v * v).Add(c.Control2.Sub(c.Control1).Mul(6 * v * u)).Add(c.End.Sub(c.Control2).Mul(3 * u * u))

@@ -16,9 +16,14 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 	carHalfLen := f.car.Length * 0.5 // ~24.0
 	carHalfWid := f.car.Width * 0.5  // ~11.0
 
+	lookahead := math.Max(260, f.car.Speed*f.car.Speed/(2*220)+100)
 	for _, b := range f.buses {
+		if gap, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, b.JunctionCorridor, sim.OBB{Center: b.Pos, Heading: b.Heading, HalfLen: b.Length / 2, HalfWid: b.Width / 2}, f.car.Length, f.car.Width); ok {
+			targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, b.Speed, f.car.Speed, 220))
+			continue
+		}
 		distToBus := f.car.Pos.Distance(b.Pos)
-		if distToBus >= 260.0 {
+		if distToBus >= lookahead {
 			continue
 		}
 
@@ -90,7 +95,7 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 			if math.Abs(lat) <= corridorW {
 				// Must be strictly ahead of the car's front bumper!
 				// Vehicles alongside or behind the car must never cause it to brake.
-				if fwd > carHalfLen && fwd < 240.0 {
+				if fwd > carHalfLen && fwd < lookahead {
 					if fwd < minFwdAhead {
 						minFwdAhead = fwd
 						hasObstacleAhead = true
@@ -136,7 +141,7 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 					}
 				} else {
 					f.car.IsBraking = true
-					decelSpd := math.Max(0, (bumperDist-25.0)*1.8)
+					decelSpd := math.Min(math.Max(0, (bumperDist-25)*1.8), math.Sqrt(2*220*math.Max(0, bumperDist-25)))
 					targetSpd = math.Min(targetSpd, decelSpd)
 				}
 			} else if !isWrongWay {
@@ -149,7 +154,8 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 					}
 				} else {
 					f.car.IsBraking = true
-					decelSpd := math.Max(0, (bumperDist-16.0)*1.6)
+					lead := math.Max(0, b.Speed*math.Cos(b.Heading-f.car.Heading))
+					decelSpd := math.Min(math.Max(0, lead+(bumperDist-20)*.8), math.Sqrt(lead*lead+2*220*math.Max(0, bumperDist-20)))
 					targetSpd = math.Min(targetSpd, decelSpd)
 				}
 			} else {
@@ -169,37 +175,71 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 }
 
 func (tm *TrafficManager) carFollowingSpeed(f carFrame, targetSpd float64) float64 {
-	// C. Check Other AI Cars ahead in same lane
 	if f.car.InRoundabout {
 		return targetSpd
 	}
-	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
-	for j := 0; j < f.activeCount; j++ {
-		if j == f.index {
+	u := sim.Vec2{X: math.Cos(f.car.Heading), Y: math.Sin(f.car.Heading)}
+	for j, other := range tm.Cars {
+		if j == f.index || j >= f.activeCount || other.InRoundabout {
 			continue
 		}
-		other := tm.Cars[j]
-		if other.InRoundabout {
-			continue // Other is in roundabout; entry yield check in Section E handles right of way
+		if gap, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, other.JunctionCorridor, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}, f.car.Length, f.car.Width); ok {
+			targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, other.Speed, f.car.Speed, 220))
+			continue
 		}
-		toOther := other.Pos.Sub(f.car.Pos)
-		if toOther.Dot(toOther) < 120*120 {
-			fProj := toOther.X*cosH + toOther.Y*sinH
-			lProj := math.Abs(-toOther.X*sinH + toOther.Y*cosH)
-
-			if fProj > f.car.Length*0.5 && fProj < 110 && lProj < f.laneWidth*0.65 {
-				f.car.IsBraking = true
-				if fProj < 60 {
-					targetSpd = 0
-					if fProj < 40 && f.car.Speed > 0 {
-						f.car.Speed = 0
-					}
-				} else {
-					targetSpd = math.Min(targetSpd, math.Max(0, (fProj-52)*1.8))
-				}
+		delta := other.Pos.Sub(f.car.Pos)
+		forward := delta.Dot(u)
+		if forward <= f.car.Length/2 {
+			continue
+		}
+		yaw := other.Heading - f.car.Heading
+		extent := other.Length/2*math.Abs(math.Sin(yaw)) + other.Width/2*math.Abs(math.Cos(yaw))
+		lateral := math.Abs(-delta.X*u.Y + delta.Y*u.X)
+		if lateral > f.car.Width/2+extent+5 {
+			continue
+		}
+		alongExtent := other.Length/2*math.Abs(math.Cos(yaw)) + other.Width/2*math.Abs(math.Sin(yaw))
+		gap := forward - f.car.Length/2 - alongExtent
+		lead := math.Max(0, other.Speed*math.Cos(yaw))
+		closing := math.Max(0, f.car.Speed-lead)
+		if gap > math.Max(90, closing*closing/(2*220)+closing*.5+30) {
+			continue
+		}
+		// While turning, the tangent ray can point into a stopped adjacent
+		// through queue even though the committed curve bends away from it.
+		if math.Abs(other.Speed) < 1 && committedCarPathClear(f.car, other) {
+			continue
+		}
+		allowed := math.Min(math.Max(0, lead+.9*(gap-18)), math.Sqrt(lead*lead+2*220*math.Max(0, gap-18)))
+		if gap < 12 {
+			allowed = 0
+			if gap < 5 {
+				f.car.Speed = 0
 			}
 		}
+		if allowed < targetSpd {
+			f.car.IsBraking = true
+			targetSpd = allowed
+		}
 	}
-
 	return targetSpd
+}
+
+// Only a committed junction path can disprove the straight following ray.
+// Moving crossing traffic still uses the conservative following/admission rules.
+func committedCarPathClear(car, other *sim.TrafficCar) bool {
+	turn := car.JunctionTurn
+	if turn == nil || turn.LaneChange || turn.Straight {
+		return false
+	}
+	obstacle := sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}
+	horizon := math.Max(120, car.Speed*car.Speed/(2*220)+math.Abs(car.Speed)*.3+50)
+	for distance := 0.; distance <= horizon; distance += 6 {
+		pos, heading := turn.Predict(distance)
+		body := sim.OBB{Center: pos, Heading: heading, HalfLen: car.Length / 2, HalfWid: car.Width / 2}
+		if hit, _, _ := sim.CheckOBBCollision(body, obstacle); hit {
+			return false
+		}
+	}
+	return true
 }

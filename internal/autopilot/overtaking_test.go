@@ -52,6 +52,18 @@ func TestBerserkModeOvertakingOnMultiLaneRoad(t *testing.T) {
 			driver.OvertakeState, driver.LaneOffset)
 	}
 
+	// The fleet restriction must preserve same-direction passing on wide roads.
+	driver.Reset()
+	driver.BerserkMode = true
+	driver.DisallowOncomingOvertake = true
+	driver.State = AutopilotStateCruising
+	driver.ComputeControls(bus, route, w, nil, []VehicleObstacle{slowCar}, lw, 0.016)
+	if driver.OvertakeState != OvertakeChangingLane || math.Abs(driver.TargetLaneOffset+lw) > 1 {
+		t.Fatal("fleet restriction incorrectly blocked same-direction passing")
+	}
+	driver.Reset()
+	driver.DisallowOncomingOvertake = false
+
 	// 2. Berserk Mode: initiates overtake into inner lane (-lw)
 	driver.BerserkMode = true
 	driver.State = AutopilotStateCruising
@@ -308,7 +320,17 @@ func TestLeftTurnLaneChangeDoesNotCrossDoubleYellowIntoOncomingLane(t *testing.T
 					a := path[k].Sub(path[k-1])
 					b := path[k+1].Sub(path[k])
 					turn := sim.NormalizeAngle(math.Atan2(b.Y, b.X) - math.Atan2(a.Y, a.X))
-					if turn < -0.4 && turn > -2.8 {
+					// Smooth arcs turn a little at each waypoint. Include cumulative
+					// heading over a local distance, rather than requiring a kink.
+					cumulative := turn
+					distance := b.Length()
+					for j := k + 2; j < len(path) && distance < 180; j++ {
+						c := path[j].Sub(path[j-1])
+						cumulative += sim.NormalizeAngle(math.Atan2(c.Y, c.X) - math.Atan2(b.Y, b.X))
+						distance += c.Length()
+						b = c
+					}
+					if (turn < -0.4 && turn > -2.8) || cumulative < -.5 {
 						hasLeftTurn = true
 						break
 					}

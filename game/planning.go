@@ -229,8 +229,7 @@ func (g *Game) TogglePlanMode() {
 			// Instant snap back to driver mode without resetting vehicle positions
 			g.Camera.FollowBus(g.Bus)
 			g.Camera.Pos = g.Camera.TargetPos
-			g.Camera.TargetZoom = 1.0
-			g.Camera.Zoom = 1.0
+			g.Camera.RestoreDrivingZoom()
 			g.Camera.Rotation = g.Camera.TargetRotation
 			g.HUD.AddToast(locale.T("已进入【驾驶模式】：开始运营发车！", "[Drive Mode] Starting operation!"), true)
 		}

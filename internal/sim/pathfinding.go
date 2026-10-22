@@ -427,11 +427,9 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64, options 
 							}
 						}
 					} else {
-						// U-turn (turn == 2): orthogonal loop across center divider from inner lane
+						// Preserve tangency and a drivable radius across both halves of the turn.
 						outOff := RoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
-						pA := interPt.Add(rPrev.Mul(lw * 0.5))
-						pB := interPt.Add(rCurr.Mul(outOff))
-						pts = append(pts, pA, pB)
+						pts = append(pts, UTurnPath(interPt, math.Atan2(uPrev.Y, uPrev.X), lw/2, outOff, geometry)...)
 					}
 				}
 			}

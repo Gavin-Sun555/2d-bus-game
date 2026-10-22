@@ -3,6 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
+	"sort"
 )
 
 // CheckPlayerViolation checks if player's bus is running a red light.
@@ -355,7 +356,42 @@ func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lo
 	wantLeft := len(turnOptions) > 0 && turnOptions[0]
 	wantRight := len(turnOptions) > 1 && turnOptions[1]
 	allowYellow := len(turnOptions) > 2 && turnOptions[2]
+	return tls.checkStop(pos, heading, lookAhead, laneWidth, wantLeft, wantRight, false, func(*TrafficIntersection, float64) bool { return allowYellow })
+}
 
+// CheckStopForVehicleAtSpeed is CheckStopForVehicle with a dilemma-zone yellow
+// policy: when allowYellow is set, a yellow is taken only if the vehicle reaches
+// the stop line at its current speed before the yellow ends. Otherwise it would
+// enter on red, so it must stop.
+// routeKnown makes the supplied movement authoritative: a temporary lane-change
+// position must not substitute the left arrow for a planned through movement.
+func (tls *TrafficLightSystem) CheckStopForVehicleAtSpeed(pos Vec2, heading, lookAhead, laneWidth float64, wantLeft, wantRight, allowYellow bool, speed float64, routeKnown ...bool) (shouldStop bool, distToStopLine float64) {
+	return tls.checkStop(pos, heading, lookAhead, laneWidth, wantLeft, wantRight, len(routeKnown) > 0 && routeKnown[0], func(inter *TrafficIntersection, distToLine float64) bool {
+		if !allowYellow || speed <= 1.0 {
+			return false
+		}
+		return distToLine/speed < inter.YellowRemaining()
+	})
+}
+
+// YellowRemaining returns the seconds left in a yellow phase (0 otherwise).
+func (inter *TrafficIntersection) YellowRemaining() float64 {
+	switch inter.Phase {
+	case PhaseEWYellow, PhaseNSYellow, PhaseEWLeftYellow, PhaseNSLeftYellow:
+		duration := inter.YellowDuration
+		if duration <= 0 {
+			duration = 2.5 // default yellow, matching deadlock.go
+		}
+		return math.Max(0, duration-inter.Timer)
+	}
+	return 0
+}
+
+// checkStop evaluates upcoming junctions nearest-first. Turn intent describes
+// the movement at the nearest junction only: applying a later right turn to an
+// earlier junction would grant right-on-red to a straight movement. Farther
+// junctions are reached only by going straight through the nearer ones.
+func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth float64, wantLeft, wantRight, routeKnown bool, yellowOK func(*TrafficIntersection, float64) bool) (bool, float64) {
 	// Mutual exclusion: if vehicle intends to turn left, it cannot turn right
 	if wantLeft {
 		wantRight = false
@@ -364,6 +400,11 @@ func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lo
 	cosH := math.Cos(heading)
 	sinH := math.Sin(heading)
 
+	type candidate struct {
+		inter      *TrafficIntersection
+		distToLine float64
+	}
+	var candidates []candidate
 	for _, inter := range tls.Intersections {
 		stopLineDist := inter.GetStopLineDistForHeading(heading, laneWidth)
 		toInter := inter.Center.Sub(pos)
@@ -373,49 +414,60 @@ func (tls *TrafficLightSystem) CheckStopForVehicle(pos Vec2, heading float64, lo
 		// Must be on the approaching corridor heading towards the intersection (accommodates 2, 4, and 6 lane approaches)
 		if forwardDist > -stopLineDist && forwardDist < stopLineDist+lookAhead+60 && lateralDist < math.Max(laneWidth*3.6, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
 			distToLine := forwardDist - stopLineDist
-
 			// If already at or past the stop line into the intersection (distToLine <= 0):
 			// NEVER stop! Must proceed and clear intersection to avoid blocking zebra crossings!
 			if distToLine <= 0 {
 				continue
 			}
+			candidates = append(candidates, candidate{inter, distToLine})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].distToLine < candidates[j].distToLine })
 
-			// Determine which signal to respect (Left-turn vs Through):
-			hasDedicatedLanes := inter.ApproachHasDedicatedLanesForHeading(heading)
-			inLeftTurnLane := false
-			if hasDedicatedLanes {
-				if math.Abs(cosH) > math.Abs(sinH) {
-					// EW avenue
-					dy := math.Abs(pos.Y - inter.Center.Y)
-					if dy > 5.0 && dy < laneWidth*0.95 {
-						inLeftTurnLane = true
-					}
-				} else {
-					// NS avenue
-					dx := math.Abs(pos.X - inter.Center.X)
-					if dx > 5.0 && dx < laneWidth*0.95 {
-						inLeftTurnLane = true
-					}
+	for i, c := range candidates {
+		inter, distToLine := c.inter, c.distToLine
+		nearest := i == 0
+
+		// Determine which signal to respect (Left-turn vs Through):
+		hasDedicatedLanes := inter.ApproachHasDedicatedLanesForHeading(heading)
+		inLeftTurnLane := false
+		if hasDedicatedLanes {
+			if math.Abs(cosH) > math.Abs(sinH) {
+				// EW avenue
+				dy := math.Abs(pos.Y - inter.Center.Y)
+				if dy > 5.0 && dy < laneWidth*0.95 {
+					inLeftTurnLane = true
+				}
+			} else {
+				// NS avenue
+				dx := math.Abs(pos.X - inter.Center.X)
+				if dx > 5.0 && dx < laneWidth*0.95 {
+					inLeftTurnLane = true
 				}
 			}
+		}
 
-			// If vehicle is physically positioned in the dedicated left-turn lane, it MUST turn left and CANNOT turn right!
-			effectiveWantLeft := wantLeft || (hasDedicatedLanes && inLeftTurnLane)
-			effectiveWantRight := wantRight && !effectiveWantLeft && !inLeftTurnLane
+		// Unplanned vehicles infer their signal from the lane. A known route
+		// retains its movement while temporarily straddling lanes.
+		effectiveWantLeft := (nearest && wantLeft) || (!routeKnown && hasDedicatedLanes && inLeftTurnLane)
+		effectiveWantRight := nearest && wantRight && !effectiveWantLeft && !inLeftTurnLane
 
-			// Vehicles making a lawful right turn (from outer lane) may legally turn on red (红灯允许右转)
-			if effectiveWantRight {
-				return false, 999.0
+		// Vehicles making a lawful right turn (from outer lane) may legally turn on red (红灯允许右转)
+		if effectiveWantRight {
+			return false, 999.0
+		}
+
+		sig := inter.GetSignalForHeading(heading, effectiveWantLeft)
+
+		// If approaching before the stop line within lookAhead
+		if distToLine < lookAhead {
+			if sig == SignalRed || (sig == SignalYellow && !yellowOK(inter, distToLine)) {
+				return true, distToLine
 			}
-
-			sig := inter.GetSignalForHeading(heading, effectiveWantLeft)
-
-			// If approaching before the stop line within lookAhead
-			if distToLine > 0 && distToLine < lookAhead {
-				if sig == SignalRed || (!allowYellow && sig == SignalYellow) {
-					return true, distToLine
-				}
-			}
+		}
+		// A turn at this junction leaves the corridor; farther junctions do not apply.
+		if nearest && wantLeft {
+			break
 		}
 	}
 	return false, 999.0

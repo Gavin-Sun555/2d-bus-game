@@ -171,6 +171,9 @@ func evaluate6LaneThroughTraffic(bus *sim.Bus, obstacles []VehicleObstacle, cosH
 func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, currentOffset, targetOffset, laneWidth float64) bool {
 	corridorBase := bus.Width/2 + 10.0
 	for _, other := range obstacles {
+		if yieldedVehicleClearsRear(bus, other, cosH, sinH) {
+			continue
+		}
 		dOther := other.Pos.Sub(bus.Pos)
 		fwdOther := dOther.X*cosH + dOther.Y*sinH
 		latOther := -dOther.X*sinH + dOther.Y*cosH
@@ -370,6 +373,9 @@ func isBaseLaneClearToReturn(bus *sim.Bus, obstacles []VehicleObstacle, cosH, si
 		}
 		corridor := corridorBase + obs.Width/2
 		if distToBaseLane < corridor {
+			if yieldedVehicleClearsRear(bus, obs, cosH, sinH) {
+				continue
+			}
 			minSafeBehind := -(bus.Length/2 + obs.Length/2 + 30.0)
 			if obs.Speed > bus.Speed+10.0 {
 				minSafeBehind = -(bus.Length/2 + obs.Length/2 + 70.0)

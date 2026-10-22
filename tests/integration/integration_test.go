@@ -24,6 +24,9 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 		t.Run(theme.DisplayName(), func(t *testing.T) {
 			g := game.NewGame(1280, 720)
 			g.EnterCity(theme)
+			// This test teleports between bays to verify passenger/route service.
+			// Live traffic would turn those teleports into artificial collisions.
+			g.TrafficMgr.Cars = nil
 
 			if g.State != game.StatePlaying {
 				t.Fatalf("[%s] Game state must be StatePlaying, got %v", theme.DisplayName(), g.State)

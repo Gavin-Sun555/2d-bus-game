@@ -63,11 +63,11 @@ func (g *Game) ResetBusesToRouteStart() {
 		g.Camera.FollowBus(g.Bus)
 		g.Camera.Pos = g.Bus.Pos
 		g.Camera.TargetPos = g.Bus.Pos
-		g.Camera.TargetZoom = 1.0
-		g.Camera.Zoom = 1.0
+		g.Camera.RestoreDrivingZoom()
 		g.Camera.Rotation = g.Camera.TargetRotation
 	}
 
+	g.ensureOperations()
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
 }

@@ -16,7 +16,7 @@ import (
 //     and their destinations are strictly downstream stops along the route.
 //  4. Yellow Box clearance ("Don't Block the Box"): AI cars holding before stop lines at green lights
 //     when a bus occupies or clears the intersection box.
-//  5. Severe gridlock timeout resolution (> 55.5s threshold):
+//  5. Severe gridlock timeout resolution (> 74s threshold):
 //     - Jammed AI cars disappear and reset to clear roadway segments with safe speed.
 //     - Jammed AI buses reset back to the route starting station (StopIDs[0]) with cleared passengers and index 0.
 //     - Player bus in AI autopilot mode safely resets back to the route starting station.
@@ -165,7 +165,7 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	}
 
 	// -------------------------------------------------------------------------
-	// 5. Severe Gridlock Timeout Resolution (> 55.5s)
+	// 5. Severe Gridlock Timeout Resolution (> 74s)
 	// -------------------------------------------------------------------------
 	// Place an AI bus from the fleet and a car jammed in head-to-head deadlock
 	testAIBus := abm.Buses[0]
@@ -191,9 +191,9 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	tm.Cars = []*sim.TrafficCar{jammedCar}
 	tm.AIBusMgr = abm
 
-	// Advance deadlock to 55.5s threshold
+	// Advance deadlock to 74s threshold
 	dt := 0.2
-	for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
+	for elapsed := 0.0; elapsed < 74.2; elapsed += dt {
 		testAIBus.Bus.Speed = 0.0
 		jammedCar.Speed = 0.0
 		tm.ResolveDeadlocks(dt, nil, len(tm.Cars), laneWidth, wMetro)

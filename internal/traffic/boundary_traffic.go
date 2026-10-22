@@ -7,23 +7,53 @@ import (
 
 // Only the travel axis matters: lane offsets can lie outside the road-center bbox.
 func outsideRoadBounds(car *sim.TrafficCar, w *sim.World, margin float64) bool {
-	if w == nil || len(w.Roads) == 0 || car.InRoundabout || car.JunctionTurn != nil {
+	if w == nil || len(w.Roads) == 0 || car.InRoundabout {
 		return false
 	}
-	lo, hi := math.Inf(1), math.Inf(-1)
+	if turn := car.JunctionTurn; turn != nil {
+		// A committed outward straight corridor may extend beyond the edge.
+		// Remove once the rear leaves, without waiting for that virtual tail.
+		if !turn.Straight || turn.LaneChange || !isMapExitAhead(w, turn.Center, turn.ExitHeading) {
+			return false
+		}
+	}
+	lo, hi := roadAxisBounds(w, car.IsEW)
 	coordinate := car.Pos.Y
 	if car.IsEW {
 		coordinate = car.Pos.X
 	}
+	return coordinate < lo-margin || coordinate > hi+margin
+}
+
+// Use the same extents for exit admission and rear-body removal. An internal
+// dead end must still merge/turn; an outward-facing edge is an open map exit.
+func roadAxisBounds(w *sim.World, ew bool) (float64, float64) {
+	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, road := range w.Roads {
 		a, b := road.P1.Y, road.P2.Y
-		if car.IsEW {
+		if ew {
 			a, b = road.P1.X, road.P2.X
 		}
 		lo = math.Min(lo, math.Min(a, b))
 		hi = math.Max(hi, math.Max(a, b))
 	}
-	return coordinate < lo-margin || coordinate > hi+margin
+	return lo, hi
+}
+
+func isMapExitAhead(w *sim.World, center sim.Vec2, heading float64) bool {
+	if w == nil || len(w.Roads) == 0 {
+		return false
+	}
+	ew := math.Abs(math.Cos(heading)) > .5
+	lo, hi := roadAxisBounds(w, ew)
+	coordinate, direction := center.Y, math.Sin(heading)
+	if ew {
+		coordinate, direction = center.X, math.Cos(heading)
+	}
+	if (direction > 0 && math.Abs(coordinate-hi) > 1) || (direction < 0 && math.Abs(coordinate-lo) > 1) {
+		return false
+	}
+	return hasRoadInDirection(w, center, heading+math.Pi)
 }
 
 func (tm *TrafficManager) updateBoundaryTraffic(bus *sim.Bus, density int, laneWidth float64, w *sim.World) {
@@ -125,7 +155,9 @@ func (tm *TrafficManager) spawnAtOtherIntersection(exit sim.Vec2, bus *sim.Bus, 
 			}
 			id := tm.nextCarID
 			tm.nextCarID++
-			return &sim.TrafficCar{ID: id, Pos: pos, Heading: heading, TargetSpeed: 150 + sim.RandomFloat64()*40, Length: 46, Width: 22, Color: carPalette[id%len(carPalette)], RoadCenter: coord, IsEW: ew, LaneIndex: lane}
+			car := &sim.TrafficCar{ID: id, Pos: pos, Heading: heading, Length: 46, Width: 22, Color: carPalette[id%len(carPalette)], RoadCenter: coord, IsEW: ew, LaneIndex: lane}
+			tm.assignCarSpeed(car)
+			return car
 		}
 	}
 	return nil

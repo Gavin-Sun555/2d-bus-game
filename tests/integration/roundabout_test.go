@@ -257,7 +257,9 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 			joinedLane := false
 			lastRadialError := math.Inf(1)
 
-			for frame := 0; frame < 400; frame++ {
+			// Include approach and exit at the shared, slower operating cap.
+			frameBudget := int(math.Ceil((math.Pi*rb.Radius+400)/sim.RoundaboutSpeedLimit/dt)) + 120
+			for frame := 0; frame < frameBudget; frame++ {
 				tm.Update(dt, bus, nil, 1, laneW, w)
 
 				if car.InRoundabout {
@@ -320,6 +322,7 @@ func TestTrafficAIRoundaboutPureCircularArcNoDiagonalCuts(t *testing.T) {
 						t.Fatalf("[%s] Frame %d: Car hit hard barrier upon exiting roundabout: %v, obstacle: %s",
 							theme.DisplayName(), frame, car.Pos, bRes.ObstacleName)
 					}
+					break
 				}
 			}
 

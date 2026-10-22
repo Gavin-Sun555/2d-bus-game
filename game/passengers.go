@@ -10,6 +10,7 @@ import (
 )
 
 func (g *Game) updatePassengerExchange(toggleDoors bool) {
+	g.ensureOperations()
 	// Check if parked at any bus stop
 	var activeStop *sim.BusStop
 	var misalignedStop *sim.BusStop
@@ -59,6 +60,7 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 				if g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() {
 					offCount += g.Bus.ClearPassengers()
 				}
+				g.Operations.Alight(0, activeStop.ID, offCount)
 				g.stopBellRung = false
 				g.passengersAlighting = 0
 
@@ -77,9 +79,8 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 							}
 						}
 					}
-					actualBoarded := g.Bus.BoardPassengers(boardCount, candidates)
+					actualBoarded, fareEarned := g.Operations.Board(0, g.Bus, g.Route, activeStop.ID, boardCount, candidates)
 					activeStop.WaitingPassengers -= actualBoarded
-					fareEarned := actualBoarded * 3
 					g.Cash += fareEarned
 					toastMsg := locale.Tf("[%s] 下客 %d 人，上客 %d 人，营收 +$%d！",
 						"[%s] %d alighted, %d boarded, revenue +$%d!",
@@ -144,9 +145,8 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 							}
 						}
 					}
-					actualBoarded := g.Bus.BoardPassengers(boardCount, candidates)
+					actualBoarded, fareEarned := g.Operations.Board(0, g.Bus, g.Route, activeStop.ID, boardCount, candidates)
 					activeStop.WaitingPassengers -= actualBoarded
-					fareEarned := actualBoarded * 3
 					g.Cash += fareEarned
 					toastMsg := locale.Tf("[%s] 站台新增乘客，上客 %d 人，营收 +$%d！",
 						"[%s] Additional passengers: %d boarded, revenue +$%d!",

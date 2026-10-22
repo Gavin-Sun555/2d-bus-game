@@ -28,17 +28,55 @@ const (
 // when deciding whether to use their fallback policy.
 func (ad *AutopilotDriver) intersectionExitTurn(center sim.Vec2, cosH, sinH, stopLineDist, exitLatThreshold float64) (routeTurn, bool) {
 	foundExit := false
+	entered := false
 	for idx := ad.WaypointIdx; idx < len(ad.drivePath); idx++ {
+		// Classify the first road exit along a segment, not just its endpoint.
+		// A sparse segment can cross this junction straight before bending at
+		// the next one; the later endpoint must not select this signal's arrow.
+		if idx > 0 {
+			a := ad.drivePath[idx-1].Sub(center)
+			b := ad.drivePath[idx].Sub(center)
+			fa, fb := a.X*cosH+a.Y*sinH, b.X*cosH+b.Y*sinH
+			if fa < stopLineDist && fb >= stopLineDist && fb > fa {
+				p := a.Add(b.Sub(a).Mul((stopLineDist - fa) / (fb - fa)))
+				if math.Abs(-p.X*sinH+p.Y*cosH) <= exitLatThreshold {
+					return routeTurnStraight, true
+				}
+			}
+		}
 		toPt := ad.drivePath[idx].Sub(center)
 		forward := toPt.X*cosH + toPt.Y*sinH
 		lateral := -toPt.X*sinH + toPt.Y*cosH
+		if forward >= -stopLineDist && forward <= stopLineDist && math.Abs(lateral) <= exitLatThreshold {
+			entered = true
+		}
+		// A U-turn returns through the incoming mouth rather than crossing a
+		// far exit. Its outgoing tangent, not its position angle, identifies
+		// the left-arrow movement even on a wide multi-lane road.
+		if entered && idx > 0 && forward <= stopLineDist && lateral < 0 {
+			tangent := ad.drivePath[idx].Sub(ad.drivePath[idx-1]).Normalize()
+			if tangent.Dot(sim.Vec2{X: cosH, Y: sinH}) < -.9 {
+				return routeTurnLeft, true
+			}
+		}
 		if forward < -stopLineDist {
 			continue
 		}
-		if !(forward > 30.0 || math.Abs(lateral) > exitLatThreshold) {
+		// A wide turning apron is still inside the junction, even where it
+		// extends beyond the narrow road corridor.
+		if forward >= stopLineDist || math.Abs(lateral) > exitLatThreshold {
+			foundExit = true
+		}
+		exitBoundary := math.Max(exitLatThreshold, stopLineDist-sim.JunctionStopInset)
+		if !(forward >= stopLineDist || math.Abs(lateral) > exitBoundary) {
 			continue
 		}
-		foundExit = true
+		// A straight exit may remain far from the center in a wide curb lane.
+		// Its position angle is not a turn angle. Wait for an actual exit from
+		// the junction, then recognize the full outgoing road corridor.
+		if forward >= stopLineDist && math.Abs(lateral) <= exitLatThreshold {
+			return routeTurnStraight, true
+		}
 		angle := sim.NormalizeAngle(math.Atan2(lateral, forward))
 		switch {
 		case angle < -0.35 && angle > -2.80:
@@ -53,8 +91,12 @@ func (ad *AutopilotDriver) intersectionExitTurn(center sim.Vec2, cosH, sinH, sto
 }
 
 func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane, is6Lane bool) intersectionApproach {
+	return ad.intersectionApproachWithRunway(f, isMultiLane, is6Lane, false)
+}
+
+func (ad *AutopilotDriver) intersectionApproachWithRunway(f autopilotFrame, isMultiLane, is6Lane, earlyRight bool) intersectionApproach {
 	var approachingInter *sim.TrafficIntersection
-	distToStopLine := 999.0
+	distToStopLine := math.Inf(1)
 	isApproachingIntersection, isUpcomingLeft, isUpcomingRight := false, false, false
 	// Lane-change yaw must not rotate the approach corridor or its exit.
 	heading := approachRoadHeading(f.bus.Heading)
@@ -67,19 +109,19 @@ func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane
 			forwardDist := toInter.X*cosH + toInter.Y*sinH
 			lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
 
-			maxInterDist := 450.0
-			if is6Lane {
-				maxInterDist = 900.0
-			} else if isMultiLane {
-				maxInterDist = 550.0
+			lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)]
+			maxInterDist := requiredApproachDistance(f, lanes)
+			rightMergeDist := maxInterDist
+			if earlyRight {
+				rightMergeDist = rightTurnApproachDistance(f, lanes)
 			}
-			maxForwardDist := stopLineOffset + maxInterDist + 80.0
+			maxForwardDist := stopLineOffset + math.Max(maxInterDist, rightMergeDist) + 80.0
 			maxLatDist := f.laneWidth * 3.6
 			if is6Lane {
 				maxLatDist = f.laneWidth * 4.8
 			}
 
-			if forwardDist > -stopLineOffset && forwardDist < maxForwardDist && lateralDist < maxLatDist {
+			if forwardDist > -stopLineOffset && forwardDist < maxForwardDist && lateralDist < maxLatDist && forwardDist-stopLineOffset < distToStopLine {
 				approachingInter = inter
 				distToStopLine = forwardDist - stopLineOffset
 				isApproachingIntersection = (distToStopLine > 0 && distToStopLine < maxInterDist)
@@ -96,6 +138,9 @@ func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane
 				hasRouteExit = foundExit
 				isUpcomingLeft = turn == routeTurnLeft
 				isUpcomingRight = turn == routeTurnRight
+				if isUpcomingRight {
+					isApproachingIntersection = distToStopLine > 0 && distToStopLine < rightMergeDist
+				}
 
 				if !hasRouteExit {
 					for k := ad.WaypointIdx + 1; k < len(ad.drivePath)-1; k++ {
@@ -120,7 +165,6 @@ func (ad *AutopilotDriver) approachingIntersection(f autopilotFrame, isMultiLane
 						}
 					}
 				}
-				break
 			}
 		}
 	}
@@ -133,10 +177,8 @@ func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach int
 	if is2Lane {
 		// On 2-lane roads, borrowing oncoming lane through or near intersections is strictly prohibited!
 		if ad.LaneOffset != 0 || ad.OvertakeState != OvertakeNone {
-			if isBaseLaneClearToReturn(f.bus, f.obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, nil) {
-				ad.TargetLaneOffset = 0.0
-				ad.OvertakeState = OvertakeReturning
-			}
+			ad.TargetLaneOffset = 0.0
+			ad.OvertakeState = OvertakeReturning
 		}
 		if ad.OvertakeState == OvertakeReturning && math.Abs(ad.LaneOffset) < 1.0 {
 			ad.LaneOffset = 0.0
@@ -308,4 +350,20 @@ func (ad *AutopilotDriver) preferredThroughLane(f autopilotFrame, distToStopLine
 // direction, retaining temporary lane-change yaw only for physical steering.
 func approachRoadHeading(heading float64) float64 {
 	return sim.NormalizeAngle(math.Round(heading/(math.Pi/2)) * (math.Pi / 2))
+}
+
+// Reserve braking, a full lane transition per crossed lane, and a settled
+// approach before the entry line. Wide roads need more room than narrow ones.
+func requiredApproachDistance(f autopilotFrame, lanes int) float64 {
+	crossings := math.Max(1, float64(lanes/2-1))
+	settle := f.bus.Length + 2*f.laneWidth
+	return math.Max(650+180*(crossings-1), f.speedAbs*f.speedAbs/(2*130)+f.speedAbs*(1.4+.7*crossings)+settle)
+}
+
+// A right turn may require crossing every passing lane before a curb queue.
+// Reserve extra low-speed runway without changing straight-road queue policy.
+func rightTurnApproachDistance(f autopilotFrame, lanes int) float64 {
+	crossings := math.Max(1, float64(lanes/2-1))
+	settle := f.bus.Length + 2*f.laneWidth
+	return math.Max(requiredApproachDistance(f, lanes), 900+240*(crossings-1)+settle)
 }

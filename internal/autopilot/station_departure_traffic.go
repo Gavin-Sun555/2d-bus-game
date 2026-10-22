@@ -50,6 +50,9 @@ func (ad *AutopilotDriver) stationDepartureTrafficSpeed(f autopilotFrame, target
 		behind := math.Max(180, math.Max(0, ob.Speed)*2.2+80)
 		ahead := math.Max(120, (f.bus.Length+ob.Length)/2+40)
 		if along >= -behind && along < ahead {
+			if ad.clearsStoppedDepartureFollower(f, ob) {
+				continue
+			}
 			return 0
 		}
 	}
@@ -84,6 +87,40 @@ func (ad *AutopilotDriver) clearsYieldingCarDuringDeparture(f autopilotFrame, ob
 		}
 		body.Center = position
 		body.Heading = math.Atan2(tangent.Y, tangent.X)
+		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+			return false
+		}
+	}
+	return true
+}
+
+// A stopped bus queue behind the bay cannot "pass first". Permit departure
+// only when the complete rear body is behind us and the full pull-out sweep
+// clears it. Moving, alongside and front traffic keep their normal priority.
+func (ad *AutopilotDriver) clearsStoppedDepartureFollower(f autopilotFrame, ob VehicleObstacle) bool {
+	if math.Abs(ob.Speed) >= 3 || len(ad.drivePath) < 2 {
+		return false
+	}
+	_, forward, _, active := ad.stationDepartureRoad(f)
+	if !active {
+		return false
+	}
+	yaw := ob.Heading - math.Atan2(forward.Y, forward.X)
+	nose := ob.Pos.Sub(f.bus.Pos).Dot(forward) + ob.Length/2*math.Abs(math.Cos(yaw)) + ob.Width/2*math.Abs(math.Sin(yaw))
+	if nose >= -f.bus.Length/2-6 {
+		return false
+	}
+	pointAt := func(distance float64) (sim.Vec2, float64) {
+		p := ad.pointAt(f.s + distance)
+		u := ad.pointAt(f.s + distance + 2).Sub(p).Normalize()
+		return p.Add(sim.Vec2{X: -u.Y, Y: u.X}.Mul(ad.LaneOffset)), math.Atan2(u.Y, u.X)
+	}
+	base, heading := pointAt(0)
+	errorPos, errorHeading := f.bus.Pos.Sub(base), sim.NormalizeAngle(f.bus.Heading-heading)
+	other := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 2, HalfWid: ob.Width/2 + 2}
+	for distance := 0.; distance <= 240; distance += 4 {
+		pos, heading := pointAt(distance)
+		body := sim.OBB{Center: pos.Add(errorPos), Heading: heading + errorHeading, HalfLen: f.bus.Length/2 + 2, HalfWid: f.bus.Width/2 + 2}
 		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
 			return false
 		}

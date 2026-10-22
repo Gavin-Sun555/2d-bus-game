@@ -8,7 +8,7 @@ func TestCompleteSignalCycleTimeout(t *testing.T) {
 		major                     bool
 		green, yellow, left, want float64
 	}{
-		{"minor", false, 8, 2.5, 5.5, 31.5}, {"major", true, 8, 2.5, 5.5, 55.5}, {"custom", true, 12, 3, 7, 75},
+		{"minor", false, 8, 2.5, 5.5, 42}, {"major", true, 8, 2.5, 5.5, 74}, {"custom", true, 12, 3, 7, 100},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inter := &TrafficIntersection{IsMajor: tc.major, GreenDuration: tc.green, YellowDuration: tc.yellow, LeftGreenDuration: tc.left}

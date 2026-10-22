@@ -2,6 +2,7 @@ package sim
 
 import (
 	"image/color"
+	"math"
 )
 
 type CarType int
@@ -14,13 +15,19 @@ const (
 
 // TrafficCar represents an autonomous AI civilian vehicle
 type TrafficCar struct {
-	ID          int
-	Pos         Vec2
-	Heading     float64
-	Speed       float64
-	TargetSpeed float64
-	Type        CarType
-	Color       color.RGBA
+	ID              int
+	Pos             Vec2
+	Heading         float64
+	Speed           float64
+	TargetSpeed     float64
+	MaxSpeedKPH     int // Fixed at spawn; slowing for traffic never changes this limit.
+	CanOvertake     bool
+	PassingBaseLane int
+	PassingLeadID   int
+	PassingLeadBus  *Bus
+	Passing         bool
+	Type            CarType
+	Color           color.RGBA
 
 	Length float64
 	Width  float64
@@ -31,8 +38,9 @@ type TrafficCar struct {
 	LaneIndex  int     // Counted from median: on eight-lane roads 0 left, 1/2 through, 3 right/shared bus lane.
 
 	// Intersection turns follow the same swept corridors as buses.
-	JunctionTurn  *CarJunctionTurn
-	YieldingToBus *Bus // Keep a granted station gap until the bus completes its merge.
+	JunctionTurn     *CarJunctionTurn
+	JunctionCorridor *JunctionCorridor
+	YieldingToBus    *Bus // Keep a granted gap until the bus completes its merge.
 
 	// Roundabout navigation
 	InRoundabout          bool
@@ -58,7 +66,11 @@ type TrafficCar struct {
 
 // CarJunctionTurn retains a continuous path until the vehicle clears its arc.
 type CarJunctionTurn struct {
-	LaneChange     bool // Approach merge using the same continuous path follower; signals still apply.
+	EntryHeading   float64 // Original approach heading, retained while rotating.
+	SpeedLimit     float64 // Optional approach-merge cap; zero uses normal cruising.
+	Center         Vec2    // Junction owning this trajectory; excludes unrelated crossings.
+	Straight       bool    // Straight-through lane continuity across road-width changes.
+	LaneChange     bool    // Approach merge using the same continuous path follower; signals still apply.
 	Points         []Vec2
 	Segment        int
 	Progress       float64
@@ -75,4 +87,27 @@ type CarRoundaboutCurve struct {
 	ArcLengths                     [65]float64
 	Distance                       float64
 	Exiting                        bool
+	Entry                          *RoundaboutJoin
+}
+
+// Predict follows the committed arc by travelled distance, then continues on
+// its outgoing lane. It never mutates the live follower's progress.
+func (turn *CarJunctionTurn) Predict(distance float64) (Vec2, float64) {
+	if turn == nil || len(turn.Points) == 0 {
+		return Vec2{}, 0
+	}
+	segment := turn.Segment
+	distance = math.Max(0, distance) + turn.Progress
+	for segment < len(turn.Points)-1 {
+		a, b := turn.Points[segment], turn.Points[segment+1]
+		delta := b.Sub(a)
+		length := delta.Length()
+		if distance <= length && length > 0 {
+			return a.Add(delta.Mul(distance / length)), math.Atan2(delta.Y, delta.X)
+		}
+		distance -= length
+		segment++
+	}
+	u := Vec2{X: math.Cos(turn.ExitHeading), Y: math.Sin(turn.ExitHeading)}
+	return turn.Points[len(turn.Points)-1].Add(u.Mul(distance)), turn.ExitHeading
 }

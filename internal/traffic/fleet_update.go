@@ -37,40 +37,51 @@ func (abm *AIBusManager) Update(
 	}
 	if playerBus != nil {
 		baseObstacles = append(baseObstacles, autopilot.VehicleObstacle{
-			Pos:     playerBus.Pos,
-			Heading: playerBus.Heading,
-			Speed:   playerBus.Speed,
-			Length:  playerBus.Length,
-			Width:   playerBus.Width,
+			Pos:              playerBus.Pos,
+			YieldingTo:       playerBus.YieldingToBus,
+			JunctionCorridor: playerBus.JunctionCorridor,
+			Heading:          playerBus.Heading,
+			Speed:            playerBus.Speed,
+			Length:           playerBus.Length,
+			Width:            playerBus.Width,
 		})
 	}
 	for _, c := range activeCars {
 		baseObstacles = append(baseObstacles, autopilot.VehicleObstacle{
-			Pos:     c.Pos,
-			Heading: c.Heading,
-			Speed:   c.Speed,
-			Length:  c.Length,
-			Width:   c.Width,
+			Pos:              c.Pos,
+			YieldingTo:       c.YieldingToBus,
+			JunctionTurn:     c.JunctionTurn,
+			JunctionCorridor: c.JunctionCorridor,
+			Heading:          c.Heading,
+			Speed:            c.Speed,
+			Length:           c.Length,
+			Width:            c.Width,
 		})
 	}
 
 	abm.baseObstacles = baseObstacles
 	for _, ab := range abm.Buses {
+		abm.updateMergeYield(ab.Bus, playerBus, laneWidth)
 		obstacles := append(abm.obstacles[:0], baseObstacles...)
 		for _, other := range abm.Buses {
 			if other.ID == ab.ID {
 				continue
 			}
 			obstacles = append(obstacles, autopilot.VehicleObstacle{
-				Pos:     other.Bus.Pos,
-				Heading: other.Bus.Heading,
-				Speed:   other.Bus.Speed,
-				Length:  other.Bus.Length,
-				Width:   other.Bus.Width,
+				Pos:              other.Bus.Pos,
+				YieldingTo:       other.Bus.YieldingToBus,
+				JunctionCorridor: other.Bus.JunctionCorridor,
+				Heading:          other.Bus.Heading,
+				Speed:            other.Bus.Speed,
+				Length:           other.Bus.Length,
+				Width:            other.Bus.Width,
 			})
 		}
 
 		abm.obstacles = obstacles
+		if ab.Driver != nil {
+			ab.Driver.DisallowOncomingOvertake = true
+		}
 		throttle, brake, steer, handbrake, toggleDoors, isDocked := ab.Driver.ComputeControls(
 			ab.Bus,
 			ab.Route,
@@ -92,10 +103,11 @@ func (abm *AIBusManager) Update(
 				if ab.LastExchangedStopID != targetStopID {
 					ab.LastExchangedStopID = targetStopID
 					// 1. Alight passengers destined for this stop
-					ab.Bus.RemovePassengersAlightingAt(targetStopID)
+					offCount := ab.Bus.RemovePassengersAlightingAt(targetStopID)
 					if ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
-						ab.Bus.ClearPassengers()
+						offCount += ab.Bus.ClearPassengers()
 					}
+					abm.Operations.Alight(ab.ID, targetStopID, offCount)
 				}
 
 				// 2. Board waiting passengers with downstream destinations:
@@ -115,7 +127,7 @@ func (abm *AIBusManager) Update(
 					if take > boardSpace {
 						take = boardSpace
 					}
-					actualBoarded := ab.Bus.BoardPassengers(take, candidates)
+					actualBoarded, _ := abm.Operations.Board(ab.ID, ab.Bus, ab.Route, targetStopID, take, candidates)
 					st.WaitingPassengers -= actualBoarded
 					ab.PassengersCarried += actualBoarded
 				}
@@ -131,7 +143,7 @@ func (abm *AIBusManager) Update(
 			ab.Bus.Speed = 0
 		}
 
-		// Recover only after this bus has remained jammed for 1.5 full signal cycles.
+		// Recover only after this bus has remained jammed for two full signal cycles.
 		if math.Abs(ab.Bus.Speed) < 3.0 {
 			// If bus is actively docked and exchanging passengers, it is operating normally, NOT deadlocked!
 			if isDocked && ab.Bus.DoorsOpen {
@@ -225,7 +237,6 @@ func (abm *AIBusManager) Update(
 			}
 
 			ab.updateDeadlock(dt, isBusDeadlocked, tls, world)
-
 		} else {
 			ab.DeadlockTimer = 0
 		}

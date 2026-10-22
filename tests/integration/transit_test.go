@@ -188,6 +188,7 @@ func TestIntegrationFullGameplayAllMaps(t *testing.T) {
 
 	for _, theme := range themes {
 		t.Run(theme.DisplayName(), func(t *testing.T) {
+			sim.SeedSimulation(600 + int64(theme))
 			g := game.NewGame(1280, 720)
 			g.EnterCity(theme)
 
@@ -208,8 +209,11 @@ func TestIntegrationFullGameplayAllMaps(t *testing.T) {
 
 			initPos := g.Bus.Pos
 
-			// 4. Simulate 350 game ticks of live gameplay (dwell cycle takes ~208 frames, then vehicle cruises down the street)
-			for frame := 0; frame < 350; frame++ {
+			// 4. Allow boarding, door closure and a safe gap in live traffic.
+			// The old 350-tick deadline could expire just as the dwell cycle
+			// finished; the initial passenger load changes the dwell duration.
+			// Keep checking all safety invariants throughout this 20-second window.
+			for frame := 0; frame < 1200; frame++ {
 				err := g.Update()
 				if err != nil {
 					t.Fatalf("[%s] Frame %d: g.Update() returned error: %v", theme.DisplayName(), frame, err)

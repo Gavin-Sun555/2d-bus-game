@@ -49,3 +49,45 @@ func TestCameraViewportCulling(t *testing.T) {
 		t.Errorf("Coordinate round-trip mismatch: got %v, expected %v", recoveredWorld, worldPt)
 	}
 }
+
+func TestWideDrivingViewDoublesWorldCoverage(t *testing.T) {
+	for _, rotation := range []float64{0, math.Pi / 2, math.Pi} {
+		cam := NewCamera(1280, 720)
+		cam.Pos = Vec2{X: 350, Y: -200}
+		cam.TargetPos = cam.Pos
+		cam.Rotation = rotation
+		before := cam.ScreenToWorld(Vec2{}).Sub(cam.Pos)
+		if cam.ToggleDrivingView() != 2 {
+			t.Fatal("wide view did not enable")
+		}
+		after := cam.ScreenToWorld(Vec2{}).Sub(cam.Pos)
+		if after.Distance(before.Mul(2)) > .001 || cam.Zoom != .5 || cam.TargetZoom != .5 {
+			t.Fatal("world coverage did not double")
+		}
+		world := cam.ScreenToWorld(Vec2{X: 100, Y: 200})
+		if cam.WorldToScreen(world).Distance(Vec2{X: 100, Y: 200}) > .001 {
+			t.Fatal("wide view coordinate transform mismatch")
+		}
+		cam.Zoom, cam.TargetZoom = .08, .08 // Planning zoom must not overwrite the driving choice.
+		cam.RestoreDrivingZoom()
+		if cam.Zoom != .5 {
+			t.Fatal("planning discarded wide view")
+		}
+		if cam.ToggleDrivingView() != 4 || cam.Zoom != .25 || cam.TargetZoom != .25 {
+			t.Fatal("second toggle did not select 4× view")
+		}
+		if cam.ScreenToWorld(Vec2{}).Sub(cam.Pos).Distance(before.Mul(4)) > .001 {
+			t.Fatal("4× world coverage mismatch")
+		}
+		world = cam.ScreenToWorld(Vec2{X: 100, Y: 200})
+		if cam.WorldToScreen(world).Distance(Vec2{X: 100, Y: 200}) > .001 {
+			t.Fatal("4× view coordinate transform mismatch")
+		}
+		if cam.ToggleDrivingView() != 1 || cam.Zoom != 1 || cam.TargetZoom != 1 {
+			t.Fatal("third toggle did not restore default")
+		}
+		if cam.Pos != cam.TargetPos || cam.Rotation != rotation || cam.ScreenWidth != 1280 || cam.ScreenHeight != 720 {
+			t.Fatal("toggle changed framing or window size")
+		}
+	}
+}

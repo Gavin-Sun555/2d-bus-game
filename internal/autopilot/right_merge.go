@@ -10,7 +10,12 @@ import (
 // Keep the actual corridor, rather than reversing into another lane or forcing
 // the planned return. The normal lane policy can retry when traffic clears.
 func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
-	if !ad.BerserkMode || f.world == nil || len(ad.drivePath) < 2 || len(f.obstacles) == 0 || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
+	// Required merges already check every crossed lane and cap approach speed.
+	// Reapplying the passing gap here would freeze the same safe queue slot.
+	if ad.approachMerge != nil {
+		return
+	}
+	if f.world == nil || len(ad.drivePath) < 2 || len(f.obstacles) == 0 || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
 		return
 	}
 	for _, rb := range f.world.Roundabouts {
@@ -44,6 +49,8 @@ func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
 		return
 	}
 	ad.holdLaneOffset(actual)
+	center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+	ad.beginMidLaneRecovery(f, heading, center, ew)
 }
 
 func (ad *AutopilotDriver) holdLaneOffset(offset float64) {

@@ -11,6 +11,8 @@ import (
 // AIBus represents an autonomous transit bus operating along the city's bus route
 type AIBus struct {
 	ID                  int
+	MaxSpeedKPH         int
+	CanOvertake         bool
 	LineName            string
 	Bus                 *sim.Bus
 	Route               *sim.Route
@@ -37,6 +39,8 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 		ab.Bus.Heading = st.Heading
 		ab.Bus.Speed = 0
 		ab.Bus.SteeringAngle = 0
+		ab.Bus.JunctionCorridor = nil
+		ab.Bus.YieldingToBus = nil
 		ab.Bus.ClearPassengers()
 		ab.LastExchangedStopID = -1
 		if ab.Driver != nil {
@@ -55,9 +59,11 @@ func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSy
 
 // AIBusManager oversees all AI buses operating on the active city route
 type AIBusManager struct {
+	Operations    *sim.TransitOperations
 	baseObstacles []autopilot.VehicleObstacle
 	obstacles     []autopilot.VehicleObstacle
 	Buses         []*AIBus
+	BusSpeedRange sim.SpeedRange
 	BusCount      int // Number of AI buses operating on the route (0 ~ 8)
 	CurrentMap    sim.MapTheme
 	CurrentLane   float64
@@ -208,13 +214,22 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		bus.SteeringAngle = 0
 		bus.Capacity = sim.DefaultBusCapacity
 
+		rangeKPH := abm.BusSpeedRange.Normalize(50, 80)
+		speedKPH := rangeKPH.Sample()
+		driver := autopilot.NewAutopilotDriver()
+		driver.DisallowOncomingOvertake = true
+		driver.BerserkMode = speedKPH > rangeKPH.MinKPH
+		driver.BerserkMaxSpeed = sim.SpeedKPH(speedKPH)
+		driver.CruiseSpeedLimit = sim.SpeedKPH(speedKPH)
+		bus.MaxSpeedFwd = sim.SpeedKPH(speedKPH)
 		aiColor := busColors[i%len(busColors)]
 		newBuses = append(newBuses, &AIBus{
-			ID:                  i + 1,
-			LineName:            targetRoute.Name,
-			Bus:                 bus,
-			Route:               busRoute,
-			Driver:              autopilot.NewAutopilotDriver(),
+			ID:          i + 1,
+			LineName:    targetRoute.Name,
+			Bus:         bus,
+			Route:       busRoute,
+			Driver:      driver,
+			MaxSpeedKPH: speedKPH, CanOvertake: speedKPH > rangeKPH.MinKPH,
 			Color:               aiColor,
 			LastExchangedStopID: -1,
 		})
@@ -231,11 +246,12 @@ func (abm *AIBusManager) GetObstacles(excludeID int) []autopilot.VehicleObstacle
 			continue
 		}
 		obs = append(obs, autopilot.VehicleObstacle{
-			Pos:     b.Bus.Pos,
-			Heading: b.Bus.Heading,
-			Speed:   b.Bus.Speed,
-			Length:  b.Bus.Length,
-			Width:   b.Bus.Width,
+			Pos:              b.Bus.Pos,
+			JunctionCorridor: b.Bus.JunctionCorridor,
+			Heading:          b.Bus.Heading,
+			Speed:            b.Bus.Speed,
+			Length:           b.Bus.Length,
+			Width:            b.Bus.Width,
 		})
 	}
 	return obs

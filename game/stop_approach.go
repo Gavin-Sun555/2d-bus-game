@@ -84,7 +84,7 @@ func (g *Game) updateStopApproach() {
 		// 1. Chime bell notification when approaching within 550px
 		if distToTarget < 550 && g.stopBellRung && !g.bellToastShown && isAlignedHeading && isOnStopRoad && isArrivingAtStop {
 			g.bellToastShown = true
-			g.HUD.AddToast(fmt.Sprintf("[🔔 下车铃响] 叮咚~ 车内有 %d 位乘客按下车铃，将在下一站下车！", g.passengersAlighting), false)
+			g.HUD.AddToast(locale.T("[🔔 下车铃响] 叮咚~ 有乘客请求在下一站下车！", "[🔔 Stop requested] A passenger has requested the next stop!"), false)
 		}
 
 		// 2. Skip Stop (飞站 / 漏站) check when approaching or past within 380px
@@ -136,7 +136,7 @@ func (g *Game) updateStopApproach() {
 				} else {
 					reasons := ""
 					if g.stopBellRung {
-						reasons += fmt.Sprintf("车内有 %d 人按铃下车 ", g.passengersAlighting)
+						reasons += locale.T("下车铃已响 ", "Stop requested ")
 					}
 					if targetStop.WaitingPassengers > 0 && !isOccupied {
 						reasons += fmt.Sprintf("站台有 %d 人候车且前方无其他车辆靠站 ", targetStop.WaitingPassengers)

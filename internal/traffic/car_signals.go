@@ -10,7 +10,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 	if f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return targetSpd
 	}
-	lookAhead := f.laneWidth*1.5 + 85.0
+	lookAhead := math.Max(f.laneWidth*1.5+85, f.car.Speed*f.car.Speed/(2*220)+60)
 	halfLen := f.car.Length * 0.5
 	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
 	bumper := sim.Vec2{X: f.car.Pos.X + cosH*halfLen, Y: f.car.Pos.Y + sinH*halfLen}
@@ -31,7 +31,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 			if distance <= 14.0 {
 				return 0
 			}
-			return math.Min(targetSpd, math.Max(0, (distance-10.0)*1.8))
+			return math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, distance-14)))
 		}
 	}
 
@@ -50,7 +50,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		}
 		occupied := false
 		for _, bus := range f.buses {
-			if bus != nil && bus.Pos.Distance(inter.Center) < stopLine+20.0 {
+			if bus != nil && !carClearsBusInJunction(f, bus, inter) && bus.Pos.Distance(inter.Center) < stopLine+20.0 {
 				occupied = true
 				break
 			}
@@ -65,9 +65,21 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 			}
 			return 0
 		}
-		return math.Min(targetSpd, math.Max(0, (distance-10.0)*1.8))
+		return math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, distance-14)))
 	}
 	return targetSpd
+}
+
+// A moving bus that has completed its return can lead same-lane straight
+// traffic through the box. Its merge priority must not become a second red light.
+func canFollowCommittedThroughBus(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection) bool {
+	request := bus.LaneMergeRequest
+	if request == nil || request.Remaining <= 0 || !request.Joined || request.RightTurn || bus.Speed <= 15 || request.Junction.Distance(inter.Center) > 1 || math.Cos(f.car.Heading-request.Heading) < .98 {
+		return false
+	}
+	forward := sim.Vec2{X: math.Cos(request.Heading), Y: math.Sin(request.Heading)}
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	return bus.Pos.Sub(f.car.Pos).Dot(forward) > 0 && math.Abs(f.car.Pos.Sub(request.Target).Dot(right)) < f.laneWidth*.35
 }
 
 // intersectionYieldSpeed reserves the box for a lawful crossing/turning bus,
@@ -91,7 +103,7 @@ func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) 
 		}
 		distToLine := forward - stopLineDist
 		for _, bus := range f.buses {
-			if bus == nil || sim.IsBusFacingWrongWay(bus) {
+			if bus == nil || sim.IsBusFacingWrongWay(bus) || carClearsBusInJunction(f, bus, inter) {
 				continue
 			}
 			if !(inter.Center.Distance(bus.Pos) < stopLineDist+15.0) {

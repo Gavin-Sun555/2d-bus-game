@@ -17,21 +17,26 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	obs := g.obstacles[:0]
 	for _, c := range activeCars {
 		obs = append(obs, autopilot.VehicleObstacle{
-			Pos:     c.Pos,
-			Heading: c.Heading,
-			Speed:   c.Speed,
-			Length:  c.Length,
-			Width:   c.Width,
+			Pos:              c.Pos,
+			YieldingTo:       c.YieldingToBus,
+			JunctionTurn:     c.JunctionTurn,
+			JunctionCorridor: c.JunctionCorridor,
+			Heading:          c.Heading,
+			Speed:            c.Speed,
+			Length:           c.Length,
+			Width:            c.Width,
 		})
 	}
 	if g.AIBusMgr != nil {
 		for _, ab := range g.AIBusMgr.Buses {
 			obs = append(obs, autopilot.VehicleObstacle{
-				Pos:     ab.Bus.Pos,
-				Heading: ab.Bus.Heading,
-				Speed:   ab.Bus.Speed,
-				Length:  ab.Bus.Length,
-				Width:   ab.Bus.Width,
+				Pos:              ab.Bus.Pos,
+				YieldingTo:       ab.Bus.YieldingToBus,
+				JunctionCorridor: ab.Bus.JunctionCorridor,
+				Heading:          ab.Bus.Heading,
+				Speed:            ab.Bus.Speed,
+				Length:           ab.Bus.Length,
+				Width:            ab.Bus.Width,
 			})
 		}
 	}

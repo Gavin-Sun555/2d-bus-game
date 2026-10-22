@@ -63,7 +63,7 @@ func canPassWaitingRoundaboutBus(f carFrame, bus *sim.Bus) bool {
 				predicted.RoundaboutTargetR = (rb.InnerRadius + 16 + 3*rb.Radius) / 4
 				predicted.RoundaboutExitHeading = incoming
 				predicted.RoundaboutTraveled = 0
-				beginRoundaboutEntry(&predicted)
+				beginRoundaboutEntry(&predicted, rb, f.laneWidth)
 			}
 			moveCar(&predicted, .04)
 		}

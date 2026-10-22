@@ -338,7 +338,11 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 				vector.StrokeRect(screen, float32(promptX), float32(promptY), float32(promptW), float32(promptH),
 					2, sim.RGBA(234, 179, 8, 255), true)
 
-				promptText := locale.Tf("【须靠站】[%s] 站台 %d 人候车 / 车内 %d 人下车，请减速靠站", "[Must Stop] [%s] %d waiting / %d alighting, please decelerate to stop bay", targetStop.LocalizedName(), targetStop.WaitingPassengers, passengersAlighting)
+				bellStatus := locale.T("无人按铃", "No stop request")
+				if stopBellRung {
+					bellStatus = locale.T("下车铃已响", "Stop requested")
+				}
+				promptText := locale.Tf("【须靠站】[%s] 站台 %d 人候车 / %s，请减速靠站", "[Must Stop] [%s] %d waiting / %s, please decelerate", targetStop.LocalizedName(), targetStop.WaitingPassengers, bellStatus)
 				textui.DrawText(screen, promptText, promptX+16, promptY+15, 13, sim.RGBA(254, 240, 138, 255))
 			}
 		}

@@ -11,6 +11,7 @@ func (g *Game) EnterCity(theme sim.MapTheme) {
 	g.SetMapTheme(theme)
 	g.State = StatePlaying
 	g.IsPlanMode = false
+	g.Camera.RestoreDrivingZoom()
 }
 
 func (g *Game) SetMapTheme(theme sim.MapTheme) {
@@ -20,6 +21,7 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.World.BuildMap(theme, currentLaneW)
 
 	// Rebuild traffic lights and AI civilian vehicles for active map
+	g.syncAISpeedRanges()
 	g.TrafficLights.BuildForWorld(g.World)
 	g.TrafficMgr.BuildForWorld(g.World, traffic.MaxTrafficCars, currentLaneW)
 	if g.AutopilotDriver != nil {
@@ -60,6 +62,7 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
 
+	g.resetOperations()
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
 	g.HUD.AddToast(fmt.Sprintf("已进入城市地图: 【%s】！", theme.DisplayName()), true)

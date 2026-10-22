@@ -219,51 +219,13 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		float32(s.langToggleBounds.W), float32(s.langToggleBounds.H), 1.5, langBtnColor, true)
 	textui.DrawText(screen, langBtnText, s.langToggleBounds.X+20, s.langToggleBounds.Y+6, 12, langBtnColor)
 
-	// Rules & Customization Explanation Info Box
-	infoY := modalY + 328
-	infoH := 240.0
-	vector.DrawFilledRect(screen, float32(modalX+26), float32(infoY), float32(modalW-52), float32(infoH),
-		sim.RGBA(15, 23, 42, 200), true)
-	vector.StrokeRect(screen, float32(modalX+26), float32(infoY), float32(modalW-52), float32(infoH),
-		1, sim.RGBA(71, 85, 105, 255), true)
+	s.drawAISpeedRanges(screen, modalX, modalY+332)
+	textui.DrawText(screen, locale.T("每辆车按 10 km/h 一档随机分配，生成后固定。", "Limits are sampled in 10 km/h steps and fixed at spawn."), modalX+26, modalY+440, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("最低档保持跟车；其余车辆可安全超车。", "The lowest tier follows; faster vehicles may pass safely."), modalX+26, modalY+462, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("调整范围对新生成的车辆生效。", "Range changes apply to newly spawned vehicles."), modalX+26, modalY+484, 12, sim.RGBA(148, 163, 184, 255))
 
-	if s.Language == locale.LanguageEN {
-		textui.DrawText(screen, "• Traffic Network, Autopilot & Operating Rules:", modalX+36, infoY+10, 12, sim.RGBA(148, 163, 184, 255))
-		textui.DrawText(screen, fmt.Sprintf("  - Map: %s; change city from the main menu.", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
-		textui.DrawText(screen, "  - Top speed: 60 / 80 / 100 / 120 km/h (manual + Berserk). [Shift+B]", modalX+36, infoY+46, 11, sim.RGBA(6, 182, 212, 255))
-		textui.DrawText(screen, "  - Route AI Fleet: 0-8 autonomous buses operating routes and serving passengers;", modalX+36, infoY+64, 12, sim.RGBA(52, 211, 153, 255))
-		textui.DrawText(screen, "  - Camera: Heading-Up / North-Up / South-Up. [V]", modalX+36, infoY+82, 12, sim.RGBA(251, 146, 60, 255))
-		textui.DrawText(screen, "  - Roads: 2 / 4 / 6 / 8 lanes, bus lanes, bridges and waterways.", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - Standard 52px wide city roadway lanes provide comfortable clearance and turning;", modalX+36, infoY+118, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - Wide intersection geometries allow realistic turning without barrier clipping;", modalX+36, infoY+136, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - Press [L] anytime to quickly toggle interface language (English / Chinese);", modalX+36, infoY+154, 12, sim.RGBA(56, 189, 248, 255))
-
-		descFine := fmt.Sprintf("  - Fines Status: Violations deduct $%d (red light crossing / wrong-way).", s.FineAmount)
-		descFineColor := sim.RGBA(248, 113, 113, 255)
-		if !s.TrafficFinesEnabled {
-			descFine = "  - Fines Status: Violations waived (warning alert only)."
-			descFineColor = sim.RGBA(74, 222, 128, 255)
-		}
-		textui.DrawText(screen, descFine, modalX+36, infoY+176, 12, descFineColor)
-	} else {
-		textui.DrawText(screen, "• 交通网络调度、自动驾驶与车辆规则说明:", modalX+36, infoY+10, 12, sim.RGBA(148, 163, 184, 255))
-		textui.DrawText(screen, fmt.Sprintf("  - 当前地图: 【%s】（主菜单换图）；", s.MapTheme.DisplayName()), modalX+36, infoY+28, 12, sim.RGBA(192, 132, 252, 255))
-		textui.DrawText(screen, "  - 公交最高限速 (60/80/100/120 km/h): 手动极速与AI狂暴巡航均生效，支持按 Shift+B 快速切速；", modalX+36, infoY+46, 11, sim.RGBA(6, 182, 212, 255))
-		textui.DrawText(screen, "  - 路线 AI 公交: 调度 0~8 辆独立 AI 公交车，在城市环线自主运营、上下客流；", modalX+36, infoY+64, 12, sim.RGBA(52, 211, 153, 255))
-		textui.DrawText(screen, "  - 视角切换: 支持【车头朝上跟随】/【固定正北标准】/【固定正南倒置】，按 [V] 键切换；", modalX+36, infoY+82, 12, sim.RGBA(251, 146, 60, 255))
-		textui.DrawText(screen, "  - 支持双向2/4/6/8车道、公交专用道、跨线桥及水景；", modalX+36, infoY+100, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - 默认采用 52px 宽敞市区物理车道，提供充裕的行驶与平稳转弯空间；", modalX+36, infoY+118, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - 全城道路与路口几何尺寸全面加宽，显著降低公交转弯难度；", modalX+36, infoY+136, 12, sim.RGBA(203, 213, 225, 255))
-		textui.DrawText(screen, "  - 随时按键盘 [L] 键可快速在中文与英文界面之间一键切换；", modalX+36, infoY+154, 12, sim.RGBA(56, 189, 248, 255))
-
-		descFine := fmt.Sprintf("  - 罚款状态: 违章抓拍扣除 $%d (红灯压线/对侧车道判断)。", s.FineAmount)
-		descFineColor := sim.RGBA(248, 113, 113, 255)
-		if !s.TrafficFinesEnabled {
-			descFine = "  - 罚款状态: 违章已豁免扣款 (仅弹出警示提示)。"
-			descFineColor = sim.RGBA(74, 222, 128, 255)
-		}
-		textui.DrawText(screen, descFine, modalX+36, infoY+176, 12, descFineColor)
-	}
+	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 516, W: 528, H: 32}
+	operationsButton(screen, s.operationsBounds, locale.T("票价设置与运营统计 [O]", "Fares & operating statistics [O]"), true)
 
 	// Bottom Buttons: Return to Menu & Resume
 	s.menuButtonBounds = sim.Rect{X: modalX + 26, Y: modalY + modalH - 46, W: 250, H: 34}

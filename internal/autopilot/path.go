@@ -49,6 +49,8 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 	if skipDeparture {
 		out = []sim.Vec2{lane1}
 		start = 2
+	} else if departure, next := closeLeftDeparture(raw, h1, lw); next > 0 {
+		out, start = departure, next
 	} else if math.Abs(lane1.Sub(raw[0]).Dot(h1)) < 10.0 {
 		seg := raw[2].Sub(lane1)
 		segLen := seg.Length()
@@ -117,6 +119,11 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		}
 	}
 	if ad.pathFromID != from.ID || ad.pathToID != to.ID {
+		ad.midLaneRecovery = nil
+		ad.approachMerge = nil
+		ad.approachMergeJoined = false
+		ad.parallelEntryCenter = nil
+		ad.uTurn = nil
 		ad.ordinaryBusLeft = false
 		ad.busLaneJunction = nil
 		ad.rightTurnJunction = nil

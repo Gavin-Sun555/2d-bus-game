@@ -69,6 +69,7 @@ func (g *Game) updateAutopilotHotkeys() {
 }
 
 func (g *Game) updateDriverHUD() bool {
+	g.updateDrivingViewHotkey()
 	// 4. Perspective toggle hotkey (V key)
 	if inpututil.IsKeyJustPressed(ebiten.KeyV) {
 		newMode := g.Camera.ToggleMode()

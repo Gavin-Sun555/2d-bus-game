@@ -12,12 +12,12 @@ func TestFleetRecoveryWaitsForFullCycleDeadline(t *testing.T) {
 	route.CurrentIndex = 1
 	pos := sim.Vec2{X: -400, Y: 26}
 	ab := &AIBus{Bus: sim.NewBus(pos.X, pos.Y, 0), Route: route, Driver: autopilot.NewAutopilotDriver()}
-	for i := 0; i < 111; i++ {
+	for i := 0; i < 148; i++ {
 		ab.Bus.Pos = pos
 		ab.Bus.Heading = 0
 		ab.Bus.Speed = 0
 		ab.updateDeadlock(.5, true, nil, w)
-		if i < 110 && ab.Route.CurrentIndex == 0 {
+		if i < 147 && ab.Route.CurrentIndex == 0 {
 			t.Fatalf("Fleet reset after only %.1fs", float64(i+1)*.5)
 		}
 	}

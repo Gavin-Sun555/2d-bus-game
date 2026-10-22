@@ -70,7 +70,34 @@ func (ad *AutopilotDriver) trackRightTurnWithoutPassingOffset(f autopilotFrame) 
 		// Do not replace the old offset with a forced merge through traffic.
 		// Hold the incoming corridor until there is room to enter the turn.
 		ad.rightTurnWaiting = true
-		ad.busTurnHoldDistance = .01
+		distToStop := 0.0
+		if f.world != nil && ad.rightTurnJunction != nil {
+			center := *ad.rightTurnJunction
+			forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			stopLineDist := 0.0
+			if f.tls != nil {
+				for _, it := range f.tls.Intersections {
+					if it.Center.Distance(center) < 1 {
+						stopLineDist = it.GetStopLineDistForHeading(heading, f.laneWidth)
+						break
+					}
+				}
+			}
+			if stopLineDist == 0 {
+				g := f.world.JunctionAt(center, f.laneWidth)
+				stopLineDist = g.HalfX + sim.JunctionStopInset
+				if math.Abs(math.Cos(heading)) <= .5 {
+					stopLineDist = g.HalfY + sim.JunctionStopInset
+				}
+			}
+			toJunction := center.Sub(f.bus.Pos).Dot(forward)
+			distToStop = toJunction - stopLineDist - f.bus.Length/2
+		}
+		if distToStop > 0 {
+			ad.busTurnHoldDistance = math.Max(.01, distToStop-25)
+		} else {
+			ad.busTurnHoldDistance = .01
+		}
 		ad.holdLaneOffset(ad.LaneOffset)
 		return
 	}

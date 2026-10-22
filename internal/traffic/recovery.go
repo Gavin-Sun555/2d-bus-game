@@ -7,7 +7,7 @@ import (
 )
 
 // Legacy exported names share the full default timeout; intersections have no shortcut.
-const DeadlockDurationThreshold = 1.5 * sim.DefaultSignalCycle
+const DeadlockDurationThreshold = 2 * sim.DefaultSignalCycle
 const IntersectionDeadlockThreshold = DeadlockDurationThreshold
 
 // DespawnCar removes a car from active traffic
@@ -137,6 +137,8 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 		car.DeadlockTracker = sim.StationaryTracker{}
 		car.IsBraking = false
 		car.JunctionTurn = nil
+		car.Passing = false
+		car.PassingLeadBus = nil
 		car.YieldingToBus = nil
 		car.RoundaboutCurve = nil
 		car.InRoundabout = false
@@ -170,7 +172,7 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 			car.DeadlockTimer = 0
 			continue
 		}
-		if yielding := car.YieldingToBus; yielding != nil && yielding.StationMergeRequest != nil && yielding.StationMergeRequest.Remaining > 0 {
+		if yielding := car.YieldingToBus; yielding != nil && ((yielding.StationMergeRequest != nil && yielding.StationMergeRequest.Remaining > 0) || (yielding.LaneMergeRequest != nil && yielding.LaneMergeRequest.Remaining > 0)) {
 			car.DeadlockTimer = 0
 			continue
 		}

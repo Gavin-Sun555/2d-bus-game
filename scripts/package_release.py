@@ -58,6 +58,7 @@ def main():
                 }, output)
         shutil.copy2(root / 'VERSION', package)
         shutil.copy2(root / 'README.md', package)
+        shutil.copy2(root / 'CHANGELOG.md', package)
         shutil.copy2(root / 'custom_map.json', package)
         shutil.copytree(root / 'docs', package / 'docs')
         with zipfile.ZipFile(dist / f'{name}.zip', 'w', zipfile.ZIP_DEFLATED) as archive:

@@ -8,7 +8,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 func drawIntersectionPads(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth float64, planMode bool) {
@@ -58,7 +57,7 @@ func drawIntersectionAsphalt(screen *ebiten.Image, cam *sim.Camera, w *sim.World
 			}
 			for _, q := range quads {
 				cornerPt := cam.WorldToScreen(c.Add(sim.Vec2{X: q[0], Y: q[1]}))
-				vector.DrawFilledCircle(screen, float32(cornerPt.X), float32(cornerPt.Y), float32(curbR), sceneColors(w.Theme).asphalt, true)
+				filledCircle(screen, float32(cornerPt.X), float32(cornerPt.Y), float32(curbR), sceneColors(w.Theme).asphalt, true)
 			}
 		}
 	}
@@ -154,7 +153,7 @@ func drawParallelLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, co
 	p2 := center.Add(sim.Vec2{X: cosH*len/2 - sinH*offset, Y: sinH*len/2 + cosH*offset})
 	s1 := cam.WorldToScreen(p1)
 	s2 := cam.WorldToScreen(p2)
-	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), stroke*float32(cam.Zoom), c, true)
+	strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), stroke*float32(cam.Zoom), c, true)
 }
 
 func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSegment, center sim.Vec2, cosH, sinH, len, offset, laneWidth float64, splits []float64) {
@@ -186,8 +185,8 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 				p2 := sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
 				s1 := cam.WorldToScreen(p1)
 				s2 := cam.WorldToScreen(p2)
-				vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-				vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
+				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
 			}
 			prevX = ix
 		}
@@ -202,8 +201,8 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 			p2 := sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
 			s1 := cam.WorldToScreen(p1)
 			s2 := cam.WorldToScreen(p2)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
 		}
 	} else {
 		minY := math.Min(r.P1.Y, r.P2.Y)
@@ -220,8 +219,8 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 				p2 := sim.Vec2{X: r.P1.X - offset, Y: segEnd}
 				s1 := cam.WorldToScreen(p1)
 				s2 := cam.WorldToScreen(p2)
-				vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-				vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
+				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
 			}
 			prevY = iy
 		}
@@ -236,8 +235,8 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 			p2 := sim.Vec2{X: r.P1.X - offset, Y: segEnd}
 			s1 := cam.WorldToScreen(p1)
 			s2 := cam.WorldToScreen(p2)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
 		}
 	}
 }
@@ -247,7 +246,7 @@ func drawCenterDividers(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, 
 	p2 := center.Add(sim.Vec2{X: cosH*len/2 - sinH*perpOffset, Y: sinH*len/2 + cosH*perpOffset})
 	s1 := cam.WorldToScreen(p1)
 	s2 := cam.WorldToScreen(p2)
-	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+	strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 		float32(2.5*cam.Zoom), c, true)
 }
 
@@ -268,7 +267,7 @@ func drawDashedYellowLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2
 		db := center.Add(sim.Vec2{X: cosH * dEnd, Y: sinH * dEnd})
 		sa := cam.WorldToScreen(da)
 		sb := cam.WorldToScreen(db)
-		vector.StrokeLine(screen, float32(sa.X), float32(sa.Y), float32(sb.X), float32(sb.Y),
+		strokeLine(screen, float32(sa.X), float32(sa.Y), float32(sb.X), float32(sb.Y),
 			float32(3*cam.Zoom), sim.RGBA(250, 204, 21, 230), true)
 	}
 }
@@ -291,7 +290,7 @@ func drawDashedWhiteLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2,
 		db := center.Add(sim.Vec2{X: cosH*dEnd - sinH*perpOffset, Y: sinH*dEnd + cosH*perpOffset})
 		sa := cam.WorldToScreen(da)
 		sb := cam.WorldToScreen(db)
-		vector.StrokeLine(screen, float32(sa.X), float32(sa.Y), float32(sb.X), float32(sb.Y),
+		strokeLine(screen, float32(sa.X), float32(sa.Y), float32(sb.X), float32(sb.Y),
 			float32(2*cam.Zoom), sim.RGBA(241, 245, 249, 180), true)
 	}
 }
@@ -431,7 +430,7 @@ func drawZebraBranch(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, hor
 		}
 		s1 := cam.WorldToScreen(p1)
 		s2 := cam.WorldToScreen(p2)
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 			float32(7.5*cam.Zoom), sim.RGBA(241, 245, 249, 215), true)
 	}
 }
@@ -442,7 +441,7 @@ func drawSolidWhiteDivider(screen *ebiten.Image, cam *sim.Camera, center sim.Vec
 	p2 := center.Add(sim.Vec2{X: cosH * halfLen, Y: sinH * halfLen})
 	s1 := cam.WorldToScreen(p1)
 	s2 := cam.WorldToScreen(p2)
-	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+	strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 		float32(2.5*cam.Zoom), sim.RGBA(248, 250, 252, 220), true)
 }
 
@@ -474,31 +473,31 @@ func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, he
 		p2 := pos.Add(fwd.Mul(14))
 		s1 := cam.WorldToScreen(p1)
 		s2 := cam.WorldToScreen(p2)
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), lw, col, true)
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), lw, col, true)
 
 		pl := pos.Add(fwd.Mul(6)).Add(left.Mul(6))
 		pr := pos.Add(fwd.Mul(6)).Sub(left.Mul(6))
 		sl := cam.WorldToScreen(pl)
 		sr := cam.WorldToScreen(pr)
-		vector.StrokeLine(screen, float32(s2.X), float32(s2.Y), float32(sl.X), float32(sl.Y), lw, col, true)
-		vector.StrokeLine(screen, float32(s2.X), float32(s2.Y), float32(sr.X), float32(sr.Y), lw, col, true)
+		strokeLine(screen, float32(s2.X), float32(s2.Y), float32(sl.X), float32(sl.Y), lw, col, true)
+		strokeLine(screen, float32(s2.X), float32(s2.Y), float32(sr.X), float32(sr.Y), lw, col, true)
 	} else {
 		// Left-Turn Arrow (↰)
 		p1 := pos.Sub(fwd.Mul(14))
 		pCurve := pos.Add(fwd.Mul(4))
 		s1 := cam.WorldToScreen(p1)
 		sc := cam.WorldToScreen(pCurve)
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(sc.X), float32(sc.Y), lw, col, true)
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(sc.X), float32(sc.Y), lw, col, true)
 
 		pTip := pCurve.Add(left.Mul(15))
 		stip := cam.WorldToScreen(pTip)
-		vector.StrokeLine(screen, float32(sc.X), float32(sc.Y), float32(stip.X), float32(stip.Y), lw, col, true)
+		strokeLine(screen, float32(sc.X), float32(sc.Y), float32(stip.X), float32(stip.Y), lw, col, true)
 
 		pBarbT := pTip.Sub(left.Mul(5)).Add(fwd.Mul(4))
 		pBarbB := pTip.Sub(left.Mul(5)).Sub(fwd.Mul(4))
 		sbt := cam.WorldToScreen(pBarbT)
 		sbb := cam.WorldToScreen(pBarbB)
-		vector.StrokeLine(screen, float32(stip.X), float32(stip.Y), float32(sbt.X), float32(sbt.Y), lw, col, true)
-		vector.StrokeLine(screen, float32(stip.X), float32(stip.Y), float32(sbb.X), float32(sbb.Y), lw, col, true)
+		strokeLine(screen, float32(stip.X), float32(stip.Y), float32(sbt.X), float32(sbt.Y), lw, col, true)
+		strokeLine(screen, float32(stip.X), float32(stip.Y), float32(sbb.X), float32(sbb.Y), lw, col, true)
 	}
 }

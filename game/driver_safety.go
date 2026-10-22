@@ -84,7 +84,5 @@ func (g *Game) updateAutopilotDeadlock(dt, currentLaneW float64, obs []autopilot
 		}
 	}
 	g.AutopilotDeadlockTimer = g.DeadlockTracker.Update(g.AutopilotDeadlockTimer, dt, g.Bus.Pos, g.Bus.Speed, jammed)
-	if g.AutopilotDeadlockTimer >= g.TrafficLights.DeadlockTimeoutAt(g.Bus.Pos) {
-		g.ResetToStartingStation()
-	}
+	// Diagnostic only: a stationary player bus is never teleported or reset.
 }

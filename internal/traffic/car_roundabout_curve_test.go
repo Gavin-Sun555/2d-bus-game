@@ -9,7 +9,7 @@ import (
 
 func TestRoundaboutEntryCurveClearsWaitingNeighbor(t *testing.T) {
 	car := &sim.TrafficCar{Pos: sim.Vec2{X: -205, Y: 63}, Heading: 0, Speed: 70, Length: 48, Width: 22, InRoundabout: true, RoundaboutRadius: math.Hypot(205, 63), RoundaboutAngle: math.Atan2(63, -205), RoundaboutTargetR: 214, RoundaboutOuterRadius: 240}
-	beginRoundaboutEntry(car)
+	beginRoundaboutEntry(car, sim.Roundabout{Radius: 240, InnerRadius: 120}, 42)
 	bus := sim.NewBus(-225, 21, .15)
 	body := sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length/2 + 2, HalfWid: bus.Width/2 + 2}
 	for i := 0; i < 60; i++ {

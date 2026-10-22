@@ -68,6 +68,13 @@ func (c *check) configure() {
 		c.g.IsPlanMode = false
 		c.g.Settings.IsOpen = true
 		c.current.Scene = "settings-zh"
+	case c.scene == 28 || c.scene == 29:
+		locale.SetLanguage(locale.LanguageZH)
+		c.g.Settings.IsOpen = false
+		c.g.IsPlanMode = false
+		c.g.Camera.DrivingViewLevel = c.scene - 27
+		c.g.Camera.RestoreDrivingZoom()
+		c.current.Scene = fmt.Sprintf("driving-view-%dx", c.g.Camera.DrivingViewMultiplier())
 	case c.scene == 27:
 		locale.SetLanguage(locale.LanguageEN)
 		c.g.Settings.Language = locale.LanguageEN
@@ -81,7 +88,7 @@ func (c *check) Update() error {
 	if c.frame >= c.frames && c.drawn >= c.frames {
 		c.results = append(c.results, c.current)
 		c.scene++
-		if c.scene >= 28 || c.onlyScene {
+		if c.scene >= 30 || c.onlyScene {
 			data, err := json.MarshalIndent(c.results, "", "  ")
 			if err != nil {
 				return err
@@ -133,10 +140,11 @@ func (c *check) Draw(screen *ebiten.Image) {
 }
 func (c *check) Layout(_, _ int) (int, int) { return 1280, 720 }
 func main() {
-	output := flag.String("output", "dist/release-0.0.5/visual", "Screenshot and frame measurement directory")
+	output := flag.String("output", "dist/release-0.0.6/visual", "Screenshot and frame measurement directory")
 	frames := flag.Int("frames", 60, "Frames per scene (at least 11; first ten warm up)")
+	rotation := flag.Float64("rotation", 0, "Camera rotation in radians for frozen visual checks")
 	freeze := flag.Bool("freeze", false, "Keep simulation static for pixel-identical renderer comparisons")
-	only := flag.Int("only-scene", -1, "Run one numbered scene (0-27) for controlled profiling")
+	only := flag.Int("only-scene", -1, "Run one numbered scene (0-29) for controlled profiling")
 	profile := flag.String("cpuprofile", "", "Optional CPU profile file")
 	flag.Parse()
 	if *profile != "" {
@@ -159,7 +167,7 @@ func main() {
 	sim.SeedSimulation(5)
 	c := &check{g: game.NewGame(1280, 720), output: *output, frames: *frames}
 	if *only >= 0 {
-		if *only > 27 {
+		if *only > 29 {
 			panic("invalid scene")
 		}
 		c.scene = *only
@@ -167,8 +175,9 @@ func main() {
 	}
 	c.freeze = *freeze
 	c.configure()
+	c.g.Camera.Rotation, c.g.Camera.TargetRotation = *rotation, *rotation
 	ebiten.SetWindowSize(1280, 720)
-	ebiten.SetWindowTitle("0.0.5 release graphics check")
+	ebiten.SetWindowTitle("0.0.6 release graphics check")
 	if err := ebiten.RunGame(c); err != nil {
 		panic(err)
 	}

@@ -40,7 +40,7 @@ func (ad *AutopilotDriver) retryRoundaboutExit(bus *sim.Bus, rb *sim.Roundabout,
 	outgoing := ad.drivePath[index+1].Sub(ad.drivePath[index]).Normalize()
 	leaving := radius >= outer-14 && (sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}).Dot(outgoing) > .85
 	missed := !leaving && passed > .12 && passed < 1.0
-	blocked := inner && !roundaboutExitMergeClear(bus, rb, obstacles)
+	blocked := inner && !roundaboutExitMergeClear(bus, rb, obstacles, lw)
 	tooLate := inner && remaining < 45
 	// Passing the last circular waypoint does not necessarily mean the road
 	// mouth is behind us. An outer-lane bus can still make a safe, smooth exit;
@@ -93,7 +93,7 @@ func (ad *AutopilotDriver) retryRoundaboutExit(bus *sim.Bus, rb *sim.Roundabout,
 	return true
 }
 
-func roundaboutExitMergeClear(bus *sim.Bus, rb *sim.Roundabout, obstacles []VehicleObstacle) bool {
+func roundaboutExitMergeClear(bus *sim.Bus, rb *sim.Roundabout, obstacles []VehicleObstacle, lw float64) bool {
 	outer := roundaboutOuterLaneRadius(rb)
 	radius := bus.Pos.Distance(rb.Center)
 	angle := math.Atan2(bus.Pos.Y-rb.Center.Y, bus.Pos.X-rb.Center.X)
@@ -105,10 +105,27 @@ func roundaboutExitMergeClear(bus *sim.Bus, rb *sim.Roundabout, obstacles []Vehi
 		theta := angle - speed*t/math.Max(radius, 1)
 		body := sim.OBB{Center: rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(r)), Heading: theta - math.Pi/2, HalfLen: bus.Length/2 + 4, HalfWid: bus.Width/2 + 4}
 		for _, obstacle := range obstacles {
-			if hit, _, _ := sim.CheckOBBCollision(body, roundaboutObstacleAt(rb, obstacle, t)); hit {
+			if hit, _, _ := sim.CheckOBBCollision(body, roundaboutMergeObstacleAt(rb, obstacle, lw, t)); hit {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+func roundaboutMergeObstacleAt(rb *sim.Roundabout, obstacle VehicleObstacle, lw, elapsed float64) sim.OBB {
+	body := roundaboutObstacleAt(rb, obstacle, elapsed)
+	if obstacle.Speed < 5 || obstacle.Length >= 70 || obstacle.Pos.Distance(rb.Center) > rb.Radius+150 {
+		return body
+	}
+	actual := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}
+	for _, forward := range []sim.Vec2{{X: 1}, {Y: 1}, {X: -1}, {Y: -1}} {
+		if _, curve, ok := sim.RoundaboutEntryCorridor(*rb, forward, lw, actual, false); ok {
+			p, h := sim.RoundaboutEntryAhead(curve, *rb, obstacle.Pos, obstacle.Speed*elapsed)
+			body.Center = p
+			body.Heading = h
+			return body
+		}
+	}
+	return body
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Draw renders the bus and its components in world space
@@ -16,7 +15,7 @@ func DrawBus(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 	for _, mark := range b.TireTracks {
 		s1 := cam.WorldToScreen(mark.Pos1)
 		s2 := cam.WorldToScreen(mark.Pos2)
-		vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 			float32(5*cam.Zoom), sim.RGBA(30, 30, 30, uint8(mark.Alpha*255)), true)
 	}
 
@@ -164,11 +163,11 @@ func drawBusHeadlightBeam(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera, sta
 
 	// Soft semi-transparent light cone
 	beamColor := sim.RGBA(254, 240, 138, 25)
-	vector.DrawFilledCircle(screen, float32(p1.X), float32(p1.Y), float32(6*cam.Zoom), sim.RGBA(254, 240, 138, 80), true)
+	filledCircle(screen, float32(p1.X), float32(p1.Y), float32(6*cam.Zoom), sim.RGBA(254, 240, 138, 80), true)
 
 	// Draw lines for beam cone edges
-	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), float32(1.5*cam.Zoom), beamColor, true)
-	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), float32(1.5*cam.Zoom), beamColor, true)
+	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), float32(1.5*cam.Zoom), beamColor, true)
+	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), float32(1.5*cam.Zoom), beamColor, true)
 }
 
 func drawBusDoors(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
@@ -203,7 +202,7 @@ func drawBusBody(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, heading
 		frontCenter := center.Add(sim.Vec2{X: cosH * (length/2 - 2), Y: sinH * (length/2 - 2)})
 		sc := cam.WorldToScreen(frontCenter)
 		radius := float32((width / 2) * cam.Zoom)
-		vector.DrawFilledCircle(screen, float32(sc.X), float32(sc.Y), radius, c, true)
+		filledCircle(screen, float32(sc.X), float32(sc.Y), radius, c, true)
 	}
 }
 

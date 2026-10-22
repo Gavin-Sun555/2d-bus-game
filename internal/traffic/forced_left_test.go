@@ -15,6 +15,8 @@ func forcedLeftWorld(lanes int, heading float64) (*sim.World, *sim.TrafficLightS
 		{P1: in.Mul(-2400), P2: sim.Vec2{}, Lanes: lanes},
 		{P1: sim.Vec2{}, P2: left.Mul(2400), Lanes: lanes},
 	}}
+	// This bend is internal to the city, rather than an outward map exit.
+	w.Roads = append(w.Roads, sim.RoadSegment{P1: in.Mul(3000).Add(left.Mul(3000)), P2: in.Mul(3400).Add(left.Mul(3000)), Lanes: 2})
 	w.RebuildIntersections()
 	tls := sim.NewTrafficLightSystem()
 	tls.BuildForWorld(w)
@@ -145,7 +147,7 @@ func TestThroughCarsKeepHeadingUnderGreenWithRedLeftArrow(t *testing.T) {
 						tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
 						for step := 0; step < 1500 && car.Pos.Dot(in) < line+200; step++ {
 							tm.StepCar(.016, car, 0, nil, tls, 1, lw, w)
-							if car.JunctionTurn != nil || car.LaneIndex != lane || math.Abs(sim.NormalizeAngle(car.Heading-heading)) > .001 {
+							if (car.JunctionTurn != nil && !car.JunctionTurn.Straight) || car.LaneIndex != lane || math.Abs(sim.NormalizeAngle(car.Heading-heading)) > .001 {
 								t.Fatal("through-green car turned or changed lanes")
 							}
 						}

@@ -121,9 +121,278 @@ go build ./...         # 编译所有包
 
 - `internal/traffic/forced_left_approach.go` handles multi-lane road ends with only a left exit: cars merge one lane at a time before the stop line, yielding to adjacent traffic and reserving room to retry. Approach merges reuse the junction path follower with `CarJunctionTurn.LaneChange`, which keeps traffic-light and intersection-yield checks active.
 
-- `internal/autopilot/right_merge.go` rechecks rightward returns against actual bus position and every crossed lane; blocked returns hold the current corridor. `station_merge_request.go` publishes a short-lived station merge intent on the bus; `internal/traffic/station_bus_yield.go` lets curb-lane cars with enough braking room create and hold a gap for departures and arrivals, then resume after the intent ends.
+- `internal/autopilot/right_merge.go` rechecks rightward returns against actual bus position and every crossed lane; blocked returns hold the current corridor. `station_merge_request.go` publishes a short-lived station merge intent on the bus; `internal/traffic/bus_merge_yield.go` lets curb-lane cars with enough braking room create and hold a gap for departures and arrivals, then resume after the intent ends.
 
 - `internal/autopilot/right_turn.go` clears incoming-road passing offsets only after a safe right-turn entry is available, locks the explicit turn path until the whole bus clears the junction, and retains a short pursuit lookahead through the exit. This prevents a negative straight-road offset from rotating into the outgoing oncoming lane.
 
-- `internal/sim/deadlock.go` derives recovery deadlines from the actual signal phase graph (1.5 complete cycles) and tracks uninterrupted stationary jams. Cars, fleet buses and the player each own their recovery clock; recovery never resets a neighboring vehicle on someone else's timer.
+- `internal/sim/deadlock.go` derives recovery deadlines from the actual signal phase graph (two complete cycles) and tracks uninterrupted stationary jams. Cars and fleet buses each own their recovery clock; recovery never resets a neighboring vehicle on someone else's timer. Player jam tracking is diagnostic only and cannot reset or teleport the player.
 - `internal/traffic/boundary_traffic.go` retires cars only after their whole body leaves the road-network bounds, and queues safe replacements on approaches to randomly selected other intersections. Pending spawns retry when space becomes available and remain in the active traffic prefix.
+
+
+### Route-required merge priority
+
+`internal/autopilot/approach_merge.go` gives required through/right-turn merges
+priority over passing, turn commitment and queue balancing. Safety checks use the road axis,
+not temporary lane-change yaw. The controller publishes an expiring
+`sim.BusLaneMergeRequest` naming its target corridor; it preserves the request
+while alongside traffic clears, without steering into the occupied gap.
+
+`internal/traffic/lane_bus_yield.go` grants the gap only from behind, in that
+corridor, with sufficient braking room. Distant cars close excess space before
+holding the reserved rear gap. Observations retain the granting bus pointer, so
+a safely braking rear car can grant priority without ignoring unrelated vehicles.
+Completing the merge ends the rear-car yield; a joined through-lane intent remains
+until the bus's rear clears the junction. Same-lane cars can follow that moving
+bus on green, with normal headway checks. Cancelling or returning to manual
+control ends the request; active yielding is excluded from deadlock removal.
+Signals still stop the bus on through red; a left-only red must not freeze a
+through-bound bus returning before the line. Integration checks run actual player
+and fleet controllers with cars, including collision, red-light, legal-entry and
+post-merge resumption assertions.
+
+Right turns reserve the actual curb lane, including returning from a borrowed
+lane on two-lane roads. The request retains its incoming road axis across the
+stop line until the physical bus is aligned. Steering follows that merge corridor
+before joining the turn arc; the right-turn exit lock stays active until the rear
+clears the junction. Queue integration checks include a moving bus blocking the
+merge initially, following buses, and collision/road-edge/opposing-lane checks.
+
+`internal/autopilot/merge_clearance.go` admits low-speed required returns behind
+stopped forward queues using projected body gaps and a braking/headway speed cap,
+rather than the passing policy's extra 200px runway. Rear, oncoming and alongside
+traffic retain the normal clearance; every crossed lane is checked. The deferred
+passing guard does not overwrite this required-return decision. Regression tests
+include the Metropolis north-ring approach to Expo Center, stationary forward
+queues, actual rear-car yielding, and resumption after the queue clears.
+
+Straight returns retain their incoming road axis through zero-speed waits. Their
+steering target limits yaw near the median to keep the long rear corner clear.
+Completion requires the physical body to fit the lane and steering to settle;
+the requested through lane then stays locked until the rear clears the box,
+preventing immediate re-overtaking. Tests cover stopped forward queues with a
+free outside lane and completed merges followed by green-light departure.
+The lock requires a verified parallel route segment crossing the far exit, so a
+point on a wide turning arc cannot commit a turning bus to straight travel.
+
+### Roundabout follower clearance
+
+`internal/traffic/roundabout_following.go` distinguishes a fully separated,
+same-direction follower from an entry or circulating conflict. Its projected
+body must remain behind the lead car's rear bumper with clearance. Entry yield
+and circulating proximity checks share this rule so a car can clear the mouth
+without yielding to its own queue. Alongside, overlapping and crossing traffic
+retain the existing safety checks. Integration tests cover waiting player/fleet
+buses across road widths, headings and entry lanes, plus coupled player autopilot
+and lead-car passage through the roundabout.
+
+### Bus following and wide-road signals
+
+`internal/autopilot/following.go` caps berserk speed behind bus-sized vehicles using
+projected body clearance, leader speed and headway. This cap runs after passing
+decisions, so a passing speed floor cannot override an overlapping long vehicle.
+Stopped leaders receive a stationary buffer; moving leaders are followed with a
+continuous speed target. Cars retain their existing passing policy.
+
+Intersection route classification waits for an exit beyond the junction mouth
+and accepts the full outgoing through corridor. A curb bus-lane waypoint's angle
+from the junction center does not imply a right turn. Once the current exit is
+known, signal selection does not fall back to turns at later waypoints.
+
+### Parallel roundabout entries
+
+`internal/sim/roundabout_entry.go` defines the shared, tangent-continuous join.
+The two approach lanes offset a common curve along its normal, then hold their
+respective ring radii. Whole-body swept envelopes, including independently
+positioned vehicles and tracking clearance, determine whether entry lanes can
+run in parallel. `car_roundabout_curve.go` parameterizes this join by distance;
+loaded vehicles already inside the mouth retain their continuous recovery curve.
+
+Autopilot publishes an expiring `BusRoundaboutEntry` only while tracking a
+qualified circular route. Short right exits, manual buses and ordinary junction
+turns do not receive the parallel-entry exception. Cars retain the outside yield
+plane for conflicting circulating traffic. `roundabout_parallel.go` distinguishes
+separate entry/circulating/exit corridors, and `roundabout_following.go` follows
+moving buses by physical headway instead of repeatedly stopping in an angular
+exclusion zone. Outward bus merges predict cars along their entry curve too.
+
+`TestParallelRoundaboutEntry` drives both controllers through 216 scenarios:
+three lane widths, four directions, staggered arrivals, civilian pairs, ordinary
+and berserk player buses, and fleet buses. It checks concurrent entry, stopped
+noses, contact and eventual departure without vehicle resets. Geometry tests
+independently sweep both bodies, and live following tests cover player/fleet
+bus headway plus stationary leaders.
+
+### U-turn completion
+
+`sim.UTurnPath` replaces the orthogonal lane-crossing chord with a bus-sized
+semicircle. Narrow roads use the junction apron and a smooth return taper that
+finishes before the exit. `autopilot.uTurnMovement` recognizes an outgoing
+reverse tangent through the incoming mouth; `uTurnManeuver` retains the turn
+until the rear clears that mouth. Once across the entry line it suppresses new
+lane policies, tracks the arc and taper closely, and excludes only the current
+junction from signal braking. Red entry signals, later signals and obstacle
+sweeps remain active. Resetting or changing the route clears the maneuver.
+
+`TestUTurnResumesThroughJunction` covers 96 combinations of road widths,
+lane counts, headings and driving modes, including red entry, a stopped bus
+mid-turn and a subsequent signal change. `TestUniversityWetlandsUTurnResumesAfterStop`
+covers the reported Metropolis leg at three widths and cruise speeds. Geometry
+tests verify bus turning curvature and the full body within the junction box.
+
+### Approach movement and lane-return margin
+
+Signal braking uses the planned movement when the route exit is known. The
+optional `routeKnown` argument to `CheckStopForVehicleAtSpeed` prevents a
+transient position in a left-turn lane from replacing a through movement with
+the left arrow; callers without a known route retain lane-based inference.
+Exit classification interpolates the first segment crossing the far stop-line
+plane, so a sparse waypoint beyond a later turn cannot select this junction's
+signal. An active required merge retains its through/right intent explicitly.
+
+Lane planning selects the nearest approaching junction and reserves braking
+distance, lane-transition time and settling space according to speed and lane
+count. This window also excludes new passing into the left-only lane. Required
+returns keep existing gap checks and rear-vehicle yielding. The regression
+matrix exercises real controls, bus physics and violation detection on two-,
+four-, six- and eight-lane roads, including reserved bus lanes, at three speeds
+and widths in all four directions. The full body must settle in a lawful lane
+at least 150 pixels before the stop line in these unobstructed scenarios.
+
+
+### Junction admission and mixed vehicle speeds
+
+Autonomous buses publish a short-lived `sim.JunctionCorridor` containing their
+remaining swept body route. Civilian cars plan straight lane continuity as well
+as turns, including smooth lane reductions inside a junction. Disjoint body
+corridors can run together. Conflicting movements yield before entry to a
+vehicle already inside; simultaneous car merges use signal priority, arrival
+time and a stable vehicle ID. Stopped outgoing queues reserve enough exit space
+for the entering vehicle. Manual buses retain conservative protection. Bus
+obstacle prediction follows a car's committed arc instead of extending its
+instantaneous heading. Corridor samples and bounds are cached, and disjoint
+bounding rectangles reject comparisons before the full body checks.
+
+`sim.SpeedRange` samples inclusive 10 km/h bins at spawn. `TrafficCar` and
+`AIBus` retain their assigned limit and passing eligibility for their lifetime,
+including fleet recovery. Manager settings apply to future spawns. The car
+range defaults to 30–60 (ceiling 100); the fleet range defaults to 30–50
+(ceiling 80). A fleet driver's `CruiseSpeedLimit` is a final speed cap, independent
+of the player's settings. Only vehicles assigned above the configured minimum
+may pass. Civilian passing follows a smooth arc-length lane transition, keeps
+out of reserved lanes and returns before junctions. Civilian cars and fleet
+buses pass only in same-direction lanes; only the player in Berserk mode may
+borrow an opposing lane on a two-lane road, subject to oncoming-traffic checks.
+Signal and following braking horizons increase with vehicle speed.
+
+Focused tests cover fixed spawn/respawn speed bins, settings bounds/layout,
+passing and safe return, opposing-lane rejection, high-speed braking, simultaneous
+opposing left turns, outgoing queues and straight lane reductions. Set
+`BUSGAME_TRAFFIC_SOAK=1` to run `TestMixedTrafficSpeedSoak`; optional
+`BUSGAME_SOAK_STEPS` controls its duration for profiling.
+
+
+### All-stop default circuits and junction platoons
+
+`standard_route.go` owns the map-specific all-stop itineraries used by both map
+loading and `NewDefaultRoute`. Each built-in route visits all 12 station indexes
+once before returning to 0. The itineraries are planned with the platform sides
+in `maps_stops.go`; River Valley's bridge platforms sit on the corresponding
+banks. Custom maps retain their authored geometry and use directed road-distance
+insertion when loaded, including noncontiguous external station IDs via indexes.
+
+Required left merges reserve enough approach length for all remaining lanes.
+Active merge corridors prevent overlapping commits; a car behind cannot reserve
+the leading car's escape. Shorter recovery tapers carry a speed cap. Elective
+passing is suppressed before a left-only road ending.
+
+`JunctionLeaderGap` recognizes a same-lane leader only with a matching junction,
+entry direction, exit lane, current curve position and heading. Those vehicles
+use continuous headway instead of reserving the entire junction for one vehicle.
+Crossing movements still use swept-body admission; blocked exits still wait.
+`PredictJunctionBody` follows a leader's published curve, including AI buses,
+instead of extrapolating its turning heading along a straight line.
+
+
+Route buses publish `Bus.YieldingToBus` when `BusMergeYieldLimit` accepts a
+route-required return ahead of them. The manager refreshes that acknowledgement,
+the following driver caps its speed to preserve the slot, and both fleet and
+player observations forward it through `VehicleObstacle.YieldingTo`. The merging
+driver can then use the physically safe, braking-aware rear slot instead of its
+normal overtaking buffer. Alongside and fast close traffic cannot grant a slot;
+expiry or completion releases priority. Player buses never receive automatic
+merge-yield assignments.
+
+
+`road_lane_recovery.go` handles a small existing median intrusion after a bus
+has braked to a stop. The normal sweep still brakes at high speed. At low speed,
+recovery candidates predict the steering actuator, all body corners and nearby
+traffic; the median clearance must improve without worsening. Accepted motion
+is capped at 20 px/s through the normal signal and obstacle speed constraints.
+If the wheels first need to turn, the bus stays stationary while they preposition.
+There is no pose snap, route reset or bypass of red/obstacle caps.
+
+
+### Station departures before a left turn
+
+`internal/autopilot/station_left_departure.go` coalesces an immediate bay exit
+and left-lane taper into one smoothstep curve with forward endpoint tangents,
+when the available run is at least twice the lateral displacement. It retains
+the junction turn arc and leaves U-turn prefixes to their dedicated controller.
+University Park is placed one block upstream of its former location so the
+southbound departure has room to join traffic before preparing the left turn
+at the southern junction, including the widest supported lane setting.
+Regression tests cover short departure geometry and both driving modes at three
+road widths, with a stopped bus ahead in the left-turn lane before release.
+
+
+Eight-lane right-turn preparation uses `beginCarLaneChange` instead of changing
+`LaneIndex` and invoking navigation's lateral interpolation. Both entry into the
+shared bus/right-turn lane and departure from a reserved lane follow traveled
+arc length and rotate with the tangent. The entry lookahead scales with the
+speed-dependent curve length, and a new merge requires room for the entire
+curve plus the front half-body and a 40px margin before the stop line.
+
+
+### Blocked fleet lane returns and wide driving view
+
+`internal/autopilot/mid_lane_recovery.go` handles a stopped fleet bus whose
+rightward return has been blocked after partially crossing a lane marking.
+Away from stations and junctions, a clear previous lane becomes a stable merge
+target until the physical body and steering align. A 20px/s bicycle prediction
+checks the steering actuator, median, corners and nearby traffic over 0.8s.
+Only a stationary side queue outside the destination lane can lose its extra
+following margin while the sweep is clear; signal and frontal-body limits stay
+in effect. An unsafe sweep prepositions the wheels at rest and retries.
+
+`Camera.WideDrivingView` retains the driving view independently of planning
+zoom. X switches between zoom 1 and 0.5, doubling world coverage in both axes
+without changing the logical window or HUD. Planning return, route reset and
+city entry restore the chosen driving zoom. Culling and picking use the same
+camera transform at either scale.
+
+
+### Through traffic at outward map exits
+
+`internal/traffic/boundary_traffic.go` shares `roadAxisBounds` between map-exit
+recognition and rear-body removal. A junction on the outward road extent with
+an incoming road can provide a straight civilian exit even though the graph has
+no further road segment. Forced left preparation skips that exit; turn intent
+and straight corridor planning use the same decision and preserve the through
+lane. Dedicated turn lanes retain their normal turns. Interior dead ends still
+require legal approach merges. Signal and collision checks apply before entry;
+committed cars clear the exit corridor and are replaced at another intersection
+only after their entire body has left. Tests cover the reported two-car corner,
+all four outward headings and three lane widths, red/green signals and removal.
+
+### Fares and operating statistics
+
+`internal/sim/fares.go` owns normalized integer fare policies and road-route
+distances. `transit_operations.go` charges newly boarded passengers once and
+records per-vehicle/per-station activity. Its simulation-time telemetry includes
+traffic and dwell, while interrupted or partial first laps cannot publish an
+average. Distances share the speedometer's conversion of 0.05 meters per pixel.
+`game/operations.go` manages route/map lifecycle and attaches the shared ledger
+to the autonomous fleet. Player and fleet income both reach company cash.
+`internal/ui/operations_panel.go` presents fares, station legs and vehicle
+statistics; opening it pauses simulation. `cmd/operations-preview` renders both
+languages through a real Ebitengine game loop for visual checks.

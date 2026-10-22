@@ -7,7 +7,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // DrawRouteLine draws connecting route lines along the driving lanes on the side of the road.
@@ -82,7 +81,7 @@ func drawSegmentPath(screen *ebiten.Image, cam *sim.Camera, path []sim.Vec2, lin
 		p2 := cam.WorldToScreen(w2)
 
 		// Route line along the road
-		vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y),
+		strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y),
 			strokeWidth, lineColor, true)
 
 		// Draw directional arrows along segments that are sufficiently long on screen
@@ -96,9 +95,9 @@ func drawSegmentPath(screen *ebiten.Image, cam *sim.Camera, path []sim.Vec2, lin
 			arr1 := mid.Sub(dir.Mul(arrLen)).Add(perp.Mul(arrWid))
 			arr2 := mid.Sub(dir.Mul(arrLen)).Sub(perp.Mul(arrWid))
 			arrLw := float32(math.Max(1.8, 3.0*cam.Zoom))
-			vector.StrokeLine(screen, float32(mid.X), float32(mid.Y), float32(arr1.X), float32(arr1.Y),
+			strokeLine(screen, float32(mid.X), float32(mid.Y), float32(arr1.X), float32(arr1.Y),
 				arrLw, lineColor, true)
-			vector.StrokeLine(screen, float32(mid.X), float32(mid.Y), float32(arr2.X), float32(arr2.Y),
+			strokeLine(screen, float32(mid.X), float32(mid.Y), float32(arr2.X), float32(arr2.Y),
 				arrLw, lineColor, true)
 		}
 	}
@@ -172,13 +171,13 @@ func DrawNavArrow(r *sim.Route, screen *ebiten.Image, cam *sim.Camera, bus *sim.
 	base1 := arrowCenter.Add(sim.Vec2{X: -cosA*8 + perpX*8, Y: -sinA*8 + perpY*8})
 	base2 := arrowCenter.Add(sim.Vec2{X: -cosA*8 - perpX*8, Y: -sinA*8 - perpY*8})
 
-	vector.DrawFilledCircle(screen, float32(arrowCenter.X), float32(arrowCenter.Y), float32(16*cam.Zoom),
+	filledCircle(screen, float32(arrowCenter.X), float32(arrowCenter.Y), float32(16*cam.Zoom),
 		sim.RGBA(15, 23, 42, 190), true)
-	vector.StrokeCircle(screen, float32(arrowCenter.X), float32(arrowCenter.Y), float32(16*cam.Zoom),
+	strokeCircle(screen, float32(arrowCenter.X), float32(arrowCenter.Y), float32(16*cam.Zoom),
 		float32(1.5), sim.RGBA(250, 204, 21, 255), true)
 
 	// Draw pointer
-	vector.StrokeLine(screen, float32(tip.X), float32(tip.Y), float32(base1.X), float32(base1.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
-	vector.StrokeLine(screen, float32(tip.X), float32(tip.Y), float32(base2.X), float32(base2.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
-	vector.StrokeLine(screen, float32(base1.X), float32(base1.Y), float32(base2.X), float32(base2.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
+	strokeLine(screen, float32(tip.X), float32(tip.Y), float32(base1.X), float32(base1.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
+	strokeLine(screen, float32(tip.X), float32(tip.Y), float32(base2.X), float32(base2.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
+	strokeLine(screen, float32(base1.X), float32(base1.Y), float32(base2.X), float32(base2.Y), 2.5, sim.RGBA(250, 204, 21, 255), true)
 }

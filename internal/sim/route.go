@@ -44,18 +44,9 @@ func NewRoute() *Route {
 	}
 }
 
+// NewDefaultRoute uses the same all-stop itinerary as the Metropolis map.
 func NewDefaultRoute() *Route {
-	// Default starting route visiting major stops in a continuous right-hand city loop:
-	// Stop 0 (Central Terminal, Eastbound) -> Stop 2 (Civic Center, Southbound) ->
-	// Stop 10 (Creative District, Westbound) -> Stop 8 (City Hospital, Northbound) -> Stop 0
-	return &Route{
-		Name:            "Line 1 (城市核心环线)",
-		Color:           RGBA(14, 165, 233, 255), // Sky blue
-		StopIDs:         []int{0, 2, 10, 8, 0},
-		CurrentIndex:    0,
-		TotalTrips:      0,
-		cachedDescDirty: true,
-	}
+	return newStandardRoute(MapThemeMetropolis, 12)
 }
 
 func (r *Route) AddStop(stopID int) {

@@ -11,6 +11,7 @@ import (
 // steering response and forward motion at the configured berserk speed.
 func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64) float64 {
 	ad.roadSafetyHold = false
+	ad.roadRecoverySpeed = 0
 	if f.world == nil || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
 		return steer
 	}
@@ -129,7 +130,14 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 	}
 	// No steering input can clear the current swept envelope at this speed.
 	// Brake and unwind yaw gently instead of asserting that full right is safe.
+	recoverySteer, canRecover := ad.roadLaneRecovery(f, steer, heading, center, ew)
+	if canRecover {
+		return recoverySteer
+	}
 	ad.roadSafetyHold = true
+	if ad.roadRecoverySpeed > 0 {
+		return recoverySteer
+	}
 	return sim.Clamp(-yaw*2+.08, -.25, .25)
 }
 

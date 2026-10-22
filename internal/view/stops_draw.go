@@ -9,7 +9,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Draw renders the bus stop, waiting shelter, and passenger dots
@@ -42,7 +41,7 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 			p2 := s.Pos.Add(sim.Vec2{X: cosH*(offset+20) + sinH*(s.Width/2-4), Y: sinH*(offset+20) - cosH*(s.Width/2-4)})
 			s1 := cam.WorldToScreen(p1)
 			s2 := cam.WorldToScreen(p2)
-			vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
+			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 				float32(2.5*cam.Zoom), sim.RGBA(234, 179, 8, 140), true)
 		}
 	}
@@ -67,7 +66,7 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 				Y: sinH*(col*6-32) + perpY*(row*6+12),
 			})
 			ps := cam.WorldToScreen(pWorld)
-			vector.DrawFilledCircle(screen, float32(ps.X), float32(ps.Y), float32(2.8*cam.Zoom),
+			filledCircle(screen, float32(ps.X), float32(ps.Y), float32(2.8*cam.Zoom),
 				sim.RGBA(251, 191, 36, 230), true)
 		}
 	}
@@ -83,9 +82,9 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	if isTarget {
 		badgeColor = sim.RGBA(59, 130, 246, 255)
 	}
-	vector.DrawFilledCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
+	filledCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
 		badgeRadius, badgeColor, true)
-	vector.StrokeCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
+	strokeCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
 		badgeRadius, float32(math.Max(1.5, 2*cam.Zoom)), sim.RGBA(255, 255, 255, 255), true)
 
 	// Station info label
@@ -101,7 +100,7 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	}
 	labelX, labelY := shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4)
 	labelW, labelH := textui.MeasureText(infoText, 12)
-	vector.DrawFilledRect(screen, float32(labelX-5), float32(labelY-3), float32(labelW+10), float32(labelH+6), sim.RGBA(15, 25, 35, 218), true)
+	filledRect(screen, float32(labelX-5), float32(labelY-3), float32(labelW+10), float32(labelH+6), sim.RGBA(15, 25, 35, 218), true)
 	textui.DrawText(screen, infoText, shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4), 12, color.White)
 }
 
@@ -127,8 +126,8 @@ func drawRotatedBoxOutline(screen *ebiten.Image, cam *sim.Camera, center sim.Vec
 	s4 := cam.WorldToScreen(c4)
 
 	sw := float32(math.Max(1.5, stroke*cam.Zoom))
-	vector.StrokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), sw, c, true)
-	vector.StrokeLine(screen, float32(s2.X), float32(s2.Y), float32(s3.X), float32(s3.Y), sw, c, true)
-	vector.StrokeLine(screen, float32(s3.X), float32(s3.Y), float32(s4.X), float32(s4.Y), sw, c, true)
-	vector.StrokeLine(screen, float32(s4.X), float32(s4.Y), float32(s1.X), float32(s1.Y), sw, c, true)
+	strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), sw, c, true)
+	strokeLine(screen, float32(s2.X), float32(s2.Y), float32(s3.X), float32(s3.Y), sw, c, true)
+	strokeLine(screen, float32(s3.X), float32(s3.Y), float32(s4.X), float32(s4.Y), sw, c, true)
+	strokeLine(screen, float32(s4.X), float32(s4.Y), float32(s1.X), float32(s1.Y), sw, c, true)
 }

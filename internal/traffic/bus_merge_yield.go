@@ -6,9 +6,9 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
-// Curb-lane cars create a gap behind a bus requesting a station merge. Cars
-// already alongside or too close to brake comfortably clear the bus first.
-func (tm *TrafficManager) stationBusYieldSpeed(f carFrame, target float64) float64 {
+// Cars create a gap for route-required and station merges. Cars already
+// alongside or too close to brake comfortably clear the bus first.
+func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64 {
 	car := f.car
 	if f.world == nil || car.InRoundabout || car.JunctionTurn != nil {
 		car.YieldingToBus = nil
@@ -17,7 +17,17 @@ func (tm *TrafficManager) stationBusYieldSpeed(f carFrame, target float64) float
 	previous := car.YieldingToBus
 	car.YieldingToBus = nil
 	for _, bus := range f.buses {
-		if bus == nil || bus.StationMergeRequest == nil || bus.StationMergeRequest.Remaining <= 0 || bus.DoorsOpen {
+		if bus == nil || bus.DoorsOpen {
+			continue
+		}
+		if limit, ok := laneBusYieldLimit(f, bus, previous); ok {
+			if car.YieldingToBus == nil || limit < target {
+				car.YieldingToBus = bus
+			}
+			car.IsBraking = true
+			target = math.Min(target, limit)
+		}
+		if bus.StationMergeRequest == nil || bus.StationMergeRequest.Remaining <= 0 {
 			continue
 		}
 		var stop *sim.BusStop

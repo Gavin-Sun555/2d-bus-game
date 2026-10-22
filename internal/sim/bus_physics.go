@@ -124,6 +124,25 @@ func (b *Bus) GetGearLimits() (maxSpeed float64, accelFactor float64) {
 
 // Update handles vehicle kinematics per frame (dt is seconds)
 func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64, handbrake bool, toggleDoors bool) {
+	if b.JunctionCorridor != nil {
+		b.JunctionCorridor.Remaining -= dt
+		if b.JunctionCorridor.Remaining <= 0 {
+			b.JunctionCorridor = nil
+		}
+	}
+	if b.RoundaboutEntry != nil {
+		b.RoundaboutEntry.Remaining -= dt
+		if b.RoundaboutEntry.Remaining <= 0 {
+			b.RoundaboutEntry = nil
+		}
+	}
+	if b.LaneMergeRequest != nil {
+		b.LaneMergeRequest.Remaining -= dt
+		if b.LaneMergeRequest.Remaining <= 0 {
+			b.LaneMergeRequest = nil
+		}
+	}
+
 	if b.StationMergeRequest != nil {
 		b.StationMergeRequest.Remaining -= dt
 		if b.StationMergeRequest.Remaining <= 0 {

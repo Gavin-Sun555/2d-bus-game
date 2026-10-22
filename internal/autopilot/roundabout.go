@@ -35,7 +35,7 @@ func (ad *AutopilotDriver) updateRoundaboutLane(bus *sim.Bus, rb *sim.Roundabout
 	}
 	// Outside the circle, retain the chosen approach lane. Once circulating,
 	// use the first safe gap rather than waiting until the last exit waypoint.
-	if bus.Pos.Distance(rb.Center) > rb.Radius+10 || !roundaboutExitMergeClear(bus, rb, obstacles) {
+	if bus.Pos.Distance(rb.Center) > rb.Radius+10 || !roundaboutExitMergeClear(bus, rb, obstacles, laneWidth) {
 		ad.TargetLaneOffset = ad.LaneOffset
 		ad.LaneOffsetProgress = 1
 		ad.OvertakeState = OvertakePassing

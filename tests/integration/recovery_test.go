@@ -137,7 +137,7 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 
 	playerBus := sim.NewBus(5000, 5000, 0) // Far away player bus
 
-	// Simulate 10 seconds of motionless deadlock (less than 55.5s traffic light cycle threshold)
+	// Simulate 10 seconds of motionless deadlock (less than 74s traffic light cycle threshold)
 	dt := 0.5
 	for elapsed := 0.0; elapsed < 10.0; elapsed += dt {
 		tm.ResolveDeadlocks(dt, playerBus, len(tm.Cars), 52.0, nil)
@@ -158,9 +158,9 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 	}
 	car1.Speed = 0
 
-	// Now simulate until deadlock timer exceeds DeadlockDurationThreshold (55.5s)
+	// Now simulate until deadlock timer exceeds DeadlockDurationThreshold (74s)
 	// (Simulate 39s more)
-	for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
+	for elapsed := 0.0; elapsed < 74.2; elapsed += dt {
 		tm.ResolveDeadlocks(dt, playerBus, len(tm.Cars), 52.0, nil)
 		if len(tm.Cars) < 2 {
 			break
@@ -168,7 +168,7 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 	}
 
 	if len(tm.Cars) != 1 {
-		t.Fatalf("Expected one car to directly disappear after > 55.5s deadlock, remaining: %d", len(tm.Cars))
+		t.Fatalf("Expected one car to directly disappear after > 74s deadlock, remaining: %d", len(tm.Cars))
 	}
 
 	// 2. Verify AI car stopped behind player bus NEVER despawns
@@ -212,13 +212,13 @@ func TestNonPlayerVehiclesDeadlockTimeoutDespawn(t *testing.T) {
 		oldPos1 := bus1.Bus.Pos
 
 		// Simulate beyond the default stationary recovery threshold.
-		for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
+		for elapsed := 0.0; elapsed < 74.2; elapsed += dt {
 			abm.Update(dt, playerBus, w, nil, tm, 52.0, 2)
 		}
 
 		// At least one AI bus must have repositioned to its next route stop to clear the jam
 		if bus1.Bus.Pos == oldPos1 && bus2.Bus.Pos.Distance(oldPos1) < 100.0 {
-			t.Fatalf("Expected AI buses to resolve deadlock after > 55.5s by advancing stop")
+			t.Fatalf("Expected AI buses to resolve deadlock after > 74s by advancing stop")
 		}
 	}
 }
@@ -268,9 +268,9 @@ func TestCarTimeoutDoesNotResetAnotherBus(t *testing.T) {
 		t.Fatalf("Initial AI bus route index should not be 0 for this test")
 	}
 
-	// Simulate motionless deadlock for > 55.5s (DeadlockDurationThreshold)
+	// Simulate motionless deadlock for > 74s (DeadlockDurationThreshold)
 	dt := 0.2
-	for elapsed := 0.0; elapsed < 56.0; elapsed += dt {
+	for elapsed := 0.0; elapsed < 74.2; elapsed += dt {
 		aiBus.Bus.Speed = 0.0
 		car.Speed = 0.0
 		tm.ResolveDeadlocks(dt, nil, len(tm.Cars), lw, w)

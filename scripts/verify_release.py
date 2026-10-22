@@ -19,7 +19,7 @@ def verify(path, version):
         assert archive.testzip() is None, 'ZIP integrity check failed'
         prefix = path.stem + '/'
         assert archive.read(prefix + 'VERSION').decode().strip() == version
-        for name in ['README.md', 'custom_map.json', 'docs/architecture.md',
+        for name in ['README.md', 'CHANGELOG.md', 'custom_map.json', 'docs/architecture.md',
                      f'docs/releases/{version}.md', f'docs/releases/{version}-testing.md']:
             assert prefix + name in archive.namelist(), f'missing {name}'
         json.loads(archive.read(prefix + 'custom_map.json'))

@@ -36,7 +36,7 @@ func TestRelease005TrafficSoak(t *testing.T) {
 						t.Fatal(err)
 					}
 					if g.Bus.Durability < health {
-						if berserk && (theme == sim.MapThemeEmeraldLake || theme == sim.MapThemeTwinCities) {
+						if berserk && (theme == sim.MapThemeRiverValley || theme == sim.MapThemeEmeraldLake || theme == sim.MapThemeTwinCities) {
 							t.Fatalf("release safety regression at %.2fs: durability %.0f -> %.0f, pos=%v", float64(tick)/60, health, g.Bus.Durability, g.Bus.Pos)
 						}
 
@@ -79,6 +79,9 @@ func TestRelease005TrafficSoak(t *testing.T) {
 				}
 				if berserk && (theme == sim.MapThemeEmeraldLake || theme == sim.MapThemeTwinCities) && distance < 10000 {
 					t.Fatalf("release safety regression: insufficient forward progress %.0fpx in 120s", distance)
+				}
+				if berserk && theme == sim.MapThemeRiverValley && distance < 6000 {
+					t.Fatalf("river valley progress regression: %.0fpx", distance)
 				}
 				if distance < 100 || maxCars != 288 {
 					t.Fatalf("Scene inactive: player distance=%.1f maxCars=%d start=%v", distance, maxCars, start)

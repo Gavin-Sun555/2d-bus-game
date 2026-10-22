@@ -9,7 +9,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Draw renders all AI route buses with customized transit liveries and roof badges
@@ -37,9 +36,9 @@ func DrawFleet(abm *traffic.AIBusManager, screen *ebiten.Image, cam *sim.Camera)
 			badgeX := sPos.X - badgeW/2
 			badgeY := sPos.Y - 32.0*cam.Zoom - badgeH
 
-			vector.DrawFilledRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
+			filledRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
 				sim.RGBA(15, 23, 42, 230), true)
-			vector.StrokeRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
+			strokeRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
 				1.2, ab.Color, true)
 
 			badgeText := fmt.Sprintf("[1号线] AI#%d 👥%d/%d", ab.ID, ab.Bus.PassengerCount, ab.Bus.Capacity)

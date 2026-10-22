@@ -10,14 +10,14 @@ import (
 )
 
 func strokeWorldLine(screen *ebiten.Image, a, b sim.Vec2, width float64, c color.RGBA) {
-	vector.StrokeLine(screen, float32(a.X), float32(a.Y), float32(b.X), float32(b.Y), float32(width), c, true)
+	strokeLine(screen, float32(a.X), float32(a.Y), float32(b.X), float32(b.Y), float32(width), c, true)
 }
 func worldCircle(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, radius float64, c color.RGBA) {
 	if !cam.IsPointVisible(center, radius) {
 		return
 	}
 	s := cam.WorldToScreen(center)
-	vector.DrawFilledCircle(screen, float32(s.X), float32(s.Y), float32(radius*cam.Zoom), c, true)
+	filledCircle(screen, float32(s.X), float32(s.Y), float32(radius*cam.Zoom), c, true)
 }
 func worldPolygon(screen *ebiten.Image, cam *sim.Camera, points []sim.Vec2, c color.RGBA) {
 	if len(points) < 3 {

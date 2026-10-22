@@ -42,13 +42,13 @@ func TestCurbCarsYieldOnlyToActiveSafeStationMerge(t *testing.T) {
 							bus.StationMergeRequest = nil
 						}
 						f := carFrame{car: car, buses: []*sim.Bus{bus}, world: w, laneWidth: lw}
-						speed := (&TrafficManager{}).stationBusYieldSpeed(f, 90)
+						speed := (&TrafficManager{}).busMergeYieldSpeed(f, 90)
 						if scenario == "yield" {
 							if speed > 90 || car.YieldingToBus != bus || !car.IsBraking {
 								t.Fatal("curb car did not create a station gap")
 							}
 							bus.StationMergeRequest = nil
-							if (&TrafficManager{}).stationBusYieldSpeed(f, 90) != 90 || car.YieldingToBus != nil {
+							if (&TrafficManager{}).busMergeYieldSpeed(f, 90) != 90 || car.YieldingToBus != nil {
 								t.Fatal("car did not resume after bus finished merge")
 							}
 						} else if speed != 90 || car.YieldingToBus != nil {

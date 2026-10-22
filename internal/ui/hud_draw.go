@@ -47,14 +47,14 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	if targetID := route.GetCurrentTargetStopID(); targetID >= 0 && targetID < len(world.Stops) {
 		stop := world.Stops[targetID]
 		distToStop := bus.Pos.Distance(stop.Pos)
-		distMeters := int(math.Round(distToStop * 0.5))
+		distMeters := int(math.Round(distToStop * sim.MetersPerPixel))
 		targetMsg := locale.Tf("下一站: [%s] 距%dm (候车 %d人)", "Next: [%s] %dm (Wait: %d)", stop.LocalizedName(), distMeters, stop.WaitingPassengers)
 		textui.DrawText(screen, targetMsg, 445, 20, 12, sim.RGBA(226, 232, 240, 255))
 
 		// Stop Bell badge
 		bellX := 660.0
 		if stopBellRung {
-			bellText := locale.Tf("🔔 下车铃: %d人准备下车", "🔔 Bell: %d to alight", passengersAlighting)
+			bellText := locale.T("🔔 下车铃: 已按铃", "🔔 Bell: Requested")
 			vector.DrawFilledRect(screen, float32(bellX), 12, 175, 32, sim.RGBA(180, 83, 9, 230), true)
 			vector.StrokeRect(screen, float32(bellX), 12, 175, 32, 1.5, sim.RGBA(250, 204, 21, 255), true)
 			textui.DrawText(screen, bellText, bellX+10, 20, 12, sim.RGBA(254, 240, 138, 255))
@@ -117,6 +117,18 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 			camModeStr = locale.T("🎥 视角: 正南 [V]", "🎥 Cam: South [V]")
 			camModeColor = sim.RGBA(251, 146, 60, 255)
 		}
+	}
+
+	if !isPlanMode && cam != nil {
+		name := locale.T("正北[V]", "North[V]")
+		if cam.Mode == sim.CameraModeHeadingUp {
+			name = locale.T("跟随[V]", "Follow[V]")
+		}
+		if cam.Mode == sim.CameraModeSouthUp {
+			name = locale.T("正南[V]", "South[V]")
+		}
+		coverage := cam.DrivingViewMultiplier()
+		camModeStr = fmt.Sprintf("%s · ×%d[X]", name, coverage)
 	}
 	vector.DrawFilledRect(screen, camBtnX, 12, camBtnW, 32, sim.RGBA(30, 41, 59, 240), true)
 	vector.StrokeRect(screen, camBtnX, 12, camBtnW, 32, 1.5, camModeColor, true)

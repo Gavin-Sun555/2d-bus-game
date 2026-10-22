@@ -26,15 +26,16 @@ func (m CameraMode) String() string {
 
 // Camera represents the 2D view camera
 type Camera struct {
-	Pos            Vec2    // Center of the view in world coordinates
-	TargetPos      Vec2    // Target position for smooth interpolation
-	Zoom           float64 // Scale factor (1.0 = normal, 0.5 = 2x zoomed out)
-	TargetZoom     float64
-	Rotation       float64    // Camera view rotation in radians (0 = North-Up, pi = South-Up)
-	TargetRotation float64    // Target rotation for smooth interpolation
-	Mode           CameraMode // Current camera perspective mode
-	ShakeIntensity float64    // Screen shake on collision
-	ShakeOffset    Vec2
+	Pos              Vec2    // Center of the view in world coordinates
+	TargetPos        Vec2    // Target position for smooth interpolation
+	Zoom             float64 // Scale factor (1.0 = normal, 0.5 = 2x zoomed out)
+	TargetZoom       float64
+	DrivingViewLevel int        // Cycles through 1×, 2× and 4× visible width and height.
+	Rotation         float64    // Camera view rotation in radians (0 = North-Up, pi = South-Up)
+	TargetRotation   float64    // Target rotation for smooth interpolation
+	Mode             CameraMode // Current camera perspective mode
+	ShakeIntensity   float64    // Screen shake on collision
+	ShakeOffset      Vec2
 
 	ScreenWidth  int
 	ScreenHeight int
@@ -209,4 +210,22 @@ func (c *Camera) IsBoxVisible(minX, minY, maxX, maxY float64) bool {
 // IsPointVisible checks whether a circle centered at pos with radius r intersects the visible viewport.
 func (c *Camera) IsPointVisible(pos Vec2, radius float64) bool {
 	return c.IsBoxVisible(pos.X-radius, pos.Y-radius, pos.X+radius, pos.Y+radius)
+}
+
+// ToggleDrivingView changes world coverage without resizing the HUD or window.
+func (c *Camera) ToggleDrivingView() int {
+	c.DrivingViewLevel = (c.DrivingViewLevel + 1) % 3
+	c.RestoreDrivingZoom()
+	return c.DrivingViewMultiplier()
+}
+
+// DrivingViewMultiplier describes world coverage independently of planning zoom.
+func (c *Camera) DrivingViewMultiplier() int {
+	return 1 << c.DrivingViewLevel
+}
+
+// RestoreDrivingZoom also restores the chosen view after route planning.
+func (c *Camera) RestoreDrivingZoom() {
+	zoom := 1.0 / float64(c.DrivingViewMultiplier())
+	c.Zoom, c.TargetZoom = zoom, zoom
 }

@@ -7,7 +7,6 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // Draw renders all active AI cars
@@ -32,6 +31,18 @@ func drawSingleCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
 	shadowOffset := sim.Vec2{X: 4, Y: 5}
 	drawRotatedBox(screen, cam, c.Pos.Add(shadowOffset), cosH, sinH, c.Length, c.Width, sim.RGBA(2, 6, 23, 90))
 
+	if cam.Zoom <= .5 && drawCachedCar(screen, cam, c) {
+		return
+	}
+	drawCarDetails(screen, cam, c)
+}
+
+func drawCarDetails(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
+	drawCarDetailsWithBeams(screen, cam, c, cam.Zoom >= .20)
+}
+
+func drawCarDetailsWithBeams(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar, beams bool) {
+	cosH, sinH := math.Cos(c.Heading), math.Sin(c.Heading)
 	// Main Car Body
 	drawRotatedBox(screen, cam, c.Pos, cosH, sinH, c.Length, c.Width, c.Color)
 
@@ -60,7 +71,7 @@ func drawSingleCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
 	drawRotatedBox(screen, cam, hl2, cosH, sinH, 3, 4, sim.RGBA(254, 240, 138, 255))
 
 	// Soft Headlight beams forward for BOTH left and right headlights
-	if cam.Zoom >= 0.20 {
+	if beams {
 		drawCarHeadlightBeam(screen, cam, hl1, cosH, sinH, perpX, perpY)
 		drawCarHeadlightBeam(screen, cam, hl2, cosH, sinH, perpX, perpY)
 	}
@@ -90,11 +101,11 @@ func drawCarHeadlightBeam(screen *ebiten.Image, cam *sim.Camera, startPos sim.Ve
 	zoom := float32(cam.Zoom)
 
 	// Small glowing lamp halo at fixture
-	vector.DrawFilledCircle(screen, float32(p1.X), float32(p1.Y), 3.0*zoom, sim.RGBA(254, 240, 138, 85), true)
+	filledCircle(screen, float32(p1.X), float32(p1.Y), 3.0*zoom, sim.RGBA(254, 240, 138, 85), true)
 
 	// Center beam ray
-	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(pMid.X), float32(pMid.Y), 1.5*zoom, coreColor, true)
+	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(pMid.X), float32(pMid.Y), 1.5*zoom, coreColor, true)
 	// Outer beam cone edge lines
-	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), 1.0*zoom, beamColor, true)
-	vector.StrokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), 1.0*zoom, beamColor, true)
+	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), 1.0*zoom, beamColor, true)
+	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), 1.0*zoom, beamColor, true)
 }

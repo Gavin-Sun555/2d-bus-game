@@ -30,7 +30,7 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 		nearest, next = distance, inter
 	}
 	if next == nil || !next.ApproachHasDedicatedLanesForHeading(heading) ||
-		hasRoadInDirection(f.world, next.Center, heading) || hasRoadInDirection(f.world, next.Center, heading+math.Pi/2) ||
+		(hasRoadInDirection(f.world, next.Center, heading) || isMapExitAhead(f.world, next.Center, heading)) || hasRoadInDirection(f.world, next.Center, heading+math.Pi/2) ||
 		!hasRoadInDirection(f.world, next.Center, heading-math.Pi/2) {
 		return math.Inf(1)
 	}
@@ -42,8 +42,12 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 	// One adjacent lane at a time, with zero lateral slope at both endpoints.
 	// Path following uses traveled arc length, so the car rotates through the
 	// merge instead of sliding sideways or moving farther than speed*dt.
-	length := math.Max(160, 3*f.laneWidth)
-	if room >= length && tm.laneMergeClear(f, forward, -1) {
+	// Budget all remaining lane changes before committing the first one.
+	// A late merge may use a shorter smooth taper, but cannot consume the
+	// road needed to finish the next merge and leave the car stranded.
+	standardLength := math.Max(160, 3*f.laneWidth)
+	length := math.Min(standardLength, (room-20)/float64(car.LaneIndex))
+	if length >= math.Max(70, 1.3*f.laneWidth) && tm.laneMergeClear(f, forward, -1) {
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		points := make([]sim.Vec2, 33)
 		for i := range points {
@@ -51,10 +55,10 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 			ease := u * u * u * (10 - 15*u + 6*u*u)
 			points[i] = car.Pos.Add(forward.Mul(length * u)).Sub(right.Mul(f.laneWidth * ease))
 		}
-		car.JunctionTurn = &sim.CarJunctionTurn{LaneChange: true, Points: points, ExitHeading: heading, ExitEW: car.IsEW, ExitRoadCenter: car.RoadCenter, ExitLane: car.LaneIndex - 1}
+		car.JunctionTurn = &sim.CarJunctionTurn{LaneChange: true, Points: points, ExitHeading: heading, ExitEW: car.IsEW, ExitRoadCenter: car.RoadCenter, ExitLane: car.LaneIndex - 1, SpeedLimit: 65}
 		return math.Sqrt(2 * 220 * math.Max(0, room))
 	}
 	// Keep enough road ahead to complete the merge after the gap opens;
 	// stopping right at the line would leave no room to try again.
-	return math.Sqrt(2 * 220 * math.Max(0, room-length*float64(car.LaneIndex)-20))
+	return math.Sqrt(2 * 220 * math.Max(0, room-standardLength*float64(car.LaneIndex)-20))
 }

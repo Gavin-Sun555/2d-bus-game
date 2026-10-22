@@ -33,24 +33,27 @@ func (s AutopilotState) String() string {
 
 // Autopilot tuning constants (px, px/s, px/s²)
 const (
-	apCruiseSpeed        = 150.0 // Standard cruising speed (~40 km/h)
-	apBerserkCruiseSpeed = 445.0 // Berserk mode straightaway top cruise speed (80 km/h)
-	apRoundaboutSpeed    = 90.0  // Speed cap while circulating a roundabout
-	apCornerDecel        = 120.0 // Planned deceleration used when anticipating corners
-	apStopDecel          = 85.0  // Planned deceleration used when braking into a stop bay
-	apApproachDist       = 220.0 // Remaining path length at which the bus is "approaching"
-	apTrackWindow        = 260.0 // Arc-length window searched ahead of the current segment
-	apRelocalizeDist     = 140.0 // Lateral error beyond which the tracker re-localizes globally
-	apBayStraight        = 60.0  // Straight, curb-aligned run-in before the bay center
+	apCruiseSpeed        = 150.0                    // Standard cruising speed (~40 km/h)
+	apBerserkCruiseSpeed = 445.0                    // Berserk mode straightaway top cruise speed (80 km/h)
+	apRoundaboutSpeed    = sim.RoundaboutSpeedLimit // Speed cap while circulating a roundabout
+	apCornerDecel        = 120.0                    // Planned deceleration used when anticipating corners
+	apStopDecel          = 85.0                     // Planned deceleration used when braking into a stop bay
+	apApproachDist       = 220.0                    // Remaining path length at which the bus is "approaching"
+	apTrackWindow        = 260.0                    // Arc-length window searched ahead of the current segment
+	apRelocalizeDist     = 140.0                    // Lateral error beyond which the tracker re-localizes globally
+	apBayStraight        = 60.0                     // Straight, curb-aligned run-in before the bay center
 )
 
 // VehicleObstacle represents any vehicle in the world (civilian car or another bus)
 type VehicleObstacle struct {
-	Pos     sim.Vec2
-	Heading float64
-	Speed   float64
-	Length  float64
-	Width   float64
+	YieldingTo       *sim.Bus
+	JunctionTurn     *sim.CarJunctionTurn
+	JunctionCorridor *sim.JunctionCorridor
+	Pos              sim.Vec2
+	Heading          float64
+	Speed            float64
+	Length           float64
+	Width            float64
 }
 
 // Autopilot overtaking states (Berserk Mode on multi-lane roads)
@@ -64,16 +67,25 @@ const (
 // AutopilotDriver encapsulates autonomous driving intelligence for both the player's bus
 // (when autopilot is enabled) and background AI route buses.
 type AutopilotDriver struct {
-	roadSafetyHold  bool
-	State           AutopilotState
-	BerserkMode     bool    // true if Berserk mode is active (player bus fast straightaways)
-	BerserkMaxSpeed float64 // Configurable Berserk mode cruise speed in px/s (default: 445.0 / 80 km/h)
-	DwellTimer      float64
-	DwellTotal      float64
-	DwellFinished   bool
-	DockedStopID    int
-	LastTargetID    int
-	WaypointIdx     int // Index of the drive-path segment currently being tracked (monotonic)
+	parallelEntryCenter      *sim.Vec2
+	uTurn                    *uTurnManeuver
+	approachMerge            *sim.BusLaneMergeRequest
+	approachMergeJoined      bool
+	roadSafetyHold           bool
+	roadRecoverySpeed        float64
+	midLaneRecovery          *sim.BusLaneMergeRequest
+	midLaneSweepClear        bool
+	State                    AutopilotState
+	DisallowOncomingOvertake bool    // Fleet vehicles may pass only in same-direction lanes.
+	BerserkMode              bool    // true if Berserk mode is active (player bus fast straightaways)
+	CruiseSpeedLimit         float64 // Optional fixed fleet-vehicle speed limit; zero uses player settings.
+	BerserkMaxSpeed          float64 // Configurable Berserk mode cruise speed in px/s (default: 445.0 / 80 km/h)
+	DwellTimer               float64
+	DwellTotal               float64
+	DwellFinished            bool
+	DockedStopID             int
+	LastTargetID             int
+	WaypointIdx              int // Index of the drive-path segment currently being tracked (monotonic)
 
 	// Overtaking state for Berserk mode on multi-lane roads
 	OvertakeState        int     // OvertakeNone, OvertakeChangingLane, OvertakePassing, OvertakeReturning
@@ -148,6 +160,8 @@ func (ad *AutopilotDriver) GetBerserkCruiseSpeed() float64 {
 
 // Reset clears autonomous driving internal state
 func (ad *AutopilotDriver) Reset() {
+	ad.parallelEntryCenter = nil
+	ad.uTurn = nil
 	ad.State = AutopilotStateCruising
 	ad.busLaneJunction = nil
 	ad.rightTurnJunction = nil
@@ -157,6 +171,11 @@ func (ad *AutopilotDriver) Reset() {
 	ad.pathOrdinaryBusLeft = false
 	ad.busTurnHoldDistance = 0
 	ad.roadSafetyHold = false
+	ad.roadRecoverySpeed = 0
+	ad.midLaneRecovery = nil
+	ad.midLaneSweepClear = false
+	ad.approachMerge = nil
+	ad.approachMergeJoined = false
 	ad.stationDock = nil
 	ad.departureFromDock = false
 	ad.pathSkipTarget = false
@@ -201,6 +220,8 @@ func (ad *AutopilotDriver) ComputeControls(
 	dt float64,
 ) (throttle, brake, steer float64, handbrake, toggleDoors bool, isDocked bool) {
 	bus.StationMergeRequest = nil
+	bus.LaneMergeRequest = nil
+	bus.RoundaboutEntry = nil
 	if route == nil || len(route.StopIDs) == 0 || world == nil || len(world.Stops) == 0 {
 		return 0.0, 1.0, 0.0, true, false, false
 	}
@@ -268,6 +289,8 @@ func (ad *AutopilotDriver) ComputeControls(
 		return inputs.throttle, inputs.brake, inputs.steer, false, inputs.toggleDoors, inputs.isDocked
 	}
 
+	ad.updateUTurn(bus, world, laneWidth)
+
 	// Update overtaking controller (Berserk Mode on multi-lane roads)
 	ad.updateOvertaking(bus, world, tls, obstacles, laneWidth, ad.LastPathS, speedAbs, remDist, dt, targetStop)
 
@@ -325,7 +348,9 @@ func (ad *AutopilotDriver) ComputeControls(
 	}
 	var targetPt sim.Vec2
 	steer, frame.alpha, targetPt, frame.nearRoundabout = ad.pursuitSteering(frame)
-	targetSpd := ad.targetSpeed(frame)
+	steer = ad.midLaneSafeSteering(frame, steer)
+	ad.publishJunctionCorridor(frame)
+	targetSpd := math.Min(ad.targetSpeed(frame), ad.controlSweptSpeed(frame, steer))
 	if ad.busTurnHoldDistance > 0 {
 		targetSpd = math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, ad.busTurnHoldDistance-10)))
 	}

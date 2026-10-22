@@ -40,7 +40,7 @@ func TestBusStopPassengerArrivalsAndContainment(t *testing.T) {
 
 func TestPassengerDestinationAssignment(t *testing.T) {
 	// 1. Metropolis closed loop: [0, 2, 10, 8, 0]
-	route := NewDefaultRoute()
+	route := &Route{StopIDs: []int{0, 2, 10, 8, 0}}
 
 	// Stop 0 (Terminal at start of loop): candidates must strictly be [2, 10, 8], NOT 0
 	c0 := route.GetUpcomingCandidateStopIDs(0)

@@ -12,8 +12,11 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	var nearRb *sim.Roundabout
 	if f.world != nil {
 		for i := range f.world.Roundabouts {
-			if f.bus.Pos.Distance(f.world.Roundabouts[i].Center) <= f.world.Roundabouts[i].Radius+80.0 {
-				nearRoundabout = true
+			rb := &f.world.Roundabouts[i]
+			distance := f.bus.Pos.Distance(rb.Center)
+			parallelApproach := distance <= rb.Radius+160 && ad.parallelRoundaboutJoin(f, rb)
+			if parallelApproach || distance <= rb.Radius+80 {
+				nearRoundabout = distance <= rb.Radius+80
 				nearRb = &f.world.Roundabouts[i]
 				break
 			}
@@ -33,12 +36,14 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	}
 
 	lookahead := sim.Clamp(f.speedAbs*0.55+45.0, 55.0, 140.0)
-	if ad.rightTurnJunction != nil {
+	if ad.uTurn != nil && ad.uTurn.entered {
+		lookahead = 35
+	} else if ad.rightTurnJunction != nil {
 		// Keep tracking the exit closely until the rear has cleared. Restoring
 		// the long berserk lookahead at the last arc point leaves yaw error
 		// large enough for the bus's nose to cross a narrow road's centerline.
 		lookahead = math.Min(lookahead, 60)
-	} else if nearRoundabout {
+	} else if nearRb != nil {
 		lookahead = sim.Clamp(f.speedAbs*0.35+30.0, 35.0, 52.0)
 	} else if is2LaneRoad && (ad.OvertakeState == OvertakeChangingLane || (ad.LaneOffset != 0 && math.Abs(f.lateralErr) > 6.0)) {
 		// On 2-lane roads borrowing oncoming lane: smooth, longer lookahead prevents steep yaw into opposite shoulder
@@ -277,7 +282,27 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		}
 	}
 
-	if ad.rightTurnWaiting {
+	if nearRb != nil && ad.directRoundaboutExit == nil && ad.parallelRoundaboutJoin(f, nearRb) {
+		if points, forward, ok := ad.roundaboutEntryCurve(f, nearRb, roundaboutLaneOffset(nearRb, f.bus, ad.LaneOffset)); ok {
+			targetPt = pursuitAlongEntry(points, f.bus.Pos, forward, lookahead)
+			f.bus.RoundaboutEntry = &sim.BusRoundaboutEntry{Center: nearRb.Center, Forward: forward, Remaining: .3}
+		}
+	}
+
+	if ad.approachMerge != nil {
+		forward := sim.Vec2{X: math.Cos(ad.approachMerge.Heading), Y: math.Sin(ad.approachMerge.Heading)}
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		corridor := ad.pointAt(f.s).Add(right.Mul(ad.LaneOffset))
+		mergeLookahead := math.Max(60, math.Abs(ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right))*.8)
+		if !ad.approachMerge.RightTurn {
+			// Near the median, a sharp rightward yaw sweeps the long rear
+			// corner across the centerline before the bus has moved outward.
+			lateral := 1.5*f.laneWidth - ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right)
+			yawLimit := sim.Clamp((lateral-f.bus.Width/2-3)/(f.bus.Length/2), .06, .4)
+			mergeLookahead = math.Max(60, math.Abs(corridor.Sub(f.bus.Pos).Dot(right))/math.Tan(yawLimit))
+		}
+		targetPt = f.bus.Pos.Add(forward.Mul(mergeLookahead)).Add(right.Mul(corridor.Sub(f.bus.Pos).Dot(right)))
+	} else if ad.rightTurnWaiting {
 		forward := sim.Vec2{X: math.Cos(ad.rightTurnHeading), Y: math.Sin(ad.rightTurnHeading)}
 		targetPt = f.bus.Pos.Add(forward.Mul(lookahead))
 	}

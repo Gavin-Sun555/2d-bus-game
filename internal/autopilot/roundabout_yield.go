@@ -8,8 +8,8 @@ import (
 
 // Check the whole turning envelope before the adjacent-lane filters used on
 // straight roads. Circulating cars have priority even when currently beside us.
-func (ad *AutopilotDriver) innerEntryObstacleSpeed(f autopilotFrame) float64 {
-	if !ad.BerserkMode || f.world == nil || len(f.obstacles) == 0 {
+func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float64 {
+	if f.world == nil || len(f.obstacles) == 0 {
 		return math.Inf(1)
 	}
 	limit := math.Inf(1)
@@ -20,7 +20,7 @@ func (ad *AutopilotDriver) innerEntryObstacleSpeed(f autopilotFrame) float64 {
 			continue
 		}
 		offset := roundaboutLaneOffset(rb, f.bus, ad.LaneOffset)
-		points, forward, ok := ad.innerRoundaboutEntryCurve(f, rb, offset)
+		points, forward, ok := ad.roundaboutEntryCurve(f, rb, offset)
 		if !ok {
 			continue
 		}
@@ -29,12 +29,19 @@ func (ad *AutopilotDriver) innerEntryObstacleSpeed(f autopilotFrame) float64 {
 		// continue through the gap instead of stopping in front of a following car.
 		yieldDistance := -rb.Radius - f.bus.Length/2 - 16 - f.bus.Pos.Sub(rb.Center).Dot(forward)
 		traffic := make([]sim.OBB, 0, len(f.obstacles))
+		entryFrame := f
+		entryFrame.obstacles = make([]VehicleObstacle, 0, len(f.obstacles))
+		parallel := ad.parallelRoundaboutJoin(f, rb)
 		for _, obstacle := range f.obstacles {
 			// Keep local body clearance while an adjacent car clears the mouth,
 			// including the first frames after it starts moving.
+			if parallel && separateRoundaboutEntry(f, rb, forward, obstacle) {
+				continue
+			}
 			traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
+			entryFrame.obstacles = append(entryFrame.obstacles, obstacle)
 		}
-		if yieldDistance >= -2 && entryHasMovingConflict(f, rb, points, forward, s) {
+		if yieldDistance >= -2 && entryHasMovingConflict(entryFrame, rb, points, forward, s) {
 			limit = math.Min(limit, math.Sqrt(2*135*math.Max(0, yieldDistance-20)))
 		}
 
@@ -86,8 +93,8 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 		for _, obstacle := range f.obstacles {
 			// Only circulating traffic has priority here. A following vehicle
 			// on the approach must not make the bus stop at the yield line.
-			radius := obstacle.Pos.Distance(rb.Center)
-			if math.Abs(obstacle.Speed) < 5 || radius < rb.InnerRadius || radius > rb.Radius+10 {
+			obstacleBody := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}
+			if !sim.HasRoundaboutPriority(*rb, obstacleBody) {
 				continue
 			}
 			for time := math.Max(0, arrival-0.6); time <= arrival+0.8; time += 0.08 {
@@ -103,32 +110,17 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 
 // Predict circulating traffic along its arc; approach traffic follows its heading.
 func roundaboutObstacleAt(rb *sim.Roundabout, obstacle VehicleObstacle, elapsed float64) sim.OBB {
-	radial := obstacle.Pos.Sub(rb.Center)
-	radius := radial.Length()
-	forward := sim.Vec2{X: math.Cos(obstacle.Heading), Y: math.Sin(obstacle.Heading)}
-	tangent := sim.Vec2{X: radial.Y, Y: -radial.X}.Normalize()
-	alignment := forward.Dot(tangent)
-	position, heading := obstacle.Pos, obstacle.Heading
-	if radius >= rb.InnerRadius && radius <= rb.Radius+10 && math.Abs(alignment) > 0.7 {
-		turn := -math.Copysign(1, alignment) * obstacle.Speed * elapsed / radius
-		c, s := math.Cos(turn), math.Sin(turn)
-		position = rb.Center.Add(sim.Vec2{X: radial.X*c - radial.Y*s, Y: radial.X*s + radial.Y*c})
-		heading += turn
-	} else {
-		position = position.Add(forward.Mul(obstacle.Speed * elapsed))
-	}
-	return sim.OBB{Center: position, Heading: heading, HalfLen: obstacle.Length/2 + 4, HalfWid: obstacle.Width/2 + 2}
+	body := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length/2 + 4, HalfWid: obstacle.Width/2 + 2}
+	return sim.PredictRoundaboutBody(*rb, body, obstacle.Speed, elapsed)
 }
 
 // Use the low cornering speed and allow for acceleration from a waiting start.
 func roundaboutEntryArrival(distance, speed float64) float64 {
-	const cruise = 90.0
-	const acceleration = 100.0
-	speed = math.Min(speed, cruise)
-	ramp := (cruise - speed) / acceleration
-	rampDistance := (speed + cruise) * ramp / 2
-	if distance < rampDistance {
-		return (math.Sqrt(speed*speed+2*acceleration*distance) - speed) / acceleration
-	}
-	return ramp + (distance-rampDistance)/cruise
+	return sim.RoundaboutEntryArrival(distance, speed)
+}
+
+func separateRoundaboutEntry(f autopilotFrame, rb *sim.Roundabout, forward sim.Vec2, obs VehicleObstacle) bool {
+	return sim.SeparateRoundaboutEntries(*rb, forward, f.laneWidth,
+		sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length / 2, HalfWid: f.bus.Width / 2}, true,
+		sim.OBB{Center: obs.Pos, Heading: obs.Heading, HalfLen: obs.Length / 2, HalfWid: obs.Width / 2}, false)
 }

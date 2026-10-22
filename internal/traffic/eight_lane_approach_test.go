@@ -88,18 +88,18 @@ func TestEightLaneCivilianRightTurns(t *testing.T) {
 
 func TestEightLaneRightMergeYieldsToBus(t *testing.T) {
 	w, tls := eightLaneWorld(sim.RoadBusBoulevard8Lane)
-	car := &sim.TrafficCar{ID: 3, Pos: sim.Vec2{X: -650, Y: 130}, Heading: 0, Speed: 80, Length: 46, Width: 22, IsEW: true, LaneIndex: 2}
-	bus := sim.NewBus(-670, 182, 0)
+	car := &sim.TrafficCar{ID: 3, Pos: sim.Vec2{X: -850, Y: 130}, Heading: 0, Speed: 80, Length: 46, Width: 22, IsEW: true, LaneIndex: 2}
+	bus := sim.NewBus(-870, 182, 0)
 	bus.Speed = 100
 	tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
 	frame := carFrame{car: car, world: w, tls: tls, laneWidth: 52, buses: []*sim.Bus{bus}}
 	tm.prepareEightLaneApproach(frame)
-	if car.LaneIndex != 2 {
+	if car.LaneIndex != 2 || car.JunctionTurn != nil {
 		t.Fatal("car merged in front of a bus")
 	}
 	bus.Pos.X = -1200
 	tm.prepareEightLaneApproach(frame)
-	if car.LaneIndex != 3 {
-		t.Fatal("car did not prepare its right turn after the lane cleared")
+	if car.LaneIndex != 2 || car.JunctionTurn == nil || !car.JunctionTurn.LaneChange || car.JunctionTurn.ExitLane != 3 {
+		t.Fatal("car did not prepare a smooth right merge after the lane cleared")
 	}
 }

@@ -80,12 +80,16 @@ func TestBackgroundBusesAndBerserkSettingsRemainIndependent(t *testing.T) {
 	g := game.NewGame(1280, 720)
 	g.EnterCity(sim.MapThemeMetropolis)
 	w, lw := g.World, 52.0
-	// F. Verify Other AI Buses remain in Standard Mode
+	// Background buses use their own sampled speed/passing profile.
 	aiBusMgr := traffic.NewAIBusManager()
 	aiBusMgr.SetLineCount(1, w, lw)
-	if len(aiBusMgr.Buses) > 0 && aiBusMgr.Buses[0].Driver.BerserkMode {
-		t.Fatalf("Background Route AI Bus must remain in standard mode (BerserkMode=false)")
+	ai := aiBusMgr.Buses[0]
+	if ai.Driver.BerserkMode != ai.CanOvertake {
+		t.Fatal("fleet passing policy did not match its assigned tier")
 	}
+	speed, passing := ai.Driver.BerserkMaxSpeed, ai.Driver.BerserkMode
+	g.AIBusMgr = aiBusMgr
+	g.TrafficMgr.AIBusMgr = aiBusMgr
 
 	// G. Settings & Toggle Verification
 	g.Settings.AutopilotEnabled = true
@@ -98,6 +102,15 @@ func TestBackgroundBusesAndBerserkSettingsRemainIndependent(t *testing.T) {
 	if !g.Settings.AutopilotBerserk {
 		t.Fatalf("Berserk mode flag should be enabled")
 	}
+	for i := 0; i < 5; i++ {
+		if err := g.Update(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if ai.Driver.BerserkMaxSpeed != speed || ai.Driver.BerserkMode != passing {
+		t.Fatal("player settings changed a fleet vehicle's fixed profile")
+	}
+
 }
 
 // TestAIBusFleetFrontBackQueueing verifies that multiple AI vehicles spawn strictly queued
@@ -223,11 +236,14 @@ func TestAIBusFleetFrontBackQueueing(t *testing.T) {
 					oldDist := bus1.Bus.Pos.Distance(startStop.Pos)
 					playerBus.Pos = startStop.Pos.Add(sim.Vec2{X: cosH * 600.0, Y: sinH * 600.0}) // Player departs 600px ahead
 
+					nearestDist := oldDist
 					for f := 0; f < 80; f++ {
 						abm.Update(dt, playerBus, w, tls, nil, lw, 2)
+						nearestDist = math.Min(nearestDist, bus1.Bus.Pos.Distance(startStop.Pos))
 					}
 
-					newDist := bus1.Bus.Pos.Distance(startStop.Pos)
+					// Faster assigned vehicles may already have served and departed again.
+					newDist := nearestDist
 					if newDist >= oldDist {
 						t.Fatalf("[%s] AI bus #1 did not advance into Stop 0 bay when player departed (oldDist: %.1f, newDist: %.1f)",
 							theme.DisplayName(), oldDist, newDist)
@@ -579,7 +595,8 @@ func TestStationApproachAIBusDoesNotDespawnIn4Seconds(t *testing.T) {
 
 	// Advance route index and load passengers so we can verify route is not lost
 	g.Route.CurrentIndex = 1
-	g.Bus.PassengerCount = 10
+	g.Bus.BoardPassengers(10, []int{targetStopID})
+	g.RollAlightingForNextStop()
 
 	// Simulate for 5.0 seconds (> IntersectionDeadlockThreshold = 4.0s)
 	totalFrames := int(5.0 * 60)

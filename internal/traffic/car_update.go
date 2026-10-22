@@ -8,6 +8,9 @@ import (
 
 func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bus *sim.Bus, tls *sim.TrafficLightSystem, activeCount int, laneWidth float64, w *sim.World) {
 	// 1. Perception & Sensors
+	if car.JunctionCorridor != nil {
+		car.JunctionCorridor.Remaining = 0
+	}
 	targetSpd := car.TargetSpeed
 	car.IsBraking = false
 
@@ -38,16 +41,22 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 	targetSpd = math.Min(targetSpd, forcedLeftLimit)
 	if math.IsInf(forcedLeftLimit, 1) {
 		tm.prepareEightLaneApproach(frame)
+		targetSpd = math.Min(targetSpd, tm.prepareCarPassing(frame))
 	}
 	targetSpd = tm.signalSpeed(frame, targetSpd)
-	targetSpd = tm.stationBusYieldSpeed(frame, targetSpd)
+	targetSpd = tm.junctionQueueSpeed(frame, targetSpd)
+	targetSpd = tm.busMergeYieldSpeed(frame, targetSpd)
 	targetSpd = tm.busFollowingSpeed(frame, targetSpd)
 	targetSpd = tm.carFollowingSpeed(frame, targetSpd)
 	targetSpd = tm.intersectionYieldSpeed(frame, targetSpd)
 	targetSpd = tm.roundaboutSpeed(frame, targetSpd)
 
-	if car.JunctionTurn != nil {
+	if car.JunctionTurn != nil && !car.JunctionTurn.LaneChange && !car.JunctionTurn.Straight {
 		targetSpd = math.Min(targetSpd, 85)
+	}
+
+	if car.JunctionTurn != nil && car.JunctionTurn.SpeedLimit > 0 {
+		targetSpd = math.Min(targetSpd, car.JunctionTurn.SpeedLimit)
 	}
 
 	// 2. Acceleration / Braking Physics
@@ -63,6 +72,7 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 
 	// 4. Preserve lane tracking until the car leaves the map.
 	tm.handleCarNavigation(car, laneWidth, w)
+	publishCarJunctionCorridor(frame)
 }
 
 // carFrame shares the tick's observations across perception rules. Rules run in
