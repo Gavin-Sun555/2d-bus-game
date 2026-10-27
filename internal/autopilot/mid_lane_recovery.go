@@ -150,11 +150,18 @@ func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) boo
 			}
 		}
 		for _, ob := range f.obstacles {
-			other := sim.OBB{Center: ob.Pos.Add(sim.UnitFromAngle(ob.Heading).Mul(ob.Speed * elapsed)), Heading: ob.Heading, HalfLen: ob.Length/2 + 1, HalfWid: ob.Width/2 + 1}
-			if ob.JunctionTurn != nil {
-				other.Center, other.Heading = ob.JunctionTurn.Predict(math.Max(0, ob.Speed) * elapsed)
+			// Retain the conservative signed prediction for reversing traffic.
+			if ob.Speed < 0 {
+				other := sim.OBB{Center: ob.Pos.Add(sim.UnitFromAngle(ob.Heading).Mul(ob.Speed * elapsed)), Heading: ob.Heading, HalfLen: ob.Length/2 + 1, HalfWid: ob.Width/2 + 1}
+				if ob.JunctionTurn != nil {
+					other.Center, other.Heading = ob.JunctionTurn.Predict(0)
+				}
+				if hit, _, _ := sim.CheckBusAtBody(f.bus, body, other); hit {
+					return false
+				}
+				continue
 			}
-			if hit, _, _ := sim.CheckBusAtBody(f.bus, body, other); hit {
+			if obstacleSweepCollision(f.bus, body, ob, ob.Speed*elapsed, 1, 1) {
 				return false
 			}
 		}

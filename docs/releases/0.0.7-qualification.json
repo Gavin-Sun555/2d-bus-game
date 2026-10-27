@@ -1011,8 +1011,7 @@
       "gapP999": true,
       "gapOver100Reviewed": true,
       "health": true,
-      "measurementValidity": true,
-      "confirmedControllerDeadlocksCleared": false
+      "measurementValidity": true
     },
     "waitDurationAuditOnly": true
   },
@@ -1100,23 +1099,6 @@
   "evidenceDirectory": "dist/release-0.0.7-final/",
   "releaseBlockers": [
     {
-      "priority": "P1",
-      "kind": "Confirmed bus controller interlocks, independent of car congestion",
-      "count": 2,
-      "busPairs": [
-        [
-          18,
-          23
-        ],
-        [
-          19,
-          20
-        ]
-      ],
-      "isolation": "Zero cars, each pair alone, both buses move 0 px over 20 seconds while signals allow movement",
-      "evidence": "dist/bus-priority-audit-2026-10-27/pair18-23.jsonl and pair19-20.jsonl"
-    },
-    {
       "priority": "P2",
       "kind": "Draw callback interval P99 exceeds the proposed 25 ms gate",
       "actualMS": 31.076580539999966,
@@ -1149,5 +1131,130 @@
     "soakSimulatedSeconds": 2520,
     "sourceSHA256ExcludingDocs": "ef04c3ebba246db618cc178a2a5fd6d044ff2640a6567defd847a5e497c403fc",
     "report": "../bus-priority-qualification-2026-10-27.md"
+  },
+  "resolvedControllerBlockers": [
+    {
+      "priority": "P1",
+      "kind": "Confirmed bus controller interlocks, independent of car congestion",
+      "count": 2,
+      "busPairs": [
+        [
+          18,
+          23
+        ],
+        [
+          19,
+          20
+        ]
+      ],
+      "isolation": "Zero cars, each pair alone, both buses move 0 px over 20 seconds while signals allow movement",
+      "evidence": "dist/bus-priority-audit-2026-10-27/pair18-23.jsonl and pair19-20.jsonl"
+    }
+  ],
+  "interlockUpdate": {
+    "date": "2026-10-27",
+    "baselineCommit": "cd0fd5b4406df06303141d4eda0db8118f0c2534",
+    "sourceSHA256ExcludingDocs": "b409ff86ca37defd8e8aa84fa36dbe53274f6f41a47e6b5be198107a979ee194",
+    "sourceFingerprintAlgorithm": "SHA256 of sorted non-ignored tracked/untracked paths excluding docs; path NUL bytes NUL",
+    "fixedBusPairs": [
+      [
+        18,
+        23
+      ],
+      [
+        19,
+        20
+      ]
+    ],
+    "isolatedRegression": {
+      "variants": 8,
+      "secondsPerVariant": 120,
+      "before": "all eight fail with zero progress",
+      "after": "all eight pass; no physical body contact or hard boundary contact",
+      "reverseUpdateOrder": true,
+      "reloadAfterSeconds": 5,
+      "distancePX": {
+        "18": 6547.9,
+        "23": 10509.2,
+        "19": 8068.4,
+        "20": 13087.7
+      }
+    },
+    "normalRegression": {
+      "passed": 10072,
+      "skipped": 24,
+      "failed": 0
+    },
+    "changedAreaRace": {
+      "passed": 253,
+      "skipped": 0,
+      "failed": 0
+    },
+    "finalScopeGuardRace": {
+      "passed": 11,
+      "skipped": 0,
+      "failed": 0
+    },
+    "finalTargeted": {
+      "passed": 20,
+      "skipped": 0,
+      "failed": 0
+    },
+    "completeRaceRerun": false,
+    "soakLeafScenes": [
+      "TestMixedTrafficSpeedSoak/0",
+      "TestMixedTrafficSpeedSoak/3",
+      "TestMixedTrafficSpeedSoak/4",
+      "TestRelease005TrafficSoak/map0/berserkfalse",
+      "TestRelease005TrafficSoak/map0/berserktrue",
+      "TestRelease005TrafficSoak/map1/berserkfalse",
+      "TestRelease005TrafficSoak/map1/berserktrue",
+      "TestRelease005TrafficSoak/map2/berserkfalse",
+      "TestRelease005TrafficSoak/map2/berserktrue",
+      "TestRelease005TrafficSoak/map3/berserkfalse",
+      "TestRelease005TrafficSoak/map3/berserktrue",
+      "TestRelease005TrafficSoak/map4/berserkfalse",
+      "TestRelease005TrafficSoak/map4/berserktrue",
+      "TestRelease005TrafficSoak/map5/berserkfalse",
+      "TestRelease005TrafficSoak/map5/berserktrue",
+      "TestRelease007MixedFleetSoak/map0",
+      "TestRelease007MixedFleetSoak/map1",
+      "TestRelease007MixedFleetSoak/map2",
+      "TestRelease007MixedFleetSoak/map3",
+      "TestRelease007MixedFleetSoak/map4",
+      "TestRelease007MixedFleetSoak/map5"
+    ],
+    "soakSimulatedSeconds": 2520,
+    "native15MinuteRerun": false,
+    "fleetReplay": {
+      "seconds": 120,
+      "aiBuses": 48,
+      "carsTarget": 864,
+      "carsObservedAtEnd": 748,
+      "minimumFleetHealth": 100,
+      "previouslyStoppedBusDistancesPX": {
+        "17": 793.5405097118123,
+        "18": 3679.9740220176104,
+        "19": 5661.217002633805,
+        "20": 6022.08937396296,
+        "21": 2613.9314953981666,
+        "22": 3357.704689805856,
+        "23": 3620.5336670953257,
+        "37": 10880.356443685836,
+        "38": 3517.8205813511104,
+        "39": 5042.044427376205,
+        "40": 6434.010502398068
+      }
+    },
+    "userSaveSHA256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+    "releaseDecision": "HOLD",
+    "remainingReason": "Prior native draw interval P99 31.08 ms versus proposed 25 ms; not remeasured in this traffic fix",
+    "evidenceDirectory": "dist/bus-interlock-fix-2026-10-27",
+    "report": "../bus-interlock-fix-2026-10-27.md"
+  },
+  "trafficQualification": {
+    "confirmedControllerDeadlocksCleared": true,
+    "normalCongestionBlocksRelease": false,
+    "waitingTimeAloneBlocksRelease": false
   }
 }

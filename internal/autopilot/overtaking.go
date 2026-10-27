@@ -21,6 +21,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 	targetStop *sim.BusStop,
 ) {
 	ad.pathReturnHold = nil
+	ad.prepareStationYieldRecovery(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
 	ad.prepareServedStationMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
 	ad.retryStoppedMidLaneReturn(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
 	if ad.advanceMidLaneRecovery(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {

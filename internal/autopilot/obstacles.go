@@ -53,7 +53,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			continue
 		}
 
-		if ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		if ad.clearsStationYieldNeighbor(f, obs) || ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
 			continue
 		}
 

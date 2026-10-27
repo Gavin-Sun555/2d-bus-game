@@ -54,7 +54,7 @@ func (ad *AutopilotDriver) stationDepartureTrafficSpeed(f autopilotFrame, target
 		behind := math.Max(180, math.Max(0, ob.Speed)*2.2+80)
 		ahead := math.Max(120, (f.bus.Length+ob.Length)/2+40)
 		if along >= -behind && along < ahead {
-			if ad.clearsStoppedDepartureFollower(f, ob) || ad.clearsYieldingCarDuringDeparture(f, ob) {
+			if ad.clearsStationYieldNeighbor(f, ob) || ad.clearsStoppedDepartureFollower(f, ob) || ad.clearsYieldingCarDuringDeparture(f, ob) {
 				continue
 			}
 			return 0
