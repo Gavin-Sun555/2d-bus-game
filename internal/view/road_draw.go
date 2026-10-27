@@ -79,8 +79,7 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 	}
 
 	heading := math.Atan2(dir.Y, dir.X)
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 
 	// 1. Soft Shoulder (drivable buffer with deceleration, ShoulderWidth = 40px)
 	if !planMode && cam.Zoom >= 0.35 {
@@ -373,7 +372,7 @@ func drawCrosswalks(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWid
 				continue
 			}
 			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
-			fwd := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			fwd := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
 			stop := ewStopLineDist
 			if approach >= 2 {
@@ -456,8 +455,7 @@ func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, he
 	if scale < 0.28 {
 		return
 	}
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 	fwd := sim.Vec2{X: cosH, Y: sinH}
 	left := sim.Vec2{X: sinH, Y: -cosH} // In screen coords (+Y is down), driver's left is (sinH, -cosH)
 

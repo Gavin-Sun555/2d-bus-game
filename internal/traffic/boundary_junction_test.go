@@ -15,7 +15,7 @@ func TestMetropolisThroughCarsClearBoundaryJunction(t *testing.T) {
 			w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 			tls := sim.NewTrafficLightSystem()
 			tls.BuildForWorld(w)
-			center := sim.Vec2{X: -2600 * sim.MapGridScale, Y: -1200 * sim.MapGridScale}
+			center := sim.Vec2{X: -5200 * sim.MapGridScale, Y: -2400 * sim.MapGridScale}
 			var inter *sim.TrafficIntersection
 			for _, it := range tls.Intersections {
 				if it.Center.Distance(center) < 1 {
@@ -55,12 +55,12 @@ func TestMapExitThroughCarsObeySignalsAndClearOnGreen(t *testing.T) {
 				w := sim.NewWorld(lw, sim.MapThemeMetropolis)
 				tls := sim.NewTrafficLightSystem()
 				tls.BuildForWorld(w)
-				center := sim.Vec2{X: -2600 * sim.MapGridScale, Y: -1200 * sim.MapGridScale}
+				center := sim.Vec2{X: -5200 * sim.MapGridScale, Y: -2400 * sim.MapGridScale}
 				if h == 0 {
 					center.X = -center.X
 				}
 				if h == math.Pi/2 {
-					center = sim.Vec2{X: 2600 * sim.MapGridScale, Y: 1200 * sim.MapGridScale}
+					center = sim.Vec2{X: 5200 * sim.MapGridScale, Y: 2400 * sim.MapGridScale}
 				}
 				var inter *sim.TrafficIntersection
 				for _, it := range tls.Intersections {

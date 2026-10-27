@@ -27,7 +27,7 @@ func (ad *AutopilotDriver) trackJunctionTurnLane(f autopilotFrame, dt float64) b
 		if c := f.bus.JunctionCorridor; c != nil && c.Remaining > 0 && c.Center.Distance(center) < 1 {
 			heading = c.EntryHeading
 		}
-		u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+		u := sim.UnitFromAngle(heading)
 		stop := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY + sim.JunctionStopInset
 		if -delta.Dot(u)-stop-f.bus.Length/2 > 0 {
 			continue

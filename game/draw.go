@@ -13,7 +13,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		return
 	}
 
-	targetStopID := g.Route.GetCurrentTargetStopID()
+	displayRoute := g.planningRoute()
+	targetStopID := displayRoute.GetCurrentTargetStopID()
 	laneWidth := g.Settings.GetLaneWidth()
 
 	// 1. Draw World (Roads, Buildings, Trees, Rivers, Bus Stops)
@@ -24,8 +25,15 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		view.DrawTrafficLights(g.TrafficLights, screen, g.Camera, laneWidth)
 	}
 
+	if g.IsPlanMode && !g.HideOtherRoutes {
+		for _, r := range g.activeLines() {
+			if r != displayRoute {
+				view.DrawRouteLine(r, screen, g.Camera, g.World, true, laneWidth)
+			}
+		}
+	}
 	// 3. Draw Active Route lines on map (offset into driving lanes)
-	view.DrawRouteLine(g.Route, screen, g.Camera, g.World, g.IsPlanMode, laneWidth)
+	view.DrawRouteLine(displayRoute, screen, g.Camera, g.World, g.IsPlanMode, laneWidth)
 
 	// 4. Draw AI Traffic Vehicles (Hidden during Planning Mode to eliminate lag and declutter map)
 	if !g.IsPlanMode {
@@ -59,8 +67,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	} else {
 		g.HUD.TargetStopOccupied = false
 	}
-	g.HUD.Draw(screen, g.Bus, g.Route, g.World, g.IsPlanMode, g.Cash, currentStop, g.Settings, g.stopBellRung, g.passengersAlighting, g.Camera, g.TrafficLights)
+	g.HUD.Draw(screen, g.Bus, displayRoute, g.World, g.IsPlanMode, g.Cash, currentStop, g.Settings, g.stopBellRung, g.passengersAlighting, g.Camera, g.TrafficLights)
 
+	g.drawNetworkPanel(screen)
 	// 8. Draw Settings Modal (on top of everything)
 	g.Settings.Draw(screen, g.Camera)
 	if g.OperationsPanel != nil {

@@ -33,8 +33,7 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 
 	defaultStopLineDist := f.laneWidth*1.6 + 18.0
 	heading := approachRoadHeading(f.bus.Heading)
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 
 	// 1. Direct intersection route analysis:
 	// Classify the movement at the nearest junction whose stop line is ahead.

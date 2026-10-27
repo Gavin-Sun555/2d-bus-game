@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-22",
+  "machine": "Apple M4, macOS arm64",
+  "traffic_density_counts": [
+    144,
+    288,
+    576,
+    864
+  ],
+  "scene": {
+    "theme": "Metropolis",
+    "seed": 5,
+    "resolution": [
+      1280,
+      720
+    ],
+    "driving_view_multiplier": 4,
+    "player_berserk": true,
+    "ai_bus_speed_kph": [
+      30,
+      80
+    ],
+    "requested_updates": 7200,
+    "warmup_updates": 10,
+    "runs_sequential": true
+  },
+  "full_test": {
+    "passed_test_items_including_subtests": 7969,
+    "failed_test_items": 0,
+    "skipped_tests": [
+      "TestMixedTrafficSpeedSoak",
+      "TestReleaseContactProbe",
+      "TestRelease005TrafficSoak",
+      "TestProbeTechGreen"
+    ],
+    "packages": [
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/view",
+        "elapsed_seconds": 0.499
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/ui",
+        "elapsed_seconds": 0.534
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/sim",
+        "elapsed_seconds": 3.439
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/autopilot",
+        "elapsed_seconds": 70.849
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/tests/integration",
+        "elapsed_seconds": 79.694
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/traffic",
+        "elapsed_seconds": 95.731
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/game",
+        "elapsed_seconds": 96.689
+      }
+    ]
+  },
+  "targeted_race": "passed: internal/sim and internal/traffic cache, index, geometry and spatial tests",
+  "performance": [
+    {
+      "CarsMin": 851,
+      "CarsMax": 864,
+      "CarsFinal": 851,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 119991.184292,
+      "MeanUpdateTPS": 59.92106872204084,
+      "MeanDrawFPS": 58.029263075322724,
+      "UpdateP50MS": 10.462625,
+      "UpdateP95MS": 14.916958,
+      "UpdateP99MS": 18.370292,
+      "UpdateMaxMS": 28.797792,
+      "Scene": "max-traffic-864-cars-8-buses",
+      "Frames": 6963,
+      "UpdateFrames": 7190,
+      "UpdateMS": 76865.87696300016,
+      "DrawSubmitMS": 9939.634915999999
+    },
+    {
+      "CarsMin": 850,
+      "CarsMax": 864,
+      "CarsFinal": 850,
+      "FleetBuses": 16,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 120367.326292,
+      "MeanUpdateTPS": 59.73381831675587,
+      "MeanDrawFPS": 51.99085327208042,
+      "UpdateP50MS": 12.456583,
+      "UpdateP95MS": 16.683583,
+      "UpdateP99MS": 19.139375,
+      "UpdateMaxMS": 39.709167,
+      "Scene": "max-traffic-864-cars-16-buses",
+      "Frames": 6258,
+      "UpdateFrames": 7190,
+      "UpdateMS": 92130.77140599972,
+      "DrawSubmitMS": 8639.699206000023
+    },
+    {
+      "CarsMin": 837,
+      "CarsMax": 864,
+      "CarsFinal": 837,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 145340.008458,
+      "MeanUpdateTPS": 49.47020490973584,
+      "MeanDrawFPS": 12.790696930069393,
+      "UpdateP50MS": 19.652334,
+      "UpdateP95MS": 24.114542,
+      "UpdateP99MS": 26.368583,
+      "UpdateMaxMS": 42.346166,
+      "Scene": "max-traffic-864-cars-48-buses",
+      "Frames": 1859,
+      "UpdateFrames": 7190,
+      "UpdateMS": 139163.76889100013,
+      "DrawSubmitMS": 2645.336772999994
+    }
+  ],
+  "measurement_limits": [
+    "Update TPS and Draw FPS are callback rates measured over wall time, not GPU presentation timings.",
+    "Game.Update durations exclude added state audits; wall rates include audits and final screenshot capture.",
+    "Each run covers about 120 seconds of simulation with one fixed seed; this is not exhaustive gameplay coverage."
+  ],
+  "final_checks": {
+    "go_vet": "passed",
+    "git_diff_check": "passed",
+    "macos_app_build": "passed"
+  }
+}

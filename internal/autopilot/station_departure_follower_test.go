@@ -26,9 +26,12 @@ func TestDepartureOnlyReleasesSafeStoppedRearTraffic(t *testing.T) {
 					name         string
 					along, speed float64
 					clears       bool
-				}{{"stopped rear bus", -150, 0, true}, {"moving rear bus", -150, 90, false}, {"alongside bus", 0, 0, false}, {"front bus", 100, 0, false}, {"rear nose alongside", -60, 0, false}} {
+				}{{"stopped rear bus", -150, 0, true}, {"moving rear bus", -150, 90, false}, {"alongside bus", 0, 0, false}, {"front bus", 100, 0, false}, {"separated rear nose alongside", -60, 0, true}, {"moving rear nose alongside", -60, 90, false}, {"overlapping rear nose alongside", -60, 0, false}} {
 					t.Run(tc.name, func(t *testing.T) {
 						p := from.Pos.Add(u.Mul(tc.along)).Sub(r.Mul(from.Pos.Sub(from.RoadCenter).Dot(r) - 3.5*lw))
+						if tc.name == "overlapping rear nose alongside" {
+							p = from.Pos.Add(u.Mul(tc.along))
+						}
 						ob := VehicleObstacle{Pos: p, Heading: h, Speed: tc.speed, Length: 96, Width: 36}
 						f := autopilotFrame{bus: b, world: w, targetStop: to, laneWidth: lw, s: ad.LastPathS, obstacles: []VehicleObstacle{ob}}
 						if clear := ad.clearsStoppedDepartureFollower(f, ob); clear != tc.clears {

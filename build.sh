@@ -131,6 +131,10 @@ cmd_app() {
     <string>busgame</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.simulation-games</string>
+    <key>LSSupportsGameMode</key>
+    <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

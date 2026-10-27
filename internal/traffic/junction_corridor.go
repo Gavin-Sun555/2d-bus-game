@@ -7,13 +7,24 @@ import (
 
 func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 	car := f.car
+	scratch := f.junctionScratch()
 	cache := car.JunctionCorridor
-	if cache != nil && cache.Remaining > 0 && cache.Center.Distance(inter.Center) < 1 && cache.CachePosition == car.Pos && cache.CacheHeading == car.Heading && cache.CacheTurn == car.JunctionTurn {
+	if cache == nil && scratch != nil && scratch.corridor != nil {
+		cache = scratch.corridor
+		cache.Remaining = 0
+		car.JunctionCorridor = cache
+	}
+	key := carJunctionKey(f, inter)
+	if cache != nil && (scratch == nil || (scratch.bodyValid && scratch.bodyKey == key)) && cache.Remaining > 0 && cache.Center.Distance(inter.Center) < 1 && cache.CachePosition == car.Pos && cache.CacheHeading == car.Heading && cache.CacheTurn == car.JunctionTurn {
 		return cache.Bodies
 	}
 	if cache == nil {
 		cache = &sim.JunctionCorridor{}
 		car.JunctionCorridor = cache
+	}
+	if scratch != nil {
+		scratch.corridor = cache
+		scratch.bodyKey, scratch.bodyValid = key, true
 	}
 	cache.Center = inter.Center
 	cache.Remaining = .25
@@ -24,18 +35,22 @@ func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 	if car.JunctionTurn != nil && !car.JunctionTurn.LaneChange {
 		cache.EntryHeading = car.JunctionTurn.EntryHeading
 	}
-	u0 := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	u0 := sim.UnitFromAngle(car.Heading)
 	toCenter := inter.Center.Sub(car.Pos)
 	cache.Entered = (car.JunctionTurn != nil && !car.JunctionTurn.LaneChange && car.JunctionTurn.Center.Distance(inter.Center) < 1) || (toCenter.Dot(u0) > 0 && toCenter.Dot(u0)-car.Length/2 <= inter.GetStopLineDistForHeading(car.Heading, f.laneWidth))
 
-	points := []sim.Vec2{car.Pos}
+	var points []sim.Vec2
+	if scratch != nil {
+		points = scratch.points[:0]
+	}
+	points = append(points, car.Pos)
 	turn := car.JunctionTurn
 	if turn != nil && !turn.LaneChange {
 		points = append(points, turn.Points[turn.Segment+1:]...)
 	} else {
 		turn = planCarJunctionTurn(f, inter)
 		if turn != nil {
-			u := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+			u := sim.UnitFromAngle(car.Heading)
 			for _, p := range turn.Points {
 				if p.Sub(car.Pos).Dot(u) > 0 {
 					points = append(points, p)
@@ -47,7 +62,7 @@ func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 	if turn != nil {
 		heading = turn.ExitHeading
 	}
-	u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	u := sim.UnitFromAngle(heading)
 	g := f.world.JunctionAt(inter.Center, f.laneWidth)
 	half := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY
 	last := points[len(points)-1]
@@ -55,7 +70,14 @@ func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 	if distance > 0 {
 		points = append(points, last.Add(u.Mul(distance)))
 	}
-	cache.Bodies = sim.AppendPathBodies(cache.Bodies[:0], points, car.Length, car.Width)
+	if scratch != nil {
+		scratch.points = points
+	}
+	if scratch != nil {
+		cache.Bodies = scratch.appendBodies(cache.Bodies[:0], points, turn, car.Length, car.Width)
+	} else {
+		cache.Bodies = sim.AppendPathBodies(cache.Bodies[:0], points, car.Length, car.Width)
+	}
 	cache.RebuildBounds()
 	return cache.Bodies
 }
@@ -72,10 +94,12 @@ func carClearsBusInJunction(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersec
 		return false
 	}
 	carJunctionBodies(f, inter)
-	if _, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, corridor, sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length / 2, HalfWid: bus.Width / 2}, f.car.Length, f.car.Width); ok {
+	if _, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, corridor, bus.BodyEnvelope(), f.car.Length, f.car.Width); ok {
 		return true
 	}
-	actual := sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length/2 + 4, HalfWid: bus.Width/2 + 3}
+	actual := bus.BodyEnvelope()
+	actual.HalfLen += 4
+	actual.HalfWid += 3
 	actualCorridor := sim.JunctionCorridor{Bodies: []sim.OBB{actual}}
 	actualCorridor.RebuildBounds()
 	if !sim.SeparatedJunctionCorridors(f.car.JunctionCorridor, &actualCorridor) {
@@ -84,7 +108,7 @@ func carClearsBusInJunction(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersec
 	// A same-lane moving leader does not own the whole box; normal headway
 	// handles it. A turning bus must still reserve its full swept corridor.
 	last := corridor.Bodies[len(corridor.Bodies)-1]
-	u := sim.Vec2{X: math.Cos(f.car.Heading), Y: math.Sin(f.car.Heading)}
+	u := sim.UnitFromAngle(f.car.Heading)
 	delta := bus.Pos.Sub(f.car.Pos)
 	if bus.Speed > 15 && math.Cos(bus.Heading-f.car.Heading) > .98 && math.Cos(last.Heading-f.car.Heading) > .98 && delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.35 {
 		return true
@@ -96,8 +120,8 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 	if target <= .5 || f.world == nil || f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return target
 	}
-	u := sim.Vec2{X: math.Cos(f.car.Heading), Y: math.Sin(f.car.Heading)}
-	for _, inter := range f.tls.Intersections {
+	u := sim.UnitFromAngle(f.car.Heading)
+	for _, inter := range f.nearbyJunctions() {
 		if f.world.IsAtRoundabout(inter.Center) {
 			continue
 		}
@@ -119,8 +143,25 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			return sim.ExitQueueBlocksEntry(bodies, inter.Center, g, f.car.Length, f.car.Width, sim.OBB{Center: pos, Heading: heading, HalfLen: length / 2, HalfWid: width / 2}, speed)
 		}
 		occupied := false
-		for i, other := range tm.Cars {
-			if i == f.index || i >= f.activeCount || other.InRoundabout || !otherHasJunctionPriority(f, inter, other, i, gap) {
+		approachReach := junctionApproachReach(inter, f.laneWidth)
+		ids, indexed := tm.junctionScanCandidates(f, inter, approachReach, 2*(g.HalfX+g.HalfY)+200)
+		count := len(tm.Cars)
+		if indexed {
+			count = len(ids)
+		}
+		for candidate := 0; candidate < count; candidate++ {
+			i := candidate
+			if indexed {
+				i = ids[candidate]
+			}
+			other := tm.Cars[i]
+			if i == f.index || i >= f.activeCount || other.InRoundabout {
+				continue
+			}
+			if !tm.disableJunctionBroadPhase && !carCanReachJunction(other, inter.Center, approachReach) {
+				continue
+			}
+			if !otherHasJunctionPriority(f, inter, other, i, gap) {
 				continue
 			}
 			delta := other.Pos.Sub(f.car.Pos)
@@ -132,6 +173,7 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			}
 			otherFrame := f
 			otherFrame.car = other
+			otherFrame.scratch = tm.scratchForCar(other, i)
 			carJunctionBodies(otherFrame, inter)
 			if gap, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, other.JunctionCorridor, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}, f.car.Length, f.car.Width); ok {
 				target = math.Min(target, sim.JunctionFollowingSpeed(gap, other.Speed, f.car.Speed, 220))
@@ -142,7 +184,12 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 				break
 			}
 		}
-		for i, other := range tm.Cars {
+		for candidate := 0; candidate < count; candidate++ {
+			i := candidate
+			if indexed {
+				i = ids[candidate]
+			}
+			other := tm.Cars[i]
 			if i == f.index || i >= f.activeCount {
 				continue
 			}
@@ -152,7 +199,11 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			}
 		}
 		for _, bus := range f.buses {
-			if bus != nil && blocked(bus.Pos, bus.Heading, bus.Length, bus.Width, bus.Speed) {
+			if bus == nil {
+				continue
+			}
+			body := bus.BodyEnvelope()
+			if blocked(body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, bus.Speed) {
 				occupied = true
 				break
 			}
@@ -177,7 +228,7 @@ func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other 
 		// The changing yaw is not a new approach or a new turn intention.
 		return true
 	}
-	u := sim.Vec2{X: math.Cos(other.Heading), Y: math.Sin(other.Heading)}
+	u := sim.UnitFromAngle(other.Heading)
 	delta := inter.Center.Sub(other.Pos)
 	if math.Abs(delta.X*u.Y-delta.Y*u.X) > inter.ApproachRoadHalfWidth(other.Heading, f.laneWidth) {
 		return false
@@ -229,7 +280,7 @@ func publishCarJunctionCorridor(f carFrame) {
 	if f.world == nil || f.tls == nil || f.car.InRoundabout {
 		return
 	}
-	for _, inter := range f.tls.Intersections {
+	for _, inter := range f.nearbyJunctions() {
 		if f.world.IsAtRoundabout(inter.Center) {
 			continue
 		}
@@ -237,7 +288,7 @@ func publishCarJunctionCorridor(f carFrame) {
 			carJunctionBodies(f, inter)
 			return
 		}
-		u := sim.Vec2{X: math.Cos(f.car.Heading), Y: math.Sin(f.car.Heading)}
+		u := sim.UnitFromAngle(f.car.Heading)
 		delta := inter.Center.Sub(f.car.Pos)
 		forward := delta.Dot(u)
 		if forward > 0 && forward-f.car.Length/2 <= inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth) && math.Abs(delta.X*u.Y-delta.Y*u.X) < inter.ApproachRoadHalfWidth(f.car.Heading, f.laneWidth) {
@@ -245,4 +296,25 @@ func publishCarJunctionCorridor(f carFrame) {
 			return
 		}
 	}
+}
+
+// A non-committed approach is bounded by its stopping horizon plus the line
+// and roadway extents. Using their sum is conservative for every yaw. Keep
+// committed turns regardless of distance, as their original corridor can
+// remain relevant after the vehicle travels past the approach region.
+func junctionApproachReach(inter *sim.TrafficIntersection, lw float64) float64 {
+	ew, _, ns, _ := inter.GetApproachDimensions(lw)
+	lanes := 0
+	for _, n := range inter.ApproachLanes {
+		lanes = max(lanes, n)
+	}
+	return math.Max(ew, ns) + float64(lanes)*lw/2 + 12
+}
+func carCanReachJunction(car *sim.TrafficCar, center sim.Vec2, approachReach float64) bool {
+	if car.JunctionTurn != nil {
+		return true
+	}
+	radius := approachReach + car.Length/2 + math.Max(180, car.Speed*car.Speed/(2*220)+60)
+	d := car.Pos.Sub(center)
+	return d.Dot(d) <= radius*radius
 }

@@ -11,7 +11,7 @@ func (ad *AutopilotDriver) junctionAdmissionSpeed(f autopilotFrame) float64 {
 		return math.Inf(1)
 	}
 	heading := approachRoadHeading(f.bus.Heading)
-	u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	u := sim.UnitFromAngle(heading)
 	var inter *sim.TrafficIntersection
 	for _, it := range f.tls.Intersections {
 		if it.Center.Distance(corridor.Center) < 1 {
@@ -41,10 +41,19 @@ func (ad *AutopilotDriver) junctionAdmissionSpeed(f autopilotFrame) float64 {
 		}
 		if !waitingAtRed && ob.JunctionTurn != nil && !ob.JunctionTurn.LaneChange && ob.JunctionTurn.Center.Distance(corridor.Center) < 1 {
 			points := ob.JunctionTurn.Points[ob.JunctionTurn.Segment:]
-			otherBodies := sim.AppendPathBodies(nil, points, ob.Length, ob.Width)
 			delta := ob.Pos.Sub(f.bus.Pos)
 			sameLeader := ob.Speed > 15 && math.Cos(ob.Heading-heading) > .98 && delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.35
-			conflict = conflict || (!sameLeader && !sim.CorridorsSeparated(corridor.Bodies, otherBodies))
+			if !conflict && !sameLeader {
+				var storage []sim.OBB
+				if ad != nil {
+					storage = ad.geometryScratch().admission[:0]
+				}
+				otherBodies := sim.AppendPathBodies(storage, points, ob.Length, ob.Width)
+				if ad != nil && cap(otherBodies) <= maxTemporaryBodies {
+					ad.temporaryGeometry.admission = otherBodies
+				}
+				conflict = !sim.CorridorsSeparated(corridor.Bodies, otherBodies)
+			}
 		}
 		if conflict {
 			return math.Sqrt(2 * 130 * math.Max(0, gap-18))
@@ -87,7 +96,7 @@ func waitingOutsideRedEntry(ob VehicleObstacle, inter *sim.TrafficIntersection, 
 	if inter.GetSignalForHeading(entry, left) != sim.SignalRed {
 		return false
 	}
-	u := sim.Vec2{X: math.Cos(entry), Y: math.Sin(entry)}
+	u := sim.UnitFromAngle(entry)
 	half := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY
 	yaw := ob.Heading - entry
 	nose := ob.Pos.Sub(inter.Center).Dot(u) + math.Abs(math.Cos(yaw))*ob.Length/2 + math.Abs(math.Sin(yaw))*ob.Width/2

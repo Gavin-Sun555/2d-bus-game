@@ -122,8 +122,21 @@ func (b *Bus) GetGearLimits() (maxSpeed float64, accelFactor float64) {
 	}
 }
 
+// SetNextAccelerationScale adjusts engine response for one physics step.
+// It is consumed even if the doors or brakes prevent motion.
+func (b *Bus) SetNextAccelerationScale(scale float64) {
+	b.nextAccelerationScale = Clamp(scale, 1, 1.25)
+}
+
 // Update handles vehicle kinematics per frame (dt is seconds)
 func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64, handbrake bool, toggleDoors bool) {
+	if b.IsArticulated() && !b.TrailerInitialized {
+		b.ResetArticulation()
+	}
+	oldPos, oldHeading := b.Pos, b.Heading
+	defer func() { b.advanceTrailer(oldPos, oldHeading) }()
+	accelerationScale := math.Max(1, b.nextAccelerationScale)
+	b.nextAccelerationScale = 0
 	if b.JunctionCorridor != nil {
 		b.JunctionCorridor.Remaining -= dt
 		if b.JunctionCorridor.Remaining <= 0 {
@@ -227,7 +240,7 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 					b.Speed = math.Min(0, b.Speed+b.BrakeRate*dt)
 					b.IsBraking = true
 				} else {
-					b.Speed = math.Min(maxSpd, b.Speed+b.AccelRate*accelRatio*throttle*dt)
+					b.Speed = math.Min(maxSpd, b.Speed+b.AccelRate*accelerationScale*accelRatio*throttle*dt)
 				}
 			case GearReverse:
 				// Reverse gear (R): accelerates vehicle backward
@@ -236,7 +249,7 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 					b.Speed = math.Max(0, b.Speed-b.BrakeRate*dt)
 					b.IsBraking = true
 				} else {
-					b.Speed = math.Max(-maxSpd, b.Speed-b.AccelRate*accelRatio*throttle*dt)
+					b.Speed = math.Max(-maxSpd, b.Speed-b.AccelRate*accelerationScale*accelRatio*throttle*dt)
 				}
 			case GearNeutral:
 				// Neutral gear (N): transmission disengaged, no wheel driving torque
@@ -310,8 +323,7 @@ func (b *Bus) updateTireTracks(dt float64) {
 }
 
 func (b *Bus) getRearWheelPositions() (Vec2, Vec2) {
-	cosH := math.Cos(b.Heading)
-	sinH := math.Sin(b.Heading)
+	sinH, cosH := math.Sincos(b.Heading)
 	perpX := -sinH
 	perpY := cosH
 

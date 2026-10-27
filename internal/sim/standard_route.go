@@ -2,12 +2,15 @@ package sim
 
 import "math"
 
-// GetStandardRouteForMap returns an all-stop loop starting and ending at stop 0.
+// GetStandardRouteForMap returns the initial twelve-stop city service.
 // Built-in itineraries follow the road network and each platform's travel direction.
-// Custom maps use directed road distances and include every station.
+// Custom maps use directed road distances and include every authored station.
 func GetStandardRouteForMap(theme MapTheme, world *World) *Route {
 	if world == nil {
 		return newStandardRoute(theme, 0)
+	}
+	if len(world.Stops) >= 48 && theme != MapThemeCustom {
+		return DefaultTransitLines(world)[0]
 	}
 	route := newStandardRoute(theme, len(world.Stops))
 	if theme == MapThemeCustom {

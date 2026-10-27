@@ -10,8 +10,8 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 		return
 	}
 	car := f.car
-	in := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
-	for _, inter := range f.tls.Intersections {
+	in := sim.UnitFromAngle(car.Heading)
+	for _, inter := range f.nearbyJunctions() {
 		if f.world != nil && f.world.IsAtRoundabout(inter.Center) {
 			continue
 		}
@@ -56,8 +56,9 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 			remaining = append(remaining, goal)
 		}
 		path = remaining
-		plan.Points = path
-		car.JunctionTurn = plan
+		committed := *plan
+		committed.Points = path
+		car.JunctionTurn = &committed
 		return
 	}
 }
@@ -67,9 +68,11 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 func carIntersectionTurns(f carFrame, inter *sim.TrafficIntersection) (left, right bool) {
 	car := f.car
 	straight := hasRoadInDirection(f.world, inter.Center, car.Heading) || isMapExitAhead(f.world, inter.Center, car.Heading)
-	hasLeft := hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2)
-	hasRight := hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2)
+	// Boundary exits are legal movements too. Use the same destinations for
+	// signal selection, swept-corridor admission and the committed path.
 	dedicated := inter.ApproachHasDedicatedLanesForHeading(car.Heading)
+	hasLeft := hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) || (dedicated && car.LaneIndex == 0 && isMapExitAhead(f.world, inter.Center, car.Heading-math.Pi/2))
+	hasRight := hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2)
 	left = hasLeft && ((!straight && (!hasRight || car.LaneIndex == 0)) || (car.LaneIndex == 0 && dedicated))
 	if dedicated && car.LaneIndex != 0 {
 		left = false
@@ -108,9 +111,9 @@ func moveCarThroughJunction(car *sim.TrafficCar, dt float64) {
 	}
 }
 
-func planCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJunctionTurn {
+func buildCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJunctionTurn {
 	car := f.car
-	in := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	in := sim.UnitFromAngle(car.Heading)
 	left := sim.NormalizeAngle(car.Heading - math.Pi/2)
 	right := sim.NormalizeAngle(car.Heading + math.Pi/2)
 	turnLeft, turnRight := carIntersectionTurns(f, inter)
@@ -125,7 +128,7 @@ func planCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJun
 	if turnLeft {
 		heading = left
 	}
-	out := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	out := sim.UnitFromAngle(heading)
 	newEW := math.Abs(out.X) > .5
 	roadCenter := inter.Center.Y
 	if !newEW {
@@ -169,7 +172,7 @@ func planCarStraight(f carFrame, inter *sim.TrafficIntersection) *sim.CarJunctio
 		return nil
 	}
 	car := f.car
-	u := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	u := sim.UnitFromAngle(car.Heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
 	g := f.world.JunctionAt(inter.Center, f.laneWidth)
 	half := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY

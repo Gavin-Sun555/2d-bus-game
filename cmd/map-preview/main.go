@@ -91,7 +91,7 @@ func (p *preview) Draw(screen *ebiten.Image) {
 		}
 		cam.Rotation = 0
 		cam.Pos = sim.Vec2{}
-		cam.Zoom = 0.065
+		cam.Zoom = 0.032
 		view.DrawWorld(w, screen, cam, -1, 52, true)
 		textui.DrawText(screen, w.Theme.ShortName(), 30, 24, 24, sim.RGBA(245, 247, 239, 255))
 		if err := p.save(screen, fmt.Sprintf("%02d-map.png", i+1)); err != nil {
@@ -139,7 +139,7 @@ func main() {
 		panic(err)
 	}
 	p := &preview{output: *output}
-	for theme := sim.MapThemeMetropolis; theme <= sim.MapThemeTwinCities; theme++ {
+	for _, theme := range sim.BuiltinMapThemes() {
 		p.worlds = append(p.worlds, sim.NewWorld(52, theme))
 	}
 	ebiten.SetWindowSize(1100, 700)
@@ -150,5 +150,5 @@ func main() {
 	if p.err != nil {
 		panic(p.err)
 	}
-	fmt.Println("Saved five map overviews, driving details, rotated views and comparison to", *output)
+	fmt.Println("Saved four map overviews, driving details, rotated views and comparison to", *output)
 }

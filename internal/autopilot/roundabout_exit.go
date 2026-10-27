@@ -38,7 +38,7 @@ func (ad *AutopilotDriver) retryRoundaboutExit(bus *sim.Bus, rb *sim.Roundabout,
 	angle := math.Atan2(bus.Pos.Y-rb.Center.Y, bus.Pos.X-rb.Center.X)
 	passed := sim.NormalizeAngle(exitAngle - angle)
 	outgoing := ad.drivePath[index+1].Sub(ad.drivePath[index]).Normalize()
-	leaving := radius >= outer-14 && (sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}).Dot(outgoing) > .85
+	leaving := radius >= outer-14 && (sim.UnitFromAngle(bus.Heading)).Dot(outgoing) > .85
 	missed := !leaving && passed > .12 && passed < 1.0
 	blocked := inner && !roundaboutExitMergeClear(bus, rb, obstacles, lw)
 	tooLate := inner && remaining < 45
@@ -58,11 +58,11 @@ func (ad *AutopilotDriver) retryRoundaboutExit(bus *sim.Bus, rb *sim.Roundabout,
 	// Localization stays monotonic across the duplicate circle and the destination
 	// and road departure remain the same; no position or heading is snapped.
 	points := make([]sim.Vec2, 0, 60+len(ad.drivePath)-ad.WaypointIdx)
-	points = append(points, rb.Center.Add(sim.Vec2{X: math.Cos(angle), Y: math.Sin(angle)}.Mul(outer)))
+	points = append(points, rb.Center.Add(sim.UnitFromAngle(angle).Mul(outer)))
 	if !missed {
 		for step := 1; step <= 64; step++ {
 			theta := angle - 2*math.Pi*float64(step)/64
-			points = append(points, rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(outer)))
+			points = append(points, rb.Center.Add(sim.UnitFromAngle(theta).Mul(outer)))
 		}
 	}
 	delta := angle - exitAngle
@@ -72,7 +72,7 @@ func (ad *AutopilotDriver) retryRoundaboutExit(bus *sim.Bus, rb *sim.Roundabout,
 	steps := int(math.Ceil(delta / .10))
 	for i := 1; i <= steps; i++ {
 		theta := angle - delta*float64(i)/float64(steps)
-		points = append(points, rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(outer)))
+		points = append(points, rb.Center.Add(sim.UnitFromAngle(theta).Mul(outer)))
 	}
 	points = append(points, ad.drivePath[index+1:]...)
 	ad.drivePath = dedupePath(points)
@@ -103,7 +103,7 @@ func roundaboutExitMergeClear(bus *sim.Bus, rb *sim.Roundabout, obstacles []Vehi
 		ease := fraction * fraction * (3 - 2*fraction)
 		r := radius + (outer-radius)*ease
 		theta := angle - speed*t/math.Max(radius, 1)
-		body := sim.OBB{Center: rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(r)), Heading: theta - math.Pi/2, HalfLen: bus.Length/2 + 4, HalfWid: bus.Width/2 + 4}
+		body := sim.OBB{Center: rb.Center.Add(sim.UnitFromAngle(theta).Mul(r)), Heading: theta - math.Pi/2, HalfLen: bus.Length/2 + 4, HalfWid: bus.Width/2 + 4}
 		for _, obstacle := range obstacles {
 			if hit, _, _ := sim.CheckOBBCollision(body, roundaboutMergeObstacleAt(rb, obstacle, lw, t)); hit {
 				return false

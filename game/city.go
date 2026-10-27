@@ -32,7 +32,15 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	sim.ClearRoutePathCache()
 
 	// Update starting route to standard route for this map
-	g.Route = sim.GetStandardRouteForMap(theme, g.World)
+	g.Lines = sim.DefaultTransitLines(g.World)
+	g.LineCount = 1
+	g.PlayerLine = 0
+	g.NetworkSelected = 0
+	g.initializeLineFleets()
+	g.Route = g.Lines[0]
+	g.NetworkOpen = false
+	g.planRoute = nil
+	g.planModeRouteModified = false
 	g.Route.CurrentIndex = 0
 	g.Route.InvalidateDescription()
 
@@ -44,7 +52,7 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 			firstStop = g.World.Stops[startID]
 		}
 	}
-	g.Bus.Pos = firstStop.Pos
+	g.Bus.Pos = firstStop.FrontBerthPosition()
 	g.Bus.Heading = firstStop.Heading
 	g.Bus.Speed = 0
 	g.Bus.SteeringAngle = 0
@@ -52,10 +60,12 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.Bus.IsBraking = false
 	g.Bus.OnShoulder = false
 	g.Bus.ClearPassengers()
+	g.Bus.SetModel(g.LineFleets[g.PlayerLine].PlayerModel)
 
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
-		g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
+		g.AIBusMgr.Routes = g.activeLines()
+		g.buildLineFleets(true)
 	}
 
 	g.Camera.FollowBus(g.Bus)
@@ -81,7 +91,7 @@ func (g *Game) ReloadCustomMap() error {
 		g.SetMapTheme(sim.MapThemeCustom)
 		g.HUD.AddToast(fmt.Sprintf("已成功重载自定义地图: 【%s】！", customMap.Name), true)
 	} else {
-		g.HUD.AddToast(fmt.Sprintf("已成功校验自定义地图: 【%s】(可按[6]或[C]切换)", customMap.Name), true)
+		g.HUD.AddToast(fmt.Sprintf("已成功校验自定义地图: 【%s】(可按[5]或[C]切换)", customMap.Name), true)
 	}
 	return nil
 }

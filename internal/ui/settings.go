@@ -10,18 +10,21 @@ import (
 
 // Settings manages user game configuration
 type Settings struct {
-	IsOpen                  bool
-	Fare                    sim.FarePolicy
-	OpenOperationsRequested bool
-	operationsBounds        sim.Rect
-	TrafficFinesEnabled     bool
-	FineAmount              int
-	TrafficDensity          int            // 1: Low (36), 2: Medium (72), 3: High (144), 4: Congested (288)
-	LaneWidthLevel          int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
-	CameraViewMode          sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
-	MapTheme                sim.MapTheme   // Active city map
-	ThemeChanged            bool
-	ReturnToMenuRequested   bool
+	IsOpen                       bool
+	SaveRequested, LoadRequested bool
+	saveBounds, loadBounds       sim.Rect
+	Fare                         sim.FarePolicy
+	OpenOperationsRequested      bool
+	OpenNetworkRequested         bool
+	operationsBounds             sim.Rect
+	TrafficFinesEnabled          bool
+	FineAmount                   int
+	TrafficDensity               int            // 1: Low (144), 2: Medium (288), 3: High (576), 4: Congested (864)
+	LaneWidthLevel               int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
+	CameraViewMode               sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
+	MapTheme                     sim.MapTheme   // Active city map
+	ThemeChanged                 bool
+	ReturnToMenuRequested        bool
 
 	// AI Autopilot & Route AI Buses Configurations
 	AutopilotEnabled         bool
@@ -31,7 +34,7 @@ type Settings struct {
 	AICarMaxSpeed            int
 	AIBusMinSpeed            int
 	AIBusMaxSpeed            int
-	speedRangeBounds         [4][2]sim.Rect // decrement/increment for car min/max, bus min/max
+	speedRangeBounds         [2][2]sim.Rect // decrement/increment for car min/max
 	AIBusCount               int            // Number of AI buses on the route (0 ~ 8)
 	AIBusFleetChanged        bool
 
@@ -180,6 +183,14 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 				}
 			}
 		}
+		if s.saveBounds.Contains(mPos) {
+			s.SaveRequested = true
+			return
+		}
+		if s.loadBounds.Contains(mPos) {
+			s.LoadRequested = true
+			return
+		}
 		if s.operationsBounds.Contains(mPos) {
 			s.OpenOperationsRequested = true
 			s.IsOpen = false
@@ -225,8 +236,8 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		} else if s.berserkSpeed120Bounds.Contains(mPos) {
 			s.AutopilotBerserkMaxSpeed = 120
 		} else if s.aiBusToggleBounds.Contains(mPos) {
-			s.AIBusCount = (s.AIBusCount + 1) % 9
-			s.AIBusFleetChanged = true
+			s.OpenNetworkRequested = true
+			s.IsOpen = false
 		} else if s.themeToggleBounds.Contains(mPos) {
 			s.ReturnToMenuRequested = true
 			s.IsOpen = false

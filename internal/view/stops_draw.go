@@ -16,12 +16,11 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	planMode := len(isPlanMode) > 0 && isPlanMode[0]
 
 	// Frustum culling: skip drawing if stop and shelter are completely off-screen
-	if !cam.IsPointVisible(s.Pos, 160) && !cam.IsPointVisible(s.ShelterPos, 160) {
+	if !cam.IsPointVisible(s.Pos, s.Length/2+40) && !cam.IsPointVisible(s.ShelterPos, 160) {
 		return
 	}
 
-	cosH := math.Cos(s.Heading)
-	sinH := math.Sin(s.Heading)
+	sinH, cosH := math.Sincos(s.Heading)
 
 	// 1. Bus Stop Bay (Yellow bordered bay marked on the road)
 	bayBorderColor := sim.RGBA(234, 179, 8, 220) // Vibrant yellow
@@ -43,6 +42,16 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 			s2 := cam.WorldToScreen(p2)
 			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y),
 				float32(2.5*cam.Zoom), sim.RGBA(234, 179, 8, 140), true)
+		}
+	}
+
+	if !planMode && cam.Zoom >= .4 && s.HasTwoBerths() {
+		front := s.FrontBerthPosition()
+		right := sim.Vec2{X: -sinH, Y: cosH}
+		for _, p := range []sim.Vec2{front, s.RearBerthPosition()} {
+			a := cam.WorldToScreen(p.Add(sim.Vec2{X: cosH, Y: sinH}.Mul(48)).Add(right.Mul(-s.Width/2 + 3)))
+			b := cam.WorldToScreen(p.Add(sim.Vec2{X: cosH, Y: sinH}.Mul(48)).Add(right.Mul(s.Width/2 - 3)))
+			strokeLine(screen, float32(a.X), float32(a.Y), float32(b.X), float32(b.Y), float32(2*cam.Zoom), bayBorderColor, true)
 		}
 	}
 
@@ -73,8 +82,12 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 
 	// 4. Station Marker Pole / Flag
 	badgeRadius := float32(14 * cam.Zoom)
-	if badgeRadius < 8 {
-		badgeRadius = 8
+	minRadius := float32(8)
+	if planMode && cam.Zoom < .1 && !isTarget && !isHovered {
+		minRadius = 2
+	}
+	if badgeRadius < minRadius {
+		badgeRadius = minRadius
 	}
 
 	// Glowing circle badge
@@ -86,6 +99,10 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 		badgeRadius, badgeColor, true)
 	strokeCircle(screen, float32(shelterScreen.X), float32(shelterScreen.Y-float64(badgeRadius*2.5)),
 		badgeRadius, float32(math.Max(1.5, 2*cam.Zoom)), sim.RGBA(255, 255, 255, 255), true)
+
+	if planMode && cam.Zoom < .1 && !isTarget && !isHovered {
+		return
+	}
 
 	// Station info label
 	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.Name, s.WaitingPassengers)

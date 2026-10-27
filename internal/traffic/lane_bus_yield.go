@@ -11,14 +11,15 @@ func laneBusYieldLimit(f carFrame, bus, previous *sim.Bus) (float64, bool) {
 	if request == nil || request.Remaining <= 0 || request.Joined || math.Cos(f.car.Heading-request.Heading) < .98 || math.Cos(bus.Heading-request.Heading) < .5 {
 		return 0, false
 	}
-	forward := sim.Vec2{X: math.Cos(request.Heading), Y: math.Sin(request.Heading)}
+	forward := sim.UnitFromAngle(request.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	if math.Abs(f.car.Pos.Sub(request.Target).Dot(right)) > f.laneWidth*.40 {
 		return 0, false
 	}
 	yaw := bus.Heading - request.Heading
-	extent := bus.Length/2*math.Abs(math.Cos(yaw)) + bus.Width/2*math.Abs(math.Sin(yaw))
-	gap := bus.Pos.Sub(f.car.Pos).Dot(forward) - extent - f.car.Length/2 - 30
+	body := bus.BodyEnvelope()
+	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw))
+	gap := body.Center.Sub(f.car.Pos).Dot(forward) - extent - f.car.Length/2 - 30
 	minGap := -8.0
 	if previous == bus {
 		minGap = -30.0

@@ -129,11 +129,11 @@ func CheckOBBCollision(a, b OBB) (bool, Vec2, float64) {
 	}
 
 	// Local axes of A
-	uA := Vec2{X: math.Cos(a.Heading), Y: math.Sin(a.Heading)}
+	uA := UnitFromAngle(a.Heading)
 	vA := Vec2{X: -math.Sin(a.Heading), Y: math.Cos(a.Heading)}
 
 	// Local axes of B
-	uB := Vec2{X: math.Cos(b.Heading), Y: math.Sin(b.Heading)}
+	uB := UnitFromAngle(b.Heading)
 	vB := Vec2{X: -math.Sin(b.Heading), Y: math.Cos(b.Heading)}
 
 	axes := [4]Vec2{uA, vA, uB, vB}
@@ -173,15 +173,8 @@ func ResolveBusCarSeparation(bus *Bus, car *TrafficCar) bool {
 		return false
 	}
 	dist := bus.Pos.Distance(car.Pos)
-	if dist > (bus.Length+car.Length)*0.6 {
+	if dist > (bus.OverallLength()+car.Length)*1.1 {
 		return false
-	}
-
-	busOBB := OBB{
-		Center:  bus.Pos,
-		HalfLen: bus.Length / 2.0,
-		HalfWid: bus.Width / 2.0,
-		Heading: bus.Heading,
 	}
 	carOBB := OBB{
 		Center:  car.Pos,
@@ -190,13 +183,13 @@ func ResolveBusCarSeparation(bus *Bus, car *TrafficCar) bool {
 		Heading: car.Heading,
 	}
 
-	collides, normal, depth := CheckOBBCollision(busOBB, carOBB)
+	collides, normal, depth := bus.CollidesBody(carOBB)
 	if !collides || depth <= 0 {
 		return false
 	}
 
-	carForward := Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
-	busForward := Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}
+	carForward := UnitFromAngle(car.Heading)
+	busForward := UnitFromAngle(bus.Heading)
 	toBus := bus.Pos.Sub(car.Pos)
 	isCarFacingBus := carForward.Dot(toBus) > 0
 	isBusFacingCar := busForward.Dot(car.Pos.Sub(bus.Pos)) > 0
@@ -204,7 +197,7 @@ func ResolveBusCarSeparation(bus *Bus, car *TrafficCar) bool {
 	// When both vehicles are aligned in the same road corridor (e.g. queue or car following bus),
 	// physical separation should strictly push longitudinally along the travel lane rather than sideways.
 	headDiff := math.Abs(NormalizeAngle(bus.Heading - car.Heading))
-	if headDiff < 0.7 {
+	if headDiff < 0.7 && !bus.IsArticulated() {
 		fwd := toBus.Dot(carForward)
 		fwdOverlap := (bus.Length/2.0 + car.Length/2.0) - math.Abs(fwd)
 		if fwdOverlap > 0 {
@@ -257,31 +250,24 @@ func ResolveBusBusSeparation(busA, busB *Bus) bool {
 		return false
 	}
 	dist := busA.Pos.Distance(busB.Pos)
-	if dist > (busA.Length+busB.Length)*0.6 {
+	if dist > (busA.OverallLength()+busB.OverallLength())*1.1 {
 		return false
 	}
-
-	obbA := OBB{
-		Center:  busA.Pos,
-		HalfLen: busA.Length / 2.0,
-		HalfWid: busA.Width / 2.0,
-		Heading: busA.Heading,
-	}
-	obbB := OBB{
+	_ = OBB{
 		Center:  busB.Pos,
 		HalfLen: busB.Length / 2.0,
 		HalfWid: busB.Width / 2.0,
 		Heading: busB.Heading,
 	}
 
-	collides, normal, depth := CheckOBBCollision(obbA, obbB)
+	collides, normal, depth := CheckBusesCollision(busA, busB)
 	if !collides || depth <= 0 {
 		return false
 	}
 
 	headDiff := math.Abs(NormalizeAngle(busA.Heading - busB.Heading))
-	if headDiff < 0.7 {
-		fwdA := Vec2{X: math.Cos(busA.Heading), Y: math.Sin(busA.Heading)}
+	if headDiff < 0.7 && !busA.IsArticulated() && !busB.IsArticulated() {
+		fwdA := UnitFromAngle(busA.Heading)
 		toA := busA.Pos.Sub(busB.Pos)
 		fwd := toA.Dot(fwdA)
 		fwdOverlap := (busA.Length/2.0 + busB.Length/2.0) - math.Abs(fwd)
@@ -324,8 +310,9 @@ func ResolveCarCarSeparation(carA, carB *TrafficCar) bool {
 	if carA == nil || carB == nil || carA == carB {
 		return false
 	}
-	dist := carA.Pos.Distance(carB.Pos)
-	if dist > (carA.Length+carB.Length)*0.6 {
+	delta := carA.Pos.Sub(carB.Pos)
+	radius := (carA.Length + carB.Length) * 0.6
+	if delta.Dot(delta) > radius*radius {
 		return false
 	}
 
@@ -349,7 +336,7 @@ func ResolveCarCarSeparation(carA, carB *TrafficCar) bool {
 
 	headDiff := math.Abs(NormalizeAngle(carA.Heading - carB.Heading))
 	if headDiff < 0.7 {
-		fwdA := Vec2{X: math.Cos(carA.Heading), Y: math.Sin(carA.Heading)}
+		fwdA := UnitFromAngle(carA.Heading)
 		toA := carA.Pos.Sub(carB.Pos)
 		fwd := toA.Dot(fwdA)
 		fwdOverlap := (carA.Length/2.0 + carB.Length/2.0) - math.Abs(fwd)
@@ -386,4 +373,11 @@ func ResolveCarCarSeparation(carA, carB *TrafficCar) bool {
 	}
 
 	return true
+}
+
+// UnitFromAngle returns {cos a, sin a}. math.Sincos is bit-identical to
+// separate Sin/Cos calls but shares the argument reduction.
+func UnitFromAngle(a float64) Vec2 {
+	s, c := math.Sincos(a)
+	return Vec2{X: c, Y: s}
 }

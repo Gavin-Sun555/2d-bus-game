@@ -1,0 +1,498 @@
+{
+  "machine": "Apple M4 MacBook Air / darwin arm64 / Metal / VSync on",
+  "frames": 1800,
+  "warmup": 300,
+  "aiBuses": 48,
+  "carCount": 864,
+  "groups": {
+    "before": {
+      "runs": [
+        {
+          "run": "render-before-1",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25035.363584,
+            "MeanUpdateTPS": 59.915247284790546,
+            "MeanDrawFPS": 59.5557558010818,
+            "UpdateP50MS": 11.757083,
+            "UpdateP95MS": 13.860791,
+            "UpdateP99MS": 14.631709,
+            "UpdateMaxMS": 31.987458,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1491,
+            "UpdateFrames": 1500,
+            "UpdateMS": 17275.605416000028,
+            "DrawSubmitMS": 2073.6317339999955
+          }
+        },
+        {
+          "run": "render-before-2",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25029.252875,
+            "MeanUpdateTPS": 59.929875154134024,
+            "MeanDrawFPS": 59.81001540382576,
+            "UpdateP50MS": 11.77,
+            "UpdateP95MS": 13.735084,
+            "UpdateP99MS": 14.525709,
+            "UpdateMaxMS": 24.074792,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1497,
+            "UpdateFrames": 1500,
+            "UpdateMS": 17178.627230000002,
+            "DrawSubmitMS": 2057.622027
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.68288560245378,
+        "MeanUpdateTPS": 59.92256121946228,
+        "UpdateP50MS": 11.763541499999999,
+        "UpdateP95MS": 13.7979375,
+        "UpdateP99MS": 14.578709,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "step34": {
+      "runs": [
+        {
+          "run": "render-step34-1",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25025.655083,
+            "MeanUpdateTPS": 59.93849092162044,
+            "MeanDrawFPS": 59.93849092162044,
+            "UpdateP50MS": 11.240875,
+            "UpdateP95MS": 13.113125,
+            "UpdateP99MS": 13.963541,
+            "UpdateMaxMS": 24.575709,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "UpdateMS": 16369.223137000003,
+            "DrawSubmitMS": 2070.2019829999995
+          }
+        },
+        {
+          "run": "render-step34-2",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25029.789584,
+            "MeanUpdateTPS": 59.92859008926138,
+            "MeanDrawFPS": 59.72882812229717,
+            "UpdateP50MS": 11.502291,
+            "UpdateP95MS": 13.359625,
+            "UpdateP99MS": 14.273708,
+            "UpdateMaxMS": 28.852917,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1495,
+            "UpdateFrames": 1500,
+            "UpdateMS": 16745.27720900001,
+            "DrawSubmitMS": 2102.1746200000043
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.83365952195881,
+        "MeanUpdateTPS": 59.93354050544091,
+        "UpdateP50MS": 11.371583000000001,
+        "UpdateP95MS": 13.236374999999999,
+        "UpdateP99MS": 14.1186245,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "step2off": {
+      "runs": [
+        {
+          "run": "render-step2-off-1",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25027.025333,
+            "MeanUpdateTPS": 59.93520924047406,
+            "MeanDrawFPS": 59.93520924047406,
+            "UpdateP50MS": 11.428,
+            "UpdateP95MS": 13.234125,
+            "UpdateP99MS": 14.132,
+            "UpdateMaxMS": 21.529458,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "UpdateMS": 16647.28528599999,
+            "DrawSubmitMS": 2102.9309129999992
+          }
+        },
+        {
+          "run": "render-step2-off-2",
+          "metrics": {
+            "PosePredictionHits": 1329444,
+            "PosePredictionMisses": 950959,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25026.947708,
+            "MeanUpdateTPS": 59.93539513891727,
+            "MeanDrawFPS": 59.93539513891727,
+            "UpdateP50MS": 11.268208,
+            "UpdateP95MS": 13.082458,
+            "UpdateP99MS": 13.981667,
+            "UpdateMaxMS": 21.67325,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "UpdateMS": 16382.836599999997,
+            "DrawSubmitMS": 2058.832053999998
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.93530218969566,
+        "MeanUpdateTPS": 59.93530218969566,
+        "UpdateP50MS": 11.348104,
+        "UpdateP95MS": 13.1582915,
+        "UpdateP99MS": 14.0568335,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "step2on": {
+      "runs": [
+        {
+          "run": "render-step2-on-1",
+          "metrics": {
+            "PosePredictionHits": 1349685,
+            "PosePredictionMisses": 930281,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25024.749084,
+            "MeanUpdateTPS": 59.94066094189334,
+            "MeanDrawFPS": 59.70089829812577,
+            "UpdateP50MS": 10.341375,
+            "UpdateP95MS": 12.691709,
+            "UpdateP99MS": 13.796042,
+            "UpdateMaxMS": 25.044792,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1494,
+            "UpdateFrames": 1500,
+            "UpdateMS": 15326.610553999966,
+            "DrawSubmitMS": 2069.323571
+          }
+        },
+        {
+          "run": "render-step2-on-2",
+          "metrics": {
+            "PosePredictionHits": 1349685,
+            "PosePredictionMisses": 930281,
+            "Vsync": true,
+            "SingleThread": false,
+            "GraphicsLibrary": "Metal",
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "FleetBuses": 48,
+            "PlayerDamageSteps": 0,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "MeasuredWallMS": 25025.992292,
+            "MeanUpdateTPS": 59.93768328936557,
+            "MeanDrawFPS": 59.93768328936557,
+            "UpdateP50MS": 10.479,
+            "UpdateP95MS": 12.829125,
+            "UpdateP99MS": 13.922,
+            "UpdateMaxMS": 24.888292,
+            "Scene": "max-traffic-864-cars-48-buses-model2",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "UpdateMS": 15457.153438999983,
+            "DrawSubmitMS": 2100.9764290000016
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.81929079374567,
+        "MeanUpdateTPS": 59.93917211562946,
+        "UpdateP50MS": 10.4101875,
+        "UpdateP95MS": 12.760417,
+        "UpdateP99MS": 13.859021,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "serial": {
+      "runs": [
+        {
+          "run": "pipeline-stable-serial-1",
+          "metrics": {
+            "Mode": "serial",
+            "Frames": 1499,
+            "UpdateFrames": 1500,
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "MeanDrawFPS": 59.98833078736181,
+            "MeanUpdateTPS": 60.02834968715325,
+            "MeasuredWallMS": 24988.193209,
+            "DrawSubmitMS": 2101.1381549999983,
+            "UpdateP50MS": 10.818791,
+            "UpdateP95MS": 12.057,
+            "UpdateP99MS": 12.309625,
+            "SnapshotP50MS": 0,
+            "SnapshotP95MS": 0,
+            "TickP95MS": 12.057,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "PlayerDamageSteps": 0,
+            "PlayerDistance": 4186.170349034333,
+            "FleetBuses": 48
+          }
+        },
+        {
+          "run": "pipeline-stable-serial-2",
+          "metrics": {
+            "Mode": "serial",
+            "Frames": 1496,
+            "UpdateFrames": 1500,
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "MeanDrawFPS": 59.86873769335967,
+            "MeanUpdateTPS": 60.028814532111966,
+            "MeasuredWallMS": 24987.999708,
+            "DrawSubmitMS": 2156.2454300000013,
+            "UpdateP50MS": 10.908125,
+            "UpdateP95MS": 12.095417,
+            "UpdateP99MS": 12.6425,
+            "SnapshotP50MS": 0,
+            "SnapshotP95MS": 0,
+            "TickP95MS": 12.095417,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "PlayerDamageSteps": 0,
+            "PlayerDistance": 4186.170349034333,
+            "FleetBuses": 48
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.92853424036074,
+        "MeanUpdateTPS": 60.02858210963261,
+        "UpdateP50MS": 10.863458,
+        "UpdateP95MS": 12.0762085,
+        "UpdateP99MS": 12.476062500000001,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "pipeline": {
+      "runs": [
+        {
+          "run": "pipeline-stable-on-1",
+          "metrics": {
+            "Mode": "pipeline",
+            "Frames": 1498,
+            "UpdateFrames": 1500,
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "MeanDrawFPS": 59.9560842695372,
+            "MeanUpdateTPS": 60.036132446132044,
+            "MeasuredWallMS": 24984.953875,
+            "DrawSubmitMS": 2175.3724560000005,
+            "UpdateP50MS": 10.90875,
+            "UpdateP95MS": 12.0575,
+            "UpdateP99MS": 12.47725,
+            "SnapshotP50MS": 0.012708,
+            "SnapshotP95MS": 0.014708,
+            "TickP95MS": 12.070583,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "PlayerDamageSteps": 0,
+            "PlayerDistance": 4186.170349034333,
+            "FleetBuses": 48
+          }
+        },
+        {
+          "run": "pipeline-stable-on-2",
+          "metrics": {
+            "Mode": "pipeline",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "MeanDrawFPS": 60.03612703962673,
+            "MeanUpdateTPS": 60.03612703962673,
+            "MeasuredWallMS": 24984.956125,
+            "DrawSubmitMS": 2167.591297000001,
+            "UpdateP50MS": 10.852958,
+            "UpdateP95MS": 12.129667,
+            "UpdateP99MS": 12.5255,
+            "SnapshotP50MS": 0.012792,
+            "SnapshotP95MS": 0.014417,
+            "TickP95MS": 12.143374999999999,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "PlayerDamageSteps": 0,
+            "PlayerDistance": 4186.170349034333,
+            "FleetBuses": 48
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 59.99610565458197,
+        "MeanUpdateTPS": 60.03612974287938,
+        "UpdateP50MS": 10.880854,
+        "UpdateP95MS": 12.0935835,
+        "UpdateP99MS": 12.501375,
+        "CarsMin": 864.0,
+        "CarsMax": 864.0,
+        "CarsFinal": 864.0,
+        "PlayerFinalDurability": 100.0,
+        "FleetMinDurability": 100.0,
+        "PlayerDamageSteps": 0.0
+      }
+    },
+    "copy": {
+      "runs": [
+        {
+          "run": "pipeline-stable-copy-only",
+          "metrics": {
+            "Mode": "snapshot-serial",
+            "Frames": 1500,
+            "UpdateFrames": 1500,
+            "CarsMin": 864,
+            "CarsMax": 864,
+            "CarsFinal": 864,
+            "MeanDrawFPS": 60.029390689828695,
+            "MeanUpdateTPS": 60.029390689828695,
+            "MeasuredWallMS": 24987.759875,
+            "DrawSubmitMS": 2138.4416939999987,
+            "UpdateP50MS": 10.86,
+            "UpdateP95MS": 12.044542,
+            "UpdateP99MS": 12.295166,
+            "SnapshotP50MS": 0.011708,
+            "SnapshotP95MS": 0.013792,
+            "TickP95MS": 12.055584,
+            "PlayerFinalDurability": 100,
+            "FleetMinDurability": 100,
+            "PlayerDamageSteps": 0,
+            "PlayerDistance": 4186.170349034333,
+            "FleetBuses": 48
+          }
+        }
+      ],
+      "median": {
+        "MeanDrawFPS": 60.029390689828695,
+        "MeanUpdateTPS": 60.029390689828695,
+        "UpdateP50MS": 10.86,
+        "UpdateP95MS": 12.044542,
+        "UpdateP99MS": 12.295166,
+        "CarsMin": 864,
+        "CarsMax": 864,
+        "CarsFinal": 864,
+        "PlayerFinalDurability": 100,
+        "FleetMinDurability": 100,
+        "PlayerDamageSteps": 0
+      }
+    }
+  },
+  "defaultEnabled": [
+    "step3",
+    "step4"
+  ],
+  "removedExperiments": [
+    "step2",
+    "step1"
+  ]
+}

@@ -13,7 +13,7 @@ func (tm *TrafficManager) roundaboutEntryPrioritySpeed(f carFrame, rb sim.Rounda
 	if curve == nil || curve.Exiting {
 		return math.Inf(1)
 	}
-	forward := sim.Vec2{X: math.Cos(car.RoundaboutExitHeading), Y: math.Sin(car.RoundaboutExitHeading)}
+	forward := sim.UnitFromAngle(car.RoundaboutExitHeading)
 	yaw := car.Heading - car.RoundaboutExitHeading
 	front := car.Length/2*math.Abs(math.Cos(yaw)) + car.Width/2*math.Abs(math.Sin(yaw))
 	gap := rb.Center.Sub(car.Pos).Dot(forward) - front - rb.YieldLineDistance()
@@ -50,7 +50,7 @@ func (tm *TrafficManager) roundaboutEntryPrioritySpeed(f carFrame, rb sim.Rounda
 		}
 	}
 	for _, bus := range f.buses {
-		if bus != nil && conflict(sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length / 2, HalfWid: bus.Width / 2}, bus.Speed) {
+		if bus != nil && conflict(bus.BodyEnvelope(), bus.Speed) {
 			return math.Sqrt(2 * 220 * math.Max(0, gap-8))
 		}
 	}

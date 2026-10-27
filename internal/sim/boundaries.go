@@ -6,8 +6,28 @@ import (
 
 // CheckBoundaries checks if a position is on the road, on the shoulder, or hitting a hard barrier
 func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) BoundaryCheckResult {
+	var cache *boundaryGeometryCache
+	if w.boundaryDepth > 0 && w.boundaryCache != nil && w.boundaryCache.width == laneWidth && finiteBoundary(pos.X, pos.Y, busRadius) {
+		cache = w.boundaryCache
+	}
+	return w.checkBoundaries(pos, busRadius, laneWidth, cache)
+}
+
+func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, cache *boundaryGeometryCache) BoundaryCheckResult {
 	// 1. Check decorative Building collisions (Hard Barrier)
-	for _, b := range w.Buildings {
+	var buildingStorage [32]int
+	var buildingIDs []int
+	buildingCount := len(w.Buildings)
+	if cache != nil {
+		buildingIDs = cache.buildingTree.candidates(pos, busRadius, buildingStorage[:0])
+		buildingCount = len(buildingIDs)
+	}
+	for i := 0; i < buildingCount; i++ {
+		id := i
+		if cache != nil {
+			id = buildingIDs[i]
+		}
+		b := w.Buildings[id]
 		hw := b.W/2 + busRadius
 		hh := b.H/2 + busRadius
 		if math.Abs(pos.X-b.Pos.X) < hw && math.Abs(pos.Y-b.Pos.Y) < hh {
@@ -38,8 +58,12 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 	}
 
 	// 2. Check Outer Metropolitan Perimeter Wall (Hard Barrier)
-	boundX := 3200.0 * MapGridScale
-	boundY := 1480.0 * MapGridScale
+	var boundX, boundY float64
+	if cache != nil {
+		boundX, boundY = cache.boundX, cache.boundY
+	} else {
+		boundX, boundY = w.PerimeterBounds()
+	}
 	if pos.X > boundX {
 		return BoundaryCheckResult{Zone: ZoneHardBarrier, Pushback: Vec2{X: -1, Y: 0}, Penetration: pos.X - boundX, ObstacleName: "东侧边界隔离墙"}
 	}
@@ -82,9 +106,25 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 	// 2.8 Check Bus Stop Bays, Platforms, and Approach/Exit Transition Tapers:
 	// Bus stops feature indented turnout bays with lead-in deceleration and lead-out merge tapers.
 	// Ensure that vehicles pulling into or out of bus bays navigate smoothly without hitting phantom roadside barriers.
-	for _, st := range w.Stops {
-		cosH := math.Cos(st.Heading)
-		sinH := math.Sin(st.Heading)
+	var stopStorage [32]int
+	var stopIDs []int
+	stopCount := len(w.Stops)
+	if cache != nil {
+		stopIDs = cache.stopTree.candidates(pos, 0, stopStorage[:0])
+		stopCount = len(stopIDs)
+	}
+	for i := 0; i < stopCount; i++ {
+		id := i
+		if cache != nil {
+			id = stopIDs[i]
+		}
+		st := w.Stops[id]
+		var cosH, sinH float64
+		if cache != nil {
+			cosH, sinH = cache.stops[id].cos, cache.stops[id].sin
+		} else {
+			sinH, cosH = math.Sincos(st.Heading)
+		}
 		dx := pos.X - st.Pos.X
 		dy := pos.Y - st.Pos.Y
 
@@ -112,7 +152,13 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 		// Bay box length is st.Length (140 px, dLong in [-70, +70]).
 		// Approach queue corridor: dLong in [-1200, -70] (safely accommodates multi-bus fleet departure queue up to 8 buses).
 		// Departure taper: dLong in [+70, +180] (110 px smooth exit corridor).
-		if dLong >= -1200.0 && dLong <= 180.0 {
+		bayHalf := st.Length / 2
+		taperLength := 110.0
+		if st.Length > 200 {
+			taperLength = 260
+		}
+		departureEnd := bayHalf + taperLength
+		if dLong >= -1200.0 && dLong <= departureEnd {
 			curbDist := (float64(st.RoadLanes)/2.0)*laneWidth + st.Width*0.48
 			// Only apply to the bus stop side of the road
 			if dLat >= -curbDist-15.0 {
@@ -120,12 +166,12 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 				bayOuterCurbLat := st.Width*0.5 + 12.0
 
 				var curbLat float64
-				if dLong < -70.0 {
+				if dLong < -bayHalf {
 					// Approach queuing corridor: maintain full outer bay envelope clearance for queued AI fleet
 					curbLat = bayOuterCurbLat
-				} else if dLong > 70.0 {
+				} else if dLong > bayHalf {
 					// Departure transition taper
-					t := (180.0 - dLong) / 110.0
+					t := (departureEnd - dLong) / taperLength
 					curbLat = mainRoadCurbLat + t*(bayOuterCurbLat-mainRoadCurbLat)
 				} else {
 					// Directly inside bus stop bay box
@@ -143,18 +189,23 @@ func (w *World) CheckBoundaries(pos Vec2, busRadius float64, laneWidth float64) 
 	minDistBeyondCurb := math.MaxFloat64
 	var closestPush Vec2
 
-	for _, r := range w.Roads {
-		roadW := r.GetWidth(laneWidth)
-		roadHW := roadW / 2
+	if cache != nil && len(cache.roadTree.nodes) > 0 {
+		bestID := len(w.Roads)
+		cache.nearestRoad(0, pos, &minDistBeyondCurb, &bestID, &closestPush)
+	} else {
+		for _, r := range w.Roads {
+			roadW := r.GetWidth(laneWidth)
+			roadHW := roadW / 2
 
-		d, push := DistToSegment(pos, r.P1, r.P2)
-		dBeyond := d - roadHW
-		if dBeyond < minDistBeyondCurb {
-			minDistBeyondCurb = dBeyond
-			closestPush = push
+			d, push := DistToSegment(pos, r.P1, r.P2)
+			dBeyond := d - roadHW
+			if dBeyond < minDistBeyondCurb {
+				minDistBeyondCurb = dBeyond
+				closestPush = push
+			}
 		}
-	}
 
+	}
 	// Decision based on minimum distance beyond curb
 	if minDistBeyondCurb <= 0 {
 		// Fully on asphalt road

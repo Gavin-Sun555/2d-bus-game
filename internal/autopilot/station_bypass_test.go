@@ -98,7 +98,7 @@ func TestSkipPermissionChangeRebuildsStationApproach(t *testing.T) {
 		ad.CanSkipTargetStop = skip
 		ad.PrepareLeg(w, w.Stops[0], w.Stops[1], lw)
 		end := ad.drivePath[len(ad.drivePath)-1]
-		expected := w.Stops[1].Pos
+		expected := w.Stops[1].FrontBerthPosition()
 		if skip {
 			expected = stopRoadPoint(w.Stops[1], lw)
 		}

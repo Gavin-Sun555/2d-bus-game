@@ -100,7 +100,7 @@ func (ad *AutopilotDriver) intersectionApproachWithRunway(f autopilotFrame, isMu
 	isApproachingIntersection, isUpcomingLeft, isUpcomingRight := false, false, false
 	// Lane-change yaw must not rotate the approach corridor or its exit.
 	heading := approachRoadHeading(f.bus.Heading)
-	cosH, sinH := math.Cos(heading), math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 
 	if f.tls != nil {
 		for _, inter := range f.tls.Intersections {
@@ -173,7 +173,7 @@ func (ad *AutopilotDriver) intersectionApproachWithRunway(f autopilotFrame, isMu
 }
 
 func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach intersectionApproach, is2Lane, is6Lane bool, distBaseToCenter, dt float64) {
-	cosH, sinH := math.Cos(f.bus.Heading), math.Sin(f.bus.Heading)
+	sinH, cosH := math.Sincos(f.bus.Heading)
 	if is2Lane {
 		// On 2-lane roads, borrowing oncoming lane through or near intersections is strictly prohibited!
 		if ad.LaneOffset != 0 || ad.OvertakeState != OvertakeNone {
@@ -317,7 +317,7 @@ func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach int
 // preferredThroughLane chooses only between the inner through lane and the outer
 // lane. Safety checks before committing the change remain with the caller.
 func (ad *AutopilotDriver) preferredThroughLane(f autopilotFrame, distToStopLine float64, is6Lane bool) float64 {
-	cosH, sinH := math.Cos(f.bus.Heading), math.Sin(f.bus.Heading)
+	sinH, cosH := math.Sincos(f.bus.Heading)
 	queuedInner := countQueuedCars(f.obstacles, f.bus, cosH, sinH, ad.LaneOffset, -f.laneWidth, distToStopLine, f.laneWidth)
 	queuedOuter := countQueuedCars(f.obstacles, f.bus, cosH, sinH, ad.LaneOffset, 0, distToStopLine, f.laneWidth)
 	if queuedInner < queuedOuter {

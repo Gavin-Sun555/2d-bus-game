@@ -1,10 +1,14 @@
 package sim
 
-import "math"
+import (
+	"math"
+)
 
 type StationActivity struct{ Boarded, Alighted, Revenue int }
 type VehicleOperations struct {
+	Route                                      *Route
 	ID                                         int
+	LineName                                   string
 	Revenue, Boarded, Alighted, CompletedLaps  int
 	KM, Seconds, CompletedKM, CompletedSeconds float64
 	Stations                                   map[int]*StationActivity
@@ -23,15 +27,18 @@ func (v *VehicleOperations) AverageKPH() (float64, bool) {
 }
 
 type TransitOperations struct {
-	Policy    FarePolicy
-	Distances RouteDistances
-	Vehicles  map[int]*VehicleOperations // 0 = player; positive IDs = fleet buses
-	Stations  map[int]*StationActivity
-	Revenue   int
+	world          *World
+	laneWidth      float64
+	routeDistances map[*Route]RouteDistances
+	Policy         FarePolicy
+	Distances      RouteDistances
+	Vehicles       map[int]*VehicleOperations // 0 = player; positive IDs = fleet buses
+	Stations       map[int]*StationActivity
+	Revenue        int
 }
 
 func NewTransitOperations(w *World, r *Route, lw float64, p FarePolicy) *TransitOperations {
-	return &TransitOperations{Policy: p.Normalize(), Distances: BuildRouteDistances(w, r, lw), Vehicles: make(map[int]*VehicleOperations), Stations: make(map[int]*StationActivity)}
+	return &TransitOperations{world: w, laneWidth: lw, routeDistances: make(map[*Route]RouteDistances), Policy: p.Normalize(), Distances: BuildRouteDistances(w, r, lw), Vehicles: make(map[int]*VehicleOperations), Stations: make(map[int]*StationActivity)}
 }
 func (o *TransitOperations) Vehicle(id int) *VehicleOperations {
 	v := o.Vehicles[id]
@@ -60,7 +67,7 @@ func (o *TransitOperations) Board(id int, b *Bus, r *Route, stop, count int, can
 	for i := before; i < len(b.Passengers); i++ {
 		stops, km := 0, 0.
 		if o != nil && r != nil {
-			stops, km = o.Distances.Journey(stop, b.Passengers[i].TargetStopID, r.CurrentIndex)
+			stops, km = o.DistancesFor(r).Journey(stop, b.Passengers[i].TargetStopID, r.CurrentIndex)
 		}
 		fare := policy.Quote(stops, km)
 		b.Passengers[i].PaidFare = fare
@@ -96,6 +103,8 @@ func (o *TransitOperations) Track(id int, b *Bus, r *Route, dt float64) {
 		return
 	}
 	v := o.Vehicle(id)
+	v.LineName = r.Name
+	v.Route = r
 	if v.bus != b {
 		v.bus = b
 		v.lastPos = b.Pos
@@ -116,7 +125,7 @@ func (o *TransitOperations) Track(id int, b *Bus, r *Route, dt float64) {
 		v.validLoop = false
 	}
 	if r.TotalTrips > v.lastTrips {
-		if v.validLoop && r.TotalTrips == v.lastTrips+1 && v.loopKM >= o.Distances.TotalKM*.5 && o.Distances.TotalKM > 0 {
+		if v.validLoop && r.TotalTrips == v.lastTrips+1 && v.loopKM >= o.DistancesFor(r).TotalKM*.5 && o.DistancesFor(r).TotalKM > 0 {
 			v.CompletedLaps++
 			v.CompletedKM += v.loopKM
 			v.CompletedSeconds += v.loopSeconds
@@ -127,4 +136,30 @@ func (o *TransitOperations) Track(id int, b *Bus, r *Route, dt float64) {
 	}
 	v.lastPos = b.Pos
 	v.lastTrips = r.TotalTrips
+}
+
+// Per-itinerary distance tables keep fares and completed-lap validation correct
+// when buses on different lines share the same aggregate statistics collector.
+func (o *TransitOperations) DistancesFor(r *Route) RouteDistances {
+	if o.world == nil || r == nil {
+		return o.Distances
+	}
+	key := r
+	if d, ok := o.routeDistances[key]; ok {
+		return d
+	}
+	d := BuildRouteDistances(o.world, r, o.laneWidth)
+	o.routeDistances[key] = d
+	return d
+}
+
+// InterruptJourney retains earned revenue and completed laps while discarding
+// only the incomplete lap when the player explicitly switches services.
+func (o *TransitOperations) InterruptJourney(id int) {
+	if o == nil {
+		return
+	}
+	if v := o.Vehicles[id]; v != nil {
+		v.bus = nil
+	}
 }

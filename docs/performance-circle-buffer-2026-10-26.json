@@ -1,0 +1,330 @@
+{
+  "scope": "3 paired 60s maximum-fleet scenes; each analysis 5-60s; all after traffic fixes; only circle renderer differs",
+  "median_method": "median of per-run metrics, not pooled percentiles",
+  "median": {
+    "before": {
+      "draw_mean_ms": 1.493183123030303,
+      "draw_p99_ms": 2.03175,
+      "update_mean_ms": 11.809252304848485,
+      "update_p99_ms": 14.604416,
+      "draw_gap_p99_ms": 17.761334,
+      "draw_gap_p999_ms": 18.902417,
+      "max_gap_ms": 18.938916,
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "alloc_MB_s": 79.55256068254869,
+      "gc_count": 93
+    },
+    "after": {
+      "draw_mean_ms": 1.3781326718181819,
+      "draw_p99_ms": 1.48775,
+      "update_mean_ms": 11.744372843333334,
+      "update_p99_ms": 14.508291,
+      "draw_gap_p99_ms": 17.7395,
+      "draw_gap_p999_ms": 18.747334,
+      "max_gap_ms": 19.099083,
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "alloc_MB_s": 30.024953531721724,
+      "gc_count": 35
+    }
+  },
+  "scenes": {
+    "before1": {
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 11.698824914545455,
+        "p50": 11.486167,
+        "p95": 14.214625,
+        "p99": 14.518583,
+        "p999": 14.998375,
+        "max": 15.667292
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.4763434912121212,
+        "p50": 1.495333,
+        "p95": 1.56675,
+        "p99": 2.03175,
+        "p999": 2.175334,
+        "max": 2.23775
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.668235744848484,
+        "p50": 16.659625,
+        "p95": 17.056709,
+        "p99": 17.724875,
+        "p999": 18.71575,
+        "max": 18.894875
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 93,
+      "gc_pause_ms": 4.071376,
+      "alloc_bytes_per_second": 79552560.68254869,
+      "measurement": [
+        5,
+        60
+      ]
+    },
+    "after1": {
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 11.744372843333334,
+        "p50": 11.518833,
+        "p95": 14.203833,
+        "p99": 14.506625,
+        "p999": 15.348917,
+        "max": 15.714167
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.3781326718181819,
+        "p50": 1.397375,
+        "p95": 1.449041,
+        "p99": 1.484625,
+        "p999": 1.754667,
+        "max": 2.123334
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.66818712121212,
+        "p50": 16.660167,
+        "p95": 17.002041,
+        "p99": 17.7395,
+        "p999": 18.690291,
+        "max": 18.959334
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 35,
+      "gc_pause_ms": 1.450832,
+      "alloc_bytes_per_second": 30011220.752761222,
+      "measurement": [
+        5,
+        60
+      ]
+    },
+    "after2": {
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 11.71772919,
+        "p50": 11.513583,
+        "p95": 14.198625,
+        "p99": 14.508291,
+        "p999": 15.076458,
+        "max": 15.690875
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.375662658181818,
+        "p50": 1.394542,
+        "p95": 1.447042,
+        "p99": 1.497084,
+        "p999": 1.831916,
+        "max": 2.112917
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.668103914242423,
+        "p50": 16.665459,
+        "p95": 17.101709,
+        "p99": 17.808458,
+        "p999": 18.747334,
+        "max": 19.099083
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 35,
+      "gc_pause_ms": 1.447463,
+      "alloc_bytes_per_second": 30027822.045580372,
+      "measurement": [
+        5,
+        60
+      ]
+    },
+    "before2": {
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 11.809252304848485,
+        "p50": 11.572208,
+        "p95": 14.300125,
+        "p99": 14.604416,
+        "p999": 15.227292,
+        "max": 15.790292
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.493183123030303,
+        "p50": 1.507459,
+        "p95": 1.581041,
+        "p99": 2.025667,
+        "p999": 2.1645,
+        "max": 2.244417
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.668211515151516,
+        "p50": 16.65775,
+        "p95": 17.029,
+        "p99": 17.761334,
+        "p999": 18.902417,
+        "max": 18.938916
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 93,
+      "gc_pause_ms": 3.890209,
+      "alloc_bytes_per_second": 79559557.52628644,
+      "measurement": [
+        5,
+        60
+      ]
+    },
+    "before3": {
+      "draw_fps": 59.81818181818182,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 11.847150802424242,
+        "p50": 11.60975,
+        "p95": 14.356417,
+        "p99": 14.640166,
+        "p999": 15.180209,
+        "max": 15.839166
+      },
+      "draw_ms": {
+        "n": 3290,
+        "mean": 1.4959586531914895,
+        "p50": 1.509458,
+        "p95": 1.588208,
+        "p99": 2.038708,
+        "p999": 2.132292,
+        "max": 2.285375
+      },
+      "draw_gap_ms": {
+        "n": 3290,
+        "mean": 16.71888090182371,
+        "p50": 16.665167,
+        "p95": 17.109333,
+        "p99": 17.913375,
+        "p999": 31.677541,
+        "max": 32.079958
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 93,
+      "gc_pause_ms": 3.850913,
+      "alloc_bytes_per_second": 79335995.90480518,
+      "measurement": [
+        5,
+        60
+      ]
+    },
+    "after3": {
+      "draw_fps": 60.0,
+      "tps": 59.981818181818184,
+      "update_ms": {
+        "n": 3299,
+        "mean": 11.750257121855107,
+        "p50": 11.570333,
+        "p95": 14.199042,
+        "p99": 14.529875,
+        "p999": 15.138667,
+        "max": 15.905833
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.3843821433333334,
+        "p50": 1.402292,
+        "p95": 1.453458,
+        "p99": 1.48775,
+        "p999": 1.710792,
+        "max": 2.114208
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.66835827030303,
+        "p50": 16.665291,
+        "p95": 17.082542,
+        "p99": 17.7255,
+        "p999": 18.766417,
+        "max": 19.462
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 34,
+      "gc_pause_ms": 1.430004,
+      "alloc_bytes_per_second": 30024953.531721726,
+      "measurement": [
+        5,
+        60
+      ]
+    }
+  },
+  "reductions_percent": {
+    "alloc_MB_s": 62.25771581189561,
+    "gc_count": 62.365591397849464,
+    "draw_mean_ms": 7.705046315996045,
+    "draw_p99_ms": 26.774947705180274
+  },
+  "mesh_benchmark": {
+    "original_ns": 2811,
+    "reused_ns": 984.5,
+    "original_bytes": 17760,
+    "reused_bytes": 0,
+    "original_allocs": 4,
+    "reused_allocs": 0
+  },
+  "pixel_png_sha256": "14de3d3475cefe69344b8db4607d785d44e33f998986d2affa4a87660b9d84d3",
+  "logical_cache_max_bytes": 1659596,
+  "native_graphics": "Metal; AC; 1280x804 logical; fullscreen; driving view4x; 48 articulated AI plus articulated player; 864 active cars throughout; default berserk80 km/h; AI30-80 km/h",
+  "game_mode_observed": false,
+  "binary_sha256": "0b231e5ed0a3b2853680302998117131ceaf90b474ab38250033e19eb85e7348",
+  "save_sha256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880"
+}

@@ -1,6 +1,7 @@
 package autopilot
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
@@ -25,7 +26,7 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 						}
 						w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -2000}, P2: sim.Vec2{X: 2000}, Lanes: roadLanes[0]}, {P1: sim.Vec2{Y: -2000}, P2: sim.Vec2{Y: 2000}, Lanes: roadLanes[1]}}}
 						w.RebuildIntersections()
-						w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", f.Mul(-900), h, lanes, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", f.Mul(-800), h+math.Pi, lanes, sim.RGBA(0, 0, 0, 255), lw)}
+						w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", f.Mul(-900), h, lanes, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", f.Mul(-1400), h+math.Pi, lanes, sim.RGBA(0, 0, 0, 255), lw)}
 						g := w.JunctionAt(sim.Vec2{}, lw)
 						half := math.Abs(f.X)*g.HalfX + math.Abs(f.Y)*g.HalfY
 						out := (float64(lanes)/2 - .5) * lw
@@ -34,7 +35,7 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 						ad.BerserkMaxSpeed = 666.6666667
 						ad.drivePath = []sim.Vec2{f.Mul(-900).Add(r.Mul(lw / 2))}
 						ad.drivePath = append(ad.drivePath, sim.UTurnPath(sim.Vec2{}, h, lw/2, out, g)...)
-						ad.drivePath = append(ad.drivePath, f.Mul(-800).Sub(r.Mul(out)))
+						ad.drivePath = append(ad.drivePath, f.Mul(-1400).Sub(r.Mul(out)))
 						ad.cumLen = make([]float64, len(ad.drivePath))
 						for i := 1; i < len(ad.drivePath); i++ {
 							ad.cumLen[i] = ad.cumLen[i-1] + ad.drivePath[i].Distance(ad.drivePath[i-1])
@@ -86,14 +87,46 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 							inter.Phase = phases[j]
 						}
 						paused, exited := false, false
+						acceleratedBeforeExit := false
 						hold := 0
 						idle := 0
 						for step := 0; step < 2400; step++ {
 							if !paused && math.Abs(sim.NormalizeAngle(bus.Heading-h+math.Pi/2)) < .15 && w.InsideJunction(bus.Pos, lw, 0) {
 								paused = true
 								hold = 120
+								// Simulate a process restart during the turn, including its cached path.
+								raw, err := json.Marshal(ad.Snapshot())
+								if err != nil {
+									t.Fatal(err)
+								}
+								var saved DriverSnapshot
+								if err = json.Unmarshal(raw, &saved); err != nil {
+									t.Fatal(err)
+								}
+								restored, err := saved.Restore(w)
+								if err != nil {
+									t.Fatal(err)
+								}
+								ad = restored
 							}
 							th, br, st, hb, d, _ := ad.ComputeControls(bus, route, w, tls, nil, lw, 1.0/60)
+							if hold == 0 && paused && ad.uTurn != nil &&
+								bus.Pos.Dot(f) >= -half-bus.Length/2-80 &&
+								math.Cos(bus.Heading-h) < -.995 && math.Abs(bus.SteeringAngle) <= .06 &&
+								ad.LastTargetSpeed > 70 && th > 0 && br == 0 {
+								if !acceleratedBeforeExit {
+									// Releasing the turn cap must still brake for a queue ahead.
+									blockedDriver, blockedBus := *ad, *bus
+									blockedBus.Speed = 70
+									forward := sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}
+									queue := VehicleObstacle{Pos: bus.Pos.Add(forward.Mul(120)), Heading: bus.Heading, Length: bus.Length, Width: bus.Width}
+									_, blockedBrake, _, _, _, _ := blockedDriver.ComputeControls(&blockedBus, route, w, tls, []VehicleObstacle{queue}, lw, 1.0/60)
+									if blockedDriver.LastTargetSpeed >= 70 || blockedBrake == 0 {
+										t.Fatal("straightened U-turn bus failed to brake for outgoing queue")
+									}
+								}
+								acceleratedBeforeExit = true
+							}
 							if hold > 0 {
 								th = 0
 								br = 1
@@ -122,6 +155,9 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 							if z := w.CheckBoundaries(bus.Pos, bus.Width/2, lw).Zone; z == sim.ZoneHardBarrier {
 								t.Fatalf("barrier: %v h%.2f", bus.Pos, bus.Heading)
 							}
+						}
+						if lanes >= 6 && !acceleratedBeforeExit {
+							t.Fatal("aligned bus kept U-turn crawl speed until beyond the junction")
 						}
 						if !paused || !exited {
 							t.Fatalf("did not resume and exit: paused%v exited%v pos%v heading%.2f target%.1f", paused, exited, bus.Pos, bus.Heading, ad.LastTargetSpeed)

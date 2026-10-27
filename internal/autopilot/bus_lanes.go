@@ -34,7 +34,7 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 		return false
 	}
 	heading := approachRoadHeading(f.bus.Heading)
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	approach := ad.approachingIntersection(f, true, true)
 	if approach.approachingInter != nil && f.world.IsAtRoundabout(approach.approachingInter.Center) {
@@ -59,7 +59,11 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 				}
 				if from != nil && to != nil {
 					ad.PrepareLeg(f.world, from, to, f.laneWidth)
-					ad.trackPath(f.bus.Pos)
+					if !ad.joinMedianLeftApproach(f, heading, inter.Center) {
+						ad.ordinaryBusLeft = false
+						ad.PrepareLeg(f.world, from, to, f.laneWidth)
+					}
+					f.s, _ = ad.trackPath(f.bus.Pos)
 				} else {
 					ad.ordinaryBusLeft = false
 				}
@@ -69,11 +73,43 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 		ad.busLaneJunction = &c
 
 		desired := 0.0
-		if isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
+		actual := f.bus.Pos.Sub(ad.pointAt(f.s)).Dot(right)
+		// A mandatory path taper needs the same explicit rear-slot request as
+		// other required merges. Otherwise a waiting follower brakes for the
+		// leader but never grants the slot the leader is waiting to receive.
+		if math.Abs(actual) > 4 {
+			request := f.bus.LaneMergeRequest
+			if request == nil {
+				request = &sim.BusLaneMergeRequest{}
+			}
+			*request = sim.BusLaneMergeRequest{Target: ad.pointAt(f.s), Heading: heading, Remaining: .3, LeftTurn: approach.isUpcomingLeft, RightTurn: approach.isUpcomingRight, Junction: inter.Center}
+			f.bus.LaneMergeRequest = request
+		}
+		// Recentring inside the lane is not a lane change. A following
+		// vehicle must not reserve our own lane and deadlock its leader.
+		withinLane := math.Abs(actual-desired)+f.bus.Length/2*math.Abs(math.Sin(f.bus.Heading-heading))+f.bus.Width/2*math.Abs(math.Cos(f.bus.Heading-heading)) <= f.laneWidth/2-.25
+		if withinLane || requiredMergeLaneClear(f, heading, actual, desired) {
 			ad.TargetLaneOffset = desired
-		} else if math.Abs(ad.LaneOffset) > 1 {
-			ad.TargetLaneOffset = ad.LaneOffset
-			ad.LaneOffsetProgress = 1
+		} else if math.Abs(actual) > 1 || math.Abs(ad.LaneOffset) > 1 {
+			if ad.ordinaryBusLeft && ad.recoverBlockedMedianChoice(f, heading, center, ew, dt) {
+				return true
+			}
+			if !ad.ordinaryBusLeft && actual > -1.1*f.laneWidth && actual <= -.55*f.laneWidth && f.speedAbs < 5 && math.Abs(sim.NormalizeAngle(f.bus.Heading-heading)) < .22 {
+				// A whole-lane return needs a real merge reservation. Otherwise
+				// a following bus can close the rear slot while waiting for us.
+				ad.approachMerge = &sim.BusLaneMergeRequest{Target: ad.pointAt(f.s), Heading: heading, Remaining: .3, LeftTurn: true, Junction: inter.Center}
+				ad.approachMergeJoined = false
+				return ad.advanceApproachMerge(f, dt)
+			}
+			if !ad.ordinaryBusLeft && math.Abs(actual) < .55*f.laneWidth && f.speedAbs < 5 && math.Abs(sim.NormalizeAngle(f.bus.Heading-heading)) < .22 {
+				// A close follower need not provide a full passing gap for a
+				// fractional recenter. Crawl only when actuator/body prediction
+				// clears the white car beside the rear and the following bus.
+				ad.midLaneRecovery = &sim.BusLaneMergeRequest{Target: ad.pointAt(f.s), Heading: heading, Remaining: .3}
+				ad.advanceMidLaneRecovery(f, dt)
+				return true
+			}
+			ad.holdLaneOffset(actual)
 			ad.busTurnHoldDistance = math.Max(.01, approach.distToStopLine-f.bus.Length/2-25)
 		}
 		ad.progressLaneOffset(dt, f.speedAbs)
@@ -115,8 +151,8 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	if math.Abs(base-3.5*f.laneWidth) > f.laneWidth*.2 {
 		desired = 0
 	}
-	currentLane := int(math.Round((base+ad.LaneOffset)/f.laneWidth - .5))
-	if desiredLane != currentLane && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
+	// A frozen fractional offset is not a completed lane return.
+	if math.Abs(desired-ad.TargetLaneOffset) > 1 && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
 		ad.TargetLaneOffset = desired
 		ad.OvertakeState = OvertakeChangingLane
 	}

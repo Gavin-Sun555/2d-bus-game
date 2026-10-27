@@ -74,7 +74,7 @@ func ExitQueueBlocksEntry(bodies []OBB, center Vec2, g JunctionGeometry, length,
 	if math.Cos(other.Heading-exit.Heading) < .9 {
 		return false
 	}
-	u := Vec2{X: math.Cos(exit.Heading), Y: math.Sin(exit.Heading)}
+	u := UnitFromAngle(exit.Heading)
 	right := Vec2{X: -u.Y, Y: u.X}
 	half := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY
 	along := other.Center.Sub(center).Dot(u)
@@ -194,6 +194,6 @@ func PredictJunctionBody(c *JunctionCorridor, distance float64) (OBB, bool) {
 		remaining -= length
 	}
 	last := c.Bodies[len(c.Bodies)-1]
-	last.Center = last.Center.Add(Vec2{X: math.Cos(last.Heading), Y: math.Sin(last.Heading)}.Mul(remaining))
+	last.Center = last.Center.Add(UnitFromAngle(last.Heading).Mul(remaining))
 	return last, true
 }

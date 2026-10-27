@@ -3,7 +3,7 @@ package sim
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 )
 
 // CheckPlayerViolation checks if player's bus is running a red light.
@@ -16,8 +16,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 	}
 
 	halfLen := bus.Length * 0.5
-	cosH := math.Cos(bus.Heading)
-	sinH := math.Sin(bus.Heading)
+	sinH, cosH := math.Sincos(bus.Heading)
 
 	frontPos := Vec2{
 		X: bus.Pos.X + cosH*halfLen,
@@ -69,7 +68,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 
 		stopLineDist := inter.GetStopLineDistForHeading(refHeading, lw)
 
-		uFwd := Vec2{X: math.Cos(refHeading), Y: math.Sin(refHeading)}
+		uFwd := UnitFromAngle(refHeading)
 		vRight := Vec2{X: -math.Sin(refHeading), Y: math.Cos(refHeading)}
 
 		// Projected position along forward entry axis (origin = intersection center)
@@ -81,7 +80,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 
 		// Motion vector towards intersection center:
 		toCenter := inter.Center.Sub(bus.Pos)
-		fwdDir := Vec2{X: math.Cos(effHeading), Y: math.Sin(effHeading)}
+		fwdDir := UnitFromAngle(effHeading)
 		movingTowardsCenter := toCenter.X*fwdDir.X + toCenter.Y*fwdDir.Y
 
 		// Lateral offset from approach road corridor centerline (checked only before entry)
@@ -397,14 +396,14 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 		wantRight = false
 	}
 
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 
 	type candidate struct {
 		inter      *TrafficIntersection
 		distToLine float64
 	}
-	var candidates []candidate
+	var candidateStorage [8]candidate
+	candidates := candidateStorage[:0]
 	for _, inter := range tls.Intersections {
 		stopLineDist := inter.GetStopLineDistForHeading(heading, laneWidth)
 		toInter := inter.Center.Sub(pos)
@@ -422,7 +421,15 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 			candidates = append(candidates, candidate{inter, distToLine})
 		}
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].distToLine < candidates[j].distToLine })
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if a.distToLine < b.distToLine {
+			return -1
+		}
+		if a.distToLine > b.distToLine {
+			return 1
+		}
+		return 0
+	})
 
 	for i, c := range candidates {
 		inter, distToLine := c.inter, c.distToLine
@@ -481,8 +488,7 @@ func (tls *TrafficLightSystem) ShouldVehicleStop(pos Vec2, heading float64, look
 
 // GetApproachingSignalInfo returns signal info for a vehicle approaching an intersection within lookAhead
 func (tls *TrafficLightSystem) GetApproachingSignalInfo(pos Vec2, heading float64, laneWidth float64) (hasInter bool, thruSig LightSignal, leftSig LightSignal, isMajor bool, remainingSec float64, distToLine float64) {
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 
 	for _, inter := range tls.Intersections {
 		stopLineDist := inter.GetStopLineDistForHeading(heading, laneWidth)

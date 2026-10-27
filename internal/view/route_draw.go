@@ -161,8 +161,7 @@ func DrawNavArrow(r *sim.Route, screen *ebiten.Image, cam *sim.Camera, bus *sim.
 		Y: math.Sin(screenAngle) * navRadius,
 	})
 
-	cosA := math.Cos(screenAngle)
-	sinA := math.Sin(screenAngle)
+	sinA, cosA := math.Sincos(screenAngle)
 	perpX := -sinA
 	perpY := cosA
 

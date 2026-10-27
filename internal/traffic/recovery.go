@@ -157,6 +157,10 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 	if len(signals) > 0 {
 		tls = signals[0]
 	}
+	tm.resolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls, false)
+}
+
+func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount int, laneWidth float64, w *sim.World, tls *sim.TrafficLightSystem, indexReady bool) {
 	if tm == nil || len(tm.Cars) == 0 {
 		return
 	}
@@ -164,6 +168,7 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 		activeCount = len(tm.Cars)
 	}
 
+	indexed := tm.prepareRecoveryQueries(activeCount, w, tls, indexReady)
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
 
@@ -179,7 +184,9 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 
 		// Detect if car is near an intersection (within 130px of intersection center)
 		isNearIntersection := false
-		if w != nil {
+		if indexed {
+			isNearIntersection = tm.recoveryQueries.nearIntersection(car.Pos)
+		} else if w != nil {
 			for _, inter := range w.Intersections {
 				if car.Pos.Distance(inter) < 130.0 {
 					isNearIntersection = true
@@ -195,13 +202,14 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 			distToBus := car.Pos.Distance(bus.Pos)
 			if distToBus < 180.0 {
 				toBus := bus.Pos.Sub(car.Pos)
-				cosH := math.Cos(car.Heading)
-				sinH := math.Sin(car.Heading)
+				sinH, cosH := math.Sincos(car.Heading)
 				fwdBus := toBus.X*cosH + toBus.Y*sinH
 				latBus := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
 				headDiff := math.Cos(car.Heading - bus.Heading)
-				// If car is queued behind player bus heading in the same direction on open road:
-				if !isNearIntersection && headDiff > 0.5 && fwdBus > 10.0 && latBus < laneWidth*1.5 {
+				// Protect aligned queues on open roads. A diagonal merging bus can
+				// be mutually blocked with this car; exempting a 60-degree cone
+				// resets its timer forever (also after loading a saved jam).
+				if !isNearIntersection && headDiff > 0.98 && fwdBus > 10.0 && latBus < laneWidth*1.5 {
 					car.DeadlockTimer = 0
 					continue
 				}
@@ -215,7 +223,16 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 
 		// 3. Check against other civilian AI cars
 		if !isJammed {
-			for j := 0; j < activeCount; j++ {
+			ids, local := tm.recoveryCandidates(car, indexed)
+			count := activeCount
+			if local {
+				count = len(ids)
+			}
+			for candidate := 0; candidate < count; candidate++ {
+				j := candidate
+				if local {
+					j = ids[candidate]
+				}
 				if j == i {
 					continue
 				}
@@ -227,8 +244,7 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				maxJamDist := (car.Length+other.Length)*0.5 + 35.0
 				if dist < maxJamDist {
 					toOther := other.Pos.Sub(car.Pos)
-					cosH := math.Cos(car.Heading)
-					sinH := math.Sin(car.Heading)
+					sinH, cosH := math.Sincos(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
 					if fwd > -15.0 || dist < (car.Length+other.Length)*0.5+10.0 {
 						isJammed = true
@@ -248,12 +264,13 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				maxJamDist := (car.Length+ab.Bus.Length)*0.5 + 40.0
 				if dist < maxJamDist {
 					toOther := ab.Bus.Pos.Sub(car.Pos)
-					cosH := math.Cos(car.Heading)
-					sinH := math.Sin(car.Heading)
+					sinH, cosH := math.Sincos(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
 					lat := math.Abs(-toOther.X*sinH + toOther.Y*cosH)
 					headDiff := math.Cos(car.Heading - ab.Bus.Heading)
-					if !isNearIntersection && headDiff > 0.5 && fwd > 10.0 && lat < laneWidth*1.5 {
+					// Match the player-bus queue rule: crossing a lane is not
+					// an aligned queue behind a stopped bus.
+					if !isNearIntersection && headDiff > 0.98 && fwd > 10.0 && lat < laneWidth*1.5 {
 						continue
 					}
 					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
@@ -265,7 +282,13 @@ func (tm *TrafficManager) ResolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 		}
 
 		car.DeadlockTimer = car.DeadlockTracker.Update(car.DeadlockTimer, dt, car.Pos, car.Speed, isJammed)
-		if car.DeadlockTimer >= tls.DeadlockTimeoutAt(car.Pos) {
+		timeout := 0.0
+		if indexed {
+			timeout = tm.recoveryQueries.timeoutAt(i, car.Pos)
+		} else {
+			timeout = tls.DeadlockTimeoutAt(car.Pos)
+		}
+		if car.DeadlockTimer >= timeout {
 			tm.DespawnCar(i)
 			break
 		}

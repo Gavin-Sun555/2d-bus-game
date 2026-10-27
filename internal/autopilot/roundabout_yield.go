@@ -12,6 +12,21 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 	if f.world == nil || len(f.obstacles) == 0 {
 		return math.Inf(1)
 	}
+	// No borrowed observation survives this synchronous scan.
+	defer func() {
+		if ad == nil {
+			return
+		}
+		if scratch := ad.temporaryGeometry; scratch != nil {
+			scratch.ringIndices = scratch.ringIndices[:0]
+			if cap(scratch.ringIndices) > maxTemporaryObstacles {
+				scratch.ringIndices = nil
+			}
+			if cap(scratch.ringBodies) > maxTemporaryObstacles {
+				scratch.ringBodies = nil
+			}
+		}
+	}()
 	limit := math.Inf(1)
 	for i := range f.world.Roundabouts {
 		rb := &f.world.Roundabouts[i]
@@ -28,20 +43,35 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 		// Hold with the whole body outside circulating traffic. Once committed,
 		// continue through the gap instead of stopping in front of a following car.
 		yieldDistance := -rb.Radius - f.bus.Length/2 - 16 - f.bus.Pos.Sub(rb.Center).Dot(forward)
-		traffic := make([]sim.OBB, 0, len(f.obstacles))
-		entryFrame := f
-		entryFrame.obstacles = make([]VehicleObstacle, 0, len(f.obstacles))
+		scratch := ad.geometryScratch()
+		traffic := scratch.ringBodies[:0]
+		if cap(traffic) < len(f.obstacles) {
+			traffic = make([]sim.OBB, 0, len(f.obstacles))
+		}
+		selected := scratch.ringIndices[:0]
+		if cap(selected) < len(f.obstacles) {
+			selected = make([]int, 0, len(f.obstacles))
+		}
 		parallel := ad.parallelRoundaboutJoin(f, rb)
-		for _, obstacle := range f.obstacles {
+		var separation sim.RoundaboutEntrySeparation
+		if parallel {
+			var geometry *sim.RoundaboutEntryGeometry
+			if !ad.disableRoundaboutEntryGeometry {
+				geometry = &ad.roundaboutEntryGeometry
+			}
+			separation = sim.PrepareRoundaboutEntrySeparation(*rb, forward, f.laneWidth, sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length / 2, HalfWid: f.bus.Width / 2}, true, geometry)
+		}
+		for obstacleIndex, obstacle := range f.obstacles {
 			// Keep local body clearance while an adjacent car clears the mouth,
 			// including the first frames after it starts moving.
-			if parallel && separateRoundaboutEntry(f, rb, forward, obstacle) {
+			if parallel && separation.Clears(sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}, false) {
 				continue
 			}
 			traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
-			entryFrame.obstacles = append(entryFrame.obstacles, obstacle)
+			selected = append(selected, obstacleIndex)
 		}
-		if yieldDistance >= -2 && entryHasMovingConflict(entryFrame, rb, points, forward, s) {
+		scratch.ringBodies, scratch.ringIndices = traffic, selected
+		if yieldDistance >= -2 && entryHasMovingConflict(f, rb, points, forward, s, selected) {
 			limit = math.Min(limit, math.Sqrt(2*135*math.Max(0, yieldDistance-20)))
 		}
 
@@ -80,7 +110,7 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 
 // Compare arrival times at the merge, rather than treating the entire future
 // arc as permanently occupied. This lets the bus use the gap after a car passes.
-func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.Vec2, forward sim.Vec2, s float64) bool {
+func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.Vec2, forward sim.Vec2, s float64, selection ...[]int) bool {
 	total := 0.0
 	for i := 1; i < len(points); i++ {
 		total += points[i].Distance(points[i-1])
@@ -90,7 +120,16 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 		tangent := entryPointAt(points, forward, s+distance+2).Sub(position)
 		body := sim.OBB{Center: position, Heading: math.Atan2(tangent.Y, tangent.X), HalfLen: f.bus.Length/2 + 12, HalfWid: f.bus.Width/2 + 10}
 		arrival := roundaboutEntryArrival(distance, f.speedAbs)
-		for _, obstacle := range f.obstacles {
+		count := len(f.obstacles)
+		if len(selection) > 0 {
+			count = len(selection[0])
+		}
+		for i := 0; i < count; i++ {
+			index := i
+			if len(selection) > 0 {
+				index = selection[0][i]
+			}
+			obstacle := f.obstacles[index]
 			// Only circulating traffic has priority here. A following vehicle
 			// on the approach must not make the bus stop at the yield line.
 			obstacleBody := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}

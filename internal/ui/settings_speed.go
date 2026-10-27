@@ -10,13 +10,10 @@ import (
 )
 
 func (s *Settings) drawAISpeedRanges(screen *ebiten.Image, x, y float64) {
-	values := []int{s.AICarMinSpeed, s.AICarMaxSpeed, s.AIBusMinSpeed, s.AIBusMaxSpeed}
-	for row := 0; row < 2; row++ {
+	values := []int{s.AICarMinSpeed, s.AICarMaxSpeed}
+	for row := 0; row < 1; row++ {
 		ry := y + float64(row)*48
 		title := locale.T("AI 小车限速 (km/h)", "AI car limits (km/h)")
-		if row == 1 {
-			title = locale.T("AI 公交限速 (km/h)", "AI bus limits (km/h)")
-		}
 		textui.DrawText(screen, title, x+26, ry+8, 13, sim.RGBA(226, 232, 240, 255))
 		for column := 0; column < 2; column++ {
 			field := row*2 + column

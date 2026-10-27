@@ -40,8 +40,15 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 		}
 	}
 
+	if hold := f.bus.RoundaboutAdmissionHold; hold != nil {
+		gap := hold.Center.Sub(f.bus.Pos).Dot(hold.Forward) - hold.StopDistance
+		targetSpd = math.Min(targetSpd, math.Sqrt(2*180*math.Max(0, gap)))
+	}
 	// A. Anticipate corners / roundabout arcs ahead, and slow while circulating
 	targetSpd = math.Min(targetSpd, ad.cornerSpeedLimit(f.s, f.speedAbs))
+	if ad.dockDepartureRun > f.s {
+		targetSpd = math.Min(targetSpd, ad.dockDepartureSpeed(f))
+	}
 	if f.nearRoundabout {
 		rbSpeed := apRoundaboutSpeed
 		if ad.BerserkMode {
@@ -50,7 +57,7 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 		targetSpd = math.Min(targetSpd, rbSpeed)
 	}
 
-	if ad.uTurn != nil && ad.uTurn.entered {
+	if ad.uTurn.needsTurnSpeed(f.bus) {
 		targetSpd = math.Min(targetSpd, 70)
 	}
 	targetSpd = ad.recoverySpeed(f, targetSpd, isApproachingSharpTurn)
@@ -72,6 +79,30 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 		}
 		targetSpd = math.Min(targetSpd, mergeSpeed)
 		targetSpd = math.Min(targetSpd, ad.requiredMergeTrafficSpeed(f))
+	}
+
+	// Returning to the reserved turn lane is a controlled queue merge, not a
+	// high-speed passing maneuver. Retain front headway even when the gap fits.
+	if ad.busLaneJunction != nil && !ad.busJunctionEntered {
+		heading := approachRoadHeading(f.bus.Heading)
+		right := sim.Vec2{X: -math.Sin(heading), Y: math.Cos(heading)}
+		target := ad.pointAt(f.s)
+		if math.Abs(target.Sub(f.bus.Pos).Dot(right)) > 4 {
+			targetSpd = math.Min(targetSpd, 80)
+		}
+		request := &sim.BusLaneMergeRequest{Target: target, Heading: heading, LeftTurn: true}
+		for _, ob := range f.obstacles {
+			// The route taper can already be sweeping safely away from the
+			// curb queue while the yawed body still shares its road-axis band.
+			// Use the same complete-body check as ordinary obstacle following;
+			// otherwise the separate queue-merge cap freezes this clear escape.
+			if ad.ordinaryBusLeft && ad.clearsThroughQueueDuringMerge(f, ob) {
+				continue
+			}
+			one := f
+			one.obstacles = []VehicleObstacle{ob}
+			targetSpd = math.Min(targetSpd, mergeTrafficSpeed(one, request))
+		}
 	}
 
 	// Fail-safe: A vehicle borrowing or occupying the opposing lane on a 2-lane road
@@ -121,16 +152,20 @@ func (ad *AutopilotDriver) longitudinalControls(speed, targetSpd float64) (throt
 			brake = sim.Clamp(speedAbs/50.0, 0.5, 1.0)
 		}
 	case speed < targetSpd-2.5:
-		if ad.BerserkMode {
-			throttle = sim.Clamp((targetSpd-speed)/22.0, 0.45, 1.0)
+		if ad.BerserkMode && ad.approachMerge == nil && ad.midLaneRecovery == nil {
+			throttle = sim.Clamp((targetSpd-speed)/18.0, 0.5, 1.0)
+		} else if ad.BerserkMode {
+			throttle = sim.Clamp((targetSpd-speed)/22.0, .45, 1)
 		} else {
 			throttle = sim.Clamp((targetSpd-speed)/35.0, 0.3, 1.0)
 		}
 		brake = 0.0
 	case speed > targetSpd+3.5:
 		throttle = 0.0
-		if ad.BerserkMode {
-			brake = sim.Clamp((speed-targetSpd)/25.0, 0.2, 1.0)
+		if ad.BerserkMode && ad.approachMerge == nil && ad.midLaneRecovery == nil {
+			brake = sim.Clamp((speed-targetSpd)/20.0, 0.25, 1.0)
+		} else if ad.BerserkMode {
+			brake = sim.Clamp((speed-targetSpd)/25.0, .2, 1)
 		} else {
 			brake = sim.Clamp((speed-targetSpd)/40.0, 0.08, 1.0)
 		}

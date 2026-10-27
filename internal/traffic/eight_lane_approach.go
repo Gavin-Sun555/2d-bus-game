@@ -16,7 +16,7 @@ func (tm *TrafficManager) prepareEightLaneApproach(f carFrame) {
 	if !ok || road.LaneCount() != 8 {
 		return
 	}
-	forward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	forward := sim.UnitFromAngle(car.Heading)
 	wantRight := false
 	mergeRoom := 0.0
 	mergeLength := carLaneChangeLength(car, f.laneWidth)
@@ -77,10 +77,7 @@ func (tm *TrafficManager) laneMergeClear(f carFrame, forward sim.Vec2, direction
 		along := delta.Dot(forward)
 		return math.Abs(delta.Dot(right)) > (width+f.car.Width)/2+4 || along > (length+f.car.Length)/2+math.Max(35, f.car.Speed*.8) || along < -(length+f.car.Length)/2-math.Max(40, speed*1.2)
 	}
-	active := tm.Cars
-	if f.activeCount > 0 && f.activeCount < len(active) {
-		active = active[:f.activeCount]
-	}
+	active := tm.carsForFrame(f)
 	var ours []sim.OBB
 	for _, other := range active {
 		if other != f.car && !clear(other.Pos, other.Length, other.Width, other.Speed) {

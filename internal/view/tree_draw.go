@@ -27,7 +27,7 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 		worldCircle(screen, cam, t.Pos, 3, rgb(144, 103, 65))
 		for i := 0; i < 7; i++ {
 			angle := float64(i)*2*math.Pi/7 + t.Pos.X*0.01
-			f := sim.Vec2{X: math.Cos(angle), Y: math.Sin(angle)}
+			f := sim.UnitFromAngle(angle)
 			side := sim.Vec2{X: -f.Y, Y: f.X}
 			tip := t.Pos.Add(f.Mul(radius * 1.65))
 			middle := t.Pos.Add(f.Mul(radius * .62))

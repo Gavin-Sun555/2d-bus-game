@@ -97,6 +97,9 @@ func (g *Game) updateDriverHUD() bool {
 		} else if toggled, notice := g.HUD.HandleCameraBtnClick(mouseScreen, g.Camera); toggled {
 			g.Settings.CameraViewMode = g.Camera.Mode
 			g.HUD.AddToast(notice, true)
+		} else if g.HUD.SettingsBtnBounds.Contains(mouseScreen) {
+			g.Settings.IsOpen = true
+			return true
 		} else if shifted, notice := g.HUD.HandleGearClick(mouseScreen, g.Bus); shifted {
 			g.HUD.AddToast(notice, false)
 		} else if toggled, notice := g.HUD.HandleAutopilotClick(mouseScreen, g.Settings); toggled {

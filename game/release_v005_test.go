@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -30,16 +31,20 @@ func TestRelease005TrafficSoak(t *testing.T) {
 				distance := 0.0
 				maxCars := 0
 				for tick := 0; tick < 7200; tick++ {
+					if tick == 1200 && theme == sim.MapThemeCustom && !berserk && os.Getenv("BUSGAME_RELEASE007_CAPTURE") != "" {
+						oldPath := g.savePathOverride
+						g.savePathOverride = filepath.Join(os.Getenv("BUSGAME_RELEASE007_CAPTURE"), "custom-normal-before-contact.json")
+						if err := g.SaveGame(); err != nil {
+							t.Fatal(err)
+						}
+						g.savePathOverride = oldPath
+					}
 					previous := g.Bus.Pos
 					health := g.Bus.Durability
 					if err := g.Update(); err != nil {
 						t.Fatal(err)
 					}
 					if g.Bus.Durability < health {
-						if berserk && (theme == sim.MapThemeRiverValley || theme == sim.MapThemeEmeraldLake || theme == sim.MapThemeTwinCities) {
-							t.Fatalf("release safety regression at %.2fs: durability %.0f -> %.0f, pos=%v", float64(tick)/60, health, g.Bus.Durability, g.Bus.Pos)
-						}
-
 						nearest := math.Inf(1)
 						var near *sim.TrafficCar
 						for _, car := range g.TrafficMgr.GetActiveCars(4) {
@@ -54,12 +59,13 @@ func TestRelease005TrafficSoak(t *testing.T) {
 						if near != nil {
 							t.Logf("contact t=%.2f bus=%v heading=%.2f speed=%.1f lane=%.1f state=%v nearest car=%d pos=%v heading=%.2f speed=%.1f ring=%t health=%.0f", float64(tick)/60, g.Bus.Pos, g.Bus.Heading, g.Bus.Speed, g.AutopilotDriver.LaneOffset, g.AutopilotDriver.State, near.ID, near.Pos, near.Heading, near.Speed, near.InRoundabout, g.Bus.Durability)
 						}
+						t.Fatalf("release safety regression at %.2fs: durability %.0f -> %.0f, pos=%v", float64(tick)/60, health, g.Bus.Durability, g.Bus.Pos)
 					}
 
 					distance += g.Bus.Pos.Distance(previous)
 					cars := g.TrafficMgr.GetActiveCars(4)
 					maxCars = max(maxCars, len(cars))
-					if len(cars) > 288 {
+					if len(cars) > sim.MaxTrafficCars {
 						t.Fatalf("Population overflow: %d", len(cars))
 					}
 					for _, car := range cars {
@@ -83,7 +89,10 @@ func TestRelease005TrafficSoak(t *testing.T) {
 				if berserk && theme == sim.MapThemeRiverValley && distance < 6000 {
 					t.Fatalf("river valley progress regression: %.0fpx", distance)
 				}
-				if distance < 100 || maxCars != 288 {
+				if berserk && theme == sim.MapThemeCustom && distance < 3000 {
+					t.Fatalf("custom skipped-bay progress regression: %.0fpx", distance)
+				}
+				if distance < 100 || maxCars != sim.MaxTrafficCars {
 					t.Fatalf("Scene inactive: player distance=%.1f maxCars=%d start=%v", distance, maxCars, start)
 				}
 				t.Logf("120 simulated seconds; traveled %.0fpx; cars %d -> %d; fleet %d; durability %.0f%%", distance, maxCars, len(g.TrafficMgr.GetActiveCars(4)), len(g.AIBusMgr.Buses), g.Bus.Durability)

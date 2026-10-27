@@ -63,3 +63,32 @@ func TestFareControlsAndOperationsPanelLayout(t *testing.T) {
 		}
 	}
 }
+
+// A long station list must not determine scrolling on the vehicle statistics tab.
+func TestVehiclesTabUsesVehicleRows(t *testing.T) {
+	w := sim.NewWorld(52)
+	r := sim.NewRoute()
+	for i := 0; i < 30; i++ {
+		r.AddStop(i)
+	}
+	o := sim.NewTransitOperations(w, r, 52, sim.DefaultFarePolicy())
+	o.Vehicle(0)
+	p := NewOperationsPanel()
+	p.IsOpen = true
+	p.Tab, p.Scroll = 1, 999
+	screen := ebiten.NewImage(1280, 720)
+	p.Draw(screen, sim.DefaultFarePolicy(), o, w)
+	if p.Scroll == 0 {
+		t.Fatal("station tab should have multiple pages")
+	}
+	p.Tab, p.Scroll = 2, 999
+	p.Draw(screen, sim.DefaultFarePolicy(), o, w)
+	if p.Scroll != 0 {
+		t.Fatal("vehicle tab rendered station rows")
+	}
+	for _, tab := range p.tabBounds {
+		if tab.Contains(sim.Vec2{X: p.vehicleBounds.X, Y: p.vehicleBounds.Y}) {
+			t.Fatal("vehicle selector overlaps tabs")
+		}
+	}
+}

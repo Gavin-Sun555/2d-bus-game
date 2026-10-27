@@ -82,7 +82,7 @@ func (ad *AutopilotDriver) roundaboutEntryCurve(f autopilotFrame, rb *sim.Rounda
 		}
 		base := ad.drivePath[entry]
 		theta := math.Atan2(base.Y-rb.Center.Y, base.X-rb.Center.X) - apRoundaboutEntrySweep
-		join := rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(radius))
+		join := rb.Center.Add(sim.UnitFromAngle(theta).Mul(radius))
 		tangent := sim.Vec2{X: math.Sin(theta), Y: -math.Cos(theta)}
 		start := base.Sub(forward.Mul(50)).Add(right.Mul(ad.LaneOffset))
 		curve = sim.RoundaboutJoin{Reference: [4]sim.Vec2{start, start.Add(forward.Mul(100)), join.Sub(tangent.Mul(60)), join}}
@@ -97,7 +97,7 @@ func (ad *AutopilotDriver) roundaboutEntryCurve(f autopilotFrame, rb *sim.Rounda
 	// Continue counter-clockwise beyond the tangent join for pursuit lookahead.
 	for i := 1; i <= 8; i++ {
 		theta := angle - float64(i)*0.05
-		points = append(points, rb.Center.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(radius)))
+		points = append(points, rb.Center.Add(sim.UnitFromAngle(theta).Mul(radius)))
 	}
 	return points, forward, true
 }

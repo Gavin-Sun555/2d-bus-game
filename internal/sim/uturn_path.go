@@ -6,7 +6,7 @@ import "math"
 // lanes with a perpendicular line. On narrow roads the bus uses the junction's
 // turning apron, then eases into the outgoing lane before leaving the box.
 func UTurnPath(center Vec2, heading, inOffset, outOffset float64, geometry JunctionGeometry) []Vec2 {
-	forward := Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := UnitFromAngle(heading)
 	right := Vec2{X: -forward.Y, Y: forward.X}
 	radius := math.Max(90, (inOffset+outOffset)/2)
 	shift := 2*radius - inOffset - outOffset

@@ -95,12 +95,12 @@ func TestAIMissedStopOvershootPenalizesAndSkips(t *testing.T) {
 	g.Cash = 100
 	g.Settings.TrafficFinesEnabled = true
 
-	// Position bus past the stop along targetStop.Heading by 75px, out in the road travel lane
+	// Position bus 75px past the forward berth, out in the road travel lane
 	cosH := math.Cos(targetStop.Heading)
 	sinH := math.Sin(targetStop.Heading)
 	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-	g.Bus.Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
+	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
 	g.Bus.Heading = targetStop.Heading
 	g.Bus.Speed = 20.0
 
@@ -237,7 +237,7 @@ func TestAIMissedStopOppositeRoadNoFalseOvershoot(t *testing.T) {
 	g.Bus.Heading = targetStop.Heading
 	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-	g.Bus.Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
+	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
 	g.skipCooldown = 0.0
 
 	_ = g.Update()
@@ -284,7 +284,7 @@ func TestAIMissedStopCirclingNearStopBreaksOutAndAdvances(t *testing.T) {
 	sinH := math.Sin(targetStop.Heading)
 	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-	g.Bus.Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 25.0, Y: sinH * 25.0}).Add(toRoadDir.Mul(30.0))
+	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 25.0, Y: sinH * 25.0}).Add(toRoadDir.Mul(30.0))
 
 	// The bus is angled sideways/backwards towards the bay (simulating the start of a circling donut or spinout)
 	g.Bus.Heading = sim.NormalizeAngle(targetStop.Heading + math.Pi*0.6) // cosHeading < 0
@@ -342,7 +342,7 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			sinH := math.Sin(targetStop.Heading)
 			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-			g.Bus.Pos = targetStop.Pos.Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Pos = targetStop.FrontBerthPosition().Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
 			g.Bus.Heading = targetStop.Heading
 			g.Bus.Speed = 60.0
 
@@ -390,7 +390,7 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
 			// Position in the passing lane (e.g. 50px towards road) 300px before the stop
-			g.Bus.Pos = targetStop.Pos.Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(50.0))
+			g.Bus.Pos = targetStop.FrontBerthPosition().Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(50.0))
 			g.Bus.Heading = targetStop.Heading
 			g.Bus.Speed = 60.0
 
@@ -431,7 +431,7 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			sinH := math.Sin(targetStop.Heading)
 			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-			g.Bus.Pos = targetStop.Pos.Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Pos = targetStop.FrontBerthPosition().Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
 			g.Bus.Heading = targetStop.Heading
 			g.Bus.Speed = 60.0
 
@@ -461,7 +461,7 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			sinH := math.Sin(targetStop.Heading)
 			toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 			toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
-			g.Bus.Pos = targetStop.Pos.Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
+			g.Bus.Pos = targetStop.FrontBerthPosition().Sub(sim.Vec2{X: cosH * 300.0, Y: sinH * 300.0}).Add(toRoadDir.Mul(20.0))
 			g.Bus.Heading = targetStop.Heading
 			g.Bus.Speed = 60.0
 
@@ -550,7 +550,7 @@ func TestAIMissedStopStoppedOutsideBayResumesDriving(t *testing.T) {
 }
 
 // TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast verifies that when an AI bus in outer/passing lane
-// has its front bumper past the station shelter (e.g. forwardProj = 15.0px) and comes to a crawl/stop
+// has its reference point past the forward berth (e.g. forwardProj = 30px) and comes to a crawl/stop
 // while unable to dock into the curb bay, it directly triggers fly-past, advances to next stop, and resumes driving.
 func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
 	g := NewGame(1280, 720)
@@ -576,8 +576,8 @@ func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
 	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
 
-	// Bus is in outer/passing lane (latDist > 65px, forwardProj = 15.0px, frontProj = 63.0px past shelter)
-	g.Bus.Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 15.0, Y: sinH * 15.0}).Add(toRoadDir.Mul(laneW * 2.0))
+	// Bus is in outer/passing lane, 30px beyond the forward berth marker.
+	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 30.0, Y: sinH * 30.0}).Add(toRoadDir.Mul(laneW * 2.0))
 	g.Bus.Heading = targetStop.Heading
 	g.Bus.Speed = 0.0
 	g.Bus.IsBraking = true

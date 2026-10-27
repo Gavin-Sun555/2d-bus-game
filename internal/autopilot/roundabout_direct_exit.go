@@ -12,7 +12,7 @@ func (ad *AutopilotDriver) tryDirectRoundaboutExit(bus *sim.Bus, rb *sim.Roundab
 	start := bus.Pos
 	end := ad.drivePath[index+1]
 	outgoing := end.Sub(ad.drivePath[index]).Normalize()
-	heading := sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}
+	heading := sim.UnitFromAngle(bus.Heading)
 	if end.Sub(start).Dot(heading) < 20 {
 		return false
 	}
@@ -66,7 +66,7 @@ func (ad *AutopilotDriver) tryDirectRoundaboutExit(bus *sim.Bus, rb *sim.Roundab
 }
 
 func (ad *AutopilotDriver) roundaboutExitBodyOnRoad(body sim.OBB, rb *sim.Roundabout, lw float64) bool {
-	forward := sim.Vec2{X: math.Cos(body.Heading), Y: math.Sin(body.Heading)}
+	forward := sim.UnitFromAngle(body.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	delta := rb.Center.Sub(body.Center)
 	nearest := body.Center.Add(forward.Mul(sim.Clamp(delta.Dot(forward), -body.HalfLen, body.HalfLen))).Add(right.Mul(sim.Clamp(delta.Dot(right), -body.HalfWid, body.HalfWid)))
@@ -89,7 +89,7 @@ func (ad *AutopilotDriver) roundaboutExitBodyOnRoad(body sim.OBB, rb *sim.Rounda
 // A candidate is accepted only when its full swept body stays on the road,
 // clears traffic and fits the bus steering range.
 func (ad *AutopilotDriver) roundaboutExitCurve(bus *sim.Bus, rb *sim.Roundabout, obstacles []VehicleObstacle, lw float64, start, end, outgoing sim.Vec2, firstHandle, lastHandle float64) []sim.Vec2 {
-	heading := sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}
+	heading := sim.UnitFromAngle(bus.Heading)
 	c1 := start.Add(heading.Mul(firstHandle))
 	c2 := end.Sub(outgoing.Mul(lastHandle))
 	points := make([]sim.Vec2, 0, 34)

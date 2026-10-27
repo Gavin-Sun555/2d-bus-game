@@ -1,0 +1,913 @@
+{
+  "decision": {
+    "performance_floor": "PASS on tested M4 AC scenarios",
+    "release": "HOLD pending traffic/progress triage",
+    "performance_scenes_passed": 8,
+    "performance_scenes_total": 8
+  },
+  "policy": {
+    "scope": "Performance qualification, proposed gate; not full release approval",
+    "minimum": {
+      "mean_tps": 59,
+      "mean_draw_fps": 58,
+      "draw_gap_p99_ms": 25,
+      "draw_gap_p999_ms": 50,
+      "draw_gap_max_ms_review": 100,
+      "long_wait_review_seconds": 120
+    },
+    "target": {
+      "fps": 60,
+      "update_p99_ms": 16.667
+    },
+    "primary_scene": "900s natural population, initial 864 cars, 48 articulated AI plus player",
+    "secondary": "fresh 120s maximum fleet after thermal soak, normal 8-bus case, custom roundabout; offline six-map mixed/save-load matrix",
+    "no_production_changes": true,
+    "save_sha256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880"
+  },
+  "render": {
+    "long-maximum": {
+      "scene": "long-maximum",
+      "measurement": [
+        30,
+        900
+      ],
+      "draw_fps": 59.701149425287355,
+      "tps": 59.99885057471264,
+      "update_ms": {
+        "n": 52199,
+        "mean": 12.035954632330121,
+        "p50": 11.917583,
+        "p95": 13.87925,
+        "p99": 14.857333,
+        "p999": 16.303292,
+        "max": 29.55175
+      },
+      "draw_ms": {
+        "n": 51940,
+        "mean": 1.498700029341548,
+        "p50": 1.505625,
+        "p95": 1.701125,
+        "p99": 2.01075,
+        "p999": 2.289375,
+        "max": 3.053458
+      },
+      "draw_gap_ms": {
+        "n": 51940,
+        "mean": 16.750119146284174,
+        "p50": 16.662875,
+        "p95": 17.199375,
+        "p99": 17.959916,
+        "p999": 34.410334,
+        "max": 67.480084
+      },
+      "gap_over_33ms": 77,
+      "gap_over_50ms": 20,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 743,
+      "cars_max": 864,
+      "cars_final": 743,
+      "player_distance": 54106.04096404355,
+      "fleet_distance": 2141944.234656772,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 1383,
+      "gc_pause_ms": 58.975173,
+      "alloc_bytes_per_second": 80808990.36334887,
+      "waits": [
+        {
+          "start": 659.700880125,
+          "end": 899.101221916,
+          "seconds": 239.40034179099996
+        },
+        {
+          "start": 389.367034666,
+          "end": 423.650427708,
+          "seconds": 34.283393042
+        },
+        {
+          "start": 611.242658875,
+          "end": 641.550847166,
+          "seconds": 30.30818829100008
+        },
+        {
+          "start": 55.533102125,
+          "end": 85.733298083,
+          "seconds": 30.200195957999995
+        },
+        {
+          "start": 28.283170166,
+          "end": 50.483276083,
+          "seconds": 22.200105917
+        },
+        {
+          "start": 135.233296958,
+          "end": 156.423165333,
+          "seconds": 21.189868374999975
+        },
+        {
+          "start": 534.61727675,
+          "end": 555.767403708,
+          "seconds": 21.150126957999987
+        },
+        {
+          "start": 366.200304,
+          "end": 386.366981208,
+          "seconds": 20.16667720800001
+        },
+        {
+          "start": 104.933297458,
+          "end": 122.11660325,
+          "seconds": 17.183305792
+        },
+        {
+          "start": 503.367359208,
+          "end": 518.483935958,
+          "seconds": 15.116576749999979
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": false,
+        "health": true
+      }
+    },
+    "hot-maximum": {
+      "scene": "hot-maximum",
+      "measurement": [
+        5,
+        120
+      ],
+      "draw_fps": 59.756521739130434,
+      "tps": 59.99130434782609,
+      "update_ms": {
+        "n": 6899,
+        "mean": 12.184763644441224,
+        "p50": 12.4895,
+        "p95": 14.1935,
+        "p99": 14.876208,
+        "p999": 15.335791,
+        "max": 16.094791
+      },
+      "draw_ms": {
+        "n": 6872,
+        "mean": 1.559648292782305,
+        "p50": 1.521208,
+        "p95": 1.726542,
+        "p99": 2.046125,
+        "p999": 2.281375,
+        "max": 2.631625
+      },
+      "draw_gap_ms": {
+        "n": 6872,
+        "mean": 16.733828870779977,
+        "p50": 16.661708,
+        "p95": 17.191875,
+        "p99": 17.913166,
+        "p999": 32.606583,
+        "max": 33.347708
+      },
+      "gap_over_33ms": 1,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 843,
+      "cars_max": 864,
+      "cars_final": 843,
+      "player_distance": 5331.514324288721,
+      "fleet_distance": 353480.9198734943,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 195,
+      "gc_pause_ms": 8.013166,
+      "alloc_bytes_per_second": 83557149.74441388,
+      "waits": [
+        {
+          "start": 55.549897708,
+          "end": 85.799999167,
+          "seconds": 30.250101458999993
+        },
+        {
+          "start": 28.283293292,
+          "end": 50.5019225,
+          "seconds": 22.218629208
+        },
+        {
+          "start": 104.983373708,
+          "end": 119.150085458,
+          "seconds": 14.166711750000005
+        },
+        {
+          "start": 94.90007425,
+          "end": 103.966688875,
+          "seconds": 9.066614625
+        },
+        {
+          "start": 89.849965042,
+          "end": 93.883392333,
+          "seconds": 4.0334272910000095
+        },
+        {
+          "start": 9.066594625,
+          "end": 12.116510417,
+          "seconds": 3.049915792
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "common-articulated": {
+      "scene": "common-articulated",
+      "measurement": [
+        5,
+        120
+      ],
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 6900,
+        "mean": 6.154862416231884,
+        "p50": 6.14575,
+        "p95": 6.930584,
+        "p99": 7.352,
+        "p999": 7.785292,
+        "max": 8.629708
+      },
+      "draw_ms": {
+        "n": 6900,
+        "mean": 1.5193521688405798,
+        "p50": 1.524792,
+        "p95": 1.707042,
+        "p99": 1.934042,
+        "p999": 2.262667,
+        "max": 2.556917
+      },
+      "draw_gap_ms": {
+        "n": 6900,
+        "mean": 16.666950911884058,
+        "p50": 16.662208,
+        "p95": 17.032833,
+        "p99": 17.47825,
+        "p999": 18.950625,
+        "max": 19.2335
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 846,
+      "cars_max": 864,
+      "cars_final": 846,
+      "player_distance": 14920.588614248933,
+      "fleet_distance": 87669.74225755986,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 172,
+      "gc_pause_ms": 7.108746,
+      "alloc_bytes_per_second": 75827316.73815535,
+      "waits": [
+        {
+          "start": 71.633227709,
+          "end": 82.749905042,
+          "seconds": 11.116677332999998
+        },
+        {
+          "start": 37.333228459,
+          "end": 48.416507917,
+          "seconds": 11.083279458
+        },
+        {
+          "start": 66.583253875,
+          "end": 70.63322125,
+          "seconds": 4.0499673750000085
+        },
+        {
+          "start": 9.116506459,
+          "end": 12.149742959,
+          "seconds": 3.0332364999999992
+        },
+        {
+          "start": 61.533241334,
+          "end": 62.549840625,
+          "seconds": 1.0165992909999986
+        },
+        {
+          "start": 95.849902375,
+          "end": 96.849931667,
+          "seconds": 1.0000292920000078
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "custom-maximum": {
+      "scene": "custom-maximum",
+      "measurement": [
+        5,
+        120
+      ],
+      "draw_fps": 60.0,
+      "tps": 59.99130434782609,
+      "update_ms": {
+        "n": 6899,
+        "mean": 7.019953632700392,
+        "p50": 6.9965,
+        "p95": 7.584209,
+        "p99": 7.83075,
+        "p999": 8.203541,
+        "max": 8.886584
+      },
+      "draw_ms": {
+        "n": 6900,
+        "mean": 1.06943791057971,
+        "p50": 1.083959,
+        "p95": 1.146333,
+        "p99": 1.549042,
+        "p999": 1.703625,
+        "max": 1.779583
+      },
+      "draw_gap_ms": {
+        "n": 6900,
+        "mean": 16.66660879826087,
+        "p50": 16.661458,
+        "p95": 16.98875,
+        "p99": 17.225875,
+        "p999": 17.746667,
+        "max": 17.996125
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 610,
+      "cars_max": 855,
+      "cars_final": 610,
+      "player_distance": 2898.5870795369106,
+      "fleet_distance": 137474.24385467177,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 320,
+      "gc_pause_ms": 12.253946,
+      "alloc_bytes_per_second": 108933087.19959079,
+      "waits": [
+        {
+          "start": 68.63330075,
+          "end": 118.050090042,
+          "seconds": 49.41678929199999
+        },
+        {
+          "start": 35.316678375,
+          "end": 63.566671583,
+          "seconds": 28.249993208
+        },
+        {
+          "start": 10.116576292,
+          "end": 16.149955042,
+          "seconds": 6.033378749999999
+        },
+        {
+          "start": 1.016646458,
+          "end": 2.033204417,
+          "seconds": 1.0165579589999998
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "coastal-maximum": {
+      "scene": "coastal-maximum",
+      "measurement": [
+        5,
+        60
+      ],
+      "draw_fps": 59.96363636363636,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 10.233464883636364,
+        "p50": 10.60325,
+        "p95": 11.730167,
+        "p99": 13.618833,
+        "p999": 14.405542,
+        "max": 14.777125
+      },
+      "draw_ms": {
+        "n": 3298,
+        "mean": 1.5295708890236508,
+        "p50": 1.506875,
+        "p95": 1.73725,
+        "p99": 2.083666,
+        "p999": 2.327541,
+        "max": 2.816708
+      },
+      "draw_gap_ms": {
+        "n": 3298,
+        "mean": 16.67791602243784,
+        "p50": 16.659041,
+        "p95": 17.082041,
+        "p99": 17.504833,
+        "p999": 17.965666,
+        "max": 31.634875
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "cars_final": 864,
+      "player_distance": 4540.306297519999,
+      "fleet_distance": 166835.53433349566,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 108,
+      "gc_pause_ms": 4.54234,
+      "alloc_bytes_per_second": 101771070.65604681,
+      "waits": [
+        {
+          "start": 32.249987375,
+          "end": 38.316616666,
+          "seconds": 6.066629290999998
+        },
+        {
+          "start": 53.466621291,
+          "end": 55.499958,
+          "seconds": 2.0333367089999967
+        },
+        {
+          "start": 16.14989875,
+          "end": 18.150021416,
+          "seconds": 2.000122666000003
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "valley-maximum": {
+      "scene": "valley-maximum",
+      "measurement": [
+        5,
+        60
+      ],
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 9.570695330909091,
+        "p50": 9.672083,
+        "p95": 11.136583,
+        "p99": 11.445833,
+        "p999": 11.815417,
+        "max": 15.553625
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.4588616881818182,
+        "p50": 1.453375,
+        "p95": 1.68325,
+        "p99": 1.904375,
+        "p999": 2.142333,
+        "max": 2.257125
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.66824758848485,
+        "p50": 16.666959,
+        "p95": 16.981375,
+        "p99": 17.298708,
+        "p999": 17.9585,
+        "max": 20.001541
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "cars_final": 864,
+      "player_distance": 5712.701658184358,
+      "fleet_distance": 185783.72934737164,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 76,
+      "gc_pause_ms": 3.226879,
+      "alloc_bytes_per_second": 77651076.07953285,
+      "waits": [
+        {
+          "start": 27.300248417,
+          "end": 44.516914833,
+          "seconds": 17.216666416000002
+        },
+        {
+          "start": 56.583587833,
+          "end": 57.583601208,
+          "seconds": 1.0000133749999947
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "lake-maximum": {
+      "scene": "lake-maximum",
+      "measurement": [
+        5,
+        60
+      ],
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 5.7829176639393935,
+        "p50": 5.764625,
+        "p95": 6.197917,
+        "p99": 6.419542,
+        "p999": 6.884041,
+        "max": 6.923458
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.3402199081818182,
+        "p50": 1.321584,
+        "p95": 1.479083,
+        "p99": 1.754625,
+        "p999": 1.959917,
+        "max": 2.252583
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.666628636363637,
+        "p50": 16.66375,
+        "p95": 16.96275,
+        "p99": 17.185125,
+        "p999": 17.636834,
+        "max": 17.923
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 560,
+      "cars_max": 846,
+      "cars_final": 560,
+      "player_distance": 3125.689472688748,
+      "fleet_distance": 69755.41529415436,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 111,
+      "gc_pause_ms": 4.228371,
+      "alloc_bytes_per_second": 84976516.1993809,
+      "waits": [
+        {
+          "start": 48.499969417,
+          "end": 53.566650792,
+          "seconds": 5.066681374999995
+        },
+        {
+          "start": 40.416616833,
+          "end": 45.466629583,
+          "seconds": 5.0500127500000005
+        },
+        {
+          "start": 30.316624083,
+          "end": 33.349980792,
+          "seconds": 3.033356708999996
+        },
+        {
+          "start": 35.383276083,
+          "end": 38.39994675,
+          "seconds": 3.0166706669999996
+        },
+        {
+          "start": 1.016545792,
+          "end": 3.016617583,
+          "seconds": 2.000071791
+        },
+        {
+          "start": 26.249948,
+          "end": 27.266624583,
+          "seconds": 1.0166765829999989
+        },
+        {
+          "start": 22.216565875,
+          "end": 23.216567417,
+          "seconds": 1.0000015419999997
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    },
+    "twins-maximum": {
+      "scene": "twins-maximum",
+      "measurement": [
+        5,
+        60
+      ],
+      "draw_fps": 60.0,
+      "tps": 60.0,
+      "update_ms": {
+        "n": 3300,
+        "mean": 10.275678405151515,
+        "p50": 10.454583,
+        "p95": 11.886208,
+        "p99": 12.335209,
+        "p999": 12.852042,
+        "max": 13.0785
+      },
+      "draw_ms": {
+        "n": 3300,
+        "mean": 1.4853920727272727,
+        "p50": 1.494875,
+        "p95": 1.809208,
+        "p99": 2.057666,
+        "p999": 2.370209,
+        "max": 2.561375
+      },
+      "draw_gap_ms": {
+        "n": 3300,
+        "mean": 16.667695416666668,
+        "p50": 16.659958,
+        "p95": 17.058709,
+        "p99": 17.500125,
+        "p999": 18.143625,
+        "max": 19.088084
+      },
+      "gap_over_33ms": 0,
+      "gap_over_50ms": 0,
+      "gap_over_100ms": 0,
+      "unfocused_or_nonfullscreen_callbacks": 0,
+      "cars_min": 864,
+      "cars_max": 864,
+      "cars_final": 864,
+      "player_distance": 9288.106369179979,
+      "fleet_distance": 200246.05988132587,
+      "player_min_health": 100,
+      "fleet_min_health": 100,
+      "gc_count": 95,
+      "gc_pause_ms": 4.018508,
+      "alloc_bytes_per_second": 94057078.5253675,
+      "waits": [
+        {
+          "start": 24.233219083,
+          "end": 27.266519583,
+          "seconds": 3.0333004999999993
+        }
+      ],
+      "gates": {
+        "focus_fullscreen": true,
+        "tps": true,
+        "draw_fps": true,
+        "gap_p99": true,
+        "gap_p999": true,
+        "spike_review": true,
+        "player_long_wait_review": true,
+        "health": true
+      }
+    }
+  },
+  "simulation_profiles": {
+    "cpu-maximum": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 10.259862535000002,
+      "P50MS": 10.545125,
+      "P95MS": 11.633666,
+      "P99MS": 11.952584,
+      "MaxMS": 22.863666,
+      "BytesPerTick": 106679.45777777777,
+      "AllocsPerTick": 245.60444444444445,
+      "GCCount": 7,
+      "GCPauseMS": 0.470499,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4117.6289599308375,
+      "PoseHits": 1739089,
+      "PoseMisses": 1395436
+    },
+    "cpu-common": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 8,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 5.27669090444443,
+      "P50MS": 5.303041,
+      "P95MS": 6.650125,
+      "P99MS": 7.019833,
+      "MaxMS": 7.5905,
+      "BytesPerTick": 97493.74222222222,
+      "AllocsPerTick": 142.88666666666666,
+      "GCCount": 7,
+      "GCPauseMS": 0.342582,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4556.7713562298095,
+      "PoseHits": 116636,
+      "PoseMisses": 361671
+    },
+    "cpu-custom": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 734,
+      "CarsMax": 856,
+      "CarsFinal": 736,
+      "MeanMS": 6.912456351111115,
+      "P50MS": 6.888167,
+      "P95MS": 7.499791,
+      "P99MS": 7.775458,
+      "MaxMS": 8.22075,
+      "BytesPerTick": 235671.96444444446,
+      "AllocsPerTick": 394.6116666666667,
+      "GCCount": 17,
+      "GCPauseMS": 0.72321,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 2413.187634110259,
+      "PoseHits": 1693168,
+      "PoseMisses": 423956
+    },
+    "clean-maximum-1": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 10.209223213888873,
+      "P50MS": 10.517208,
+      "P95MS": 11.569959,
+      "P99MS": 11.807292,
+      "MaxMS": 12.773333,
+      "BytesPerTick": 106529.72444444445,
+      "AllocsPerTick": 245.56555555555556,
+      "GCCount": 7,
+      "GCPauseMS": 0.299206,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4117.6289599308375,
+      "PoseHits": 1739089,
+      "PoseMisses": 1395436
+    },
+    "clean-maximum-2": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 10.218873831666649,
+      "P50MS": 10.474542,
+      "P95MS": 11.547083,
+      "P99MS": 11.833333,
+      "MaxMS": 21.058917,
+      "BytesPerTick": 106527.89777777778,
+      "AllocsPerTick": 245.56222222222223,
+      "GCCount": 8,
+      "GCPauseMS": 0.340585,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4117.6289599308375,
+      "PoseHits": 1739089,
+      "PoseMisses": 1395436
+    }
+  },
+  "prediction_hit_ratio": 0.5548173965752387,
+  "render_allocation": {
+    "profile_seconds": 45,
+    "filled_circle_flat_percent": 48.04,
+    "stroke_circle_flat_percent": 12.94,
+    "combined_flat_percent": 60.98,
+    "combined_allocated_MB_reported": 2139.98,
+    "total_allocated_MB_reported": 3509.39
+  },
+  "startup_warmup_ms": {
+    "long-maximum": 652.324,
+    "hot-maximum": 32.665,
+    "common-articulated": 7.654,
+    "custom-maximum": 8.678,
+    "coastal-maximum": 9.002,
+    "valley-maximum": 7.666,
+    "lake-maximum": 7.967,
+    "twins-maximum": 8.678
+  },
+  "soak": {
+    "scenarios": 21,
+    "passed": 20,
+    "failed": [
+      "TestRelease005TrafficSoak/map3/berserktrue"
+    ],
+    "legacy_recheck": "failed again: 6744px vs10000px floor",
+    "simulated_seconds": 2520
+  },
+  "resources": {
+    "rss_mib_min": 236.0625,
+    "rss_mib_max": 245.390625,
+    "sampling_seconds": [
+      188.07249522209167,
+      863.5885961055756
+    ],
+    "power": "AC at sampled boundaries",
+    "thermal_warning_reported": false,
+    "game_mode_active": "not independently observed"
+  },
+  "source_audit": {
+    "go_files": 483,
+    "changed": [],
+    "save_before": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+    "save_after": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+    "production_binary_sha256": "f524b81d90afa3dc980fab284b9de00f9f570c29bbca88d336681ea03f490cc7"
+  },
+  "evidence_root": "/Users/yansun/personal/2d-bus-game/dist/release-performance-2026-10-26",
+  "limitations": [
+    "Qualification uses Draw callback intervals, not display presentation timestamps.",
+    "Analysis windows are 30s startup exclusion for long scene and 5s for short scenes; inherited raw metadata says 2s.",
+    "Native qualification berserk cruise is 80 km/h, not 120 km/h.",
+    "Car populations naturally decline; see per-scene actual ranges.",
+    "Game Mode activation not independently observed; initial long-run app lacked support declarations added for later short runs.",
+    "No full regular/race rerun this turn; 483 Go source hashes remain unchanged.",
+    "Warmup callback includes first-render initialization and flush; no no-warm baseline this turn."
+  ],
+  "recommendations": [
+    {
+      "priority": 1,
+      "option": "Reuse bounded circle vertex/index buffers and cache tessellation templates",
+      "evidence": "60.98% of allocation bytes in separate 45s native profile; not equivalent to CPU or FPS share",
+      "risk": "low; rendering regression and A/B needed"
+    },
+    {
+      "priority": 2,
+      "option": "Cache uncached junction corridor geometry and conservatively filter segment blocks",
+      "evidence": "junctionQueueSpeed cumulative CPU 14-27%; nested percentages cannot be summed",
+      "risk": "medium; preserve candidate order and conservative bounds"
+    },
+    {
+      "priority": 3,
+      "option": "Measure exact articulated pose cache conflicts, then trial capacity or two-way cache",
+      "evidence": "55.48% hit ratio and AtPose 11.08% cumulative CPU; capacity benefit unproved",
+      "risk": "preserve bitwise keys and current physics"
+    }
+  ]
+}

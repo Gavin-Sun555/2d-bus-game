@@ -67,3 +67,19 @@ func (ad *AutopilotDriver) updateUTurn(bus *sim.Bus, w *sim.World, lw float64) {
 		}
 	}
 }
+
+// Keep the junction commitment until the rear clears for signals and lane policy,
+// but release the turning speed cap as soon as the bus has straightened on the
+// outgoing carriageway. Recheck every frame in case steering is needed again.
+func (turn *uTurnManeuver) needsTurnSpeed(bus *sim.Bus) bool {
+	if turn == nil || !turn.entered {
+		return false
+	}
+	direction := sim.UnitFromAngle(bus.Heading)
+	if direction.Dot(turn.forward) > -.995 || math.Abs(bus.SteeringAngle) > .06 {
+		return true
+	}
+	right := sim.Vec2{X: -turn.forward.Y, Y: turn.forward.X}
+	lateralExtent := math.Abs(direction.Dot(right))*bus.Length/2 + math.Abs(direction.Dot(turn.forward))*bus.Width/2
+	return bus.Pos.Sub(turn.center).Dot(right)+lateralExtent > 0
+}

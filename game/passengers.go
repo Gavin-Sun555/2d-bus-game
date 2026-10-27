@@ -46,6 +46,10 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 			// Doors closed while parked: reset flag so opening doors at this same stop allows boarding again
 			g.boardedThisStop = false
 		} else {
+			// Wait for a full stop before the terminal vehicle handover.
+			if g.Bus.PendingModel != nil && !g.boardedThisStop && g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() && math.Abs(g.Bus.Speed) > 3 {
+				return
+			}
 			// Doors are open
 			boardSpace := g.Bus.Capacity - g.Bus.PassengerCount
 
@@ -61,6 +65,22 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 					offCount += g.Bus.ClearPassengers()
 				}
 				g.Operations.Alight(0, activeStop.ID, offCount)
+				if g.Bus.PendingModel != nil && g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() {
+					g.Bus.TerminalReplacementHold = true
+					site := g.vehicleHandoverSite()
+					site.Stop = activeStop
+					if !g.Bus.ReplaceModelAtTerminus(g.Route, activeStop.ID, site) {
+						if g.Bus.PendingModel != nil && *g.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
+							// Keep the requested model for the next terminal visit;
+							// holding the front vehicle here would trap the rear berth.
+							g.Bus.TerminalReplacementHold = false
+						}
+						g.boardedThisStop = false
+						return
+					}
+					g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
+				}
+				boardSpace = g.Bus.Capacity - g.Bus.PassengerCount
 				g.stopBellRung = false
 				g.passengersAlighting = 0
 
@@ -159,4 +179,21 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 		// Left the stop bay, reset boarding flag
 		g.boardedThisStop = false
 	}
+}
+
+func (g *Game) vehicleHandoverSite() sim.VehicleHandoverSite {
+	site := sim.VehicleHandoverSite{World: g.World, LaneWidth: g.Settings.GetLaneWidth()}
+	for _, car := range g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity) {
+		site.Obstacles = append(site.Obstacles, sim.OBB{Center: car.Pos, Heading: car.Heading, HalfLen: car.Length/2 + 2, HalfWid: car.Width/2 + 2})
+	}
+	for _, b := range g.AIBusMgr.Buses {
+		for _, part := range b.Bus.BodyParts() {
+			if part.HalfLen > 0 {
+				part.HalfLen += 2
+				part.HalfWid += 2
+				site.Obstacles = append(site.Obstacles, part)
+			}
+		}
+	}
+	return site
 }

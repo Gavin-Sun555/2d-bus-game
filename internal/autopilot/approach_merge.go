@@ -38,7 +38,7 @@ func (ad *AutopilotDriver) updateRequiredApproachMerge(f autopilotFrame, dt floa
 	rightTurn := approach.isUpcomingRight
 
 	heading := approachRoadHeading(f.bus.Heading)
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	origin := sim.Vec2{Y: center}
 	if !ew {
@@ -114,7 +114,7 @@ func (ad *AutopilotDriver) updateRequiredApproachMerge(f autopilotFrame, dt floa
 // to the incoming road before retaining that axis through the whole junction.
 func (ad *AutopilotDriver) hasStraightMergeExit(f autopilotFrame, inter *sim.TrafficIntersection) bool {
 	heading := approachRoadHeading(f.bus.Heading)
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	exit := inter.GetStopLineDistForHeading(heading, f.laneWidth) + f.bus.Length/2
 	for i := ad.WaypointIdx; i < len(ad.drivePath)-1; i++ {
@@ -138,7 +138,7 @@ func (ad *AutopilotDriver) advanceApproachMerge(f autopilotFrame, dt float64) bo
 	if ad.approachMergeJoined {
 		g := f.world.JunctionAt(request.Junction, f.laneWidth)
 		half := math.Abs(math.Cos(heading))*g.HalfX + math.Abs(math.Sin(heading))*g.HalfY
-		forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+		forward := sim.UnitFromAngle(heading)
 		if f.bus.Pos.Sub(request.Junction).Dot(forward) > half+f.bus.Length/2+80 {
 			ad.approachMerge = nil
 			ad.approachMergeJoined = false
@@ -188,7 +188,7 @@ func (ad *AutopilotDriver) advanceApproachMerge(f autopilotFrame, dt float64) bo
 	} else {
 		distToStop := 0.0
 		if f.world != nil {
-			forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			forward := sim.UnitFromAngle(heading)
 			stopLineDist := 0.0
 			if f.tls != nil {
 				for _, it := range f.tls.Intersections {
@@ -225,6 +225,15 @@ func approachMergeComplete(bus *sim.Bus, request *sim.BusLaneMergeRequest, laneW
 	if error >= 4 || yaw >= .1 {
 		return false
 	}
+	if bus.IsArticulated() {
+		for _, part := range bus.BodyParts() {
+			yaw := part.Heading - request.Heading
+			half := part.HalfLen*math.Abs(math.Sin(yaw)) + part.HalfWid*math.Abs(math.Cos(yaw))
+			if math.Abs(part.Center.Sub(request.Target).Dot(right))+half > laneWidth/2-.25 {
+				return false
+			}
+		}
+	}
 	if request.RightTurn {
 		return true
 	}
@@ -235,11 +244,24 @@ func approachMergeComplete(bus *sim.Bus, request *sim.BusLaneMergeRequest, laneW
 // A confirmed yield permits a modest rear gap only after reserving the following
 // vehicle's full braking distance. Alongside and oncoming vehicles retain normal margins.
 func yieldedVehicleClearsRear(bus *sim.Bus, other VehicleObstacle, cosH, sinH float64) bool {
-	if other.YieldingTo != bus || math.Cos(other.Heading-math.Atan2(sinH, cosH)) < .98 {
+	granted := other.YieldingTo == bus
+	// Several queued buses can request the same lane. A stopped follower
+	// already yielding to the rear request also protects a bus ahead of it;
+	// insisting on a different pointer makes those leaders wait on each other.
+	if !granted && other.YieldingTo != nil && math.Abs(other.Speed) <= 3 {
+		own, held := bus.LaneMergeRequest, other.YieldingTo.LaneMergeRequest
+		forward := sim.Vec2{X: cosH, Y: sinH}
+		right := sim.Vec2{X: -sinH, Y: cosH}
+		granted = own != nil && held != nil && own.Remaining > 0 && held.Remaining > 0 && !own.Joined && !held.Joined && math.Cos(own.Heading-held.Heading) > .999 && math.Abs(own.Target.Sub(held.Target).Dot(right)) < 2 && bus.Pos.Sub(other.YieldingTo.Pos).Dot(forward) >= 0
+	}
+	if !granted || (math.Cos(other.Heading-math.Atan2(sinH, cosH)) < .98 && (math.Abs(other.Speed) > 20 || math.Cos(other.Heading-math.Atan2(sinH, cosH)) < .95)) {
 		return false
 	}
 	yaw := bus.Heading - math.Atan2(sinH, cosH)
-	extent := bus.Length/2*math.Abs(math.Cos(yaw)) + bus.Width/2*math.Abs(math.Sin(yaw))
+	body := bus.BodyEnvelope()
+	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw))
 	braking := other.Speed*other.Speed/(2*220) + math.Abs(other.Speed)*.2
-	return other.Pos.Sub(bus.Pos).Dot(sim.Vec2{X: cosH, Y: sinH}) < -(extent + other.Length/2 + 20 + braking)
+	otherYaw := other.Heading - math.Atan2(sinH, cosH)
+	otherExtent := other.Length/2*math.Abs(math.Cos(otherYaw)) + other.Width/2*math.Abs(math.Sin(otherYaw))
+	return other.Pos.Sub(body.Center).Dot(sim.Vec2{X: cosH, Y: sinH}) < -(extent + otherExtent + 20 + braking)
 }

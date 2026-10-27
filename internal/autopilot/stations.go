@@ -9,6 +9,9 @@ import (
 // dockedControls advances the door/dwell cycle. Route advancement happens only
 // after dwell has finished and the doors have fully closed.
 func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedAbs, dt float64) (throttle, brake, steer float64, handbrake, toggleDoors, isDocked bool) {
+	if bus.TerminalReplacementHold {
+		return 0, 1, 0, false, !bus.DoorsOpen, true
+	}
 	if !ad.DwellFinished {
 		switch {
 		case !bus.DoorsOpen && bus.DoorProgress <= 0.05:
@@ -30,10 +33,22 @@ func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedA
 	if route.GetCurrentTargetStopID() == ad.DockedStopID {
 		route.AdvanceToNextStop()
 	}
+	roadDeparture := false
+	if ad.stationDock != nil && ad.stationDock.rank > 0 && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
+		stop, laneWidth := ad.pathWorld.Stops[ad.DockedStopID], ad.pathLane
+		ad.beginRoadDeparture(bus, stop, laneWidth)
+		ad.skippedDeparture.served = true
+		roadDeparture = true
+	}
 	ad.LastTargetID = route.GetCurrentTargetStopID()
-	ad.departureFromDock = ad.stationDock != nil && ad.stationDock.rank > 0
+	ad.departureFromDock = !roadDeparture
 	ad.stationDock = nil
 	ad.State = AutopilotStateDeparting
+	if roadDeparture {
+		// Already in a road lane: allow the normal safe passing policy after
+		// closing the doors rather than holding behind an occupied front berth.
+		ad.State = AutopilotStateCruising
+	}
 	ad.DockedStopID = -1
 	ad.WaypointIdx = 0
 	ad.pathSynced = false
@@ -48,7 +63,7 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 	}
 	stopDecel := apStopDecel
 	if ad.BerserkMode {
-		stopDecel = 160.0 // Strong crisp deceleration in Berserk mode
+		stopDecel = 195.0 // Strong crisp deceleration in Berserk mode
 	}
 	stopSpd := math.Sqrt(2 * stopDecel * math.Max(0, f.remaining-2.0))
 	isBerserkOuterDock := ad.BerserkMode && f.targetStop.ContainsBusInOuterLane(f.bus, f.laneWidth)
@@ -77,8 +92,7 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 
 	// Station approach speed control when waiting alongside in adjacent lane:
 	if f.remaining < 350.0 && (ad.LaneOffset < -f.laneWidth*0.3 || ad.TargetLaneOffset < -f.laneWidth*0.3) {
-		cosH := math.Cos(f.bus.Heading)
-		sinH := math.Sin(f.bus.Heading)
+		sinH, cosH := math.Sincos(f.bus.Heading)
 		hasAhead, hasSide, _, leadObs := checkStationApproachLeadVehicle(
 			f.bus, f.obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, f.targetStop,
 		)
@@ -103,7 +117,7 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 
 // updateStationApproachLane decides whether to merge into the bay or wait beside it.
 func (ad *AutopilotDriver) updateStationApproachLane(bus *sim.Bus, targetStop *sim.BusStop, obstacles []VehicleObstacle, laneWidth, speedAbs, remaining, dt float64, isMultiLane, is6Lane bool) {
-	cosH, sinH := math.Cos(bus.Heading), math.Sin(bus.Heading)
+	sinH, cosH := math.Sincos(bus.Heading)
 	hasLeadAhead, hasLeadAlongside, hasPassedLead, leadObs := checkStationApproachLeadVehicle(
 		bus, obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, targetStop,
 	)
@@ -188,7 +202,7 @@ func (ad *AutopilotDriver) updateDrivingState(bus *sim.Bus, prevStop *sim.BusSto
 	}
 	approachThreshold := apApproachDist
 	if ad.BerserkMode {
-		approachThreshold = math.Max(apApproachDist*0.65, speedAbs*speedAbs/(2*160.0)+35.0)
+		approachThreshold = math.Max(apApproachDist*0.65, speedAbs*speedAbs/(2*195.0)+35.0)
 	}
 	if remaining < approachThreshold {
 		ad.State = AutopilotStateApproaching

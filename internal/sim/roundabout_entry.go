@@ -19,7 +19,7 @@ func RoundaboutEntryJoin(rb Roundabout, forward Vec2, lateral, radius, laneWidth
 	right := Vec2{X: -forward.Y, Y: forward.X}
 	start := rb.Center.Sub(forward.Mul(along + 125)).Add(right.Mul(.5 * laneWidth))
 	angle := math.Atan2(forward.Y, forward.X) + math.Pi - math.Asin(outerLateral/outer) - .6
-	join := rb.Center.Add(Vec2{X: math.Cos(angle), Y: math.Sin(angle)}.Mul(inner))
+	join := rb.Center.Add(UnitFromAngle(angle).Mul(inner))
 	tangent := Vec2{X: math.Sin(angle), Y: -math.Cos(angle)}
 	return RoundaboutJoin{Reference: [4]Vec2{start, start.Add(forward.Mul(120)), join.Sub(tangent.Mul(60)), join}, StartOffset: lateral - .5*laneWidth, EndOffset: radius - inner}
 }
@@ -72,7 +72,7 @@ func RoundaboutEntryCorridor(rb Roundabout, forward Vec2, laneWidth float64, bod
 				tangent = forward
 			}
 		}
-		if best < 12 && tangent.Normalize().Dot(Vec2{X: math.Cos(body.Heading), Y: math.Sin(body.Heading)}) > .93 {
+		if best < 12 && tangent.Normalize().Dot(UnitFromAngle(body.Heading)) > .93 {
 			return lane, curve, true
 		}
 	}
@@ -83,35 +83,86 @@ func RoundaboutEntryCorridor(rb Roundabout, forward Vec2, laneWidth float64, bod
 // independent of which vehicle starts first or travels faster. Current bodies
 // are checked too, including the bus's tracking error during a turn.
 func SeparateRoundaboutEntries(rb Roundabout, forward Vec2, laneWidth float64, a OBB, aBus bool, b OBB, bBus bool) bool {
-	la, ca, oka := RoundaboutEntryCorridor(rb, forward, laneWidth, a, aBus)
-	lb, cb, okb := RoundaboutEntryCorridor(rb, forward, laneWidth, b, bBus)
-	if !oka || !okb || la == lb {
+	test := PrepareRoundaboutEntrySeparation(rb, forward, laneWidth, a, aBus)
+	return test.Clears(b, bBus)
+}
+
+// RoundaboutEntrySeparation reuses the unchanged first vehicle's classification
+// and swept bodies during one local obstacle scan. Optional geometry samples
+// may cross ticks; current body placement and decisions never do.
+type RoundaboutEntrySeparation struct {
+	geometry  *RoundaboutEntryGeometry
+	rb        Roundabout
+	forward   Vec2
+	laneWidth float64
+	lane      int
+	valid     bool
+	path      [34]OBB
+}
+
+func roundaboutSeparationPath(curve RoundaboutJoin, body OBB) [34]OBB {
+	var path [34]OBB
+	original := body
+	body.HalfLen += 3
+	body.HalfWid += 3
+	for i := 0; i <= 32; i++ {
+		p, t := RoundaboutEntryPoint(curve, float64(i)/32)
+		body.Center = p
+		body.Heading = math.Atan2(t.Y, t.X)
+		path[i] = body
+	}
+	body.Center, body.Heading = original.Center, original.Heading
+	path[33] = body
+	return path
+}
+
+func PrepareRoundaboutEntrySeparation(rb Roundabout, forward Vec2, laneWidth float64, body OBB, bus bool, geometries ...*RoundaboutEntryGeometry) RoundaboutEntrySeparation {
+	var geometry *RoundaboutEntryGeometry
+	if len(geometries) > 0 {
+		geometry = geometries[0]
+	}
+	var lane int
+	var curve RoundaboutJoin
+	var ok bool
+	if geometry != nil {
+		lane, curve, ok = geometry.corridor(rb, forward, laneWidth, body, bus)
+	} else {
+		lane, curve, ok = RoundaboutEntryCorridor(rb, forward, laneWidth, body, bus)
+	}
+	test := RoundaboutEntrySeparation{geometry: geometry, rb: rb, forward: forward, laneWidth: laneWidth, lane: lane, valid: ok}
+	if ok {
+		if geometry != nil {
+			test.path = geometry.path(curve, lane, body, bus)
+		} else {
+			test.path = roundaboutSeparationPath(curve, body)
+		}
+	}
+	return test
+}
+
+func (test *RoundaboutEntrySeparation) Clears(body OBB, bus bool) bool {
+	if !test.valid {
 		return false
 	}
-	var paths [2][34]OBB
-	for k, c := range []RoundaboutJoin{ca, cb} {
-		body := a
-		if k == 1 {
-			body = b
-		}
-		body.HalfLen += 3
-		body.HalfWid += 3
-		for i := 0; i <= 32; i++ {
-			p, t := RoundaboutEntryPoint(c, float64(i)/32)
-			body.Center = p
-			body.Heading = math.Atan2(t.Y, t.X)
-			paths[k][i] = body
-		}
-		body.Center = a.Center
-		body.Heading = a.Heading
-		if k == 1 {
-			body.Center = b.Center
-			body.Heading = b.Heading
-		}
-		paths[k][33] = body
+	var lane int
+	var curve RoundaboutJoin
+	var ok bool
+	if test.geometry != nil {
+		lane, curve, ok = test.geometry.corridor(test.rb, test.forward, test.laneWidth, body, bus)
+	} else {
+		lane, curve, ok = RoundaboutEntryCorridor(test.rb, test.forward, test.laneWidth, body, bus)
 	}
-	for _, first := range paths[0] {
-		for _, second := range paths[1] {
+	if !ok || lane == test.lane {
+		return false
+	}
+	var path [34]OBB
+	if test.geometry != nil {
+		path = test.geometry.path(curve, lane, body, bus)
+	} else {
+		path = roundaboutSeparationPath(curve, body)
+	}
+	for _, first := range test.path {
+		for _, second := range path {
 			reach := first.HalfLen + first.HalfWid + second.HalfLen + second.HalfWid
 			d := first.Center.Sub(second.Center)
 			if d.Dot(d) > reach*reach {
@@ -165,5 +216,11 @@ func RoundaboutEntryAhead(curve RoundaboutJoin, rb Roundabout, pos Vec2, distanc
 	}
 	radial := points[48].Sub(rb.Center)
 	angle := math.Atan2(radial.Y, radial.X) - (target-lengths[48])/radial.Length()
-	return rb.Center.Add(Vec2{X: math.Cos(angle), Y: math.Sin(angle)}.Mul(radial.Length())), angle - math.Pi/2
+	return rb.Center.Add(UnitFromAngle(angle).Mul(radial.Length())), angle - math.Pi/2
+}
+
+// RoundaboutAdmissionHold keeps an unadmitted bus outside the entry plane.
+type RoundaboutAdmissionHold struct {
+	Center, Forward Vec2
+	StopDistance    float64
 }

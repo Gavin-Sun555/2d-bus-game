@@ -10,9 +10,17 @@ import (
 // A waiting bus outside this swept lane must leave road traffic free to pass.
 func busClearsCarLane(car *sim.TrafficCar, bus *sim.Bus) bool {
 	right := sim.Vec2{X: -math.Sin(car.Heading), Y: math.Cos(car.Heading)}
-	yaw := bus.Heading - car.Heading
-	extent := bus.Length/2*math.Abs(math.Sin(yaw)) + bus.Width/2*math.Abs(math.Cos(yaw))
-	return math.Abs(bus.Pos.Sub(car.Pos).Dot(right))-extent-car.Width/2 > 2
+	for _, body := range bus.BodyParts() {
+		if body.HalfLen == 0 {
+			continue
+		}
+		yaw := body.Heading - car.Heading
+		extent := body.HalfLen*math.Abs(math.Sin(yaw)) + body.HalfWid*math.Abs(math.Cos(yaw))
+		if math.Abs(body.Center.Sub(car.Pos).Dot(right))-extent-car.Width/2 <= 2 {
+			return false
+		}
+	}
+	return true
 }
 
 func canPassWaitingDepartureBus(f carFrame, bus *sim.Bus) bool {
@@ -23,7 +31,7 @@ func canPassWaitingDepartureBus(f carFrame, bus *sim.Bus) bool {
 		if math.Cos(f.car.Heading-stop.Heading) < .98 || math.Cos(bus.Heading-stop.Heading) < .8 {
 			continue
 		}
-		forward := sim.Vec2{X: math.Cos(stop.Heading), Y: math.Sin(stop.Heading)}
+		forward := sim.UnitFromAngle(stop.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		along := bus.Pos.Sub(stop.RoadCenter).Dot(forward)
 		curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth

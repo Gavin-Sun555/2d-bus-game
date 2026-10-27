@@ -80,6 +80,7 @@ func main() {
 		panic(err)
 	}
 	p := &preview{output: *output}
+	ebiten.SetRunnableOnUnfocused(true)
 	ebiten.SetWindowSize(1280, 720)
 	ebiten.SetWindowTitle("Operations panel visual review")
 	if err := ebiten.RunGame(p); err != nil {

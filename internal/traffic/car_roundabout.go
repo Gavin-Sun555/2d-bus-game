@@ -19,6 +19,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 				break
 			}
 		}
+		targetSpd = math.Min(targetSpd, roundaboutExitBusSpeed(f, rb))
 		// Recheck the right of way until the full nose reaches the yield line.
 		// InRoundabout also covers the long approach curve outside the ring.
 		targetSpd = math.Min(targetSpd, tm.roundaboutEntryPrioritySpeed(f, rb))
@@ -30,7 +31,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			// directly ahead on the same exit ramp. Do not yield to circulating
 			// traffic behind or alongside on the ring whose paths diverge, or
 			// to oncoming vehicles in the adjacent entrance lane.
-			exitDir := sim.Vec2{X: math.Cos(f.car.RoundaboutExitHeading), Y: math.Sin(f.car.RoundaboutExitHeading)}
+			exitDir := sim.UnitFromAngle(f.car.RoundaboutExitHeading)
 			exitRight := sim.Vec2{X: -exitDir.Y, Y: exitDir.X}
 			checkObstacle := func(pos sim.Vec2, heading, length, width float64) {
 				// Must be moving in generally same direction along exit road
@@ -42,7 +43,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 				if math.Abs(otherOffset-f.car.RoundaboutExitOffset) > f.laneWidth*0.75 {
 					return
 				}
-				u := sim.Vec2{X: math.Cos(f.car.Heading), Y: math.Sin(f.car.Heading)}
+				u := sim.UnitFromAngle(f.car.Heading)
 				delta := pos.Sub(f.car.Pos)
 				fwd := delta.Dot(u)
 				lat := math.Abs(-delta.X*u.Y + delta.Y*u.X)
@@ -58,7 +59,8 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			}
 			for _, bus := range f.buses {
 				if bus != nil {
-					checkObstacle(bus.Pos, bus.Heading, bus.Length, bus.Width)
+					body := bus.BodyEnvelope()
+					checkObstacle(body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2)
 					if targetSpd <= 0 {
 						return 0
 					}
@@ -80,7 +82,8 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			if bus == nil || bus.Pos.Distance(f.car.RoundaboutCenter) > f.car.RoundaboutOuterRadius+bus.Length/2+25 {
 				continue
 			}
-			if (f.car.RoundaboutCurve == nil && math.Abs(bus.Speed) < 1 && roundaboutCarPathClear(f.car, bus.Pos, bus.Heading, bus.Length, bus.Width)) || separateCirculatingBodies(f.car, bus.Pos, bus.Heading, bus.Length, bus.Width, false) || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) {
+			body := bus.BodyEnvelope()
+			if (f.car.RoundaboutCurve == nil && math.Abs(bus.Speed) < 1 && roundaboutBusPathClear(f.car, bus)) || separateCirculatingBodies(f.car, body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, false) || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) {
 				continue
 			}
 			limit := roundaboutBusHeadway(f.car, bus)
@@ -133,6 +136,13 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			}
 			stopGap := roundaboutYieldGap(f.car, rb)
 			if fwdProj > 0 && math.Abs(f.car.RoadCenter-coord) < 25 && f.car.RoundaboutCooldown <= 0 {
+				if tm.roundaboutReserved(rb.Center) {
+					outer := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
+					join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outer, f.laneWidth)
+					start, _ := sim.RoundaboutEntryPoint(join, 0)
+					gap := start.Sub(f.car.Pos).Dot(forward) - f.car.Length/2 - 8
+					targetSpd = math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, gap)))
+				}
 				outerR := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
 				join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outerR, f.laneWidth)
 				start, _ := sim.RoundaboutEntryPoint(join, 0)
@@ -146,7 +156,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 					// 1. Yield check at entry line:
 					// Circulating vehicles coming from the left or traversing across entry mouth have right of way
 					myAngle := math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
-					needYield := false
+					needYield := tm.roundaboutReserved(rb.Center)
 
 					// Account for long buses whose noses are already at the mouth
 					// while their centers are still outside the circular roadway.

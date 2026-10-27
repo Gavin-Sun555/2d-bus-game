@@ -25,8 +25,15 @@ func TestReleaseQualification_AllMapsBoundaryAndZoneSafetyAudit(t *testing.T) {
 	for _, theme := range themes {
 		t.Run(theme.DisplayName(), func(t *testing.T) {
 			w := NewWorld(laneWidth, theme)
-			if len(w.Stops) != 12 {
-				t.Fatalf("[%s] Map must have exactly 12 stops, got %d", theme.DisplayName(), len(w.Stops))
+			expected := len(w.Stops)
+			if expected < 150 && theme != MapThemeCustom && theme != MapThemeEmeraldLake {
+				t.Fatal("dense cities need at least 150 stations")
+			}
+			if theme == MapThemeCustom || theme == MapThemeEmeraldLake {
+				expected = 12
+			}
+			if len(w.Stops) != expected {
+				t.Fatalf("[%s] Map has unexpected station count, got %d", theme.DisplayName(), len(w.Stops))
 			}
 
 			// 1. Verify every stop bay is outside road boundaries and strictly clear of ZoneHardBarrier

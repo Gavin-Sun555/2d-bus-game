@@ -12,6 +12,9 @@ import (
 
 // autopilotControls updates controller configuration before producing this tick's inputs.
 func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, steer float64, handbrake, toggleDoors bool) {
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.UpdatePlayerMergeYield(g.Bus, currentLaneW)
+	}
 	// Collect dynamic obstacles (civilian traffic cars + route AI buses)
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
 	obs := g.obstacles[:0]
@@ -29,15 +32,7 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	}
 	if g.AIBusMgr != nil {
 		for _, ab := range g.AIBusMgr.Buses {
-			obs = append(obs, autopilot.VehicleObstacle{
-				Pos:              ab.Bus.Pos,
-				YieldingTo:       ab.Bus.YieldingToBus,
-				JunctionCorridor: ab.Bus.JunctionCorridor,
-				Heading:          ab.Bus.Heading,
-				Speed:            ab.Bus.Speed,
-				Length:           ab.Bus.Length,
-				Width:            ab.Bus.Width,
-			})
+			obs = append(obs, autopilot.ObserveBus(ab.Bus))
 		}
 	}
 
@@ -72,6 +67,8 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 }
 
 func (g *Game) manualControls() (throttle, brake, steer float64, handbrake, toggleDoors bool) {
+	// Manual inputs cannot guarantee the automatic rear-slot braking policy.
+	g.Bus.YieldingToBus = nil
 	g.AutopilotDeadlockTimer = 0
 	g.DeadlockTracker = sim.StationaryTracker{}
 	g.Bus.MaxSpeedFwd = g.Settings.GetBusMaxSpeed()

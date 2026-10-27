@@ -10,7 +10,7 @@ func TestWideDrivingViewSurvivesPlanningAndRouteReset(t *testing.T) {
 	g.EnterCity(sim.MapThemeMetropolis)
 	g.Camera.ToggleDrivingView()
 	g.TogglePlanMode()
-	if g.Camera.Zoom != .08 {
+	if g.Camera.Zoom != .04 {
 		t.Fatal("planning view was not retained")
 	}
 	g.TogglePlanMode()

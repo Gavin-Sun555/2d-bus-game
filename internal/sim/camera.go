@@ -111,8 +111,7 @@ func (c *Camera) Update(dt float64) {
 }
 
 func (c *Camera) FollowBus(bus *Bus) {
-	cosH := math.Cos(bus.Heading)
-	sinH := math.Sin(bus.Heading)
+	sinH, cosH := math.Sincos(bus.Heading)
 
 	switch c.Mode {
 	case CameraModeHeadingUp:
@@ -149,8 +148,7 @@ func (c *Camera) WorldToScreen(world Vec2) Vec2 {
 	dy := world.Y - effY
 
 	if c.Rotation != 0 {
-		cosR := math.Cos(c.Rotation)
-		sinR := math.Sin(c.Rotation)
+		sinR, cosR := math.Sincos(c.Rotation)
 		rx := dx*cosR + dy*sinR
 		ry := -dx*sinR + dy*cosR
 		dx = rx
@@ -173,8 +171,7 @@ func (c *Camera) ScreenToWorld(screen Vec2) Vec2 {
 	dy := (screen.Y - halfH) / c.Zoom
 
 	if c.Rotation != 0 {
-		cosR := math.Cos(c.Rotation)
-		sinR := math.Sin(c.Rotation)
+		sinR, cosR := math.Sincos(c.Rotation)
 		rx := dx*cosR - dy*sinR
 		ry := dx*sinR + dy*cosR
 		dx = rx

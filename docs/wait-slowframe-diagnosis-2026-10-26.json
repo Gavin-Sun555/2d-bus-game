@@ -1,0 +1,324 @@
+{
+  "productionExistingChanged": [
+    "internal/autopilot/station_departure.go",
+    "internal/autopilot/driver.go",
+    "internal/autopilot/station_docking.go"
+  ],
+  "productionNew": [
+    "internal/autopilot/station_shelter_exit.go"
+  ],
+  "playerDistanceBefore": 0,
+  "leaderDistanceBefore": 0,
+  "playerDistanceAfter": 10829.5,
+  "leaderDistanceAfter": 11284.3,
+  "replaySeconds": 120,
+  "playerFirst100pxSeconds": 18.8,
+  "leaderFirst50pxSeconds": 0.78,
+  "originalTargetStop": 6,
+  "targetActuallyServed": true,
+  "minimumBusHealth": 100,
+  "shaderLibraryCompileMS": 91.05376,
+  "shaderPipelineCompileMS": 8.758272,
+  "gameThreadRenderWaitMS": 101.4592,
+  "drawCallbackGapMS": 168.392625,
+  "traceForegroundSeconds": 126,
+  "traceTotalSeconds": 180,
+  "checks": [
+    "go test ./... -count=1",
+    "targeted station race tests",
+    "go vet ./...",
+    "go mod verify",
+    "git diff --check for changed files",
+    "bash build.sh app",
+    "plutil -lint"
+  ],
+  "binarySHA256": "2d03340a67664fbe5ae25e3436356ac8d2f28328addb0c5cee69fccd80fbac52",
+  "userSaveUnchanged": true,
+  "traceEvents": [
+    {
+      "event": {
+        "Kind": "draw",
+        "At": 88.384802833,
+        "MS": 2.399375,
+        "GapMS": 168.392625,
+        "Tick": 5262,
+        "Profile": false
+      },
+      "gameG": 48,
+      "waits": [
+        {
+          "at": 88.218909888,
+          "untilRunningMS": 101.4592,
+          "state": "Waiting",
+          "stack": [
+            "runtime.chanrecv1",
+            "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Call",
+            "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.runOnRenderThread",
+            "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).Flush",
+            "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueueManager).flush",
+            "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.FlushCommands",
+            "github.com/hajimehoshi/ebiten/v2/internal/atlas.FlushCommands",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).flushCommandsAndWait",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).updateFrame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).updateGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).loopGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func2"
+          ]
+        },
+        {
+          "at": 88.320373376,
+          "untilRunningMS": 0.071488,
+          "state": "Waiting",
+          "stack": [
+            "runtime.chanrecv1",
+            "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Call",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).updateGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).loopGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func2",
+            "golang.org/x/sync/errgroup.(*Group).Go.func1",
+            "runtime.chanrecv1",
+            "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Call",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).updateGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).loopGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func2"
+          ]
+        },
+        {
+          "at": 88.337635072,
+          "untilRunningMS": 0.011136,
+          "state": "Runnable",
+          "stack": [
+            "github.com/Gavin-Sun555/2d-bus-game/internal/sim.CheckOBBCollision",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/sim.separatedBodies",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/sim.SeparatedJunctionCorridors",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).junctionQueueSpeed",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).StepCar",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).Update",
+            "github.com/Gavin-Sun555/2d-bus-game/game.(*Game).Update",
+            "main.(*probe).Update",
+            "github.com/hajimehoshi/ebiten/v2.(*gameForUI).Update",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).updateFrameImpl",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).updateFrame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).updateGame"
+          ]
+        },
+        {
+          "at": 88.362647616,
+          "untilRunningMS": 0.00096,
+          "state": "Runnable",
+          "stack": [
+            "github.com/Gavin-Sun555/2d-bus-game/internal/sim.JunctionLeaderGap",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).carFollowingSpeed",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).StepCar",
+            "github.com/Gavin-Sun555/2d-bus-game/internal/traffic.(*TrafficManager).Update",
+            "github.com/Gavin-Sun555/2d-bus-game/game.(*Game).Update",
+            "main.(*probe).Update",
+            "github.com/hajimehoshi/ebiten/v2.(*gameForUI).Update",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).updateFrameImpl",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*context).updateFrame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).updateGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).loopGame",
+            "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func2"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "t": 501933057447744,
+          "g": 48,
+          "type": "Game.Draw",
+          "begin": false,
+          "at": 88.218905664
+        },
+        {
+          "t": 501933158991616,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": true,
+          "at": 88.320449536
+        },
+        {
+          "t": 501933172111744,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": false,
+          "at": 88.333569664
+        },
+        {
+          "t": 501933172113728,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": true,
+          "at": 88.333571648
+        },
+        {
+          "t": 501933185095744,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": false,
+          "at": 88.346553664
+        },
+        {
+          "t": 501933185097344,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": true,
+          "at": 88.346555264
+        },
+        {
+          "t": 501933197912896,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": false,
+          "at": 88.359370816
+        },
+        {
+          "t": 501933197913856,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": true,
+          "at": 88.359371776
+        },
+        {
+          "t": 501933210626816,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": false,
+          "at": 88.372084736
+        },
+        {
+          "t": 501933210627648,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": true,
+          "at": 88.372085568
+        },
+        {
+          "t": 501933223337088,
+          "g": 48,
+          "type": "Game.Update",
+          "begin": false,
+          "at": 88.384795008
+        },
+        {
+          "t": 501933223340032,
+          "g": 48,
+          "type": "Game.Draw",
+          "begin": true,
+          "at": 88.384797952
+        }
+      ]
+    }
+  ],
+  "renderWaits": [
+    {
+      "time": 501933058474752,
+      "g": 47,
+      "from": "Running",
+      "to": "Syscall",
+      "stack": [
+        "github.com/ebitengine/purego.syscall_SyscallN",
+        "github.com/ebitengine/purego.RegisterFunc.func4",
+        "github.com/ebitengine/purego/objc.ID.Send",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl.Device.NewLibraryWithSource",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Shader).init",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.newShader",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).NewShader",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*newShaderCommand).Exec",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).flush",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).Flush.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.LoopRenderThread",
+        "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func1",
+        "golang.org/x/sync/errgroup.(*Group).Go.func1",
+        "github.com/ebitengine/purego.syscall_SyscallN",
+        "github.com/ebitengine/purego.RegisterFunc.func4",
+        "github.com/ebitengine/purego/objc.ID.Send",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl.Device.NewLibraryWithSource",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Shader).init",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.newShader",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).NewShader",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*newShaderCommand).Exec",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).flush",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).Flush.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.LoopRenderThread",
+        "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func1",
+        "golang.org/x/sync/errgroup.(*Group).Go.func1"
+      ],
+      "durationMS": 91.05376,
+      "next": "Runnable"
+    },
+    {
+      "time": 501933149600448,
+      "g": 47,
+      "from": "Running",
+      "to": "Syscall",
+      "stack": [
+        "github.com/ebitengine/purego.syscall_SyscallN",
+        "github.com/ebitengine/purego.RegisterFunc.func4",
+        "github.com/ebitengine/purego/objc.ID.Send",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl.Device.NewRenderPipelineStateWithDescriptor",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Shader).RenderPipelineState",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).draw",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).DrawTriangles",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*drawTrianglesCommand).Exec",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).flush",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).Flush.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.LoopRenderThread",
+        "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func1",
+        "golang.org/x/sync/errgroup.(*Group).Go.func1",
+        "github.com/ebitengine/purego.syscall_SyscallN",
+        "github.com/ebitengine/purego.RegisterFunc.func4",
+        "github.com/ebitengine/purego/objc.ID.Send",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal/mtl.Device.NewRenderPipelineStateWithDescriptor",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Shader).RenderPipelineState",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).draw",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicsdriver/metal.(*Graphics).DrawTriangles",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*drawTrianglesCommand).Exec",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).flush",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.(*commandQueue).Flush.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop.func1",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/thread.(*OSThread).Loop",
+        "github.com/hajimehoshi/ebiten/v2/internal/graphicscommand.LoopRenderThread",
+        "github.com/hajimehoshi/ebiten/v2/internal/ui.(*glfwBackend).runMultiThread.func1",
+        "golang.org/x/sync/errgroup.(*Group).Go.func1"
+      ],
+      "durationMS": 8.758272,
+      "next": "Running"
+    }
+  ],
+  "sourceHashes": {
+    "internal/autopilot/station_departure.go": "057387ffcfba3deea312180dd12b28e0a8e6ab7ca5d6df832ec0dca8bd36d35f",
+    "internal/autopilot/driver.go": "ed3a601bdcd7fd94007f6194652d84999f55f17c3e94f89fbc476ebdb702d97d",
+    "internal/autopilot/station_docking.go": "8bdb882a64a52848264141a26fb6e578699bfb40ab9b64fa416e70f03b19f445",
+    "internal/autopilot/station_shelter_exit.go": "f9b7e7fdaaa96a0072b4f6e658c148e4dc18a5dd264854570650e368c688722e",
+    "internal/autopilot/station_shelter_exit_test.go": "393d8e3ec1ddda8fdde11678c222160acf29776243b3734988b86230f572085a",
+    "game/long_wait_probe_test.go": "54ca9badda70d9f1b7ee3da37f3afbe557722c883627e41975739b893ba32bc5"
+  },
+  "scope": {
+    "waitFixes": [
+      "served bay departure reconnect and rear shelter clearance",
+      "vacated queue staging forward alignment"
+    ],
+    "shaderPrewarmImplemented": false,
+    "fullPostFix15MinuteQualification": false,
+    "allLegacySavedStallsQualified": false
+  },
+  "secondWaitFixture": "internal/autopilot/testdata/station_waiting_realign.json",
+  "validationLogs": {
+    "full": "dist/wait-slowframe-diagnosis-2026-10-26/final-all-tests.log",
+    "race": "dist/wait-slowframe-diagnosis-2026-10-26/final-race.log",
+    "vet": "dist/wait-slowframe-diagnosis-2026-10-26/final-vet.log",
+    "replay": "dist/wait-slowframe-diagnosis-2026-10-26/recovery-final.log",
+    "build": "dist/wait-slowframe-diagnosis-2026-10-26/final-app-build.log"
+  }
+}

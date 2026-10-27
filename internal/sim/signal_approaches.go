@@ -23,8 +23,7 @@ func (inter *TrafficIntersection) HasNS4Lane() bool {
 }
 
 func (inter *TrafficIntersection) GetApproachIndexForHeading(heading float64) int {
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 	if math.Abs(cosH) >= math.Abs(sinH) {
 		if cosH >= 0 {
 			return 0 // West approach (Eastbound)
@@ -109,8 +108,7 @@ func (inter *TrafficIntersection) GetApproachDimensions(laneWidth float64) (ewSt
 // GetStopLineDistForHeading returns the appropriate stop line distance for a vehicle heading towards the intersection
 func (inter *TrafficIntersection) GetStopLineDistForHeading(heading float64, laneWidth float64) float64 {
 	ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 	if math.Abs(cosH) >= math.Abs(sinH) {
 		return ewStop
 	}

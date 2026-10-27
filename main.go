@@ -51,7 +51,7 @@ func main() {
 
 	g := game.NewGame(screenWidth, screenHeight)
 
-	if err := ebiten.RunGame(g); err != nil {
+	if err := ebiten.RunGame(game.WithGraphicsWarmup(g)); err != nil {
 		log.Fatalf("Game crashed: %v", err)
 	}
 }

@@ -1,0 +1,317 @@
+{
+  "version": "0.0.7",
+  "decision": "HOLD",
+  "normalRegression": {
+    "passed": 8711,
+    "skipped": 9,
+    "failed": 0
+  },
+  "coverage": {
+    "allStatementsPercent": 67.3,
+    "gameStatementsPercent": 79.3
+  },
+  "qualification": {
+    "passed": 338,
+    "failed": 0
+  },
+  "race": {
+    "initialSingleInvocation": "timed out at 40 minutes; no DATA RACE warning found",
+    "completion": "remaining test cases rerun in two shards",
+    "expectedTestAndSubtestCount": 8720,
+    "completedDistinctRaceTestAndSubtestCount": 8720,
+    "missing": [],
+    "statusMismatches": [],
+    "complete": true
+  },
+  "soakScenes": [
+    {
+      "test": "TestMixedTrafficSpeedSoak/0",
+      "evidence": [
+        "mixed_traffic_soak_test.go:51: map0 distance=7033 health=100 cars=847 fleet=8"
+      ],
+      "initialTestStatus": "fail",
+      "qualifiedStatus": "fail"
+    },
+    {
+      "test": "TestMixedTrafficSpeedSoak/3",
+      "evidence": [
+        "mixed_traffic_soak_test.go:51: map3 distance=13374 health=100 cars=479 fleet=8"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestMixedTrafficSpeedSoak/4",
+      "evidence": [
+        "mixed_traffic_soak_test.go:51: map4 distance=13316 health=100 cars=864 fleet=8"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map0/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 7052px; cars 864 -> 849; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map0/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 12334px; cars 864 -> 849; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map1/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 8628px; cars 864 -> 852; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map1/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 12913px; cars 864 -> 852; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map2/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 9651px; cars 864 -> 860; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map2/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 17584px; cars 864 -> 860; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map3/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 11574px; cars 864 -> 503; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map3/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 10884px; cars 864 -> 488; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map4/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 6811px; cars 864 -> 864; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map4/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 16235px; cars 864 -> 864; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map5/berserkfalse",
+      "evidence": [
+        "release_v005_test.go:55: contact t=22.30 bus={179.24442227697656 81.02438286420478} heading=-1.14 speed=84.6 lane=0.0 state=巡航行驶 nearest car=316 pos={137.77310570804056 73.5482524733412} heading=-0.63 speed=0.0 ring=true health=97",
+        "release_v005_test.go:89: 120 simulated seconds; traveled 10512px; cars 864 -> 619; fleet 8; durability 97%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "fail",
+      "note": "initial assertion was too narrow; strict safety rerun and captured replay both failed"
+    },
+    {
+      "test": "TestRelease005TrafficSoak/map5/berserktrue",
+      "evidence": [
+        "release_v005_test.go:89: 120 simulated seconds; traveled 5544px; cars 864 -> 602; fleet 8; durability 100%"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map0",
+      "evidence": [
+        "release_v007_test.go:51: player damage tick7069 pos{5797.159750885629 -3425.3932744721146} health75.0 tail{{5702.618915530876 -3440.163682032047} 48 18 0.2356644281669308}"
+      ],
+      "initialTestStatus": "fail",
+      "qualifiedStatus": "fail"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map1",
+      "evidence": [
+        "release_v007_test.go:108: 120s, save/load at60s, player distance11537 health100 cars864->860 AI distancesmap[1:9784.302290912387 2:4910.594658941039 3:2544.392429492259 4:1151.6698268063203 5:11528.52769182566 6:10764.96003680952 7:7569.92095659897 8:14809.21573531219]"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map2",
+      "evidence": [
+        "release_v007_test.go:108: 120s, save/load at60s, player distance12397 health100 cars864->857 AI distancesmap[1:14590.720174201148 2:7381.827055286375 3:5919.137098072584 4:3234.7797702488215 5:14621.387034258494 6:15753.375166303103 7:10176.650215545782 8:8440.080779735345]"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map3",
+      "evidence": [
+        "release_v007_test.go:108: 120s, save/load at60s, player distance11589 health100 cars864->506 AI distancesmap[1:7704.338443225481 2:7442.692031736106 3:7334.498049153065 4:5223.0031066678985 5:5251.027056498489 6:10728.06625546936 7:7841.90527894415 8:6491.315926925836]"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map4",
+      "evidence": [
+        "release_v007_test.go:108: 120s, save/load at60s, player distance12417 health100 cars864->862 AI distancesmap[1:6831.267541185509 2:3812.462418397145 3:4425.565928241634 4:3846.8385486872335 5:10461.729958005457 6:11746.122098736578 7:5849.965506655097 8:11086.162103709392]"
+      ],
+      "initialTestStatus": "pass",
+      "qualifiedStatus": "pass"
+    },
+    {
+      "test": "TestRelease007MixedFleetSoak/map5",
+      "evidence": [
+        "release_v007_test.go:51: player damage tick1170 pos{192.61940205867026 30.808377026099258} health97.0 tail{{153.75516638184027 114.80196794604807} 48 18 -0.8684910459842569}"
+      ],
+      "initialTestStatus": "fail",
+      "qualifiedStatus": "fail"
+    }
+  ],
+  "knownBlockers": [
+    {
+      "priority": "P1",
+      "scenario": "Metropolis mixed fleet, articulated player",
+      "seed": 700,
+      "tick": 7069,
+      "seconds": 117.81666666666666,
+      "healthBefore": 100,
+      "healthAfter": 75,
+      "position": [
+        5797.159750885629,
+        -3425.3932744721146
+      ],
+      "event": "station shelter impact",
+      "replayFixture": "reproductions/metropolis-articulated-before-contact.json",
+      "replayFailureTick": 168
+    },
+    {
+      "priority": "P1",
+      "scenario": "Custom map, standard autopilot",
+      "seed": 505,
+      "tick": 1338,
+      "seconds": 22.3,
+      "healthBefore": 100,
+      "healthAfter": 97,
+      "position": [
+        179.24442227697656,
+        81.02438286420478
+      ],
+      "event": "traffic collision in roundabout",
+      "replayFixture": "reproductions/custom-standard-before-contact.json",
+      "replayFailureTick": 138
+    },
+    {
+      "priority": "P1",
+      "scenario": "Custom map mixed fleet, articulated player",
+      "seed": 705,
+      "tick": 1170,
+      "seconds": 19.5,
+      "healthBefore": 100,
+      "healthAfter": 97,
+      "position": [
+        192.61940205867026,
+        30.808377026099258
+      ],
+      "event": "traffic collision in roundabout",
+      "replayFixture": "reproductions/custom-articulated-before-contact.json",
+      "replayFailureTick": 169
+    },
+    {
+      "priority": "P2",
+      "scenario": "Metropolis highest AI speed traffic soak",
+      "seed": 91,
+      "distancePX": 7033,
+      "requiredDistancePX": 10000,
+      "health": 100,
+      "event": "progress gate failed; congestion or stalled priority needs classification"
+    },
+    {
+      "priority": "P2",
+      "scenario": "864 cars plus 48 AI articulated buses at 4x view",
+      "meanDrawFPS": 7.81166025538562,
+      "meanUpdateTPS": 39.02588774889745,
+      "event": "maximum fleet performance insufficient"
+    }
+  ],
+  "performance": {
+    "8_AI_articulated": {
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 20023.340542,
+      "MeanUpdateTPS": 59.93005999588018,
+      "MeanDrawFPS": 57.932391329350835,
+      "UpdateP50MS": 11.279667,
+      "UpdateP95MS": 15.114,
+      "UpdateP99MS": 15.572708,
+      "UpdateMaxMS": 15.912084,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1160,
+      "UpdateFrames": 1200,
+      "UpdateMS": 12616.535735000014,
+      "DrawSubmitMS": 1526.7424779999985
+    },
+    "48_AI_articulated": {
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 30851.316125,
+      "MeanUpdateTPS": 39.02588774889745,
+      "MeanDrawFPS": 7.81166025538562,
+      "UpdateP50MS": 25.037,
+      "UpdateP95MS": 29.662958,
+      "UpdateP99MS": 32.026959,
+      "UpdateMaxMS": 50.858416,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 241,
+      "UpdateFrames": 1204,
+      "UpdateMS": 30200.16263200002,
+      "DrawSubmitMS": 360.33150099999983
+    }
+  },
+  "nativeGameMode": {
+    "appVersion": "0.0.7",
+    "nativeFullscreen": "passed",
+    "systemLog": "Game mode status is now on",
+    "testAppClosed": true
+  },
+  "candidateSourceSHA256": "5e8ac8f800689210d9b558e7b187efe3858e8c21d10705204afdf1c59e72dfd8",
+  "sourceFileCount": 420,
+  "userSavePreserved": true
+}

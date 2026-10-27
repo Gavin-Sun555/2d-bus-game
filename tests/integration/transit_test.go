@@ -480,8 +480,8 @@ func TestAIMissedStopOvertakeContinuesDriving(t *testing.T) {
 	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
 
-	// Bus is 60px past stop in the passing lane, speed was 20px/s
-	g.Bus.Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 60.0, Y: sinH * 60.0}).Add(toRoadDir.Mul(laneW))
+	// Bus is 60px past the forward berth in the passing lane.
+	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 60.0, Y: sinH * 60.0}).Add(toRoadDir.Mul(laneW))
 	g.Bus.Heading = targetStop.Heading
 	g.Bus.Speed = 20.0
 	g.AutopilotDriver.LaneOffset = -laneW
@@ -491,7 +491,7 @@ func TestAIMissedStopOvertakeContinuesDriving(t *testing.T) {
 	// Place active car in the curb lane alongside the bus
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
 	if len(activeCars) > 0 {
-		activeCars[0].Pos = targetStop.Pos.Add(sim.Vec2{X: cosH * 30.0, Y: sinH * 30.0})
+		activeCars[0].Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 30.0, Y: sinH * 30.0})
 		activeCars[0].Heading = targetStop.Heading
 		activeCars[0].Speed = 0.0
 		activeCars[0].Length = 32.0
@@ -626,6 +626,7 @@ func TestBerserkModePlayerBusOuterLaneDockingAndPassengerExchange(t *testing.T) 
 //  3. In Standard mode (non-Berserk), opposing-lane docking is disallowed.
 func TestBerserkModePlayerBusOppositeLaneDockingOnTwoLaneRoad(t *testing.T) {
 	g := game.NewGame(1280, 720)
+	g.World = legacyMetropolisWorld(g.Settings.GetLaneWidth())
 	g.State = game.StatePlaying
 	g.Settings.AutopilotBerserk = true
 	laneW := g.Settings.GetLaneWidth()

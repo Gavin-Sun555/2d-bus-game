@@ -10,8 +10,7 @@ func hasRoadInDirection(w *sim.World, center sim.Vec2, heading float64) bool {
 	if w == nil {
 		return true
 	}
-	cosH := math.Cos(heading)
-	sinH := math.Sin(heading)
+	sinH, cosH := math.Sincos(heading)
 	isEW := math.Abs(cosH) > math.Abs(sinH)
 
 	for _, r := range w.Roads {

@@ -11,12 +11,22 @@ import (
 // their centers have left the tracked lane. Cars retain the normal passing policy.
 func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 	limit := math.Inf(1)
-	if !ad.BerserkMode {
-		return limit
-	}
-	forward := sim.Vec2{X: math.Cos(f.bus.Heading), Y: math.Sin(f.bus.Heading)}
+	forward := sim.UnitFromAngle(f.bus.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	for _, obs := range f.obstacles {
+		if ad.clearsSkippedStopBay(f, obs) || ad.clearsServedStationQueue(f, obs) {
+			continue
+		}
+		// The short ordinary-mode obstacle ray is measured to the leader's
+		// envelope center. A long bus's rear is reached before that center
+		// enters the ray, leaving only the last-resort contact stop. Keep the
+		// same bumper headway for articulated leaders in every driving mode.
+		if !ad.BerserkMode && (obs.Bus == nil || !obs.Bus.IsArticulated()) {
+			continue
+		}
+		if ad.ordinaryBusLeft && ad.clearsThroughQueueDuringMerge(f, obs) {
+			continue
+		}
 		if obs.Length < f.bus.Length*.8 {
 			continue
 		}

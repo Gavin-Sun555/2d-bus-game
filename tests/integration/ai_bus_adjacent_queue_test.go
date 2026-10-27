@@ -24,7 +24,6 @@ func TestAIBusDoesNotBrakeForAdjacentLaneStoppedQueue(t *testing.T) {
 				// In Metropolis standard route: [0, 1, 2, 4, 3, 11, ...] -> index 4 is target Stop 3
 				route.CurrentIndex = 4
 
-
 				stop4 := w.Stops[4]
 				roadY := stop4.RoadCenter.Y
 

@@ -1,0 +1,49 @@
+{
+  "machine": "Apple M4, macOS",
+  "scope": "Static junction queries and turn buffers/samples; no scheduling changes",
+  "benchmarks": {
+    "before": "goos: darwin\ngoarch: arm64\npkg: github.com/Gavin-Sun555/2d-bus-game/internal/traffic\ncpu: Apple M4\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t  12480378 ns/op\t 3441205 B/op\t    4618 allocs/op\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t  12341058 ns/op\t 3441205 B/op\t    4618 allocs/op\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t  12342557 ns/op\t 3441205 B/op\t    4618 allocs/op\nPASS\n",
+    "after": "goos: darwin\ngoarch: arm64\npkg: github.com/Gavin-Sun555/2d-bus-game/internal/traffic\ncpu: Apple M4\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t   5374756 ns/op\t  640618 B/op\t    2060 allocs/op\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t   5328855 ns/op\t  640618 B/op\t    2060 allocs/op\nBenchmarkTrafficFrame/map0/cars1152         \t     300\t   5421743 ns/op\t  640618 B/op\t    2060 allocs/op\nPASS\n"
+  },
+  "game_runs": {
+    "before-8": {
+      "Scene": "map0-cars1152",
+      "Frames": 107,
+      "UpdateFrames": 351,
+      "UpdateMS": 6283.927922,
+      "DrawSubmitMS": 84.32196699999999
+    },
+    "after-8": {
+      "Scene": "map0-cars1152",
+      "Frames": 299,
+      "UpdateFrames": 350,
+      "UpdateMS": 3612.3717930000003,
+      "DrawSubmitMS": 213.70986999999994
+    },
+    "before-48": {
+      "Scene": "max-traffic-1152-cars-48-buses",
+      "Frames": 46,
+      "UpdateFrames": 230,
+      "UpdateMS": 7290.956618999998,
+      "DrawSubmitMS": 73.88828900000003
+    },
+    "after-48": {
+      "Scene": "max-traffic-1152-cars-48-buses",
+      "Frames": 224,
+      "UpdateFrames": 230,
+      "UpdateMS": 2797.2129920000007,
+      "DrawSubmitMS": 338.43562399999973
+    },
+    "after-48-long": {
+      "UpdateP50MS": 27.601041,
+      "UpdateP95MS": 33.709167,
+      "UpdateP99MS": 40.789,
+      "UpdateMaxMS": 105.749583,
+      "Scene": "max-traffic-1152-cars-48-buses",
+      "Frames": 1522,
+      "UpdateFrames": 7194,
+      "UpdateMS": 198762.26055300047,
+      "DrawSubmitMS": 2250.5929859999997
+    }
+  }
+}

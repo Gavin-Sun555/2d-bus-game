@@ -99,8 +99,15 @@ func TestRelease003ComprehensiveChecklist(t *testing.T) {
 		tls := sim.NewTrafficLightSystem()
 		tls.BuildForWorld(w)
 
-		if len(w.Stops) != 12 {
-			t.Fatalf("[%s] Map must have 12 stops, got %d", theme.DisplayName(), len(w.Stops))
+		expected := len(w.Stops)
+		if expected < 150 && theme != sim.MapThemeCustom && theme != sim.MapThemeEmeraldLake {
+			t.Fatal("dense cities need at least 150 stations")
+		}
+		if theme == sim.MapThemeCustom || theme == sim.MapThemeEmeraldLake {
+			expected = 12
+		}
+		if len(w.Stops) != expected {
+			t.Fatalf("[%s] Map has unexpected station count, got %d", theme.DisplayName(), len(w.Stops))
 		}
 
 		// Verify every stop bay is on drivable surface, clear of hard barriers, and strictly on the roadside (outside roadway)
@@ -163,9 +170,9 @@ func TestRelease003ComprehensiveChecklist(t *testing.T) {
 	g.ReplanRoute([]int{5, 6, 7, 8, 9, 5})
 
 	targetFirstStop := g.World.Stops[5]
-	if g.Bus.Pos.Distance(targetFirstStop.Pos) > 1.0 {
+	if g.Bus.Pos.Distance(targetFirstStop.FrontBerthPosition()) > 1.0 {
 		t.Fatalf("Player bus position after replan was not reset to first stop (5): got %v, expected %v",
-			g.Bus.Pos, targetFirstStop.Pos)
+			g.Bus.Pos, targetFirstStop.FrontBerthPosition())
 	}
 	if math.Abs(g.Bus.Heading-targetFirstStop.Heading) > 0.05 {
 		t.Fatalf("Player bus heading after replan was not aligned: got %.2f, expected %.2f",

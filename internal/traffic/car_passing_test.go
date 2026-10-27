@@ -130,3 +130,36 @@ func TestTwoLaneCarsFollowWithoutBorrowing(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockedPassingReturnKeepsLegalLaneMoving(t *testing.T) {
+	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+		t.Run(fmt.Sprint(h), func(t *testing.T) {
+			w, tls := leftPathMatrixWorld(6, 6, false, h)
+			u := sim.Vec2{X: math.Cos(h), Y: math.Sin(h)}
+			r := sim.Vec2{X: -u.Y, Y: u.X}
+			for _, lane := range []int{0, 1} {
+				car := &sim.TrafficCar{ID: 1, Pos: u.Mul(-600).Add(r.Mul((float64(lane) + .5) * 52)), Heading: h, Length: 46, Width: 22, IsEW: math.Abs(u.X) > .5, LaneIndex: lane, CanOvertake: true, Passing: true, PassingBaseLane: 1 - lane, TargetSpeed: 150}
+				neighbor := &sim.TrafficCar{ID: 2, Pos: u.Mul(-600).Add(r.Mul((float64(1-lane) + .5) * 52)), Heading: h, Length: 46, Width: 22}
+				tm := &TrafficManager{Cars: []*sim.TrafficCar{car, neighbor}}
+				f := carFrame{car: car, world: w, tls: tls, index: 0, activeCount: 2, laneWidth: 52}
+				if v := tm.prepareCarPassing(f); !math.IsInf(v, 1) || car.Passing || car.JunctionTurn != nil {
+					t.Fatalf("lane%d optional return still holds queue: speed%f passing%v", lane, v, car.Passing)
+				}
+				it := tls.Intersections[0]
+				left, _ := carIntersectionTurns(f, it)
+				if left != (lane == 0) {
+					t.Fatalf("lane%d lost its legal movement", lane)
+				}
+				// Returning remains disabled near the junction; signals still stop it.
+				it.Phase = sim.PhaseNSGreen
+				if math.Abs(u.Y) > .5 {
+					it.Phase = sim.PhaseEWGreen
+				}
+				car.Pos = u.Mul(-it.GetStopLineDistForHeading(h, 52) - car.Length/2 - 10).Add(r.Mul((float64(lane) + .5) * 52))
+				if tm.signalSpeed(f, 150) != 0 {
+					t.Fatal("cancelled passing bypassed red light")
+				}
+			}
+		})
+	}
+}

@@ -34,7 +34,7 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 		}
 	}
 	_, wheel := ebiten.Wheel()
-	if p.Tab == 1 {
+	if p.Tab != 0 {
 		p.Scroll = max(0, p.Scroll-int(wheel)*3)
 	}
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -59,6 +59,7 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 		for i, id := range options {
 			if id == p.SelectedVehicle {
 				p.SelectedVehicle = options[(i+1)%len(options)]
+				p.Scroll = 0
 				return
 			}
 		}
@@ -156,11 +157,11 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 	operationsButton(screen, p.closeBounds, locale.T("关闭", "Close"), false)
 	titles := []string{locale.T("1 票价设置", "1 Fares"), locale.T("2 站间距离 / 客流", "2 Route / Passengers"), locale.T("3 车辆运营", "3 Vehicles")}
 	for i, title := range titles {
-		p.tabBounds[i] = sim.Rect{X: x + 24 + float64(i)*180, Y: y + 64, W: 168, H: 34}
+		p.tabBounds[i] = sim.Rect{X: x + 24 + float64(i)*(width-48)/3, Y: y + 64, W: (width-48)/3 - 12, H: 34}
 		operationsButton(screen, p.tabBounds[i], title, p.Tab == i)
 	}
 	if p.Tab != 0 {
-		p.vehicleBounds = sim.Rect{X: x + width - 258, Y: y + 64, W: 234, H: 34}
+		p.vehicleBounds = sim.Rect{X: x + width - 258, Y: y + 104, W: 234, H: 34}
 		operationsButton(screen, p.vehicleBounds, operationsVehicleName(p.SelectedVehicle)+"  >", false)
 	}
 	operationsText(screen, locale.T("[O / ESC] 关闭 · 查看面板时暂停运营", "[O / ESC] Close · Simulation paused while open"), x+24, y+height-30, 12)
@@ -172,9 +173,9 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 		return
 	}
 	if p.Tab == 1 {
-		p.drawStations(screen, o, w, x, y, width, height)
+		p.drawStations(screen, o, w, x, y+40, width, height-40)
 	} else {
-		p.drawVehicles(screen, o, x, y, width, height)
+		p.drawVehicles(screen, o, x, y+40, width, height-40)
 	}
 }
 
@@ -212,13 +213,18 @@ func (p *OperationsPanel) drawFares(screen *ebiten.Image, f sim.FarePolicy, x, y
 }
 
 func (p *OperationsPanel) drawStations(screen *ebiten.Image, o *sim.TransitOperations, w *sim.World, x, y, width, height float64) {
-	operationsText(screen, fmt.Sprintf(locale.T("当前线路：%d 段 · 全程 %.3f km · 收入见车辆运营页", "Current route: %d legs · %.3f km · Revenue on Vehicles tab"), len(o.Distances.Legs), o.Distances.TotalKM), x+24, y+118, 14)
+	distances := o.Distances
+	if v := o.Vehicles[p.SelectedVehicle]; p.SelectedVehicle >= 0 && v != nil && v.Route != nil {
+		distances = o.DistancesFor(v.Route)
+	}
+
+	operationsText(screen, fmt.Sprintf(locale.T("当前线路：%d 段 · 全程 %.3f km · 收入见车辆运营页", "Current route: %d legs · %.3f km · Revenue on Vehicles tab"), len(distances.Legs), distances.TotalKM), x+24, y+118, 14)
 	operationsText(screen, locale.T("起点 → 下一站", "Station → Next station"), x+24, y+160, 13)
 	operationsText(screen, locale.T("道路里程 km", "Road km"), x+width-338, y+160, 13)
 	operationsText(screen, locale.T("本站上车", "Boarded here"), x+width-216, y+160, 13)
 	operationsText(screen, locale.T("本站下车", "Alighted here"), x+width-108, y+160, 13)
 	rows := max(1, int((height-232)/30))
-	p.Scroll = min(p.Scroll, max(0, len(o.Distances.Legs)-rows))
+	p.Scroll = min(p.Scroll, max(0, len(distances.Legs)-rows))
 	stationName := func(id int) string {
 		if w != nil && id >= 0 && id < len(w.Stops) {
 			r := []rune(w.Stops[id].CleanName())
@@ -236,9 +242,9 @@ func (p *OperationsPanel) drawStations(screen *ebiten.Image, o *sim.TransitOpera
 			activities = v.Stations
 		}
 	}
-	for row := 0; row < rows && p.Scroll+row < len(o.Distances.Legs); row++ {
+	for row := 0; row < rows && p.Scroll+row < len(distances.Legs); row++ {
 		i := p.Scroll + row
-		leg := o.Distances.Legs[i]
+		leg := distances.Legs[i]
 		ry := y + 194 + float64(row)*30
 		activity := activities[leg.From]
 		if activity == nil {
@@ -249,7 +255,7 @@ func (p *OperationsPanel) drawStations(screen *ebiten.Image, o *sim.TransitOpera
 		operationsText(screen, fmt.Sprint(activity.Boarded), x+width-216, ry, 13)
 		operationsText(screen, fmt.Sprint(activity.Alighted), x+width-108, ry, 13)
 	}
-	if len(o.Distances.Legs) > rows {
+	if len(distances.Legs) > rows {
 		operationsText(screen, locale.T("滚轮滚动查看其余站点", "Scroll for more stations"), x+24, y+height-58, 12)
 	}
 }
@@ -287,10 +293,16 @@ func (p *OperationsPanel) drawVehicles(screen *ebiten.Image, o *sim.TransitOpera
 	for i, h := range headers {
 		operationsText(screen, h, x+cols[i], y+198, 13)
 	}
+	ids := operationsVehicleIDs(o)
+	if p.SelectedVehicle >= 0 {
+		ids = []int{p.SelectedVehicle}
+	}
+	rows := max(1, int((height-330)/32))
+	p.Scroll = min(p.Scroll, max(0, len(ids)-rows))
 	row := 0
-	for _, id := range operationsVehicleIDs(o) {
-		if p.SelectedVehicle >= 0 && id != p.SelectedVehicle {
-			continue
+	for _, id := range ids[p.Scroll:] {
+		if row >= rows {
+			break
 		}
 		v := o.Vehicles[id]
 		if v == nil {
@@ -300,7 +312,11 @@ func (p *OperationsPanel) drawVehicles(screen *ebiten.Image, o *sim.TransitOpera
 		if value, ok := v.AverageKPH(); ok {
 			speed = fmt.Sprintf("%.1f", value)
 		}
-		fields := []string{operationsVehicleName(id), fmt.Sprint(v.Revenue), fmt.Sprintf("%d / %d", v.Boarded, v.Alighted), fmt.Sprint(v.CompletedLaps), speed, fmt.Sprintf("%.3f", v.KM)}
+		name := operationsVehicleName(id)
+		if v.LineName != "" {
+			name += " · " + v.LineName
+		}
+		fields := []string{name, fmt.Sprint(v.Revenue), fmt.Sprintf("%d / %d", v.Boarded, v.Alighted), fmt.Sprint(v.CompletedLaps), speed, fmt.Sprintf("%.3f", v.KM)}
 		for i, value := range fields {
 			operationsText(screen, value, x+cols[i], y+236+float64(row)*32, 13)
 		}

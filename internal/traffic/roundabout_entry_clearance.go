@@ -35,14 +35,16 @@ func canPassWaitingRoundaboutBus(f carFrame, bus *sim.Bus) bool {
 			continue
 		}
 		tangent := sim.Vec2{X: radial.Y, Y: -radial.X}.Normalize()
-		if !car.InRoundabout && (sim.Vec2{X: math.Cos(bus.Heading), Y: math.Sin(bus.Heading)}).Dot(tangent) > .7 {
+		if !car.InRoundabout && (sim.UnitFromAngle(bus.Heading)).Dot(tangent) > .7 {
 			continue
 		}
-		forward := sim.Vec2{X: math.Cos(incoming), Y: math.Sin(incoming)}
+		forward := sim.UnitFromAngle(incoming)
 		if rb.Center.Sub(bus.Pos).Dot(forward) <= 0 {
 			continue
 		}
-		body := sim.OBB{Center: bus.Pos, Heading: bus.Heading, HalfLen: bus.Length/2 + 2, HalfWid: bus.Width/2 + 2}
+		body := bus.BodyEnvelope()
+		body.HalfLen += 2
+		body.HalfWid += 2
 		predicted := *car
 		if car.RoundaboutCurve != nil {
 			curve := *car.RoundaboutCurve

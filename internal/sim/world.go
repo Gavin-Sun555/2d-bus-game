@@ -160,7 +160,13 @@ func (m MapTheme) Subtitle() string {
 }
 
 func (m MapTheme) Next() MapTheme {
-	return (m + 1) % 6
+	themes := SelectableMapThemes()
+	for i, t := range themes {
+		if t == m {
+			return themes[(i+1)%len(themes)]
+		}
+	}
+	return MapThemeMetropolis
 }
 
 type BridgeStyle int
@@ -212,6 +218,15 @@ func (r Roundabout) OuterRadius() float64 {
 
 // IsAtRoundabout checks if a given coordinate is at or inside any traffic roundabout
 func (w *World) IsAtRoundabout(pt Vec2) bool {
+	if w.geometryCache != nil {
+		if e, ok := w.geometryCache.entries[pt]; ok {
+			return e.roundabout
+		}
+	}
+	return w.uncachedIsAtRoundabout(pt)
+}
+
+func (w *World) uncachedIsAtRoundabout(pt Vec2) bool {
 	for _, rb := range w.Roundabouts {
 		if pt.Distance(rb.Center) <= rb.Radius+40.0 {
 			return true
@@ -300,17 +315,21 @@ type River struct {
 
 // World holds the city roads, buildings, trees, water, and stops
 type World struct {
-	Theme         MapTheme
-	Roads         []RoadSegment
-	Buildings     []Building
-	Trees         []Tree
-	Stops         []*BusStop
-	Rivers        []River
-	Waters        []WaterBody
-	Bridges       []Bridge
-	Roundabouts   []Roundabout
-	Intersections []Vec2
-	CustomMap     *CustomMapData
+	boundaryCache    *boundaryGeometryCache
+	boundaryDepth    int
+	geometryCache    *worldGeometryCache
+	geometryRevision uint64
+	Theme            MapTheme
+	Roads            []RoadSegment
+	Buildings        []Building
+	Trees            []Tree
+	Stops            []*BusStop
+	Rivers           []River
+	Waters           []WaterBody
+	Bridges          []Bridge
+	Roundabouts      []Roundabout
+	Intersections    []Vec2
+	CustomMap        *CustomMapData
 }
 
 // ActiveWorldForRoute stores a global reference to the currently active world for route pathfinding
@@ -367,9 +386,16 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 		w.buildMap1Metropolis(laneWidth)
 	}
 
+	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {
+		w.expandCity(laneWidth)
+	}
 	w.applyMapScale(MapGridScale, laneWidth)
 	w.MatchStopRoadLanes(laneWidth)
 	w.RebuildIntersections()
+	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {
+		w.addBlockStops(laneWidth)
+	}
+	StandardizeStopBays(w, laneWidth)
 	ActiveWorldForRoute = w
 	ClearRoutePathCache()
 }
@@ -457,8 +483,7 @@ func (w *World) applyMapScale(scale float64, laneWidth float64) {
 func (w *World) IsOverpassAt(pt Vec2) bool {
 	for _, br := range w.Bridges {
 		if br.IsOverpass {
-			cosH := math.Cos(br.Heading)
-			sinH := math.Sin(br.Heading)
+			sinH, cosH := math.Sincos(br.Heading)
 			diff := pt.Sub(br.Pos)
 			longDist := math.Abs(diff.X*cosH + diff.Y*sinH)
 			latDist := math.Abs(-diff.X*sinH + diff.Y*cosH)
@@ -471,6 +496,15 @@ func (w *World) IsOverpassAt(pt Vec2) bool {
 }
 
 func (w *World) GetIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf, nsHalf float64) {
+	if cache := w.geometryCache; cache != nil && cache.width == laneWidth {
+		if e, ok := cache.entries[c]; ok {
+			return e.ew, e.ns
+		}
+	}
+	return w.uncachedIntersectionRoadDimensions(c, laneWidth)
+}
+
+func (w *World) uncachedIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf, nsHalf float64) {
 	maxEW := 2
 	maxNS := 2
 	for _, r := range w.Roads {
@@ -509,6 +543,8 @@ func (w *World) GetIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf
 }
 
 func (w *World) RebuildIntersections() {
+	w.boundaryCache = nil
+	w.geometryCache = nil
 	w.Intersections = make([]Vec2, 0)
 	var ewRoads []RoadSegment
 	var nsRoads []RoadSegment
@@ -553,10 +589,12 @@ func (w *World) WaterBodies() []WaterBody {
 
 // UpdateLaneWidth updates all bus stop positions dynamically when lane width changes
 func (w *World) UpdateLaneWidth(laneWidth float64) {
+	w.boundaryCache = nil
 	w.MatchStopRoadLanes(laneWidth)
 	for _, s := range w.Stops {
 		s.UpdateGeometry(laneWidth)
 	}
+	StandardizeStopBays(w, laneWidth)
 }
 
 func (w *World) Update(dt float64, route ...*Route) {
@@ -567,7 +605,14 @@ func (w *World) Update(dt float64, route ...*Route) {
 	for _, s := range w.Stops {
 		// Only bus stops on the planned route generate passengers.
 		// Stops not on the route must not spawn passengers and remain at 0 waiting.
-		if r != nil && !r.ContainsStop(s.ID) {
+		served := len(route) == 0
+		for _, line := range route {
+			if line != nil && line.ContainsStop(s.ID) {
+				served = true
+				break
+			}
+		}
+		if r != nil && !served {
 			s.WaitingPassengers = 0
 			s.SpawnTimer = 0
 			continue

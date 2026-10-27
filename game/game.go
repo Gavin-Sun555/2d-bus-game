@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -24,20 +25,32 @@ type Game struct {
 	Width  int
 	Height int
 
-	State            GameState
-	SelectedMapTheme sim.MapTheme
-	menuCardBounds   [6]sim.Rect
-	menuStartBounds  sim.Rect
-	menuLangBounds   sim.Rect
+	State              GameState
+	SelectedMapTheme   sim.MapTheme
+	menuCardBounds     [6]sim.Rect
+	menuStartBounds    sim.Rect
+	menuLangBounds     sim.Rect
+	menuContinueBounds sim.Rect
+	savePathOverride   string
+	hasSave            bool
+	saveTime           time.Time
+	saveMessage        string
 
-	Bus           *sim.Bus
-	World         *sim.World
-	Route         *sim.Route
-	Camera        *sim.Camera
-	HUD           *ui.HUD
-	TrafficLights *sim.TrafficLightSystem
-	TrafficMgr    *traffic.TrafficManager
-	Settings      *ui.Settings
+	Bus             *sim.Bus
+	World           *sim.World
+	Route           *sim.Route
+	Lines           []*sim.Route
+	LineCount       int
+	PlayerLine      int
+	NetworkOpen     bool
+	networkButtons  [25]sim.Rect
+	NetworkSelected int
+	LineFleets      [6]traffic.LineFleetSettings
+	Camera          *sim.Camera
+	HUD             *ui.HUD
+	TrafficLights   *sim.TrafficLightSystem
+	TrafficMgr      *traffic.TrafficManager
+	Settings        *ui.Settings
 
 	// AI Autopilot & Autonomous Fleet
 	AutopilotDriver        *autopilot.AutopilotDriver
@@ -53,6 +66,8 @@ type Game struct {
 	greenWaitTimers     map[int]float64
 	greenWaitReports    map[int]greenWaitReport
 	IsPlanMode          bool
+	planRoute           *sim.Route
+	HideOtherRoutes     bool
 	Cash                int
 
 	// Track lane width changes
@@ -107,6 +122,10 @@ func NewGame(width, height int) *Game {
 		lastSkippedStopID:     -1,
 	}
 
+	g.Lines = sim.DefaultTransitLines(world)
+	g.Lines[0] = g.Route
+	g.LineCount = 1
+	g.initializeLineFleets()
 	// Adapt traffic lights and civilian AI traffic to active world network
 	g.TrafficMgr.AIBusMgr = g.AIBusMgr
 	g.syncAISpeedRanges()
@@ -128,22 +147,31 @@ func NewGame(width, height int) *Game {
 
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
-		g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, initLaneWidth, g.Bus)
+		g.buildLineFleets(true)
 	}
 
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
 
-	g.HUD.AddToast("欢迎来到超大都市 2D 公交模拟器！12 大特色站点已上线", true)
+	g.HUD.AddToast(fmt.Sprintf("全城 %d 座车站，支持 1～6 条线路 [T]", len(g.World.Stops)), true)
 	g.HUD.AddToast("【全新机制】路线仅指引至下一站；站内无人且车内无下车铃时可按 [F] 飞站！", false)
 	g.HUD.AddToast("【始发站已就位】公交车已停靠在中央枢纽黄色框内，按 [E] 开门上下客！", false)
 
 	g.OperationsPanel = ui.NewOperationsPanel()
 	g.resetOperations()
+	g.refreshSaveInfo()
 	return g
 }
 
 func (g *Game) Update() error {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF9) {
+		g.handleSave(true)
+		return nil
+	}
+	if g.State == StatePlaying && inpututil.IsKeyJustPressed(ebiten.KeyF5) {
+		g.handleSave(false)
+		return nil
+	}
 	if g.State == StateMainMenu {
 		g.updateMainMenu()
 		return nil
@@ -172,9 +200,29 @@ func (g *Game) Update() error {
 		g.OperationsPanel.Update(&g.Settings.Fare, g.Operations)
 		return nil
 	}
+	if g.updateNetworkPanel() {
+		return nil
+	}
 	// 1. Settings menu takes priority
 	g.Settings.Update(g.Camera)
+	if g.Settings.LoadRequested {
+		g.Settings.LoadRequested = false
+		g.handleSave(true)
+		return nil
+	}
+	if g.Settings.SaveRequested {
+		g.Settings.SaveRequested = false
+		g.handleSave(false)
+		return nil
+	}
 	g.syncAISpeedRanges()
+	g.syncCurrentLineSettings()
+	if g.Settings.OpenNetworkRequested {
+		g.Settings.OpenNetworkRequested = false
+		g.NetworkOpen = true
+		g.NetworkSelected = g.PlayerLine
+		return nil
+	}
 	if g.Settings.OpenOperationsRequested {
 		g.Settings.OpenOperationsRequested = false
 		g.ensureOperations()
@@ -193,7 +241,7 @@ func (g *Game) Update() error {
 		g.lastLaneWidth = currentLaneW
 		g.World.UpdateLaneWidth(currentLaneW)
 		if g.AIBusMgr != nil {
-			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
+			g.buildLineFleets(false)
 		}
 		g.HUD.AddToast(fmt.Sprintf("全城道路标线与车道宽度已动态切换为: %.0f px", currentLaneW), true)
 	}
@@ -201,7 +249,7 @@ func (g *Game) Update() error {
 	// Check if AI bus fleet counts were updated in Settings
 	if g.Settings.AIBusFleetChanged {
 		if g.AIBusMgr != nil {
-			g.AIBusMgr.BuildFleet(g.World, g.Settings.AIBusCount, currentLaneW, g.Bus)
+			g.buildLineFleets(false)
 		}
 		g.Settings.AIBusFleetChanged = false
 		g.HUD.AddToast(fmt.Sprintf("路线AI公交车队已调度就绪: 共 %d 辆 (环线循环)", g.Settings.AIBusCount), true)
@@ -229,7 +277,7 @@ func (g *Game) Update() error {
 		if g.SelectedMapTheme == sim.MapThemeCustom {
 			_ = g.ReloadCustomMap()
 		} else {
-			g.HUD.AddToast(locale.T("提示: custom_map.json 支持热重载！按 ESC 退入主菜单按 [6] 可进入自定义地图", "Tip: custom_map.json supports hot-reload! Press ESC to return to menu and press [6] for Custom Map"), false)
+			g.HUD.AddToast(locale.T("提示: custom_map.json 支持热重载！按 ESC 退入主菜单按 [5] 可进入自定义地图", "Tip: custom_map.json supports hot-reload! Press ESC to return to menu and press [5] for Custom Map"), false)
 		}
 	}
 
@@ -239,6 +287,8 @@ func (g *Game) Update() error {
 	}
 
 	g.ensureOperations()
+	g.World.BeginBoundaryQueries(currentLaneW)
+	defer g.World.EndBoundaryQueries()
 	// 3. Game simulation (Traffic lights, AI traffic, AI buses, passenger arrivals, violations)
 	// Fully PAUSED during Planning Mode so the city stops and no new passengers generate while planning!
 	if !g.IsPlanMode {
@@ -266,7 +316,7 @@ func (g *Game) Update() error {
 		g.checkBusCarCollisions()
 
 		// World update (passenger arrivals ONLY at bus stops on the active route)
-		g.World.Update(dt, g.Route)
+		g.World.Update(dt, g.activeLines()...)
 	}
 
 	// 7. Planning / Driver Mode inputs
@@ -287,10 +337,6 @@ func (g *Game) Update() error {
 	g.HUD.Update(dt)
 
 	return nil
-}
-
-func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
-	return g.Width, g.Height
 }
 
 func (g *Game) recordTrafficViolation(violated bool, notice string) {

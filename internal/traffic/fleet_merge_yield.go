@@ -27,3 +27,9 @@ func (abm *AIBusManager) updateMergeYield(bus, player *sim.Bus, laneWidth float6
 		}
 	}
 }
+
+// UpdatePlayerMergeYield publishes the same safe rear slot for the player's
+// automatic driver that fleet buses publish for one another.
+func (abm *AIBusManager) UpdatePlayerMergeYield(player *sim.Bus, laneWidth float64) {
+	abm.updateMergeYield(player, nil, laneWidth)
+}

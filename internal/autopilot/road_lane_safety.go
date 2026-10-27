@@ -15,6 +15,21 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 	if f.world == nil || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
 		return steer
 	}
+	// The front section may have left the painted box while the articulated
+	// rear is still turning through it. Keep the explicit turn and full-body
+	// swept checks authoritative until the entire vehicle has cleared.
+	if f.bus.IsArticulated() && ad.rightTurnJunction != nil {
+		center := *ad.rightTurnJunction
+		g := f.world.JunctionAt(center, f.laneWidth)
+		box := sim.OBB{Center: center, HalfLen: g.HalfX, HalfWid: g.HalfY}
+		for _, part := range f.bus.BodyParts() {
+			if part.HalfLen > 0 {
+				if hit, _, _ := sim.CheckOBBCollision(part, box); hit {
+					return steer
+				}
+			}
+		}
+	}
 	nearRoundabout := false
 	for _, rb := range f.world.Roundabouts {
 		if f.bus.Pos.Distance(rb.Center) < rb.Radius+260 {
@@ -41,7 +56,7 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 	// Straight-road lane protection must agree with the route's road axis.
 	// A crossing road underneath a corner or a bay taper is not its centerline.
 	tangent := ad.pointAt(f.s + 25).Sub(ad.pointAt(f.s)).Normalize()
-	if math.Abs(tangent.Dot(sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)})) < .97 && !ad.onDepartureRoad(f, center, ew, heading) {
+	if math.Abs(tangent.Dot(sim.UnitFromAngle(heading))) < .97 && !ad.onDepartureRoad(f, center, ew, heading) {
 		return steer
 	}
 
@@ -89,7 +104,7 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 			}
 			steering += sim.Clamp(target-steering, -rate*step, rate*step)
 			angle += f.speedAbs / f.bus.WheelBase * math.Tan(steering) * step
-			pos = pos.Add(sim.Vec2{X: math.Cos(angle), Y: math.Sin(angle)}.Mul(f.speedAbs * step))
+			pos = pos.Add(sim.UnitFromAngle(angle).Mul(f.speedAbs * step))
 			if f.world.InsideJunction(pos, f.laneWidth, 0) {
 				return true
 			}
@@ -158,7 +173,7 @@ func (ad *AutopilotDriver) onDepartureRoad(f autopilotFrame, center float64, ew 
 	if math.Abs(roadCenter-center) > 1 {
 		return false
 	}
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	along := f.bus.Pos.Sub(stop.RoadCenter).Dot(forward)
 	return along >= -f.bus.Length && along <= 400
 }

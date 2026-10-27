@@ -69,7 +69,7 @@ func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes
 		RoadCenter:        roadCenter,
 		Heading:           heading,
 		RoadLanes:         roadLanes,
-		Length:            140,
+		Length:            StandardStopLength,
 		Width:             44,
 		WaitingPassengers: waitPax,
 		MaxWaiting:        45,
@@ -109,16 +109,15 @@ func (s *BusStop) Update(dt float64) {
 // ContainsBus checks if a bus is parked accurately inside the designated bus stop bay box,
 // strictly requiring the bus to have pulled off the main travel road and into the yellow box.
 func (s *BusStop) ContainsBus(bus *Bus) bool {
-	cosH := math.Cos(s.Heading)
-	sinH := math.Sin(s.Heading)
+	sinH, cosH := math.Sincos(s.Heading)
 
 	// Vector from bay box center to bus center
 	dx := bus.Pos.X - s.Pos.X
 	dy := bus.Pos.Y - s.Pos.Y
 
-	// Longitudinal offset along road/bay heading (length of bay is 140, bus is 96)
-	longitudinal := dx*cosH + dy*sinH
-	if math.Abs(longitudinal) > (s.Length/2 - 2.0) { // Within ±68 px along bay length (bay half-length is 70)
+	// Both sections must fit longitudinally in the boarding platform.
+	forward := Vec2{X: cosH, Y: sinH}
+	if !s.containsBusLength(bus, forward) {
 		return false
 	}
 
@@ -146,17 +145,25 @@ func (s *BusStop) ContainsBusInOuterLane(bus *Bus, laneWidth float64) bool {
 	if bus == nil {
 		return false
 	}
-	cosH := math.Cos(s.Heading)
-	sinH := math.Sin(s.Heading)
+	sinH, cosH := math.Sincos(s.Heading)
 
 	// Vector from bay box center to bus center
 	dx := bus.Pos.X - s.Pos.X
 	dy := bus.Pos.Y - s.Pos.Y
 
-	// Longitudinal offset along road/bay heading (bay length is 140, bus is 96):
-	// Bus center must be squarely aligned alongside the station (within ±42 px)
+	// Roadside boarding follows the same forward platform markers.
 	longitudinal := dx*cosH + dy*sinH
-	if math.Abs(longitudinal) > 42.0 {
+	front := s.FrontBerthPosition().Sub(s.Pos).Dot(Vec2{X: cosH, Y: sinH})
+	alignedBerth := math.Abs(longitudinal-front) <= 42
+	if bus.IsArticulated() {
+		// An outer long bus may serve anywhere its complete two-section body
+		// fits alongside the platform, without reaching an occupied front bay.
+		alignedBerth = s.containsBusLength(bus, Vec2{X: cosH, Y: sinH})
+	}
+	if s.HasTwoBerths() && !bus.IsArticulated() {
+		alignedBerth = alignedBerth || math.Abs(longitudinal-(front-120)) <= 42
+	}
+	if !alignedBerth {
 		return false
 	}
 
@@ -190,5 +197,19 @@ func (s *BusStop) ContainsBusInOuterLane(bus *Bus, laneWidth float64) bool {
 		return false
 	}
 
+	return true
+}
+
+func (s *BusStop) containsBusLength(bus *Bus, forward Vec2) bool {
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		yaw := part.Heading - s.Heading
+		extent := math.Abs(math.Cos(yaw))*part.HalfLen + math.Abs(math.Sin(yaw))*part.HalfWid
+		if math.Abs(part.Center.Sub(s.Pos).Dot(forward))+extent > s.Length/2+2 {
+			return false
+		}
+	}
 	return true
 }

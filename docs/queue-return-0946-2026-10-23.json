@@ -1,0 +1,2806 @@
+{
+  "date": "2026-10-23",
+  "source_saved_at": "2026-10-23T09:46:03.800585-07:00",
+  "source_sha256": "0d4cf0d39a44fa7e30dfd33cd9a4f2c22cd044041f450366fa1e0eeebeccff16",
+  "source_untouched": true,
+  "saved_car_count": 750,
+  "saved_ai_bus_count": 16,
+  "density_setting": 4,
+  "density_limit": 864,
+  "simulated_seconds": 150,
+  "before_samples": [
+    {
+      "Tick": 0,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 300,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 600,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 900,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 1200,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 1500,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 1800,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 2100,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 2400,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 2700,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 3000,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 3300,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 3600,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "obstacles": 150,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    }
+  ],
+  "after_samples": [
+    {
+      "Tick": 0,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601457567,
+          "Y": 4721.022985631941
+        },
+        "Heading": 1.5707966078624502,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 580.1045376715638,
+        "Remaining": 2667.12255078908,
+        "TargetSpeed": 0.20225863363445976,
+        "LaneOffset": -52.53398542433024,
+        "TargetLaneOffset": -52.53398542433024,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 124.97701436805892,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0.20225863363445976,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 176.19249098464982,
+          "turn_merge": 0.20225863363445976
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.656850117215,
+              "Y": 4849.392824141037
+            },
+            "Heading": 1.5589463478737315,
+            "Speed": 2.1904761904761902,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0.20225863363445976,
+              "signal": 150,
+              "turn_merge": 0.20225863363445976
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002933141963,
+              "Y": 4717.45252473549
+            },
+            "Heading": 1.570711391810807,
+            "Speed": 1.15,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 300,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 600,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 900,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 1200,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 1500,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 1800,
+      "Bus": {
+        "Position": {
+          "X": -15729.46601632287,
+          "Y": 4728.025153728052
+        },
+        "Heading": 1.5707965491358906,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 587.1067057676746,
+        "Remaining": 2660.120382692969,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53398367713089,
+        "TargetLaneOffset": -52.53398367713089,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 117.97484627194808,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 170.74310672301235,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15795.376077600531,
+              "Y": 4857.439687198714
+            },
+            "Heading": 1.5134693064201263,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 150,
+              "turn_merge": 0
+            }
+          },
+          {
+            "Position": {
+              "X": -15782.002321524322,
+              "Y": 4725.0702088354
+            },
+            "Heading": 1.5707204694842538,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 2100,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022553623,
+          "Y": 4813.839737061385
+        },
+        "Heading": 1.5707963393297977,
+        "Speed": 20.44999999999977,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 672.5804557676738,
+        "Remaining": 2574.64663269297,
+        "TargetSpeed": 19.895542432700317,
+        "LaneOffset": -52.53397745065013,
+        "TargetLaneOffset": -52.53397745065013,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 32.50109627194888,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 19.656959101181762,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": 77.94418511618554,
+          "turn_merge": 19.656959101181762
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15784.602351349346,
+              "Y": 4945.752471293195
+            },
+            "Heading": 1.48086406088932,
+            "Speed": 20.09508922405154,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 19.656959101181762,
+              "signal": 150,
+              "turn_merge": 19.656959101181762
+            }
+          },
+          {
+            "Position": {
+              "X": -15781.999612711903,
+              "Y": 4812.2003476611435
+            },
+            "Heading": 1.5707945099506961,
+            "Speed": 20.449999999999775,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 2400,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2551.871065559551,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": 65.94420047295888,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 2700,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2551.871065559551,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": 65.94420047295888,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 3000,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2545.4616145655637,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 3300,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2545.4616145655637,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 3600,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2545.4616145655637,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": 65.94420047295888,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 3900,
+      "Bus": {
+        "Position": {
+          "X": -15729.466022750195,
+          "Y": 4836.27447086147
+        },
+        "Heading": 1.5707963327044243,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 695.3560229010927,
+        "Remaining": 2545.4616145655637,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.53397724980459,
+        "TargetLaneOffset": -52.53397724980459,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 9.725529138529964,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": 0,
+          "obstacles": 150,
+          "required_merge": 0,
+          "signal": 74.8057007680771,
+          "station": 150,
+          "turn_hold": 0,
+          "turn_merge": 0
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -15781.99973544493,
+              "Y": 4858.610391999228
+            },
+            "Heading": 1.5708011432736644,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": 0,
+              "obstacles": 150,
+              "required_merge": 0,
+              "signal": 74.8057007680771,
+              "turn_merge": 0
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 4200,
+      "Bus": {
+        "Position": {
+          "X": -15729.911291617444,
+          "Y": 4853.63202842841
+        },
+        "Heading": 1.6342747945679834,
+        "Speed": 3.8333333333333335,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 712.6498202565726,
+        "Remaining": 2528.1678172100837,
+        "TargetSpeed": 80,
+        "LaneOffset": -52.07879276437512,
+        "TargetLaneOffset": -8.116057802990615e-15,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 4500,
+      "Bus": {
+        "Position": {
+          "X": -15737.166669580174,
+          "Y": 4904.357103353582
+        },
+        "Heading": 1.6959191849764703,
+        "Speed": 7.087310560708376,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 1,
+        "PathS": 763.3214569866432,
+        "Remaining": 2477.496180480013,
+        "TargetSpeed": 80,
+        "LaneOffset": -44.83616739888748,
+        "TargetLaneOffset": -1.12155060442536e-14,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 4800,
+      "Bus": {
+        "Position": {
+          "X": -15780.00441108163,
+          "Y": 5119.274230039387
+        },
+        "Heading": 1.6434805619550534,
+        "Speed": 80.19797675876951,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 10,
+        "PathS": 959.0124854566095,
+        "Remaining": 2281.805152010047,
+        "TargetSpeed": 80,
+        "LaneOffset": 49.36411975683766,
+        "TargetLaneOffset": 49.36411975683766,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": {
+          "Target": {
+            "X": -15782,
+            "Y": 4721.022985631941
+          },
+          "Heading": 1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": true,
+          "Is2Lane": false,
+          "Junction": {
+            "X": -15600,
+            "Y": 5400
+          },
+          "Joined": false
+        }
+      }
+    },
+    {
+      "Tick": 5100,
+      "Bus": {
+        "Position": {
+          "X": -15347.43265216962,
+          "Y": 5496.141697999178
+        },
+        "Heading": 0.6064954227310654,
+        "Speed": 350.6134296639149,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 30,
+        "PathS": 1516.877843551712,
+        "Remaining": 1730.3492449089317,
+        "TargetSpeed": 344.0712850272311,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": 1709.3507676543682
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 5400,
+      "Bus": {
+        "Position": {
+          "X": -13651.55274004163,
+          "Y": 5630.172244297428
+        },
+        "Heading": 0.03971698638204512,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "停靠上下客",
+        "From": 236,
+        "To": 199,
+        "Waypoint": 44,
+        "PathS": 3245.1897326814483,
+        "Remaining": 2.4378678252687678,
+        "TargetSpeed": 14,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 22,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 5700,
+      "Bus": {
+        "Position": {
+          "X": -12496.98947577513,
+          "Y": 5529.098228185309
+        },
+        "Heading": 0.0036095777620429722,
+        "Speed": 269.1399879785947,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 199,
+        "To": 201,
+        "Waypoint": 2,
+        "PathS": 1156.511929750134,
+        "Remaining": 2757.8845640134696,
+        "TargetSpeed": 264.1748852321604,
+        "LaneOffset": -52.643124405245544,
+        "TargetLaneOffset": -52.643124405245544,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 6000,
+      "Bus": {
+        "Position": {
+          "X": -12242.566996906364,
+          "Y": 5529.406561123325
+        },
+        "Heading": -0.00044401337937400817,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 199,
+        "To": 201,
+        "Waypoint": 2,
+        "PathS": 1415.4200458632522,
+        "Remaining": 2498.976447900351,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.643124405245544,
+        "TargetLaneOffset": -52.643124405245544,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": 0,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 0,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -11674,
+              "Y": 5864.799999999999
+            },
+            "Heading": 4.71238898038469,
+            "Speed": 166,
+            "Length": 46,
+            "Width": 22,
+            "Limits": {
+              "junction_admission": 0,
+              "junction_sweep": -1,
+              "merge_clearance": -1,
+              "obstacles": 150,
+              "required_merge": -1,
+              "signal": 0,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 6300,
+      "Bus": {
+        "Position": {
+          "X": -12242.566996906364,
+          "Y": 5529.406561123325
+        },
+        "Heading": -0.00044401337937400817,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 199,
+        "To": 201,
+        "Waypoint": 2,
+        "PathS": 1415.4200458632522,
+        "Remaining": 2498.976447900351,
+        "TargetSpeed": 0,
+        "LaneOffset": -52.643124405245544,
+        "TargetLaneOffset": -52.643124405245544,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 0,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 6600,
+      "Bus": {
+        "Position": {
+          "X": -10280.432920369192,
+          "Y": 5581.730803829193
+        },
+        "Heading": -0.0005137605761708407,
+        "Speed": 442.56356008449166,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "进站减速",
+        "From": 199,
+        "To": 201,
+        "Waypoint": 2,
+        "PathS": 3370.1780640391385,
+        "Remaining": 544.2184297244648,
+        "TargetSpeed": 435.5982455400635,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 6900,
+      "Bus": {
+        "Position": {
+          "X": -9511.3184167129,
+          "Y": 5583.698641658451
+        },
+        "Heading": -0.12844509986238156,
+        "Speed": 317.6132185027715,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 201,
+        "To": 203,
+        "Waypoint": 2,
+        "PathS": 241.41867931704562,
+        "Remaining": 3672.9778144465577,
+        "TargetSpeed": 667,
+        "LaneOffset": -0.9459304907577462,
+        "TargetLaneOffset": -0.9459304907577462,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 7200,
+      "Bus": {
+        "Position": {
+          "X": -6808.9258215112495,
+          "Y": 5581.74510930144
+        },
+        "Heading": 0.002154246703154329,
+        "Speed": 515.1065567533603,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 201,
+        "To": 203,
+        "Waypoint": 2,
+        "PathS": 2940.4761318999326,
+        "Remaining": 973.9203618636707,
+        "TargetSpeed": 515.3235330715158,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 7500,
+      "Bus": {
+        "Position": {
+          "X": -5852.33324998624,
+          "Y": 5582.000105496258
+        },
+        "Heading": -8.238615088850119e-07,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "停靠上下客",
+        "From": 201,
+        "To": 203,
+        "Waypoint": 2,
+        "PathS": 3546.7534840261587,
+        "Remaining": 2.4929231387968684,
+        "TargetSpeed": 0,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 22,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 7800,
+      "Bus": {
+        "Position": {
+          "X": -4767.891153525607,
+          "Y": 5582.000000059542
+        },
+        "Heading": -8.429075053492808e-10,
+        "Speed": 114.12787286171175,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 203,
+        "To": 205,
+        "Waypoint": 57,
+        "PathS": 1082.4632985796218,
+        "Remaining": 2826.2027357339557,
+        "TargetSpeed": 112.43663394473593,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 111.39097542814349,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 8100,
+      "Bus": {
+        "Position": {
+          "X": -4580.954733661489,
+          "Y": 5581.999999997341
+        },
+        "Heading": 2.281999361646165e-11,
+        "Speed": 7.351206195044888,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 203,
+        "To": 205,
+        "Waypoint": 57,
+        "PathS": 1271.1793295548507,
+        "Remaining": 2637.486704758727,
+        "TargetSpeed": 6.95057893920297,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 6.695764866925693,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 8400,
+      "Bus": {
+        "Position": {
+          "X": -4576.768177697592,
+          "Y": 5581.999999997443
+        },
+        "Heading": 2.629956267617037e-11,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 203,
+        "To": 205,
+        "Waypoint": 57,
+        "PathS": 1275.4884056219983,
+        "Remaining": 2633.1776286915792,
+        "TargetSpeed": 0,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 0,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": [
+          {
+            "Position": {
+              "X": -4442.816433111489,
+              "Y": 5582.000000000006
+            },
+            "Heading": -7.103803075176462e-14,
+            "Speed": 0,
+            "Length": 96,
+            "Width": 36,
+            "Limits": {
+              "junction_admission": -1,
+              "junction_sweep": -1,
+              "merge_clearance": -1,
+              "obstacles": 0,
+              "required_merge": -1,
+              "signal": 150,
+              "turn_merge": -1
+            }
+          }
+        ],
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 8700,
+      "Bus": {
+        "Position": {
+          "X": -3249.8922843088694,
+          "Y": 5581.999999999992
+        },
+        "Heading": 4.3778394514123323e-14,
+        "Speed": 430.6862709107557,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 203,
+        "To": 205,
+        "Waypoint": 57,
+        "PathS": 2595.1861944955417,
+        "Remaining": 1313.479839818036,
+        "TargetSpeed": 431.2731736484121,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    },
+    {
+      "Tick": 9000,
+      "Bus": {
+        "Position": {
+          "X": -1952.4560651725915,
+          "Y": 5629.992840046402
+        },
+        "Heading": -0.010579570614148999,
+        "Speed": 0,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "停靠上下客",
+        "From": 203,
+        "To": 205,
+        "Waypoint": 57,
+        "PathS": 3539.579814187353,
+        "Remaining": 2.636251566138526,
+        "TargetSpeed": 0,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 22,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    }
+  ],
+  "first_target_advance_sample_seconds": 95.0,
+  "player_health_min": 91,
+  "old_0819_replay": {
+    "simulated_seconds": 60,
+    "passed": true,
+    "start": {
+      "Tick": 0,
+      "Bus": {
+        "Position": {
+          "X": 15760.861777413787,
+          "Y": 2346.6176030560837
+        },
+        "Heading": -1.7755739862314726,
+        "Speed": 3.484848484848485,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 279,
+        "To": 99,
+        "Waypoint": 2,
+        "PathS": 361.3125724329878,
+        "Remaining": 2534.82000675765,
+        "TargetSpeed": 20,
+        "LaneOffset": -21.105198056924703,
+        "TargetLaneOffset": -1.4369236893692792e-13,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 35.320478391099186,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": 974.8847111531627
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": {
+          "Target": {
+            "X": 15782,
+            "Y": 1.1144285872240898e-14
+          },
+          "Heading": -1.5707963267948966,
+          "Remaining": 0.2833333333333333,
+          "RightTurn": false,
+          "LeftTurn": false,
+          "Is2Lane": false,
+          "Junction": {
+            "X": 0,
+            "Y": 0
+          },
+          "Joined": false
+        },
+        "Approach": null
+      }
+    },
+    "end": {
+      "Tick": 3600,
+      "Bus": {
+        "Position": {
+          "X": 6750.52709206591,
+          "Y": 1617.9777633137528
+        },
+        "Heading": 3.141563601827723,
+        "Speed": 582.4917635750965,
+        "Health": 91
+      },
+      "Diagnosis": {
+        "State": "巡航行驶",
+        "From": 97,
+        "To": 95,
+        "Waypoint": 2,
+        "PathS": 2997.7517546482177,
+        "Remaining": 916.6447391153856,
+        "TargetSpeed": 575.5587103729135,
+        "LaneOffset": 0,
+        "TargetLaneOffset": 0,
+        "RoadSafetyHold": false,
+        "RightTurnWaiting": false,
+        "TurnHoldDistance": 0,
+        "Limits": {
+          "junction_admission": -1,
+          "junction_sweep": -1,
+          "merge_clearance": -1,
+          "obstacles": 150,
+          "required_merge": -1,
+          "signal": 150,
+          "station": 150,
+          "turn_hold": -1,
+          "turn_merge": -1
+        },
+        "Blockers": null,
+        "Path": null
+      },
+      "Snapshot": {
+        "Revision": 1,
+        "Ordinary": false,
+        "Mid": null,
+        "Approach": null
+      }
+    }
+  },
+  "regression": {
+    "pass": 8285,
+    "skip": 5
+  },
+  "package_results": {
+    "skip": 7,
+    "pass": 7
+  },
+  "race": "passed",
+  "vet": "passed",
+  "diff_check": "passed",
+  "app_build": "passed"
+}

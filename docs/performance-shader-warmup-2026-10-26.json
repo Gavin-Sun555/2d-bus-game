@@ -1,0 +1,105 @@
+{
+  "clean_fullscreen_runs": [
+    {
+      "run": "baseline-2",
+      "frames": 6977,
+      "valid_span_seconds": 118.00495712499996,
+      "gap_p99_ms": 31.649917,
+      "gap_p999_ms": 41.494792,
+      "gap_max_ms": 161.142583,
+      "over50ms": 3,
+      "initial_render_ms": 608.308,
+      "process_to_initial_draw_ms": 236.009,
+      "warmup_ms": null,
+      "in_game_compiles": [
+        {
+          "kind": "SHADER_COMPILE",
+          "at": 87.615997,
+          "source": "ll72cqtwjplgbsex5ucq7vz2xm",
+          "ms": 91.644458,
+          "detail": "SHADER_COMPILE ns=1793052432719107000 source=ll72cqtwjplgbsex5ucq7vz2xm ms=91.644458"
+        },
+        {
+          "kind": "PIPELINE_COMPILE",
+          "at": 87.707712,
+          "source": "ll72cqtwjplgbsex5ucq7vz2xm",
+          "ms": 0.166958,
+          "detail": "PIPELINE_COMPILE ns=1793052432810822000 source=ll72cqtwjplgbsex5ucq7vz2xm screen=false blend={BlendFactorSourceRGB:1 BlendFactorSourceAlpha:1 BlendFactorDestinationRGB:1 BlendFactorDestinationAlpha:1 BlendOperationRGB:0 BlendOperationAlpha:0} ms=0.166958"
+        }
+      ]
+    },
+    {
+      "run": "warm-1",
+      "frames": 7018,
+      "valid_span_seconds": 117.99458812500016,
+      "gap_p99_ms": 26.911625,
+      "gap_p999_ms": 33.287167,
+      "gap_max_ms": 38.741792,
+      "over50ms": 0,
+      "initial_render_ms": 551.46,
+      "process_to_initial_draw_ms": 213.989,
+      "warmup_ms": 465.019,
+      "in_game_compiles": []
+    },
+    {
+      "run": "warm-3",
+      "frames": 7031,
+      "valid_span_seconds": 118.01073745799977,
+      "gap_p99_ms": 18.235666,
+      "gap_p999_ms": 32.9005,
+      "gap_max_ms": 33.470959,
+      "over50ms": 0,
+      "initial_render_ms": 773.821,
+      "process_to_initial_draw_ms": 225.993,
+      "warmup_ms": 470.53,
+      "in_game_compiles": []
+    }
+  ],
+  "cache_hit_startup": [
+    {
+      "run": "cached-base-1",
+      "process_to_first_scene_ms": 343.511,
+      "first_draw_to_first_scene_ms": 103.33,
+      "warmup_ms": null
+    },
+    {
+      "run": "cached-warm-1",
+      "process_to_first_scene_ms": 312.253,
+      "first_draw_to_first_scene_ms": 103.566,
+      "warmup_ms": 8.744
+    },
+    {
+      "run": "cached-base-2",
+      "process_to_first_scene_ms": 321.926,
+      "first_draw_to_first_scene_ms": 84.446,
+      "warmup_ms": null
+    },
+    {
+      "run": "cached-warm-2",
+      "process_to_first_scene_ms": 329.938,
+      "first_draw_to_first_scene_ms": 112.185,
+      "warmup_ms": 8.439
+    }
+  ],
+  "cold_source_startup": {
+    "baseline-2": {
+      "process_to_first_scene_ms": 844.317
+    },
+    "warm-3": {
+      "process_to_first_scene_ms": 999.814
+    }
+  },
+  "warm1_initial_render_caveat": "Early harness logged completion before first world draw; initial_render_ms=551.46 is not comparable and must not be used for startup comparison.",
+  "invalid_run": "warm-2 had focus loss and sustained low rate after focus returned. Its P99/P99.9/max were 171.34/173.28/174.15ms despite no gameplay compiler calls. Retained as anomalous environment evidence; prewarming does not eliminate all slow frames.",
+  "validation": {
+    "all_tests": "passed: go test ./... -count=1 (all-tests-final.log)",
+    "race": "passed (race.log)",
+    "vet": "passed (vet-final.log)",
+    "diff_check": "passed",
+    "app_build": "passed; production dependencies, no experimental replacement",
+    "plist": "passed",
+    "native_app_smoke": "production .app visually reached main menu",
+    "binary_sha256": "f524b81d90afa3dc980fab284b9de00f9f570c29bbca88d336681ea03f490cc7",
+    "user_save_sha256_unchanged": "98b3cdd1323cf636c858e22ae3a70b4474932f1cbb7133132911807afeba30ba"
+  }
+}

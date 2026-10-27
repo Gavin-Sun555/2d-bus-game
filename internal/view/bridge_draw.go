@@ -14,7 +14,7 @@ func drawBridges(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth 
 			continue
 		}
 		br := original // Rendering width adapts to the road without changing collision geometry.
-		forward := sim.Vec2{X: math.Cos(br.Heading), Y: math.Sin(br.Heading)}
+		forward := sim.UnitFromAngle(br.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		for _, road := range w.Roads {
 			dir := road.P2.Sub(road.P1).Normalize()

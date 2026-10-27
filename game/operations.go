@@ -25,6 +25,7 @@ func (g *Game) ensureOperations() {
 	}
 	if g.Operations != nil {
 		g.Operations.Policy = g.Settings.Fare.Normalize()
+		g.Operations.Distances = g.Operations.DistancesFor(g.Route)
 	}
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.Operations = g.Operations

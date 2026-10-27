@@ -14,7 +14,7 @@ import (
 func TestPartialTwoLaneReturnAheadOfFollowingBusCompletes(t *testing.T) {
 	for _, lw := range []float64{42, 52, 78} {
 		t.Run(fmt.Sprintf("width%.0f", lw), func(t *testing.T) {
-			w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+			w := legacyMetropolisWorld(lw)
 			from, to := w.Stops[2], w.Stops[4]
 			route := &sim.Route{StopIDs: []int{2, 4}, CurrentIndex: 1}
 			tls := sim.NewTrafficLightSystem()
@@ -84,4 +84,34 @@ func TestPartialTwoLaneReturnAheadOfFollowingBusCompletes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Frozen pre-expansion road fixture for narrow-road regression scenarios.
+func legacyMetropolisWorld(lw float64) *sim.World {
+	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	w.Roads = w.Roads[:10]
+	w.Stops = w.Stops[:12]
+	for i := range w.Roads {
+		r := &w.Roads[i]
+		if r.P1.X == -5200*sim.MapGridScale {
+			r.P1.X = -2600 * sim.MapGridScale
+		}
+		if r.P2.X == 5200*sim.MapGridScale {
+			r.P2.X = 2600 * sim.MapGridScale
+		}
+		if r.P1.Y == -2400*sim.MapGridScale {
+			r.P1.Y = -1200 * sim.MapGridScale
+		}
+		if r.P2.Y == 2400*sim.MapGridScale {
+			r.P2.Y = 1200 * sim.MapGridScale
+		}
+		if i == 1 || i == 3 || i == 6 || i == 8 {
+			r.Lanes = 2
+			r.Type = sim.RoadStreet2Lane
+		}
+	}
+	w.MatchStopRoadLanes(lw)
+	w.RebuildIntersections()
+	sim.ClearRoutePathCache()
+	return w
 }

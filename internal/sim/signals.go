@@ -77,6 +77,7 @@ type RoadCamera struct {
 
 // TrafficLightSystem coordinates all city intersections and surveillance cameras
 type TrafficLightSystem struct {
+	junctionIndex *junctionIndex
 	Intersections []*TrafficIntersection
 	RoadCameras   []*RoadCamera
 }
@@ -187,6 +188,7 @@ func NewTrafficLightSystem() *TrafficLightSystem {
 
 // BuildForWorld adapts traffic lights and speed cameras to the active city map's road topology
 func (tls *TrafficLightSystem) BuildForWorld(w *World) {
+	tls.junctionIndex = nil
 	if w == nil {
 		return
 	}

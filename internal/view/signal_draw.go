@@ -88,7 +88,7 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 				continue
 			}
 			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
-			fwd := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			fwd := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
 			cross := ewCross
 			if approach >= 2 {

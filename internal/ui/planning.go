@@ -49,13 +49,6 @@ func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *sim.Route, w
 
 	// Status badges (Loop status & Fleet count) on the right side of top bar
 	rightBadgeX := panelX + panelW - 20.0
-	if settings != nil {
-		fleetStr := locale.Tf("AI车队: %d辆 (ESC修改)", "AI Fleet: %d (ESC)", settings.AIBusCount)
-		fleetW, _ := textui.MeasureText(fleetStr, 11.0)
-		rightBadgeX -= fleetW
-		textui.DrawText(screen, fleetStr, rightBadgeX, panelY+13, 11, sim.RGBA(148, 163, 184, 255))
-		rightBadgeX -= 16.0
-	}
 
 	// Loop closure badge
 	if len(route.StopIDs) >= 2 {
@@ -73,8 +66,8 @@ func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *sim.Route, w
 	}
 
 	// Second line: Stop Rules guidance
-	rulesText := locale.T("【靠站规则】公交车站均设于道路顺行右侧，系统已自动按顺行右侧靠站安全规划路线",
-		"[Stop Rules] Stations are placed on right side of roadway. System plans paths for right-side bays")
+	rulesText := locale.T("[T] 线路与 AI 限速 · [H] 显示/隐藏其他线路 · 当前编辑："+route.Name+" · 车站设在顺行右侧",
+		"[T] Lines / AI limits · [H] Toggle other lines · Editing: "+route.Name+" · Right-side stops")
 	textui.DrawText(screen, rulesText, panelX+20, panelY+32, 11, sim.RGBA(250, 204, 21, 230))
 
 	// Third line(s): The wrapped route lines

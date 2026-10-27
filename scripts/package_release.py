@@ -54,6 +54,8 @@ def main():
                     'CFBundleShortVersionString': args.version,
                     'CFBundleExecutable': 'busgame',
                     'CFBundleIconFile': 'AppIcon',
+                    'LSApplicationCategoryType': 'public.app-category.simulation-games',
+                    'LSSupportsGameMode': True,
                     'NSHighResolutionCapable': True,
                 }, output)
         shutil.copy2(root / 'VERSION', package)

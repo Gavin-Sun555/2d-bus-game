@@ -16,16 +16,20 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 	if !ok || road.GeneralTrafficLanes() < 2 {
 		return math.Inf(1)
 	}
-	u := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	u := sim.UnitFromAngle(car.Heading)
 	length := carLaneChangeLength(car, f.laneWidth)
 	approach := math.Inf(1)
+	var nextJunction *sim.TrafficIntersection
 	if f.tls != nil {
 		for _, inter := range f.tls.Intersections {
 			delta := inter.Center.Sub(car.Pos)
 			along := delta.Dot(u)
 			if along > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < road.GetWidth(f.laneWidth)/2+10 {
 				gap := along - inter.GetStopLineDistForHeading(car.Heading, f.laneWidth) - car.Length/2
-				approach = math.Min(approach, gap)
+				if gap < approach {
+					approach = gap
+					nextJunction = inter
+				}
 				if gap < 1300 && !hasRoadInDirection(f.world, inter.Center, car.Heading) && !hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2) && hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) {
 					// Do not leave a required left-turn queue to pass and then
 					// compete for the same lane again at the end of the road.
@@ -43,7 +47,10 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 	reserve := math.Max(700, car.TargetSpeed*2+length+200)
 	if car.Passing {
 		passed := true
-		for _, other := range tm.carsForFrame(f) {
+		fullFrame := f
+		fullFrame.candidates = nil
+		fullFrame.localCarRadius = 0 // Explicit leader-ID lookup covers all cars.
+		for _, other := range tm.carsForFrame(fullFrame) {
 			if other.ID == car.PassingLeadID {
 				passed = other.Pos.Sub(car.Pos).Dot(u) < -(car.Length+other.Length)/2-math.Max(25, car.Speed*.4)
 				break
@@ -62,6 +69,15 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 				tm.beginCarLaneChange(f, car.PassingBaseLane)
 				car.Passing = false
 			} else if approach < reserve {
+				// An optional passing return must not stop two adjacent
+				// queues waiting to swap lanes. Keep this legal lane and let
+				// its normal signal/turn planner choose the next movement.
+				if nextJunction != nil && carCurrentLaneHasExit(f, nextJunction) {
+					car.Passing = false
+					car.PassingLeadBus = nil
+					car.PassingLeadID = 0
+					return math.Inf(1)
+				}
 				return math.Sqrt(2 * 220 * math.Max(0, approach-length-100))
 			}
 		}
@@ -89,9 +105,10 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 		if bus == nil || math.Cos(bus.Heading-car.Heading) < .98 {
 			continue
 		}
-		delta := bus.Pos.Sub(car.Pos)
+		body := bus.BodyEnvelope()
+		delta := body.Center.Sub(car.Pos)
 		along := delta.Dot(u)
-		if along > (car.Length+bus.Length)/2+12 && along < nearest && math.Abs(delta.Dot(right)) < (car.Width+bus.Width)/2+5 && bus.Speed < car.TargetSpeed*.85 {
+		if along > car.Length/2+body.HalfLen+12 && along < nearest && math.Abs(delta.Dot(right)) < car.Width/2+body.HalfWid+5 && bus.Speed < car.TargetSpeed*.85 {
 			leadBus = bus
 			nearest = along
 		}
@@ -123,6 +140,16 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 }
 
 func (tm *TrafficManager) carsForFrame(f carFrame) []*sim.TrafficCar {
+	if f.candidates != nil {
+		return f.candidates
+	}
+	if f.localCarRadius > 0 && tm.spatialActive {
+		if !tm.localCarsReady {
+			tm.localCars(f.car, f.localCarRadius)
+			tm.localCarsReady = true
+		}
+		return tm.nearbyCars
+	}
 	if f.activeCount > 0 && f.activeCount < len(tm.Cars) {
 		return tm.Cars[:f.activeCount]
 	}
@@ -136,7 +163,7 @@ func carLaneChangeLength(car *sim.TrafficCar, lw float64) float64 {
 func (tm *TrafficManager) beginCarLaneChange(f carFrame, target int) {
 	car := f.car
 	heading := math.Atan2(math.Sin(car.Heading), math.Cos(car.Heading))
-	u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	u := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -u.Y, Y: u.X}
 	length := carLaneChangeLength(car, f.laneWidth)
 	shift := float64(target-car.LaneIndex) * f.laneWidth
@@ -166,4 +193,15 @@ func (tm *TrafficManager) passingLaneClear(f carFrame, u sim.Vec2, direction flo
 		}
 	}
 	return true
+}
+
+func carCurrentLaneHasExit(f carFrame, inter *sim.TrafficIntersection) bool {
+	left, right := carIntersectionTurns(f, inter)
+	heading := f.car.Heading
+	if left {
+		heading -= math.Pi / 2
+	} else if right {
+		heading += math.Pi / 2
+	}
+	return hasRoadInDirection(f.world, inter.Center, heading) || isMapExitAhead(f.world, inter.Center, heading)
 }

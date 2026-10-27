@@ -7,16 +7,26 @@ import (
 )
 
 func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) float64 {
+	var departure departureSweepCache
+	f.departureCache = &departure
 	targetSpd = math.Min(targetSpd, ad.roundaboutEntryObstacleSpeed(f))
 	targetSpd = ad.stationDepartureTrafficSpeed(f, targetSpd)
+	rearCars := ad.departureRearCars(f)
 	// E. Forward Vehicle Obstacle Avoidance
-	cosH := math.Cos(f.bus.Heading)
-	sinH := math.Sin(f.bus.Heading)
+	sinH, cosH := math.Sincos(f.bus.Heading)
 	fwdLimit := 140.0
 	if ad.BerserkMode {
 		fwdLimit = math.Max(140.0, f.speedAbs*f.speedAbs/(2*130.0)+80.0)
 	}
+	// These inputs remain constant for the entire obstacle scan.
+	roadEW, roadMulti, roadSix := false, false, false
+	if f.world != nil {
+		_, roadEW, roadMulti, roadSix = sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+	}
 	for _, obs := range f.obstacles {
+		if rearCars.matches(obs) {
+			continue
+		}
 		if gap, ok := sim.JunctionLeaderGap(f.bus.JunctionCorridor, obs.JunctionCorridor, sim.OBB{Center: obs.Pos, Heading: obs.Heading, HalfLen: obs.Length / 2, HalfWid: obs.Width / 2}, f.bus.Length, f.bus.Width); ok {
 			targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, obs.Speed, f.speedAbs, 130))
 			continue
@@ -26,6 +36,15 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 		fwdDist := delta.X*cosH + delta.Y*sinH
 		latDist := math.Abs(-delta.X*sinH + delta.Y*cosH)
 
+		// The rules below can constrain speed only in the forward ray or
+		// immediate front envelope. Rear departure traffic has already been
+		// checked above, and curved following is still checked after this loop.
+		// Avoid proving a long departure sweep for every distant/rear car.
+		frontReach := f.bus.Length/2 + obs.Length/2 + 8
+		if fwdDist <= 2 || (fwdDist >= fwdLimit && delta.Dot(delta) >= frontReach*frontReach) {
+			continue
+		}
+
 		// A straight departure can run beside the occupied bay. Use the
 		// route corridor instead of treating every nearby car as a frontal block.
 		if ad.State == AutopilotStateDeparting && math.Cos(obs.Heading-f.bus.Heading) > 0.98 &&
@@ -34,7 +53,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			continue
 		}
 
-		if ad.clearsQueueWhileRecentering(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		if ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
 			continue
 		}
 
@@ -105,14 +124,13 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 
 		roadLatDist := latDist
 		if f.world != nil {
-			_, isEW, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
-			if isMulti || is6 {
-				if isEW {
+			if (roadMulti || roadSix) && roadEW == (math.Abs(cosH) > math.Abs(sinH)) {
+				if roadEW {
 					roadLatDist = math.Abs(f.bus.Pos.Y - obs.Pos.Y)
 				} else {
 					roadLatDist = math.Abs(f.bus.Pos.X - obs.Pos.X)
 				}
-			} else {
+			} else if !roadMulti && !roadSix {
 				cosH := math.Abs(math.Cos(f.bus.Heading))
 				sinH := math.Abs(math.Sin(f.bus.Heading))
 				if cosH >= sinH {
@@ -125,8 +143,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 
 		isMultiLaneRoad := false
 		if f.world != nil {
-			_, _, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
-			isMultiLaneRoad = isMulti || is6 || f.nearRoundabout
+			isMultiLaneRoad = roadMulti || roadSix || f.nearRoundabout
 		}
 
 		// Immediate physical proximity / collision containment:
@@ -280,4 +297,64 @@ func roadSideClearance(bus *sim.Bus, obs VehicleObstacle) float64 {
 	angle := bus.Heading - obs.Heading
 	halfWidth := math.Abs(math.Cos(angle))*bus.Width/2 + math.Abs(math.Sin(angle))*bus.Length/2
 	return math.Abs(bus.Pos.Sub(obs.Pos).Dot(normal)) - halfWidth - obs.Width/2
+}
+
+// A stopped bus outside our straight corridor must not become a phantom
+// leader on a two-lane road. Check the real two-section bodies along the
+// entire passing horizon; ordinary headway remains for a shared corridor.
+func (ad *AutopilotDriver) clearsStoppedParallelBus(f autopilotFrame, ob VehicleObstacle) bool {
+	if ob.Bus == nil || math.Abs(ob.Speed) > .1 || math.Cos(ob.Heading-f.bus.Heading) < .98 || len(ad.drivePath) < 2 || f.world == nil {
+		return false
+	}
+	u := sim.UnitFromAngle(f.bus.Heading)
+	delta := ob.Pos.Sub(f.bus.Pos)
+	if delta.Dot(u) <= 0 || delta.Dot(u) > 200 || math.Abs(delta.X*u.Y-delta.Y*u.X) < (f.bus.Width+ob.Width)/2+2 {
+		return false
+	}
+	horizon := math.Min(400, delta.Dot(u)+(f.bus.OverallLength()+ob.Bus.OverallLength())/2+30)
+	base := ad.pointAt(f.s)
+	for distance := 0.; distance <= horizon; distance += 8 {
+		point := ad.pointAt(f.s + distance)
+		if math.Abs(point.Sub(base).X*u.Y-point.Sub(base).Y*u.X) > 2 || point.Sub(base).Dot(u) < distance-3 {
+			return false
+		}
+		var own [2]sim.OBB
+		index := int(distance / 8)
+		var cache *parallelSweepPose
+		if f.departureCache != nil {
+			cache = &f.departureCache.parallel[index]
+		}
+		if cache != nil && cache.ready {
+			if !cache.clear {
+				return false
+			}
+			own = cache.bodies
+		} else {
+			b := f.bus.AtPose(f.bus.Pos.Add(u.Mul(distance)), f.bus.Heading)
+			clear := b.CheckBoundaries(f.world, f.laneWidth).Zone != sim.ZoneHardBarrier
+			own = b.BodyParts()
+			if cache != nil {
+				*cache = parallelSweepPose{ready: true, clear: clear, bodies: own}
+			}
+			if !clear {
+				return false
+			}
+		}
+		for _, body := range ob.Bus.BodyParts() {
+			if body.HalfLen <= 0 {
+				continue
+			}
+			body.HalfWid += 2
+			body.HalfLen += 2
+			for _, part := range own {
+				if part.HalfLen <= 0 {
+					continue
+				}
+				if hit, _, _ := sim.CheckOBBCollision(part, body); hit {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }

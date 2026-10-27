@@ -20,9 +20,21 @@ func (ad *AutopilotDriver) updateOvertaking(
 	dt float64,
 	targetStop *sim.BusStop,
 ) {
+	ad.pathReturnHold = nil
+	ad.prepareServedStationMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
 	ad.retryStoppedMidLaneReturn(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
 	if ad.advanceMidLaneRecovery(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
 		return
+	}
+	// This prefix already joins the actual boarding position to the road.
+	// A second lane offset would move that same curve across an extra lane.
+	if ad.dockDepartureRun > 0 {
+		if s < ad.dockDepartureRun && world != nil && !world.InsideJunction(bus.Pos, laneWidth, 0) {
+			ad.holdLaneOffset(0)
+			ad.OvertakeState = OvertakeNone
+			return
+		}
+		ad.dockDepartureRun = 0
 	}
 	// All lane policies, including an already-running return, must recheck
 	// rightward clearance before their interpolated target reaches steering.
@@ -49,6 +61,11 @@ func (ad *AutopilotDriver) updateOvertaking(
 	}
 
 	if !ad.BerserkMode {
+		if ad.approachMerge != nil && ad.approachMerge.LeftTurn && ad.busLaneJunction != nil {
+			if ad.advanceApproachMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
+				return
+			}
+		}
 		ad.approachMerge = nil
 		ad.approachMergeJoined = false
 	}
@@ -165,8 +182,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 		}
 	}
 
-	cosH := math.Cos(bus.Heading)
-	sinH := math.Sin(bus.Heading)
+	sinH, cosH := math.Sincos(bus.Heading)
 
 	// =========================================================================
 	// STATION APPROACH & BAY ENTRY CONTROLLER

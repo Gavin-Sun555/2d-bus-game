@@ -12,3 +12,5 @@ dist/
 # Test & coverage artifacts
 *.out
 *.test
+__pycache__/
+*.pyc

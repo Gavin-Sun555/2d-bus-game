@@ -23,6 +23,7 @@ type HUD struct {
 	GearDBounds           sim.Rect
 	AutopilotBounds       sim.Rect
 	CameraBtnBounds       sim.Rect
+	SettingsBtnBounds     sim.Rect
 	MapThemeBtnBounds     sim.Rect
 	MenuBtnBounds         sim.Rect
 	PlanUndoBtnBounds     sim.Rect
@@ -40,8 +41,7 @@ func NewHUD() *HUD {
 
 // HandleModeBtnClick detects mouse click on the top-bar mode badge (Drive Mode <-> Plan Mode)
 func (h *HUD) HandleModeBtnClick(mousePos sim.Vec2) bool {
-	// Top-left mode badge is at x: 16 ~ 236, y: 12 ~ 44
-	return mousePos.X >= 16 && mousePos.X <= 236 && mousePos.Y >= 12 && mousePos.Y <= 44
+	return newHUDTopLayout(1280).mode.Contains(mousePos)
 }
 
 // HandleMenuBtnClick detects mouse click on the top-bar main menu / map change button

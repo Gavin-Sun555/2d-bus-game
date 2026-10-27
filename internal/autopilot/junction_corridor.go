@@ -47,7 +47,7 @@ func (ad *AutopilotDriver) publishJunctionCorridor(f autopilotFrame) {
 		corridor.Entered = false
 	}
 	corridor.Center = *center
-	u := sim.Vec2{X: math.Cos(corridor.EntryHeading), Y: math.Sin(corridor.EntryHeading)}
+	u := sim.UnitFromAngle(corridor.EntryHeading)
 	for _, it := range f.tls.Intersections {
 		if it.Center.Distance(*center) < 1 {
 			gap := center.Sub(f.bus.Pos).Dot(u) - it.GetStopLineDistForHeading(corridor.EntryHeading, f.laneWidth) - f.bus.Length/2

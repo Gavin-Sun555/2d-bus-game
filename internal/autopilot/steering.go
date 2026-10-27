@@ -113,6 +113,16 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	// Turning inside a junction may cross the incoming road axis. Its
 	// straight-road clamps must not pull a left-turn pursuit point back right.
 	insideJunction := f.world != nil && f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0)
+	if ad.ordinaryBusLeft && ad.busLaneJunction != nil && !ad.busJunctionEntered && !insideJunction {
+		// See the settled median approach early enough to unwind the actuator;
+		// chasing only the next short taper segment can overshoot the median.
+		heading := approachRoadHeading(f.bus.Heading)
+		forward := sim.UnitFromAngle(heading)
+		g := f.world.JunctionAt(*ad.busLaneJunction, f.laneWidth)
+		half := math.Abs(forward.X)*g.HalfX + math.Abs(forward.Y)*g.HalfY
+		runway := ad.busLaneJunction.Sub(f.bus.Pos).Dot(forward) - half - 20
+		lookahead = math.Max(lookahead, math.Min(120, runway))
+	}
 	baseTargetPt := ad.pointAt(f.s + lookahead)
 	targetPt = baseTargetPt
 	if ad.LaneOffset != 0 && len(ad.drivePath) >= 2 {
@@ -130,6 +140,13 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		}
 		if uNext.Length() > 1e-3 {
 			trgRight := sim.Vec2{X: -uNext.Y, Y: uNext.X}
+			// Approach lane policies measure offsets on the incoming road,
+			// not the diagonal median taper. Use the same axis for tracking
+			// and pursuit so a held offset cannot place the target behind us.
+			if ad.busLaneJunction != nil && !ad.busJunctionEntered && !insideJunction {
+				u := sim.UnitFromAngle(approachRoadHeading(f.bus.Heading))
+				trgRight = sim.Vec2{X: -u.Y, Y: u.X}
+			}
 			effOffset := ad.LaneOffset
 			if nearRb != nil {
 				effOffset = roundaboutLaneOffset(nearRb, f.bus, effOffset)
@@ -274,7 +291,7 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			}
 			targetPt.X = roadCenter - direction*distAdj
 		}
-		forward := sim.Vec2{X: math.Cos(f.targetStop.Heading), Y: math.Sin(f.targetStop.Heading)}
+		forward := sim.UnitFromAngle(f.targetStop.Heading)
 		fwdDist := targetPt.Sub(f.bus.Pos).Dot(forward)
 		minFwd := math.Max(lookahead, 35)
 		if fwdDist < minFwd {
@@ -290,7 +307,7 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	}
 
 	if ad.approachMerge != nil {
-		forward := sim.Vec2{X: math.Cos(ad.approachMerge.Heading), Y: math.Sin(ad.approachMerge.Heading)}
+		forward := sim.UnitFromAngle(ad.approachMerge.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		corridor := ad.pointAt(f.s).Add(right.Mul(ad.LaneOffset))
 		mergeLookahead := math.Max(60, math.Abs(ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right))*.8)
@@ -298,13 +315,31 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			// Near the median, a sharp rightward yaw sweeps the long rear
 			// corner across the centerline before the bus has moved outward.
 			lateral := 1.5*f.laneWidth - ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right)
+			if f.world != nil && ad.approachMerge.LeftTurn && ad.busLaneJunction != nil && !ad.ordinaryBusLeft {
+				center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, ad.approachMerge.Heading, f.laneWidth)
+				origin := sim.Vec2{Y: center}
+				if !ew {
+					origin = sim.Vec2{X: center}
+				}
+				lateral = f.bus.Pos.Sub(origin).Dot(right)
+			}
 			yawLimit := sim.Clamp((lateral-f.bus.Width/2-3)/(f.bus.Length/2), .06, .4)
 			mergeLookahead = math.Max(60, math.Abs(corridor.Sub(f.bus.Pos).Dot(right))/math.Tan(yawLimit))
 		}
 		targetPt = f.bus.Pos.Add(forward.Mul(mergeLookahead)).Add(right.Mul(corridor.Sub(f.bus.Pos).Dot(right)))
+	} else if recovery := ad.midLaneRecovery; recovery != nil {
+		forward := sim.UnitFromAngle(recovery.Heading)
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		shift := recovery.Target.Sub(f.bus.Pos).Dot(right)
+		targetPt = f.bus.Pos.Add(forward.Mul(math.Max(60, math.Abs(shift)*.8))).Add(right.Mul(shift))
 	} else if ad.rightTurnWaiting {
-		forward := sim.Vec2{X: math.Cos(ad.rightTurnHeading), Y: math.Sin(ad.rightTurnHeading)}
+		forward := sim.UnitFromAngle(ad.rightTurnHeading)
 		targetPt = f.bus.Pos.Add(forward.Mul(lookahead))
+	}
+	if hold := ad.pathReturnHold; hold != nil {
+		forward := sim.UnitFromAngle(hold.Heading)
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		targetPt = f.bus.Pos.Add(forward.Mul(lookahead)).Add(right.Mul(hold.Target.Sub(f.bus.Pos).Dot(right)))
 	}
 	toTarget := targetPt.Sub(f.bus.Pos)
 	alpha = sim.NormalizeAngle(math.Atan2(toTarget.Y, toTarget.X) - f.bus.Heading)

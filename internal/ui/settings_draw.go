@@ -165,15 +165,11 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 
 	// Option 5: Configurable Route AI Buses Count
 	opt5Y := modalY + 222
-	textui.DrawText(screen, locale.T("5. 路线 AI 公交车数量配置:", "5. Route AI Bus Fleet Size:"), modalX+26, opt5Y+7, 13, sim.RGBA(226, 232, 240, 255))
+	textui.DrawText(screen, locale.T("5. 各线路 AI 公交配置:", "5. AI fleets by line:"), modalX+26, opt5Y+7, 13, sim.RGBA(226, 232, 240, 255))
 	s.aiBusToggleBounds = sim.Rect{X: modalX + 340, Y: opt5Y, W: 210, H: 28}
 
 	fleetBtnColor := sim.RGBA(16, 185, 129, 255)
-	fleetBtnText := locale.Tf("【AI公交车队: %d 辆】", "【AI Fleet: %d Buses】", s.AIBusCount)
-	if s.AIBusCount == 0 {
-		fleetBtnColor = sim.RGBA(148, 163, 184, 255)
-		fleetBtnText = locale.T("【无AI公交 (0 辆)】", "【No AI Buses (0)】")
-	}
+	fleetBtnText := locale.Tf("%d 辆 · 线路管理 [T]", "%d buses · Lines [T]", s.AIBusCount)
 	vector.DrawFilledRect(screen, float32(s.aiBusToggleBounds.X), float32(s.aiBusToggleBounds.Y),
 		float32(s.aiBusToggleBounds.W), float32(s.aiBusToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
 	vector.StrokeRect(screen, float32(s.aiBusToggleBounds.X), float32(s.aiBusToggleBounds.Y),
@@ -220,10 +216,15 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 	textui.DrawText(screen, langBtnText, s.langToggleBounds.X+20, s.langToggleBounds.Y+6, 12, langBtnColor)
 
 	s.drawAISpeedRanges(screen, modalX, modalY+332)
-	textui.DrawText(screen, locale.T("每辆车按 10 km/h 一档随机分配，生成后固定。", "Limits are sampled in 10 km/h steps and fixed at spawn."), modalX+26, modalY+440, 12, sim.RGBA(148, 163, 184, 255))
-	textui.DrawText(screen, locale.T("最低档保持跟车；其余车辆可安全超车。", "The lowest tier follows; faster vehicles may pass safely."), modalX+26, modalY+462, 12, sim.RGBA(148, 163, 184, 255))
-	textui.DrawText(screen, locale.T("调整范围对新生成的车辆生效。", "Range changes apply to newly spawned vehicles."), modalX+26, modalY+484, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("每辆车按 10 km/h 一档随机分配，生成后固定。", "Limits are sampled in 10 km/h steps and fixed at spawn."), modalX+26, modalY+414, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("最低档保持跟车；其余车辆可安全超车。", "The lowest tier follows; faster vehicles may pass safely."), modalX+26, modalY+436, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("调整范围对新生成的车辆生效。", "Range changes apply to newly spawned vehicles."), modalX+26, modalY+458, 12, sim.RGBA(148, 163, 184, 255))
 
+	textui.DrawText(screen, locale.T("AI 公交数量与限速统一在 [T] 线路管理中设定。", "Set AI bus counts and limits in [T] Transit Lines."), modalX+26, modalY+392, 12, sim.RGBA(148, 163, 184, 255))
+	s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 478, W: 256, H: 30}
+	s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 478, W: 256, H: 30}
+	operationsButton(screen, s.saveBounds, locale.T("保存 / 覆盖存档 [F5]", "Save / Overwrite [F5]"), false)
+	operationsButton(screen, s.loadBounds, locale.T("读取存档 [F9]", "Load save [F9]"), false)
 	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 516, W: 528, H: 32}
 	operationsButton(screen, s.operationsBounds, locale.T("票价设置与运营统计 [O]", "Fares & operating statistics [O]"), true)
 

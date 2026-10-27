@@ -47,8 +47,13 @@ func DrawWorld(w *sim.World, screen *ebiten.Image, cam *sim.Camera, targetStopID
 	}
 
 	// 7. Draw Bus Stops
+	hover := -1
+	if planMode {
+		mx, my := ebiten.CursorPosition()
+		hover = w.StopAtScreen(cam, sim.Vec2{X: float64(mx), Y: float64(my)}, 12)
+	}
 	for _, s := range w.Stops {
-		DrawStop(s, screen, cam, s.ID == targetStopID, false, planMode)
+		DrawStop(s, screen, cam, s.ID == targetStopID, s.ID == hover, planMode)
 	}
 
 	drawStreetScenery(screen, cam, w, planMode, laneWidth)

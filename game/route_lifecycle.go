@@ -8,7 +8,9 @@ import (
 
 // ResetBusesToRouteStart resets both the player's bus and all AI fleet buses
 // to the first stop of the currently planned route.
-func (g *Game) ResetBusesToRouteStart() {
+func (g *Game) ResetBusesToRouteStart() { g.resetBusesToRouteStart(true) }
+
+func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 	if g.Route == nil || len(g.Route.StopIDs) == 0 || g.World == nil || len(g.World.Stops) == 0 {
 		return
 	}
@@ -21,7 +23,7 @@ func (g *Game) ResetBusesToRouteStart() {
 
 	// 1. Reset player bus
 	if g.Bus != nil {
-		g.Bus.Pos = firstStop.Pos
+		g.Bus.Pos = firstStop.FrontBerthPosition()
 		g.Bus.Heading = firstStop.Heading
 		g.Bus.Speed = 0
 		g.Bus.SteeringAngle = 0
@@ -32,6 +34,7 @@ func (g *Game) ResetBusesToRouteStart() {
 		g.Bus.DoorsOpen = true // Ready at the starting station bay for passenger boarding
 		g.Bus.OnShoulder = false
 		g.Bus.ClearPassengers()
+		g.Bus.ResetArticulation()
 	}
 
 	g.boardedThisStop = false
@@ -45,6 +48,9 @@ func (g *Game) ResetBusesToRouteStart() {
 	if g.AutopilotDriver != nil {
 		g.AutopilotDriver.Reset()
 	}
+	if !resetFleet {
+		g.queuePlayerAtStop(firstStop)
+	}
 
 	// 2. Ensure initial stop has passengers for immediate departure
 	if firstStop.WaitingPassengers < 4 {
@@ -52,10 +58,13 @@ func (g *Game) ResetBusesToRouteStart() {
 	}
 
 	// 3. Reset AI bus fleet queuing behind player bus at first stop
-	currentLaneW := g.Settings.GetLaneWidth()
+
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
-		g.AIBusMgr.RebuildFleet(g.World, currentLaneW, g.Bus)
+		g.AIBusMgr.Routes = g.activeLines()
+		if resetFleet {
+			g.buildLineFleets(true)
+		}
 	}
 
 	// 4. Follow player bus with camera
@@ -95,7 +104,7 @@ func (g *Game) ResetToStartingStation() {
 	g.Route.InvalidateDescription()
 
 	if g.Bus != nil {
-		g.Bus.Pos = startStop.Pos
+		g.Bus.Pos = startStop.FrontBerthPosition()
 		g.Bus.Heading = startStop.Heading
 		g.Bus.Speed = 0
 		g.Bus.SteeringAngle = 0
@@ -105,6 +114,7 @@ func (g *Game) ResetToStartingStation() {
 		g.Bus.IsBraking = false
 		g.Bus.DoorsOpen = false
 		g.Bus.ClearPassengers()
+		g.Bus.ResetArticulation()
 	}
 
 	if g.AutopilotDriver != nil {
@@ -120,6 +130,7 @@ func (g *Game) ResetToStartingStation() {
 	g.stopBellRung = false
 	g.passengersAlighting = 0
 	g.bellToastShown = false
+	g.queuePlayerAtStop(startStop)
 
 	if g.Camera != nil && g.Bus != nil {
 		g.Camera.Pos = g.Bus.Pos
@@ -137,7 +148,14 @@ func (g *Game) SyncStopsWithRoute() {
 		return
 	}
 	for _, s := range g.World.Stops {
-		if !g.Route.ContainsStop(s.ID) {
+		served := false
+		for _, r := range g.activeLines() {
+			if r.ContainsStop(s.ID) {
+				served = true
+				break
+			}
+		}
+		if !served {
 			s.WaitingPassengers = 0
 			s.SpawnTimer = 0
 		} else if s.WaitingPassengers == 0 {

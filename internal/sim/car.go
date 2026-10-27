@@ -108,6 +108,6 @@ func (turn *CarJunctionTurn) Predict(distance float64) (Vec2, float64) {
 		distance -= length
 		segment++
 	}
-	u := Vec2{X: math.Cos(turn.ExitHeading), Y: math.Sin(turn.ExitHeading)}
+	u := UnitFromAngle(turn.ExitHeading)
 	return turn.Points[len(turn.Points)-1].Add(u.Mul(distance)), turn.ExitHeading
 }

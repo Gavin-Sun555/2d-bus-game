@@ -40,7 +40,7 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 		if stop == nil || car.LaneIndex != max(0, stop.RoadLanes/2-1) || math.Cos(car.Heading-stop.Heading) < .98 || math.Cos(bus.Heading-stop.Heading) < .8 {
 			continue
 		}
-		forward := sim.Vec2{X: math.Cos(stop.Heading), Y: math.Sin(stop.Heading)}
+		forward := sim.UnitFromAngle(stop.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth
 		if math.Abs(car.Pos.Sub(stop.RoadCenter).Dot(right)-curb) > f.laneWidth*.35 {

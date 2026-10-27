@@ -12,7 +12,7 @@ import (
 func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
 	// Required merges already check every crossed lane and cap approach speed.
 	// Reapplying the passing gap here would freeze the same safe queue slot.
-	if ad.approachMerge != nil {
+	if ad.approachMerge != nil || (ad.busLaneJunction != nil && !ad.busJunctionEntered) {
 		return
 	}
 	if f.world == nil || len(ad.drivePath) < 2 || len(f.obstacles) == 0 || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
@@ -24,16 +24,24 @@ func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
 		}
 	}
 	heading := approachRoadHeading(f.bus.Heading)
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	base := ad.pointAt(f.s)
 	tangent := ad.pointAt(f.s + 80).Sub(base).Normalize()
-	// Junction turns and roundabout arcs have their own swept-path rules.
-	if tangent.Dot(forward) < .97 {
-		return
-	}
+	pathReturn := false
 	actual := f.bus.Pos.Sub(base).Dot(right)
 	desired := ad.TargetLaneOffset
+	if ad.ordinaryBusLeft && tangent.Dot(forward) > .8 {
+		future := ad.pointAt(f.s + math.Max(180, f.speedAbs*1.2))
+		if shift := future.Sub(base).Dot(right); shift > f.laneWidth*.2 {
+			desired += shift
+			pathReturn = true
+		}
+	}
+	// Junction turns and roundabout arcs have their own swept-path rules.
+	if tangent.Dot(forward) < .97 && !pathReturn {
+		return
+	}
 	if desired-actual < f.laneWidth*.35 {
 		return
 	}
@@ -46,6 +54,20 @@ func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
 		}
 	}
 	if clear {
+		return
+	}
+	if pathReturn {
+		center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+		origin := sim.Vec2{Y: center}
+		if !ew {
+			origin = sim.Vec2{X: center}
+		}
+		lateral := f.bus.Pos.Sub(origin).Dot(right)
+		laneCenter := (math.Floor(lateral/f.laneWidth) + .5) * f.laneWidth
+		// Cancel the route taper in road coordinates while the adjacent queue
+		// occupies it. Holding a relative zero would still drift into that queue.
+		ad.holdLaneOffset(origin.Add(right.Mul(laneCenter)).Sub(base).Dot(right))
+		ad.pathReturnHold = &sim.BusLaneMergeRequest{Target: origin.Add(right.Mul(laneCenter)), Heading: heading}
 		return
 	}
 	ad.holdLaneOffset(actual)

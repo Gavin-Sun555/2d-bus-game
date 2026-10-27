@@ -5,6 +5,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
@@ -27,6 +28,9 @@ func TestMixedTrafficSpeedSoak(t *testing.T) {
 			start := g.Bus.Pos
 			last := start
 			distance := 0.
+			stoppedTicks := 0
+			legalWaitTicks, continuousLegalWait, maxLegalWait := 0, 0, 0
+			diagnostic := os.Getenv("BUS_TRAFFIC_DIAG") == "1"
 			steps := 7200
 			if n, err := strconv.Atoi(os.Getenv("BUSGAME_SOAK_STEPS")); err == nil && n > 0 {
 				steps = n
@@ -45,11 +49,38 @@ func TestMixedTrafficSpeedSoak(t *testing.T) {
 				if g.Bus.Pos.Distance(last) > g.Bus.MaxSpeedFwd/60+20 {
 					t.Fatalf("player teleported tick%d", tick)
 				}
+				if math.Abs(g.Bus.Speed) < 1 {
+					stoppedTicks++
+				}
+				if g.waitingInRedQueue() {
+					legalWaitTicks++
+					continuousLegalWait++
+					maxLegalWait = max(maxLegalWait, continuousLegalWait)
+				} else {
+					continuousLegalWait = 0
+				}
+				if diagnostic && tick%300 == 0 {
+					d := g.AutopilotDriver.DiagnoseStop(g.Bus, g.Route, g.World, g.TrafficLights, g.obstacles, g.Settings.GetLaneWidth())
+					d.Path = nil
+					t.Logf("tick%d pos%v speed%.1f dist%.0f stopped%.1fs diag%+v", tick, g.Bus.Pos, g.Bus.Speed, distance, float64(stoppedTicks)/60, d)
+				}
 				distance += g.Bus.Pos.Distance(last)
 				last = g.Bus.Pos
 			}
 			t.Logf("map%d distance=%.0f health=%.0f cars=%d fleet=%d", theme, distance, g.Bus.Durability, len(g.TrafficMgr.Cars), len(g.AIBusMgr.Buses))
-			if distance < 10000 {
+			if directory := os.Getenv("BUS_PROGRESS_CAPTURE"); directory != "" {
+				g.savePathOverride = filepath.Join(directory, fmt.Sprintf("progress-map%d.json", theme))
+				if err := g.SaveGame(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			legalWait := float64(legalWaitTicks) / 60
+			activeFraction := float64(steps-legalWaitTicks) / float64(steps)
+			t.Logf("verified red-queue wait%.1fs longest%.1fs, active-time progress floor%.0f", legalWait, float64(maxLegalWait)/60, 10000*activeFraction)
+			if distance < 1000 || distance < 10000*activeFraction || maxLegalWait > 80*60 {
+				d := g.AutopilotDriver.DiagnoseStop(g.Bus, g.Route, g.World, g.TrafficLights, g.obstacles, g.Settings.GetLaneWidth())
+				d.Path = nil
+				t.Logf("progress failure: pos%v heading%.3f target%d diagnosis%+v", g.Bus.Pos, g.Bus.Heading, g.Route.GetCurrentTargetStopID(), d)
 				t.Fatal("traffic made no sustained progress")
 			}
 		})

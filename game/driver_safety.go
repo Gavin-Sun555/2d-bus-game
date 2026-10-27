@@ -10,24 +10,12 @@ import (
 
 func (g *Game) applyRoadBoundaries(currentLaneW float64) {
 	// Road Boundaries Check: Soft Shoulder (slowdown) & Hard Barriers (collision, damage & fine)
-	bRes := g.World.CheckBoundaries(g.Bus.Pos, g.Bus.Width/2, currentLaneW)
+	bRes := g.Bus.CheckBoundaries(g.World, currentLaneW)
 	switch bRes.Zone {
 	case sim.ZoneRoad:
 		g.Bus.OnShoulder = false
 	case sim.ZoneShoulder:
-		// Official bus bays are designated parking areas off the main roadway, not a shoulder violation
-		inBusBay := false
-		for _, s := range g.World.Stops {
-			if s.ContainsBus(g.Bus) || s.Pos.Distance(g.Bus.Pos) < s.Length/2 {
-				inBusBay = true
-				break
-			}
-		}
-		if inBusBay {
-			g.Bus.OnShoulder = false
-		} else {
-			g.Bus.OnShoulder = true
-		}
+		g.Bus.OnShoulder = !g.Bus.IsOnStationAccessShoulder(g.World, currentLaneW)
 	case sim.ZoneHardBarrier:
 		g.Bus.OnShoulder = false
 		// Repulsion pushback from hard obstacle

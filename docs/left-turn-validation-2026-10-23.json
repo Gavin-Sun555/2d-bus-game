@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-23",
+  "full_test": {
+    "passed_items_including_parents_and_subtests": 8119,
+    "failed_items": 0,
+    "skipped_tests": [
+      "TestMixedTrafficSpeedSoak",
+      "TestReleaseContactProbe",
+      "TestRelease005TrafficSoak",
+      "TestProbeTechGreen"
+    ],
+    "packages": [
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/view",
+        "elapsed_seconds": 0.409
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/ui",
+        "elapsed_seconds": 0.451
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/sim",
+        "elapsed_seconds": 3.286
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/autopilot",
+        "elapsed_seconds": 69.09
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/tests/integration",
+        "elapsed_seconds": 76.696
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/internal/traffic",
+        "elapsed_seconds": 92.71
+      },
+      {
+        "package": "github.com/Gavin-Sun555/2d-bus-game/game",
+        "elapsed_seconds": 93.544
+      }
+    ]
+  },
+  "race": {
+    "status": "passed",
+    "packages": [
+      "internal/sim",
+      "internal/autopilot"
+    ],
+    "output": "ok  \tgithub.com/Gavin-Sun555/2d-bus-game/internal/sim\t2.504s\nok  \tgithub.com/Gavin-Sun555/2d-bus-game/internal/autopilot\t12.930s\n"
+  },
+  "go_vet": "passed",
+  "regression_cases": [
+    "TestEightLaneLeftExitAlignedBeforeMouth",
+    "TestEightLaneLeftPassesAdjacentStoppedCar",
+    "TestEightLaneParallelLeftWithThreeCurbBuses",
+    "TestBusLaneLeftRecentersWithRearCarAndBus",
+    "TestMedianLeftReturnPassesBlockedAdjacentLane",
+    "TestCurbRecenteringKeepsActualBlockedBodyStopped",
+    "TestLegacyLeftPathRefreshOnlyBeforeChangedTurn",
+    "TestWideLeftTurnSeparatesOpposingBodies",
+    "TestWideLeftTurnKeepsParallelLanesSeparate"
+  ],
+  "limits": [
+    "Screenshots informed synthetic replays; they do not contain exact runtime coordinates or controller snapshots.",
+    "Legacy cached paths upgrade before an unentered changed segment; an in-progress turn is retained until its next leg.",
+    "No new FPS claim or maximum-fleet performance qualification was made in this fix round."
+  ],
+  "build_macos_app": "passed",
+  "git_diff_check": "passed"
+}

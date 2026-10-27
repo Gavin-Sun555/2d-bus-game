@@ -11,7 +11,7 @@ import (
 
 // TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency qualifies full multi-vehicle
 // concurrency across all 6 maps under maximum system load:
-// - 288 civilian vehicles (Maximum Traffic Density Level 4)
+// - 864 civilian vehicles (Maximum Traffic Density Level 4)
 // - 8 AI route buses (Maximum Fleet Configuration)
 // - Player bus active in world
 // - Traffic lights cycling through all intersection phases
@@ -38,12 +38,12 @@ func TestReleaseQualification_AllMapsTrafficAndAIFleetHeavyConcurrency(t *testin
 			tls := sim.NewTrafficLightSystem()
 			tls.BuildForWorld(w)
 
-			// 1. Build maximum civilian traffic (288 cars)
+			// 1. Build maximum civilian traffic (864 cars)
 			tm := traffic.NewTrafficManager(laneWidth)
 			tm.BuildForWorld(w, traffic.MaxTrafficCars, laneWidth)
 			activeCars := tm.GetActiveCars(4)
-			if len(activeCars) != 288 {
-				t.Fatalf("[%s] Expected 288 active cars at density 4, got %d", theme.DisplayName(), len(activeCars))
+			if len(activeCars) != traffic.MaxTrafficCars {
+				t.Fatalf("[%s] Expected 864 active cars at density 4, got %d", theme.DisplayName(), len(activeCars))
 			}
 
 			// 2. Build maximum AI bus fleet (8 buses)

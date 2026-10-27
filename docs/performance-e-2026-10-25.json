@@ -1,0 +1,439 @@
+{
+  "date": "2026-10-25",
+  "hardware": "Apple M4 MacBook Air",
+  "scope": "Conservative lane-strip ordering for straight civilian following candidates; unchanged narrow phase and slot order",
+  "baseline": "Frozen latest D plus station-service fixes",
+  "benchmark_rounds": {
+    "prototype1": {
+      "before": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench-before-1.log",
+            "update_ms": 12.184746,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench-before-2.log",
+            "update_ms": 12.151588,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench-before-3.log",
+            "update_ms": 12.14663,
+            "bytes_per_op": 298991,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 12.151588
+      },
+      "after": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench-after-1.log",
+            "update_ms": 12.120881,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench-after-2.log",
+            "update_ms": 12.222464,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench-after-3.log",
+            "update_ms": 12.092151,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 12.120881
+      }
+    },
+    "prototype2": {
+      "before": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench2-before-1.log",
+            "update_ms": 12.175998,
+            "bytes_per_op": 298991,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench2-before-2.log",
+            "update_ms": 12.141234,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench2-before-3.log",
+            "update_ms": 12.269856,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 12.175998
+      },
+      "after-v2": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench2-after-v2-1.log",
+            "update_ms": 12.066719,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench2-after-v2-2.log",
+            "update_ms": 12.202197,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench2-after-v2-3.log",
+            "update_ms": 12.208689,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 12.202197
+      }
+    },
+    "final": {
+      "before": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench3-before-1.log",
+            "update_ms": 12.111735,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench3-before-2.log",
+            "update_ms": 12.159273,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench3-before-3.log",
+            "update_ms": 12.224938,
+            "bytes_per_op": 298990,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 12.159273
+      },
+      "after-v3": {
+        "runs": [
+          {
+            "log": "dist/performance-e/bench3-after-v3-1.log",
+            "update_ms": 11.991222,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench3-after-v3-2.log",
+            "update_ms": 12.018001,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          },
+          {
+            "log": "dist/performance-e/bench3-after-v3-3.log",
+            "update_ms": 11.918189,
+            "bytes_per_op": 299013,
+            "allocs_per_op": 315
+          }
+        ],
+        "median_update_ms": 11.991222
+      }
+    }
+  },
+  "draw": {
+    "draw-after-v3-1": {
+      "PosePredictionHits": 3281776,
+      "PosePredictionMisses": 2323825,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55404.983666,
+      "MeanUpdateTPS": 59.57947790219641,
+      "MeanDrawFPS": 40.212989023354616,
+      "UpdateP50MS": 15.04775,
+      "UpdateP95MS": 17.570625,
+      "UpdateP99MS": 18.110917,
+      "UpdateMaxMS": 29.371167,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2228,
+      "UpdateFrames": 3301,
+      "UpdateMS": 48211.20688700001,
+      "DrawSubmitMS": 3203.150324000001
+    },
+    "draw-after-v3-2": {
+      "PosePredictionHits": 3282890,
+      "PosePredictionMisses": 2324830,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55388.342833,
+      "MeanUpdateTPS": 59.61543225721299,
+      "MeanDrawFPS": 39.845929434182025,
+      "UpdateP50MS": 15.067666,
+      "UpdateP95MS": 17.386375,
+      "UpdateP99MS": 18.201375,
+      "UpdateMaxMS": 35.214833,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2207,
+      "UpdateFrames": 3302,
+      "UpdateMS": 48277.77257600012,
+      "DrawSubmitMS": 3169.496826999995
+    },
+    "draw-before-1": {
+      "PosePredictionHits": 3281776,
+      "PosePredictionMisses": 2323825,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55452.611333,
+      "MeanUpdateTPS": 59.52830571272963,
+      "MeanDrawFPS": 37.49147154703572,
+      "UpdateP50MS": 15.198291,
+      "UpdateP95MS": 17.662125,
+      "UpdateP99MS": 18.299875,
+      "UpdateMaxMS": 29.132666,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2079,
+      "UpdateFrames": 3301,
+      "UpdateMS": 48781.850901999955,
+      "DrawSubmitMS": 2987.8433519999935
+    },
+    "draw-before-2": {
+      "PosePredictionHits": 3283903,
+      "PosePredictionMisses": 2325835,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55584.612292,
+      "MeanUpdateTPS": 59.422920549459036,
+      "MeanDrawFPS": 34.146140842528986,
+      "UpdateP50MS": 15.457584,
+      "UpdateP95MS": 17.763416,
+      "UpdateP99MS": 18.48775,
+      "UpdateMaxMS": 29.397917,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 1898,
+      "UpdateFrames": 3303,
+      "UpdateMS": 49369.98659100001,
+      "DrawSubmitMS": 2781.471847000002
+    },
+    "draw-normal-reverse-before": {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25021.6435,
+      "MeanUpdateTPS": 59.94810053144591,
+      "MeanDrawFPS": 59.94810053144591,
+      "UpdateP50MS": 7.628833,
+      "UpdateP95MS": 10.62975,
+      "UpdateP99MS": 10.976042,
+      "UpdateMaxMS": 24.09275,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 11239.566640000014,
+      "DrawSubmitMS": 1865.570428000001
+    },
+    "draw-normal-before": {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25032.252958,
+      "MeanUpdateTPS": 59.92269263644599,
+      "MeanDrawFPS": 59.92269263644599,
+      "UpdateP50MS": 7.589833,
+      "UpdateP95MS": 10.500708,
+      "UpdateP99MS": 10.783167,
+      "UpdateMaxMS": 19.59125,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 11078.331701000003,
+      "DrawSubmitMS": 1849.164240999999
+    },
+    "draw-normal-reverse-after-v3": {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25021.047792,
+      "MeanUpdateTPS": 59.949527792341144,
+      "MeanDrawFPS": 59.949527792341144,
+      "UpdateP50MS": 7.470208,
+      "UpdateP95MS": 10.368709,
+      "UpdateP99MS": 10.719167,
+      "UpdateMaxMS": 19.631541,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 10960.609373000008,
+      "DrawSubmitMS": 1851.57127
+    },
+    "draw-normal-after-v3": {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25021.844041,
+      "MeanUpdateTPS": 59.94762006917426,
+      "MeanDrawFPS": 59.94762006917426,
+      "UpdateP50MS": 8.036833,
+      "UpdateP95MS": 10.572791,
+      "UpdateP99MS": 10.849,
+      "UpdateMaxMS": 27.931459,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 11641.279724000002,
+      "DrawSubmitMS": 2012.0041980000044
+    }
+  },
+  "trace_sha256": {
+    "before": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7",
+    "after": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7",
+    "after-v2": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7",
+    "after-v3": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7"
+  },
+  "benchmark_normal": {
+    "before": {
+      "runs": [
+        {
+          "log": "dist/performance-e/bench-normal-before-1.log",
+          "update_ms": 7.7568,
+          "bytes_per_op": 197066,
+          "allocs_per_op": 112
+        },
+        {
+          "log": "dist/performance-e/bench-normal-before-2.log",
+          "update_ms": 7.824612,
+          "bytes_per_op": 197066,
+          "allocs_per_op": 112
+        },
+        {
+          "log": "dist/performance-e/bench-normal-before-3.log",
+          "update_ms": 7.777685,
+          "bytes_per_op": 197066,
+          "allocs_per_op": 112
+        }
+      ],
+      "median_update_ms": 7.777685
+    },
+    "after-v3": {
+      "runs": [
+        {
+          "log": "dist/performance-e/bench-normal-after-v3-1.log",
+          "update_ms": 7.596256,
+          "bytes_per_op": 197083,
+          "allocs_per_op": 112
+        },
+        {
+          "log": "dist/performance-e/bench-normal-after-v3-2.log",
+          "update_ms": 7.589448,
+          "bytes_per_op": 197083,
+          "allocs_per_op": 112
+        },
+        {
+          "log": "dist/performance-e/bench-normal-after-v3-3.log",
+          "update_ms": 7.570445,
+          "bytes_per_op": 197083,
+          "allocs_per_op": 112
+        }
+      ],
+      "median_update_ms": 7.589448
+    }
+  },
+  "validation": {
+    "full_suite": "pass",
+    "targeted_race": "pass",
+    "inactive_corridor_and_real_index_race": "pass",
+    "six_map_oracle": "pass; two densities, 180 updates per scene, exact full car state and separation results",
+    "seeded_1800_maximum_fleet_trace": "identical",
+    "old_station_replays": "both variants pass; these tests do not pin RNG, so distances are not treated as exact equivalence evidence",
+    "custom_120s_save_load": "both pass; seeded player/AI distances and population summaries identical",
+    "vet": "pass",
+    "build": "native macOS app rebuilt",
+    "default": "restricted lane candidate index enabled; complex cases use original queries"
+  },
+  "input_sha256": {
+    "internal/traffic/lane_order.go": "6916495d13974638d64c4aa07389d48f4720f8e9750ed4ede4b8980b996b6f56",
+    "internal/traffic/lane_order_test.go": "8bf7877f746ded4374c7352a6c1bd31084b14241920464ae9a6166d95aad436d",
+    "internal/traffic/traffic.go": "89726cfc90a4bfac82a08445bee67eae10f066542308e23cae5df73d2acdddeb",
+    "internal/traffic/car_following.go": "77d15ae3274ea845230b305c4f96adcc9fe9494652a6eea32f14e25dd208cf78",
+    "dist/performance-e/before-game.test": "e1db38279998afa6aafb2a2df3aaad91979d35fd83d983d6d2b9d0b4b4da456c",
+    "dist/performance-e/before-release-check": "4e7bbf7d40af171339b3ba39bdcb08f4f60bb0628019ac4ecbf6b301325e5c1c",
+    "dist/performance-e/after-v3-game.test": "b5149d4827cba6bc81f330579b7bcb43ab7d1d31fec6fbb73825e8bd23bc0b6c",
+    "dist/performance-e/after-v3-release-check": "e8b31a16bf8597148f479238204b7ff1a4bc368f492d9c21569ef2e23ceaafe0"
+  },
+  "user_save_sha256": "5cf9851ecd8791ff1a4cb007f1c4fe5d659ff453681af37517893be67a1632e0"
+}

@@ -12,7 +12,7 @@ func (ad *AutopilotDriver) retryStoppedMidLaneReturn(f autopilotFrame) {
 		return
 	}
 	heading := approachRoadHeading(f.bus.Heading)
-	u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	u := sim.UnitFromAngle(heading)
 	if ad.pointAt(f.s+80).Sub(ad.pointAt(f.s)).Normalize().Dot(u) < .99 {
 		return
 	}
@@ -47,7 +47,7 @@ func (ad *AutopilotDriver) beginMidLaneRecovery(f autopilotFrame, heading, cente
 			return
 		}
 	}
-	u := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	u := sim.UnitFromAngle(heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
 	origin := sim.Vec2{Y: center}
 	if !ew {
@@ -75,7 +75,8 @@ func (ad *AutopilotDriver) advanceMidLaneRecovery(f autopilotFrame, dt float64) 
 	}
 	r := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
 	desired := request.Target.Sub(ad.pointAt(f.s)).Dot(r)
-	if math.Abs(f.bus.Pos.Sub(request.Target).Dot(r)) < 3 && math.Abs(sim.NormalizeAngle(f.bus.Heading-request.Heading)) < .08 && math.Abs(f.bus.SteeringAngle) < .08 {
+	aligned := math.Abs(sim.NormalizeAngle(f.bus.Heading-request.Heading)) < .08 && math.Abs(f.bus.SteeringAngle) < .08
+	if math.Abs(f.bus.Pos.Sub(request.Target).Dot(r)) < 3 && aligned {
 		ad.holdLaneOffset(desired)
 		ad.midLaneRecovery = nil
 		if f.bus.LaneMergeRequest == request {
@@ -111,7 +112,15 @@ func (ad *AutopilotDriver) midLaneSafeSteering(f autopilotFrame, steer float64) 
 	f.obstacles = obstacles
 	r := sim.Vec2{X: -math.Sin(ad.midLaneRecovery.Heading), Y: math.Cos(ad.midLaneRecovery.Heading)}
 	direction := math.Copysign(1, ad.midLaneRecovery.Target.Sub(f.bus.Pos).Dot(r))
-	for _, candidate := range []float64{sim.Clamp(steer, -1, 1), direction, direction * .8} {
+	candidates := [3]float64{sim.Clamp(steer, -1, 1), direction, direction * .8}
+	if ad.skippedDeparture != nil && ad.skippedDeparture.served &&
+		math.Abs(ad.midLaneRecovery.Target.Sub(f.bus.Pos).Dot(r)) > f.laneWidth*.7 &&
+		math.Abs(sim.NormalizeAngle(f.bus.Heading-ad.midLaneRecovery.Heading)) < .45 {
+		// Start a whole-lane station exit early; a tiny recentering steer
+		// spends the available forward gap before creating lateral clearance.
+		candidates[0], candidates[1] = direction, candidates[0]
+	}
+	for _, candidate := range candidates {
 		if ad.midLaneSweepSafe(f, candidate) {
 			ad.midLaneSweepClear = true
 			return candidate
@@ -130,7 +139,7 @@ func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) boo
 			return false
 		}
 		body := sim.OBB{Center: pos, Heading: angle, HalfLen: f.bus.Length/2 + 1, HalfWid: f.bus.Width/2 + 1}
-		u := sim.Vec2{X: math.Cos(angle), Y: math.Sin(angle)}
+		u := sim.UnitFromAngle(angle)
 		r := sim.Vec2{X: -u.Y, Y: u.X}
 		for _, a := range []float64{-1, 1} {
 			for _, b := range []float64{-1, 1} {
@@ -141,11 +150,11 @@ func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) boo
 			}
 		}
 		for _, ob := range f.obstacles {
-			other := sim.OBB{Center: ob.Pos.Add(sim.Vec2{X: math.Cos(ob.Heading), Y: math.Sin(ob.Heading)}.Mul(ob.Speed * elapsed)), Heading: ob.Heading, HalfLen: ob.Length/2 + 1, HalfWid: ob.Width/2 + 1}
+			other := sim.OBB{Center: ob.Pos.Add(sim.UnitFromAngle(ob.Heading).Mul(ob.Speed * elapsed)), Heading: ob.Heading, HalfLen: ob.Length/2 + 1, HalfWid: ob.Width/2 + 1}
 			if ob.JunctionTurn != nil {
 				other.Center, other.Heading = ob.JunctionTurn.Predict(math.Max(0, ob.Speed) * elapsed)
 			}
-			if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+			if hit, _, _ := sim.CheckBusAtBody(f.bus, body, other); hit {
 				return false
 			}
 		}
@@ -155,7 +164,7 @@ func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) boo
 		}
 		wheel += sim.Clamp(steer*f.bus.MaxSteerAngle-wheel, -rate*dt, rate*dt)
 		angle += 20 / f.bus.WheelBase * math.Tan(wheel) * dt
-		pos = pos.Add(sim.Vec2{X: math.Cos(angle), Y: math.Sin(angle)}.Mul(20 * dt))
+		pos = pos.Add(sim.UnitFromAngle(angle).Mul(20 * dt))
 	}
 	return true
 }
@@ -165,7 +174,7 @@ func (ad *AutopilotDriver) clearsQueueWhileRecentering(f autopilotFrame, ob Vehi
 	if request == nil || !ad.midLaneSweepClear || math.Abs(ob.Speed) > 3 || ob.Length > 65 || math.Cos(ob.Heading-request.Heading) < .98 {
 		return false
 	}
-	u := sim.Vec2{X: math.Cos(request.Heading), Y: math.Sin(request.Heading)}
+	u := sim.UnitFromAngle(request.Heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
 	delta := ob.Pos.Sub(f.bus.Pos)
 	shift := request.Target.Sub(f.bus.Pos).Dot(r)

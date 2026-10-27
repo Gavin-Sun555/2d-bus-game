@@ -18,7 +18,7 @@ func (ad *AutopilotDriver) requestStationMerge(f autopilotFrame) {
 	if ad.CanSkipTargetStop || stop == nil || ad.State == AutopilotStateDeparting || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
 		return
 	}
-	forward := sim.Vec2{X: math.Cos(stop.Heading), Y: math.Sin(stop.Heading)}
+	forward := sim.UnitFromAngle(stop.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	distance := stop.Pos.Sub(f.bus.Pos).Dot(forward)
 	curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth

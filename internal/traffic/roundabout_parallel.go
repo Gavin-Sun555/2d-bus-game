@@ -8,7 +8,7 @@ import (
 func parallelRoundaboutEntry(f carFrame, rb sim.Roundabout, pos sim.Vec2, heading, length, width float64, bus bool) bool {
 	incoming := roundaboutApproachDirection(f.car)
 	if f.car.InRoundabout {
-		incoming = sim.Vec2{X: math.Cos(f.car.RoundaboutExitHeading), Y: math.Sin(f.car.RoundaboutExitHeading)}
+		incoming = sim.UnitFromAngle(f.car.RoundaboutExitHeading)
 	}
 	a := sim.OBB{Center: f.car.Pos, Heading: f.car.Heading, HalfLen: f.car.Length / 2, HalfWid: f.car.Width / 2}
 	b := sim.OBB{Center: pos, Heading: heading, HalfLen: length / 2, HalfWid: width / 2}
@@ -27,17 +27,17 @@ func separateCirculatingBodies(car *sim.TrafficCar, pos sim.Vec2, heading, lengt
 		return false
 	}
 	ownTangent := sim.Vec2{X: radial.Y, Y: -radial.X}.Normalize()
-	if ownTangent.Dot(sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}) < .98 {
+	if ownTangent.Dot(sim.UnitFromAngle(car.Heading)) < .98 {
 		return false
 	}
 	tangent := sim.Vec2{X: other.Y, Y: -other.X}.Normalize()
-	if tangent.Dot(sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}) < .98 {
+	if tangent.Dot(sim.UnitFromAngle(heading)) < .98 {
 		return false
 	}
 	// The rectangle's radial projection includes its turning corners.
 	extent := func(r sim.Vec2, h, l, w float64) float64 {
 		u := r.Normalize()
-		f := sim.Vec2{X: math.Cos(h), Y: math.Sin(h)}
+		f := sim.UnitFromAngle(h)
 		return math.Abs(f.Dot(u))*l/2 + math.Abs(sim.Vec2{X: -f.Y, Y: f.X}.Dot(u))*w/2
 	}
 	return math.Abs(radial.Length()-other.Length()) > extent(radial, car.Heading, car.Length, car.Width)+extent(other, heading, length, width)+6
@@ -67,6 +67,17 @@ func roundaboutCarPathClear(car *sim.TrafficCar, pos sim.Vec2, heading, length, 
 			return false
 		}
 		moveCarRoundabout(&predicted, 6.0/90)
+	}
+	return true
+}
+
+// A stopped articulated bus still occupies the tail's arc. A clear front
+// section alone cannot exempt a circulating car from following clearance.
+func roundaboutBusPathClear(car *sim.TrafficCar, bus *sim.Bus) bool {
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen > 0 && !roundaboutCarPathClear(car, part.Center, part.Heading, part.HalfLen*2, part.HalfWid*2) {
+			return false
+		}
 	}
 	return true
 }

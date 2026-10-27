@@ -21,11 +21,15 @@ func (g *Game) updateStopApproach() {
 	}
 
 	if targetStop != nil {
-		distToTarget := g.Bus.Pos.Distance(targetStop.Pos)
+		// Boarding and route endpoints use the forward berth marker. Measuring
+		// passage from the platform center fines a long-platform arrival before
+		// it reaches that marker, including while returning from a passing lane.
+		servicePosition := targetStop.FrontBerthPosition()
+		distToTarget := g.Bus.Pos.Distance(servicePosition)
 
-		headingVec := sim.Vec2{X: math.Cos(targetStop.Heading), Y: math.Sin(targetStop.Heading)}
+		headingVec := sim.UnitFromAngle(targetStop.Heading)
 		perpVec := sim.Vec2{X: -headingVec.Y, Y: headingVec.X}
-		dVec := g.Bus.Pos.Sub(targetStop.Pos)
+		dVec := g.Bus.Pos.Sub(servicePosition)
 		forwardProj := dVec.X*headingVec.X + dVec.Y*headingVec.Y
 
 		// 1. Heading alignment: Bus must be traveling in the same general direction as the stop
@@ -146,25 +150,26 @@ func (g *Game) updateStopApproach() {
 			}
 
 			// Drive-by auto skip / AI missed stop check when driving past the stop
-			frontProj := forwardProj + g.Bus.Length*0.5
 			latDist := math.Abs(-dVec.X*headingVec.Y + dVec.Y*headingVec.X)
 
 			// Point 2: Missed stop penalty only applies when bus has physically missed or overshot the bay:
-			// A. Bus center has physically overshot past the stop (> 55.0px)
+			// A. Front-section center has passed the forward berth by >55px.
 			isCenterOvershot := forwardProj > 55.0 && distToTarget < 350.0
 
-			// B. Front bumper has driven past ("车头开过了") while bus is in outer/passing lane:
-			// 1. Bus is stalled or crawling at 0 km/h in outer lane past station shelter (Speed < 8.0, !isOccupied, latDist > 65.0, frontProj > 20.0)
+			// B. The front-section reference has passed the forward berth while
+			// in an outer/passing lane. A protruding nose alone is not a miss:
+			// all models must still be allowed to reach the boarding marker.
+			// 1. Bus is stalled/crawling past the berth (Speed <8, latDist >65).
 			//    — this immediately resolves the exact deadlock where front has passed and bus stops at 0 km/h!
 			// 2. Bus is actively cruising/passing through in outer lane without docking (TargetLaneOffset in outer lane, forwardProj > 20.0)
-			isStalledInOuterLane := !isOccupied && latDist > 65.0 && frontProj > 20.0 && distToTarget < 350.0 && math.Abs(g.Bus.Speed) < 8.0
+			isStalledInOuterLane := !isOccupied && latDist > 65.0 && forwardProj > 20.0 && distToTarget < 350.0 && math.Abs(g.Bus.Speed) < 8.0
 			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 &&
 				(g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25))
 
 			isAIMissed := !canSkip && g.Settings.AutopilotEnabled && !isDocked &&
 				(isCenterOvershot || isStalledInOuterLane || isPassingInOuterLane || isCirclingNearStop)
 
-			if (forwardProj > 35.0 || (latDist > 65.0 && frontProj > 15.0) || isCirclingNearStop) && distToTarget < 350.0 && !isDocked && canSkip && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
+			if (forwardProj > 35.0 || (latDist > 65.0 && forwardProj > 15.0) || isCirclingNearStop) && distToTarget < 350.0 && !isDocked && canSkip && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
 				// Lawful skip when station is empty or occupied with no bell rung (Point 4: pass straight through in outer or through lane)
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID

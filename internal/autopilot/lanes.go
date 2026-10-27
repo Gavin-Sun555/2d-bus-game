@@ -170,6 +170,11 @@ func evaluate6LaneThroughTraffic(bus *sim.Bus, obstacles []VehicleObstacle, cosH
 // or approaching fast from behind.
 func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, currentOffset, targetOffset, laneWidth float64) bool {
 	corridorBase := bus.Width/2 + 10.0
+	body := bus.BodyEnvelope()
+	forward := sim.Vec2{X: cosH, Y: sinH}
+	extent := body.HalfLen*math.Abs(math.Cos(body.Heading-math.Atan2(sinH, cosH))) + body.HalfWid*math.Abs(math.Sin(body.Heading-math.Atan2(sinH, cosH)))
+	shift := body.Center.Sub(bus.Pos).Dot(forward)
+	ownFront, ownRear := extent+shift, extent-shift
 	for _, other := range obstacles {
 		if yieldedVehicleClearsRear(bus, other, cosH, sinH) {
 			continue
@@ -181,11 +186,11 @@ func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 		distToTarget := math.Abs(latPathOther - targetOffset)
 		corridor := corridorBase + other.Width/2
 		if distToTarget < corridor {
-			minSafeBehind := -(bus.Length/2 + other.Length/2 + 70.0)
-			minSafeAhead := (bus.Length/2 + other.Length/2 + 75.0)
+			minSafeBehind := -(ownRear + other.Length/2 + 70.0)
+			minSafeAhead := (ownFront + other.Length/2 + 75.0)
 			closingAhead := math.Max(minSafeAhead, (bus.Speed-other.Speed)*1.6+65.0)
 			if other.Speed < 20.0 {
-				closingAhead = math.Max(closingAhead, bus.Length/2+other.Length/2+200.0)
+				closingAhead = math.Max(closingAhead, ownFront+other.Length/2+200.0)
 			}
 			if fwdOther > minSafeBehind && fwdOther < closingAhead {
 				return false
@@ -200,8 +205,8 @@ func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 			midOffset := (currentOffset + targetOffset) * 0.5
 			distToMid := math.Abs(latPathOther - midOffset)
 			if distToMid < corridor {
-				alongsideBehind := -(bus.Length/2 + other.Length/2 + 25.0)
-				alongsideAhead := (bus.Length/2 + other.Length/2 + 35.0)
+				alongsideBehind := -(ownRear + other.Length/2 + 25.0)
+				alongsideAhead := (ownFront + other.Length/2 + 35.0)
 				if fwdOther > alongsideBehind && fwdOther < alongsideAhead {
 					return false
 				}

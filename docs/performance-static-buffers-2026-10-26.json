@@ -1,0 +1,498 @@
+{
+  "benchRuns": {
+    "BenchmarkArticulatedCongestedCity": {
+      "before": [
+        {
+          "ms": 5.036675,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-0-before.log"
+        },
+        {
+          "ms": 5.077305,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-5-before.log"
+        },
+        {
+          "ms": 5.023888,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-6-before.log"
+        }
+      ],
+      "step1": [
+        {
+          "ms": 4.72563,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-1-step1.log"
+        },
+        {
+          "ms": 5.178358,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-4-step1.log"
+        },
+        {
+          "ms": 4.768322,
+          "bytes": 197100,
+          "allocs": 112,
+          "run": "accepted-bench-7-step1.log"
+        }
+      ],
+      "final": [
+        {
+          "ms": 4.815508,
+          "bytes": 68483,
+          "allocs": 103,
+          "run": "accepted-bench-2-final.log"
+        },
+        {
+          "ms": 4.878082,
+          "bytes": 68483,
+          "allocs": 103,
+          "run": "accepted-bench-3-final.log"
+        },
+        {
+          "ms": 5.04406,
+          "bytes": 68483,
+          "allocs": 103,
+          "run": "accepted-bench-8-final.log"
+        }
+      ]
+    },
+    "BenchmarkArticulatedMaximumFleet": {
+      "before": [
+        {
+          "ms": 9.5456,
+          "bytes": 299041,
+          "allocs": 316,
+          "run": "accepted-bench-0-before.log"
+        },
+        {
+          "ms": 9.509133,
+          "bytes": 299041,
+          "allocs": 316,
+          "run": "accepted-bench-5-before.log"
+        },
+        {
+          "ms": 9.416642,
+          "bytes": 299041,
+          "allocs": 316,
+          "run": "accepted-bench-6-before.log"
+        }
+      ],
+      "step1": [
+        {
+          "ms": 9.61761,
+          "bytes": 299041,
+          "allocs": 316,
+          "run": "accepted-bench-1-step1.log"
+        },
+        {
+          "ms": 9.167498,
+          "bytes": 299041,
+          "allocs": 316,
+          "run": "accepted-bench-4-step1.log"
+        },
+        {
+          "ms": 9.262792,
+          "bytes": 299040,
+          "allocs": 316,
+          "run": "accepted-bench-7-step1.log"
+        }
+      ],
+      "final": [
+        {
+          "ms": 9.302561,
+          "bytes": 80563,
+          "allocs": 196,
+          "run": "accepted-bench-2-final.log"
+        },
+        {
+          "ms": 9.1147,
+          "bytes": 80563,
+          "allocs": 196,
+          "run": "accepted-bench-3-final.log"
+        },
+        {
+          "ms": 9.453278,
+          "bytes": 80563,
+          "allocs": 196,
+          "run": "accepted-bench-8-final.log"
+        }
+      ]
+    }
+  },
+  "benchMedians": {
+    "BenchmarkArticulatedCongestedCity": {
+      "before": {
+        "ms": 5.036675,
+        "bytes": 197100,
+        "allocs": 112
+      },
+      "step1": {
+        "ms": 4.768322,
+        "bytes": 197100,
+        "allocs": 112
+      },
+      "final": {
+        "ms": 4.878082,
+        "bytes": 68483,
+        "allocs": 103
+      }
+    },
+    "BenchmarkArticulatedMaximumFleet": {
+      "before": {
+        "ms": 9.509133,
+        "bytes": 299041,
+        "allocs": 316
+      },
+      "step1": {
+        "ms": 9.262792,
+        "bytes": 299041,
+        "allocs": 316
+      },
+      "final": {
+        "ms": 9.302561,
+        "bytes": 80563,
+        "allocs": 196
+      }
+    }
+  },
+  "renderRuns": {
+    "accepted-render-0-before": {
+      "PosePredictionHits": 1329444,
+      "PosePredictionMisses": 950959,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25031.072417,
+      "MeanUpdateTPS": 59.92551877167141,
+      "MeanDrawFPS": 59.885568425823635,
+      "UpdateP50MS": 11.312584,
+      "UpdateP95MS": 13.134291,
+      "UpdateP99MS": 14.011583,
+      "UpdateMaxMS": 22.326875,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 1499,
+      "UpdateFrames": 1500,
+      "UpdateMS": 16469.914181,
+      "DrawSubmitMS": 2081.8756040000007
+    },
+    "accepted-render-2-final": {
+      "PosePredictionHits": 1329444,
+      "PosePredictionMisses": 950959,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25029.47175,
+      "MeanUpdateTPS": 59.92935108588538,
+      "MeanDrawFPS": 59.60972788009399,
+      "UpdateP50MS": 10.937417,
+      "UpdateP95MS": 12.814833,
+      "UpdateP99MS": 13.709791,
+      "UpdateMaxMS": 29.542083,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 1492,
+      "UpdateFrames": 1500,
+      "UpdateMS": 15975.170360999986,
+      "DrawSubmitMS": 2067.389693000003
+    },
+    "accepted-render-1-final": {
+      "PosePredictionHits": 1329444,
+      "PosePredictionMisses": 950959,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25030.730083,
+      "MeanUpdateTPS": 59.926338345949716,
+      "MeanDrawFPS": 59.88638745371909,
+      "UpdateP50MS": 10.829,
+      "UpdateP95MS": 12.825209,
+      "UpdateP99MS": 13.612666,
+      "UpdateMaxMS": 20.125583,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 1499,
+      "UpdateFrames": 1500,
+      "UpdateMS": 15888.891057000035,
+      "DrawSubmitMS": 2060.3352589999995
+    },
+    "accepted-render-3-before": {
+      "PosePredictionHits": 1329444,
+      "PosePredictionMisses": 950959,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25037.832833,
+      "MeanUpdateTPS": 59.90933840020658,
+      "MeanDrawFPS": 59.070607662603685,
+      "UpdateP50MS": 11.292541,
+      "UpdateP95MS": 13.141208,
+      "UpdateP99MS": 13.99525,
+      "UpdateMaxMS": 52.428792,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 1479,
+      "UpdateFrames": 1500,
+      "UpdateMS": 16527.791621999964,
+      "DrawSubmitMS": 2058.4757819999986
+    }
+  },
+  "renderMedians": {
+    "before": {
+      "MeanDrawFPS": 59.47808804421366,
+      "UpdateP50MS": 11.3025625,
+      "UpdateP95MS": 13.1377495,
+      "UpdateP99MS": 14.0034165,
+      "UpdateMaxMS": 37.3778335
+    },
+    "final": {
+      "MeanDrawFPS": 59.74805766690654,
+      "UpdateP50MS": 10.8832085,
+      "UpdateP95MS": 12.820021,
+      "UpdateP99MS": 13.6612285,
+      "UpdateMaxMS": 24.833833
+    }
+  },
+  "profiles": {
+    "accepted-profile-max-final": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 10.358561271666677,
+      "P50MS": 10.630333,
+      "P95MS": 11.677917,
+      "P99MS": 12.095667,
+      "MaxMS": 21.133666,
+      "BytesPerTick": 106358.35111111111,
+      "AllocsPerTick": 246.70944444444444,
+      "GCCount": 7,
+      "GCPauseMS": 0.319833,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4093.3856531299725,
+      "PoseHits": 1781534,
+      "PoseMisses": 1428611
+    },
+    "accepted-profile-max-before": {
+      "Ticks": 1800,
+      "Warmup": 300,
+      "Buses": 48,
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "MeanMS": 10.796899882222231,
+      "P50MS": 11.016833,
+      "P95MS": 12.288792,
+      "P99MS": 14.433125,
+      "MaxMS": 25.434041,
+      "BytesPerTick": 302123.71555555554,
+      "AllocsPerTick": 396.74666666666667,
+      "GCCount": 20,
+      "GCPauseMS": 0.911792,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 4093.3856531299725,
+      "PoseHits": 1781534,
+      "PoseMisses": 1428611
+    },
+    "accepted-profile-ring-before": {
+      "Ticks": 900,
+      "Warmup": 300,
+      "Buses": 8,
+      "CarsMin": 782,
+      "CarsMax": 852,
+      "CarsFinal": 783,
+      "MeanMS": 5.649526106666672,
+      "P50MS": 5.424791,
+      "P95MS": 6.773958,
+      "P99MS": 10.965125,
+      "MaxMS": 20.619375,
+      "BytesPerTick": 351953.77777777775,
+      "AllocsPerTick": 398.6277777777778,
+      "GCCount": 14,
+      "GCPauseMS": 0.617208,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 575.9127832109841,
+      "PoseHits": 746214,
+      "PoseMisses": 75800
+    },
+    "accepted-profile-save-before": {
+      "Ticks": 900,
+      "Warmup": 300,
+      "Buses": 2,
+      "CarsMin": 695,
+      "CarsMax": 695,
+      "CarsFinal": 695,
+      "MeanMS": 3.455059062222223,
+      "P50MS": 3.400334,
+      "P95MS": 3.896458,
+      "P99MS": 4.138,
+      "MaxMS": 4.843333,
+      "BytesPerTick": 227027.21777777778,
+      "AllocsPerTick": 318.2922222222222,
+      "GCCount": 8,
+      "GCPauseMS": 0.342998,
+      "PlayerHealthStart": 97,
+      "PlayerHealthEnd": 97,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 0,
+      "PoseHits": 54420,
+      "PoseMisses": 21775
+    },
+    "accepted-profile-ring-final": {
+      "Ticks": 900,
+      "Warmup": 300,
+      "Buses": 8,
+      "CarsMin": 782,
+      "CarsMax": 852,
+      "CarsFinal": 783,
+      "MeanMS": 5.127382033333332,
+      "P50MS": 5.008417,
+      "P95MS": 5.762583,
+      "P99MS": 6.440542,
+      "MaxMS": 9.921041,
+      "BytesPerTick": 261605.04,
+      "AllocsPerTick": 392.3566666666667,
+      "GCCount": 10,
+      "GCPauseMS": 0.443792,
+      "PlayerHealthStart": 100,
+      "PlayerHealthEnd": 100,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 575.9127832109841,
+      "PoseHits": 746214,
+      "PoseMisses": 75800
+    },
+    "accepted-profile-save-final": {
+      "Ticks": 900,
+      "Warmup": 300,
+      "Buses": 2,
+      "CarsMin": 695,
+      "CarsMax": 695,
+      "CarsFinal": 695,
+      "MeanMS": 2.9835970277777806,
+      "P50MS": 2.912291,
+      "P95MS": 3.430875,
+      "P99MS": 3.907167,
+      "MaxMS": 11.378333,
+      "BytesPerTick": 216221.97333333333,
+      "AllocsPerTick": 299.0622222222222,
+      "GCCount": 8,
+      "GCPauseMS": 0.386332,
+      "PlayerHealthStart": 97,
+      "PlayerHealthEnd": 97,
+      "FleetMinHealth": 100,
+      "PlayerDistance": 0,
+      "PoseHits": 54420,
+      "PoseMisses": 21775
+    }
+  },
+  "cpuCumulativePercent": {
+    "accepted-profile-max-final": {
+      "junctionQueue": 14.71,
+      "pose": 10.39,
+      "leaderGap": 4.63,
+      "separated": 4.32
+    },
+    "accepted-profile-max-before": {
+      "junctionQueue": 14.06,
+      "pose": 9.11,
+      "separated": 4.47,
+      "leaderGap": 3.75
+    },
+    "accepted-profile-ring-before": {
+      "junctionQueue": 28.6,
+      "separated": 11.26,
+      "leaderGap": 7.43,
+      "pose": 2.7
+    },
+    "accepted-profile-save-before": {
+      "junctionQueue": 25.47,
+      "leaderGap": 6.37,
+      "separated": 5.62,
+      "pose": 1.5
+    },
+    "accepted-profile-ring-final": {
+      "junctionQueue": 28.01,
+      "separated": 12.29,
+      "leaderGap": 6.88,
+      "pose": 1.97,
+      "roadBounds": 0.25
+    },
+    "accepted-profile-save-final": {
+      "junctionQueue": 34.75,
+      "separated": 6.36,
+      "leaderGap": 4.24,
+      "pose": 1.69
+    }
+  },
+  "sourceChangedSinceFreeze": [],
+  "saveStartSHA256": "df71c0eb6e75525249ea29710560d39f12fa546417d39e4143634993c17cdd80",
+  "saveEndSHA256": "df71c0eb6e75525249ea29710560d39f12fa546417d39e4143634993c17cdd80",
+  "trajectorySHA256": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7",
+  "checks": {
+    "fullTests": true,
+    "race": true,
+    "vet": true,
+    "fourSavedReplays": true,
+    "customMap120sSaveLoad": true
+  },
+  "powerRecords": {
+    "accepted-render-0-before": {
+      "before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 3:47 remaining present: true\n",
+      "after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 3:57 remaining present: true\n"
+    },
+    "accepted-render-2-final": {
+      "before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 3:57 remaining present: true\n",
+      "after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 4:07 remaining present: true\n"
+    },
+    "accepted-render-1-final": {
+      "before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 3:57 remaining present: true\n",
+      "after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 3:57 remaining present: true\n"
+    },
+    "accepted-render-3-before": {
+      "before": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 4:07 remaining present: true\n",
+      "after": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t100%; discharging; 4:07 remaining present: true\n"
+    }
+  },
+  "renderPower": "Battery at each before/after observation",
+  "benchPowerNote": "Power was not logged per microbenchmark run; versions alternated to limit time drift",
+  "applicationSHA256": "55776baef9471ee07a4fcc4cc8539f193a11bffa7958520efe28bd85a006df67",
+  "appRebuilt": true
+}

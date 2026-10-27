@@ -16,13 +16,6 @@ func (g *Game) checkBusCarCollisions() {
 		return
 	}
 
-	busOBB := sim.OBB{
-		Center:  g.Bus.Pos,
-		HalfLen: g.Bus.Length / 2, // 48.0
-		HalfWid: g.Bus.Width / 2,  // 18.0
-		Heading: g.Bus.Heading,
-	}
-
 	for _, car := range activeCars {
 		carOBB := sim.OBB{
 			Center:  car.Pos,
@@ -31,15 +24,15 @@ func (g *Game) checkBusCarCollisions() {
 			Heading: car.Heading,
 		}
 
-		collides, normal, depth := sim.CheckOBBCollision(busOBB, carOBB)
+		collides, normal, depth := g.Bus.CollidesBody(carOBB)
 		if collides && depth > 0 {
 			// Firm separation buffer to ensure zero visual overlap
 			sepDepth := depth + 2.0
 
 			// normal points from Car to Bus
 			toBus := g.Bus.Pos.Sub(car.Pos)
-			carForward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
-			busForward := sim.Vec2{X: math.Cos(g.Bus.Heading), Y: math.Sin(g.Bus.Heading)}
+			carForward := sim.UnitFromAngle(car.Heading)
+			busForward := sim.UnitFromAngle(g.Bus.Heading)
 
 			isCarFacingBus := carForward.Dot(toBus) > 0
 			isBusFacingCar := busForward.Dot(car.Pos.Sub(g.Bus.Pos)) > 0
@@ -63,7 +56,6 @@ func (g *Game) checkBusCarCollisions() {
 			}
 
 			// Update busOBB center for subsequent car checks
-			busOBB.Center = g.Bus.Pos
 
 			// 2. Velocity & Momentum Resolution:
 			// Relative velocity along collision normal
@@ -196,18 +188,11 @@ func (g *Game) checkBusCarCollisions() {
 			if ai.Bus == nil {
 				continue
 			}
-			aiOBB := sim.OBB{
-				Center:  ai.Bus.Pos,
-				HalfLen: ai.Bus.Length / 2,
-				HalfWid: ai.Bus.Width / 2,
-				Heading: ai.Bus.Heading,
-			}
-			collides, normal, depth := sim.CheckOBBCollision(busOBB, aiOBB)
+			collides, normal, depth := sim.CheckBusesCollision(g.Bus, ai.Bus)
 			if collides && depth > 0 {
 				sepDepth := depth + 2.0
 				g.Bus.Pos = g.Bus.Pos.Add(normal.Mul(sepDepth * 0.5))
 				ai.Bus.Pos = ai.Bus.Pos.Sub(normal.Mul(sepDepth * 0.5))
-				busOBB.Center = g.Bus.Pos
 
 				g.Bus.Speed = -g.Bus.Speed * 0.25
 				ai.Bus.Speed = -ai.Bus.Speed * 0.25
@@ -215,13 +200,12 @@ func (g *Game) checkBusCarCollisions() {
 		}
 
 		// Collision separation between AI buses and civilian traffic cars
+		separations := g.TrafficMgr.BeginBusCarSeparations(activeCars)
 		for _, ai := range g.AIBusMgr.Buses {
 			if ai.Bus == nil {
 				continue
 			}
-			for _, car := range activeCars {
-				sim.ResolveBusCarSeparation(ai.Bus, car)
-			}
+			separations.Resolve(ai.Bus)
 		}
 
 		// Collision separation between AI buses themselves
@@ -233,9 +217,5 @@ func (g *Game) checkBusCarCollisions() {
 	}
 
 	// Collision separation between civilian traffic cars themselves
-	for i := 0; i < len(activeCars); i++ {
-		for j := i + 1; j < len(activeCars); j++ {
-			sim.ResolveCarCarSeparation(activeCars[i], activeCars[j])
-		}
-	}
+	g.TrafficMgr.ResolveCarCollisions(g.Settings.TrafficDensity)
 }

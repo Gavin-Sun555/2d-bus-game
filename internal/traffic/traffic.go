@@ -8,11 +8,41 @@ import (
 )
 
 type TrafficManager struct {
-	Cars          []*sim.TrafficCar
-	CarSpeedRange sim.SpeedRange
-	pendingExits  []sim.Vec2
-	nextCarID     int
-	AIBusMgr      *AIBusManager
+	separations            BusCarSeparations
+	disableBusCarIndex     bool
+	recoveryQueries        recoveryQueries
+	disableRecoveryQueries bool
+	laneOrder              laneOrderIndex
+	disableLaneOrder       bool
+	followingIndices       []int
+	followingCandidates    []*sim.TrafficCar
+	busPerceptionActive    bool
+	observedBuses          []*sim.Bus
+	observedParked         [1 + 6*MaxBusesPerLine]bool
+	// StepCar is sequential; the perception list is borrowed for that call only.
+	busStorage                    [1 + 6*MaxBusesPerLine]*sim.Bus
+	roundaboutReservations        []roundaboutReservation
+	disableJunctionBroadPhase     bool
+	disableJunctionCandidates     bool
+	junctionCandidates            []int
+	junctionCommitted             []int
+	junctionRegistered            []bool
+	junctionMaxHorizon            float64
+	disableJunctionReuse          bool
+	junctionScratch               []carJunctionScratch
+	nearbyJunctionIDs             []int
+	nearbyJunctions               []*sim.TrafficIntersection
+	disableJunctionIndex          bool
+	spatial                       carSpatialIndex
+	spatialActive, disableSpatial bool
+	nearbyIndices                 []int
+	nearbyCars                    []*sim.TrafficCar
+	localCarsReady                bool
+	Cars                          []*sim.TrafficCar
+	CarSpeedRange                 sim.SpeedRange
+	pendingExits                  []sim.Vec2
+	nextCarID                     int
+	AIBusMgr                      *AIBusManager
 }
 
 const MaxTrafficCars = sim.MaxTrafficCars
@@ -58,7 +88,9 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 		return
 	}
 	tm.Cars = make([]*sim.TrafficCar, 0)
+	tm.junctionScratch = nil
 	tm.pendingExits = nil
+	tm.roundaboutReservations = nil
 	tm.nextCarID = count
 
 	type spawnDef struct {
@@ -194,13 +226,42 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 		w = worldOptional[0]
 	}
 
+	if len(tm.junctionScratch) < activeCount {
+		tm.junctionScratch = append(tm.junctionScratch, make([]carJunctionScratch, activeCount-len(tm.junctionScratch))...)
+	}
+	if w != nil {
+		w.PrepareJunctionGeometry(laneWidth)
+	}
+	if tls != nil {
+		tls.PrepareJunctionIndex(laneWidth)
+	}
+	tm.updateRoundaboutReservations(bus, w, activeCount)
+	tm.spatialActive = !tm.disableSpatial && activeCount > 64
+	if tm.spatialActive {
+		tm.spatial.build(tm.Cars[:activeCount])
+		tm.prepareJunctionCandidates(activeCount)
+		if !tm.disableLaneOrder {
+			tm.laneOrder.build(tm.Cars[:activeCount], laneWidth)
+		}
+	}
+	tm.prepareBusPerception(bus, w)
+	tm.busPerceptionActive = true
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
 		tm.StepCar(dt, car, i, bus, tls, activeCount, laneWidth, w)
+		if tm.spatialActive {
+			tm.spatial.move(i, car.Pos)
+			tm.laneOrder.observe(i, car)
+			tm.observeJunctionCandidate(i, car)
+		}
 	}
+	recoveryIndexReady := tm.spatialActive
+	tm.spatialActive = false
+	tm.laneOrder.ready = false
+	tm.busPerceptionActive = false
 
 	// Deadlock prevention: when two non-player vehicles are jammed motionless for at least two complete traffic light cycles, disappear
-	tm.ResolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls)
+	tm.resolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls, recoveryIndexReady)
 	tm.updateBoundaryTraffic(bus, densityLevel, laneWidth, w)
 }
 

@@ -15,7 +15,7 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 	g := game.NewGame(1280, 720)
 	g.EnterCity(sim.MapThemeMetropolis)
 	g.Settings.AutopilotEnabled = true
-	g.Settings.TrafficDensity = 2 // Medium density (72 active cars out of 288)
+	g.Settings.TrafficDensity = 2 // Medium density (288 active cars out of 864)
 
 	// Ensure no spawn definitions coincide directly with road camera locations
 	for _, cam := range g.TrafficLights.RoadCameras {
@@ -26,10 +26,10 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 		}
 	}
 
-	// Inactive cars (index >= 72) must never be added to active obstacle list
+	// Inactive cars (index >= 288) must never be added to active obstacle list
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
-	if len(activeCars) != 72 {
-		t.Fatalf("Expected 72 active cars for density level 2, got %d", len(activeCars))
+	if len(activeCars) != 288 {
+		t.Fatalf("Expected 288 active cars for density level 2, got %d", len(activeCars))
 	}
 
 	// Set active leg Stop 9 -> Stop 10 Eastbound along South Ring (Y=1200*MapGridScale)
@@ -80,16 +80,16 @@ func TestTrafficDensityFourLevels(t *testing.T) {
 			tm := traffic.NewTrafficManager(lw)
 			tm.BuildForWorld(w, traffic.MaxTrafficCars, lw)
 
-			if len(tm.Cars) != 288 {
-				t.Fatalf("[%s] Expected 288 total cars generated, got %d", theme.DisplayName(), len(tm.Cars))
+			if len(tm.Cars) != 864 {
+				t.Fatalf("[%s] Expected 864 total cars generated, got %d", theme.DisplayName(), len(tm.Cars))
 			}
 
 			// Verify density levels: low, medium, high, congested.
 			expectedCounts := map[int]int{
-				1: 36,
-				2: 72,
-				3: 144,
-				4: 288,
+				1: 144,
+				2: 288,
+				3: 576,
+				4: 864,
 			}
 			for lvl, exp := range expectedCounts {
 				active := tm.GetActiveCars(lvl)
@@ -99,7 +99,7 @@ func TestTrafficDensityFourLevels(t *testing.T) {
 				}
 			}
 
-			// Verify simulation step with 288 cars runs smoothly without NaN or panic
+			// Verify simulation step with 864 cars runs smoothly without NaN or panic
 			tls := sim.NewTrafficLightSystem()
 			tls.BuildForWorld(w)
 			playerBus := sim.NewBus(w.Stops[0].Pos.X, w.Stops[0].Pos.Y, w.Stops[0].Heading)

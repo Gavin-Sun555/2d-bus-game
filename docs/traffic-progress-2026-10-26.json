@@ -1,0 +1,49 @@
+{
+  "native_capture_replay_240_seconds": {
+    "player_distance_px": 15803.7,
+    "leader_distance_px": 24769.9,
+    "longest_wait_seconds": 33.75,
+    "initial_target": 8.0,
+    "final_target": 3.0,
+    "player_final_health": 100.0
+  },
+  "roundabout_save_replay_120_seconds": {
+    "player_distance_px": 12514.9,
+    "leader_distance_px": 19703.2,
+    "longest_wait_seconds": 22.7,
+    "initial_target": 1.0,
+    "final_target": 11.0,
+    "player_final_health": 100.0
+  },
+  "user_save_replay_120_seconds": {
+    "player_distance_px": 12192.6,
+    "leader_distance_px": 0.0,
+    "longest_wait_seconds": 11.28,
+    "initial_target": 4.0,
+    "final_target": 0.0,
+    "player_final_health": 97.0
+  },
+  "roundabout_previous_priority_60_seconds_expected_failure": {
+    "player_distance_px": 0.0,
+    "leader_distance_px": 12809.4,
+    "longest_wait_seconds": 60.0,
+    "initial_target": 1.0,
+    "final_target": 1.0,
+    "player_final_health": 100.0
+  },
+  "soak_groups": {
+    "highspeed-final": 0,
+    "ordinary-final": 0,
+    "mixed-final": 0
+  },
+  "soak_leaf_scenarios": 21,
+  "soak_simulated_seconds": 2520,
+  "post_ring_mixed_scenarios": 6,
+  "post_ring_mixed_pass": true,
+  "regular_all_tests_pass": true,
+  "race_changed_cases_pass": true,
+  "full_race_suite_rerun": false,
+  "performance_qualification_rerun": false,
+  "save_sha256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+  "binary_sha256": "cd1a4eaf12ea42e3c639c7cc8bcb5db78c55cb9bba46306b2e5dd5e04aa2ef7a"
+}

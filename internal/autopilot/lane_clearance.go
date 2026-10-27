@@ -13,14 +13,18 @@ func (ad *AutopilotDriver) clearsThroughQueueDuringMerge(f autopilotFrame, obs V
 	if f.world == nil || f.nearRoundabout || len(ad.drivePath) < 2 || math.Abs(obs.Speed) >= 5 {
 		return false
 	}
-	if math.Cos(obs.Heading-f.bus.Heading) < 0.8 || ad.TargetLaneOffset > ad.LaneOffset+1 {
+	minAlignment := .8
+	if ad.ordinaryBusLeft {
+		minAlignment = .5
+	}
+	if math.Cos(obs.Heading-f.bus.Heading) < minAlignment || ad.TargetLaneOffset > ad.LaneOffset+1 {
 		return false
 	}
 	_, _, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
 	if !multi && !six {
 		return false
 	}
-	forward := sim.Vec2{X: math.Cos(obs.Heading), Y: math.Sin(obs.Heading)}
+	forward := sim.UnitFromAngle(obs.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	delta := obs.Pos.Sub(f.bus.Pos)
 	ahead := delta.Dot(forward)
@@ -47,14 +51,25 @@ func (ad *AutopilotDriver) clearsThroughQueueDuringMerge(f autopilotFrame, obs V
 		position := pointAt(distance)
 		tangent := pointAt(distance + 2).Sub(position)
 		// A corner or crossing is handled by the normal obstacle rules.
-		if tangent.Normalize().Dot(forward) < 0.8 {
+		if tangent.Normalize().Dot(forward) < minAlignment {
 			return false
 		}
 		body := current
 		body.Center = position
 		body.Heading = math.Atan2(tangent.Y, tangent.X)
 		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
-			return false
+			if !ad.ordinaryBusLeft || f.speedAbs > 80 {
+				return false
+			}
+			// A crawl away from a stopped curb queue may overlap only the
+			// conservative padding. Keep testing the complete physical bodies;
+			// actuator-based controlSweptSpeed remains authoritative as well.
+			body.HalfLen, body.HalfWid = f.bus.Length/2, f.bus.Width/2
+			physicalOther := other
+			physicalOther.HalfLen, physicalOther.HalfWid = obs.Length/2, obs.Width/2
+			if actualHit, _, _ := sim.CheckOBBCollision(body, physicalOther); actualHit {
+				return false
+			}
 		}
 	}
 	return true

@@ -39,6 +39,11 @@ func TestStopDiagnosisIdentifiesSignalAndPhysicalBlocker(t *testing.T) {
 	if d.Limits["signal"] <= 0 || d.Limits["obstacles"] != 0 || len(d.Blockers) != 1 {
 		t.Fatalf("did not distinguish green obstacle stop: %+v", d)
 	}
+	ad.busTurnHoldDistance = .01
+	d = ad.DiagnoseStop(b, r, w, tls, nil, lw)
+	if d.Limits["turn_hold"] != 0 || d.Limits["signal"] <= 0 {
+		t.Fatal("diagnosis hid a lane-return hold behind a green signal")
+	}
 	if _, err := json.Marshal(d); err != nil {
 		t.Fatal(err)
 	}

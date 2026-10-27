@@ -63,8 +63,8 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 	}
 
 	stop3 := g.World.Stops[3]
-	if g.Bus.Pos.Distance(stop3.Pos) > 1e-3 {
-		t.Fatalf("Player bus position was not reset to first stop: expected %+v, got %+v", stop3.Pos, g.Bus.Pos)
+	if g.Bus.Pos.Distance(stop3.FrontBerthPosition()) > 1e-3 {
+		t.Fatalf("Player bus position was not reset to first stop: expected %+v, got %+v", stop3.FrontBerthPosition(), g.Bus.Pos)
 	}
 	if math.Abs(sim.NormalizeAngle(g.Bus.Heading-stop3.Heading)) > 1e-4 {
 		t.Fatalf("Player bus heading was not reset: expected %f, got %f", stop3.Heading, g.Bus.Heading)
@@ -97,7 +97,7 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 		if ai.Bus.Speed != 0 {
 			t.Fatalf("AI bus %d speed must be 0, got %f", i, ai.Bus.Speed)
 		}
-		expectedPos := stop3.Pos.Add(backVec.Mul(float64(i+1) * 120.0))
+		expectedPos := stop3.FrontBerthPosition().Add(backVec.Mul(float64(i+1) * 120.0))
 		if ai.Bus.Pos.Distance(expectedPos) > 1.0 {
 			t.Fatalf("AI bus %d position mismatch: expected %+v, got %+v", i, expectedPos, ai.Bus.Pos)
 		}
@@ -120,11 +120,11 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 	// 5. Test programmatic ReplanRoute helper
 	g.ReplanRoute([]int{5, 9, 5})
 	stop5 := g.World.Stops[5]
-	if g.Bus.Pos.Distance(stop5.Pos) > 1e-3 {
-		t.Fatalf("ReplanRoute failed to reset player bus to Stop 5: expected %+v, got %+v", stop5.Pos, g.Bus.Pos)
+	if g.Bus.Pos.Distance(stop5.FrontBerthPosition()) > 1e-3 {
+		t.Fatalf("ReplanRoute failed to reset player bus to Stop 5: expected %+v, got %+v", stop5.FrontBerthPosition(), g.Bus.Pos)
 	}
 	if len(g.AIBusMgr.Buses) > 0 {
-		expectedAI0Pos := stop5.Pos.Add(sim.Vec2{X: -math.Cos(stop5.Heading), Y: -math.Sin(stop5.Heading)}.Mul(120.0))
+		expectedAI0Pos := stop5.FrontBerthPosition().Add(sim.Vec2{X: -math.Cos(stop5.Heading), Y: -math.Sin(stop5.Heading)}.Mul(120.0))
 		if g.AIBusMgr.Buses[0].Bus.Pos.Distance(expectedAI0Pos) > 1.0 {
 			t.Fatalf("ReplanRoute failed to reset AI bus behind Stop 5: expected %+v, got %+v",
 				expectedAI0Pos, g.AIBusMgr.Buses[0].Bus.Pos)

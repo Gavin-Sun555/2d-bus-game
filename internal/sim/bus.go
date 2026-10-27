@@ -69,21 +69,30 @@ const (
 )
 
 const (
-	// DefaultBusCapacity specifies standard passenger capacity for all city buses (Player & AI)
+	// DefaultBusCapacity specifies the standard model passenger capacity
 	DefaultBusCapacity = 45
 )
 
 // Bus represents our driveable city bus
 type Bus struct {
-	StationMergeRequest *BusStationMergeRequest
-	LaneMergeRequest    *BusLaneMergeRequest
-	YieldingToBus       *Bus // Acknowledged priority for a bus returning ahead of this route bus.
-	RoundaboutEntry     *BusRoundaboutEntry
-	JunctionCorridor    *JunctionCorridor
-	Pos                 Vec2    // Center position in world coordinates
-	Heading             float64 // Direction in radians (0 = facing +X / East)
-	Speed               float64 // Current speed (pixels per second, positive = forward, negative = reverse)
-	SteeringAngle       float64 // Current front wheel angle in radians
+	RoundaboutAdmissionHold *RoundaboutAdmissionHold `json:",omitempty"`
+	envelopeCache           busEnvelopeCache
+	predictionCache         *busPredictionCache
+	GeometryVersion         int
+	TrailerHeading          float64
+	TrailerInitialized      bool
+	TerminalReplacementHold bool
+	Model                   BusModel
+	PendingModel            *BusModel
+	StationMergeRequest     *BusStationMergeRequest
+	LaneMergeRequest        *BusLaneMergeRequest
+	YieldingToBus           *Bus // Acknowledged priority for a bus returning ahead of this route bus.
+	RoundaboutEntry         *BusRoundaboutEntry
+	JunctionCorridor        *JunctionCorridor
+	Pos                     Vec2    // Center position in world coordinates
+	Heading                 float64 // Direction in radians (0 = facing +X / East)
+	Speed                   float64 // Current speed (pixels per second, positive = forward, negative = reverse)
+	SteeringAngle           float64 // Current front wheel angle in radians
 
 	// Transmission & Gear
 	Gear             Gear             // Current gear (R, N, D, or M1-M5)
@@ -120,6 +129,9 @@ type Bus struct {
 	Durability    float64 // 0.0 to 100.0%
 	OnShoulder    bool    // true when wheels are on roadside shoulder (slowdown)
 	CrashCooldown float64 // Invulnerability timer after impact
+
+	// Consumed by the next physics step; not part of vehicle specs or saves.
+	nextAccelerationScale float64
 
 	// Skidmarks and trail
 	TireTracks []TireMark

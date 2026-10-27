@@ -24,6 +24,11 @@ func NewJunctionGeometry(ewHalf, nsHalf, laneWidth float64) JunctionGeometry {
 }
 
 func (w *World) JunctionAt(center Vec2, laneWidth float64) JunctionGeometry {
+	if cache := w.geometryCache; cache != nil && cache.width == laneWidth {
+		if e, ok := cache.entries[center]; ok {
+			return e.geometry
+		}
+	}
 	ew, ns := w.GetIntersectionRoadDimensions(center, laneWidth)
 	return NewJunctionGeometry(ew, ns, laneWidth)
 }
@@ -31,6 +36,9 @@ func (w *World) JunctionAt(center Vec2, laneWidth float64) JunctionGeometry {
 // InsideJunction excludes roundabouts, whose circulating lanes have their own
 // geometry. margin includes the vehicle body when deciding where a turn is legal.
 func (w *World) InsideJunction(pos Vec2, laneWidth, margin float64) bool {
+	if cache := w.geometryCache; cache != nil && cache.width == laneWidth {
+		return cache.inside(pos, margin)
+	}
 	for _, center := range w.Intersections {
 		if w.IsAtRoundabout(center) {
 			continue
@@ -47,7 +55,7 @@ func (w *World) InsideJunction(pos Vec2, laneWidth, margin float64) bool {
 // traffic these opposing arcs pass driver-side to driver-side; a tiny arc at the
 // lane crossing cannot be followed by a long-wheelbase vehicle.
 func LeftTurnPath(center Vec2, heading, laneWidth, radius float64) []Vec2 {
-	in := Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	in := UnitFromAngle(heading)
 	out := Vec2{X: in.Y, Y: -in.X}
 	return QuarterTurnPath(center, in, out, laneWidth/2, laneWidth/2, radius)
 }

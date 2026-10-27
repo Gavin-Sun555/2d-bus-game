@@ -8,7 +8,7 @@ import (
 )
 
 func configureRoundaboutExit(car *sim.TrafficCar, w *sim.World, rb *sim.Roundabout, lw, heading float64) {
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	car.RoundaboutExitHeading = heading
 	car.RoundaboutExitEW = math.Abs(forward.X) > .5
 	car.RoundaboutExitRC = rb.Center.Y
@@ -23,7 +23,7 @@ func configureRoundaboutExit(car *sim.TrafficCar, w *sim.World, rb *sim.Roundabo
 }
 
 func beginRoundaboutEntry(car *sim.TrafficCar, rb sim.Roundabout, lw float64) {
-	forward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	forward := sim.UnitFromAngle(car.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	lateral := car.Pos.Sub(car.RoundaboutCenter).Dot(right)
 	join := sim.RoundaboutEntryJoin(rb, forward, lateral, car.RoundaboutTargetR, lw)
@@ -41,24 +41,24 @@ func beginRoundaboutEntry(car *sim.TrafficCar, rb sim.Roundabout, lw float64) {
 // Fallback for vehicles already inside the mouth and adjacent manually driven
 // buses, whose future path is not a published parallel-entry corridor.
 func beginLegacyRoundaboutEntry(car *sim.TrafficCar) {
-	forward := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	forward := sim.UnitFromAngle(car.Heading)
 
 	theta := car.RoundaboutAngle - .85
-	goal := car.RoundaboutCenter.Add(sim.Vec2{X: math.Cos(theta), Y: math.Sin(theta)}.Mul(car.RoundaboutTargetR))
+	goal := car.RoundaboutCenter.Add(sim.UnitFromAngle(theta).Mul(car.RoundaboutTargetR))
 	tangent := sim.Vec2{X: math.Sin(theta), Y: -math.Cos(theta)}
 	handle := math.Min(120, math.Max(110, 25+.6*math.Abs(car.RoundaboutRadius-car.RoundaboutTargetR)))
 	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(forward.Mul(handle)), goal.Sub(tangent.Mul(math.Min(60, car.RoundaboutTargetR*.3))), goal, false)
 }
 
 func beginRoundaboutExit(car *sim.TrafficCar) {
-	out := sim.Vec2{X: math.Cos(car.RoundaboutExitHeading), Y: math.Sin(car.RoundaboutExitHeading)}
+	out := sim.UnitFromAngle(car.RoundaboutExitHeading)
 	right := sim.Vec2{X: -out.Y, Y: out.X}
 	offset := car.RoundaboutExitOffset
 	if offset == 0 {
 		offset = car.RoundaboutTargetR * math.Sin(car.RoundaboutExitAngle-car.RoundaboutExitHeading)
 	}
 	goal := car.RoundaboutCenter.Add(out.Mul(car.RoundaboutOuterRadius + 80)).Add(right.Mul(offset))
-	tangent := sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}
+	tangent := sim.UnitFromAngle(car.Heading)
 	handle := math.Min(120, car.Pos.Distance(goal)*.4)
 	car.RoundaboutCurve = newRoundaboutCurve(car.Pos, car.Pos.Add(tangent.Mul(handle)), goal.Sub(out.Mul(handle)), goal, true)
 }
@@ -89,6 +89,7 @@ func roundaboutCurveAt(c *sim.CarRoundaboutCurve, u float64) (sim.Vec2, sim.Vec2
 }
 
 func moveCarRoundabout(car *sim.TrafficCar, dt float64) {
+	localizeRoundaboutCar(car)
 	if car.RoundaboutCurve == nil {
 		diff := sim.NormalizeAngle(car.RoundaboutAngle - car.RoundaboutExitAngle)
 		if diff < 0 {
@@ -126,7 +127,7 @@ func moveCarRoundabout(car *sim.TrafficCar, dt float64) {
 			car.RoadCenter = car.RoundaboutExitRC
 			car.LaneIndex = car.RoundaboutExitLane
 			car.RoundaboutCooldown = 6
-			car.Pos = car.Pos.Add(sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}.Mul(car.Speed * remaining))
+			car.Pos = car.Pos.Add(sim.UnitFromAngle(car.Heading).Mul(car.Speed * remaining))
 			return
 		}
 		if remaining <= 1e-6 {
@@ -142,6 +143,24 @@ func moveCarRoundabout(car *sim.TrafficCar, dt float64) {
 	car.RoundaboutTraveled += car.Speed / math.Max(radius, 1) * dt
 	change := sim.Clamp(car.RoundaboutTargetR-radius, -math.Abs(car.Speed)*.45*dt, math.Abs(car.Speed)*.45*dt)
 	car.RoundaboutRadius += change
-	car.Pos = car.RoundaboutCenter.Add(sim.Vec2{X: math.Cos(car.RoundaboutAngle), Y: math.Sin(car.RoundaboutAngle)}.Mul(car.RoundaboutRadius))
+	car.Pos = car.RoundaboutCenter.Add(sim.UnitFromAngle(car.RoundaboutAngle).Mul(car.RoundaboutRadius))
 	car.Heading = sim.RotateTowards(car.Heading, sim.NormalizeAngle(car.RoundaboutAngle-math.Pi/2), math.Min(5, math.Abs(car.Speed)/35)*dt)
+}
+
+// Collision separation changes Pos independently of the navigation cache. Keep
+// the next prediction continuous from that actual position, rather than jumping
+// back across a neighboring bus to the previously stored circular coordinates.
+func localizeRoundaboutCar(car *sim.TrafficCar) {
+	if !car.InRoundabout || car.RoundaboutCurve != nil {
+		return
+	}
+	expected := car.RoundaboutCenter.Add(sim.UnitFromAngle(car.RoundaboutAngle).Mul(car.RoundaboutRadius))
+	if expected.Distance(car.Pos) <= .1 {
+		return
+	}
+	radial := car.Pos.Sub(car.RoundaboutCenter)
+	if radius := radial.Length(); radius > 1 {
+		car.RoundaboutRadius = radius
+		car.RoundaboutAngle = math.Atan2(radial.Y, radial.X)
+	}
 }

@@ -10,16 +10,19 @@ func outsideRoadBounds(car *sim.TrafficCar, w *sim.World, margin float64) bool {
 	if w == nil || len(w.Roads) == 0 || car.InRoundabout {
 		return false
 	}
+	ew := car.IsEW
 	if turn := car.JunctionTurn; turn != nil {
-		// A committed outward straight corridor may extend beyond the edge.
-		// Remove once the rear leaves, without waiting for that virtual tail.
-		if !turn.Straight || turn.LaneChange || !isMapExitAhead(w, turn.Center, turn.ExitHeading) {
+		// An outward turn may leave on a different axis than its entry.
+		// Remove only once the whole body clears that edge; do not wait
+		// for the virtual path tail or keep navigating along the entry axis.
+		if turn.LaneChange || !isMapExitAhead(w, turn.Center, turn.ExitHeading) {
 			return false
 		}
+		ew = turn.ExitEW
 	}
-	lo, hi := roadAxisBounds(w, car.IsEW)
+	lo, hi := roadAxisBounds(w, ew)
 	coordinate := car.Pos.Y
-	if car.IsEW {
+	if ew {
 		coordinate = car.Pos.X
 	}
 	return coordinate < lo-margin || coordinate > hi+margin
@@ -28,16 +31,7 @@ func outsideRoadBounds(car *sim.TrafficCar, w *sim.World, margin float64) bool {
 // Use the same extents for exit admission and rear-body removal. An internal
 // dead end must still merge/turn; an outward-facing edge is an open map exit.
 func roadAxisBounds(w *sim.World, ew bool) (float64, float64) {
-	lo, hi := math.Inf(1), math.Inf(-1)
-	for _, road := range w.Roads {
-		a, b := road.P1.Y, road.P2.Y
-		if ew {
-			a, b = road.P1.X, road.P2.X
-		}
-		lo = math.Min(lo, math.Min(a, b))
-		hi = math.Max(hi, math.Max(a, b))
-	}
-	return lo, hi
+	return w.RoadAxisBounds(ew)
 }
 
 func isMapExitAhead(w *sim.World, center sim.Vec2, heading float64) bool {
@@ -64,7 +58,11 @@ func (tm *TrafficManager) updateBoundaryTraffic(bus *sim.Bus, density int, laneW
 	for i := active - 1; i >= 0; i-- {
 		car := tm.Cars[i]
 		half := (math.Abs(math.Cos(car.Heading))*car.Length + math.Abs(math.Sin(car.Heading))*car.Width) / 2
-		if !car.IsEW {
+		ew := car.IsEW
+		if turn := car.JunctionTurn; turn != nil && !turn.LaneChange && isMapExitAhead(w, turn.Center, turn.ExitHeading) {
+			ew = turn.ExitEW
+		}
+		if !ew {
 			half = (math.Abs(math.Sin(car.Heading))*car.Length + math.Abs(math.Cos(car.Heading))*car.Width) / 2
 		}
 		if outsideRoadBounds(car, w, half) {
@@ -106,7 +104,7 @@ func (tm *TrafficManager) spawnAtOtherIntersection(exit sim.Vec2, bus *sim.Bus, 
 		first := sim.RandomIntn(4)
 		for j := 0; j < 4; j++ {
 			heading := float64((first+j)%4) * math.Pi / 2
-			forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+			forward := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -forward.Y, Y: forward.X}
 			ew := math.Abs(forward.X) > .5
 			coord := center.X

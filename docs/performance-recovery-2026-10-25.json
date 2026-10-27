@@ -1,0 +1,302 @@
+{
+  "purpose": "Deadlock query optimization; exact rules/timers/order preserved",
+  "benchmarks": {
+    "CongestedCity": {
+      "before": [
+        {
+          "file": "bench-0-before.txt",
+          "update_ms": 7.606726,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        },
+        {
+          "file": "bench-3-before.txt",
+          "update_ms": 7.690281,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        },
+        {
+          "file": "bench-4-before.txt",
+          "update_ms": 7.828571,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        }
+      ],
+      "after": [
+        {
+          "file": "bench-1-after.txt",
+          "update_ms": 6.796746,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        },
+        {
+          "file": "bench-2-after.txt",
+          "update_ms": 6.849671,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        },
+        {
+          "file": "bench-5-after.txt",
+          "update_ms": 6.934432,
+          "bytes_per_update": 197083,
+          "allocs_per_update": 112
+        }
+      ],
+      "reduction_percent": 10.930809940495024
+    },
+    "MaximumFleet": {
+      "before": [
+        {
+          "file": "bench-0-before.txt",
+          "update_ms": 11.868298,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        },
+        {
+          "file": "bench-3-before.txt",
+          "update_ms": 11.883385,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        },
+        {
+          "file": "bench-4-before.txt",
+          "update_ms": 12.143078,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        }
+      ],
+      "after": [
+        {
+          "file": "bench-1-after.txt",
+          "update_ms": 11.612784,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        },
+        {
+          "file": "bench-2-after.txt",
+          "update_ms": 11.299239,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        },
+        {
+          "file": "bench-5-after.txt",
+          "update_ms": 11.401668,
+          "bytes_per_update": 299013,
+          "allocs_per_update": 315
+        }
+      ],
+      "reduction_percent": 4.053701870300419
+    }
+  },
+  "validation": {
+    "oracle": "frozen pre-change ResolveDeadlocks implementation; randomized 32 epochs x 12 calls, including despawn",
+    "full_traffic": "6 maps x 2 densities x 180 updates; car state and post-collision state equal",
+    "trajectory_sha256": "eb1d70ed97f883bd31438aaa64e1261f060414a8baf9dce1ee6b7e61055b67d7",
+    "trajectory_equal": true,
+    "full_suite": "pass",
+    "recovery_race_seconds": 152.492,
+    "fallback_race_seconds": 1.497,
+    "vet": "pass",
+    "station_replays": "both 3600 updates pass; unseeded RNG; no damage/teleport, actual service and departure",
+    "final_build_trajectory_identical": true,
+    "user_save_unchanged": true,
+    "user_save_sha256": "5cf9851ecd8791ff1a4cb007f1c4fe5d659ff453681af37517893be67a1632e0",
+    "implementation_sha256": {
+      "internal/traffic/recovery.go": "e66f617e63abd53bd238a268f1baa8edc7fd1c917feecf513c1b960c159c4554",
+      "internal/traffic/recovery_queries.go": "755ed23e2495267ed601c0080bc7baf22824f7262c3ca9bd069171c2326e0aff",
+      "internal/traffic/recovery_queries_test.go": "d17211ac40125c0e0a886b47e5f49fe4a353f0528336402592423a31377622e4",
+      "internal/traffic/traffic.go": "4b8720a0b9a3079729ae034aa9db0c542598c6cab4ba46424a7df9f507039baf"
+    },
+    "app_rebuilt": true
+  },
+  "baseline_source": "/Users/yansun/personal/2d-bus-game/dist/performance-recovery/recovery-before.go.txt",
+  "render_maximum": [
+    {
+      "PosePredictionHits": 3281776,
+      "PosePredictionMisses": 2323825,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55414.662667,
+      "MeanUpdateTPS": 59.56907145382263,
+      "MeanDrawFPS": 37.55323771445165,
+      "UpdateP50MS": 15.185166,
+      "UpdateP95MS": 17.557083,
+      "UpdateP99MS": 18.237208,
+      "UpdateMaxMS": 31.271375,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2081,
+      "UpdateFrames": 3301,
+      "UpdateMS": 48662.67575400018,
+      "DrawSubmitMS": 3011.153790999998,
+      "run": "render-0-before"
+    },
+    {
+      "PosePredictionHits": 3280775,
+      "PosePredictionMisses": 2322773,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55161.384917,
+      "MeanUpdateTPS": 59.824458812363574,
+      "MeanDrawFPS": 48.47594026189703,
+      "UpdateP50MS": 14.357583,
+      "UpdateP95MS": 16.712208,
+      "UpdateP99MS": 17.357792,
+      "UpdateMaxMS": 32.392167,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2674,
+      "UpdateFrames": 3300,
+      "UpdateMS": 45972.668353000045,
+      "DrawSubmitMS": 3844.153431999998,
+      "run": "render-1-after"
+    },
+    {
+      "PosePredictionHits": 3281776,
+      "PosePredictionMisses": 2323825,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55158.525708,
+      "MeanUpdateTPS": 59.84568944926014,
+      "MeanDrawFPS": 47.73514096331474,
+      "UpdateP50MS": 14.374208,
+      "UpdateP95MS": 16.722833,
+      "UpdateP99MS": 17.410667,
+      "UpdateMaxMS": 33.825625,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2633,
+      "UpdateFrames": 3301,
+      "UpdateMS": 46076.58214400002,
+      "DrawSubmitMS": 3800.537697000002,
+      "run": "render-2-after"
+    },
+    {
+      "PosePredictionHits": 3280775,
+      "PosePredictionMisses": 2322773,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 55347.184083,
+      "MeanUpdateTPS": 59.62362954276479,
+      "MeanDrawFPS": 40.020102859764854,
+      "UpdateP50MS": 15.082458,
+      "UpdateP95MS": 17.428458,
+      "UpdateP99MS": 18.051167,
+      "UpdateMaxMS": 28.862292,
+      "Scene": "max-traffic-864-cars-48-buses-model2",
+      "Frames": 2215,
+      "UpdateFrames": 3300,
+      "UpdateMS": 48230.93766399984,
+      "DrawSubmitMS": 3184.8820039999873,
+      "run": "render-3-before"
+    }
+  ],
+  "render_summary": {
+    "before": {
+      "MeanDrawFPS": 38.78667028710825,
+      "MeanUpdateTPS": 59.59635049829371,
+      "UpdateP50MS": 15.133812,
+      "UpdateP95MS": 17.4927705,
+      "UpdateP99MS": 18.1441875
+    },
+    "after": {
+      "MeanDrawFPS": 48.105540612605886,
+      "MeanUpdateTPS": 59.83507413081186,
+      "UpdateP50MS": 14.3658955,
+      "UpdateP95MS": 16.7175205,
+      "UpdateP99MS": 17.3842295
+    }
+  },
+  "render_common": [
+    {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25022.183125,
+      "MeanUpdateTPS": 59.94680769885861,
+      "MeanDrawFPS": 59.94680769885861,
+      "UpdateP50MS": 7.702209,
+      "UpdateP95MS": 10.97075,
+      "UpdateP99MS": 11.225541,
+      "UpdateMaxMS": 16.548625,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 11350.747672999998,
+      "DrawSubmitMS": 1926.0001809999997,
+      "version": "before"
+    },
+    {
+      "PosePredictionHits": 15641,
+      "PosePredictionMisses": 21217,
+      "Vsync": true,
+      "SingleThread": false,
+      "GraphicsLibrary": "Metal",
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 25021.727,
+      "MeanUpdateTPS": 59.947900478652016,
+      "MeanDrawFPS": 59.947900478652016,
+      "UpdateP50MS": 6.80725,
+      "UpdateP95MS": 10.0875,
+      "UpdateP99MS": 10.413958,
+      "UpdateMaxMS": 14.904292,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1500,
+      "UpdateFrames": 1500,
+      "UpdateMS": 10195.592156999995,
+      "DrawSubmitMS": 1954.9221299999992,
+      "version": "after"
+    }
+  ],
+  "build_sha256": {
+    "dist/performance-recovery/before-game.test": "b5149d4827cba6bc81f330579b7bcb43ab7d1d31fec6fbb73825e8bd23bc0b6c",
+    "dist/performance-recovery/after-game.test": "77c3c4892370b5dab16555537879a55b992eba0c5a433b3135b1668fbb94c668",
+    "dist/performance-recovery/before-release-check": "e8b31a16bf8597148f479238204b7ff1a4bc368f492d9c21569ef2e23ceaafe0",
+    "dist/performance-recovery/after-release-check": "12a276105865608f8b2d4c5a1bbd2dba249582d51608e9218e5a0ed3d78ed1b8",
+    "2D Bus Simulator.app/Contents/MacOS/busgame": "ea3f3226fb1a73f3de9c2c39ee36cda2a3057871e7bca722f2b9687909414920"
+  }
+}

@@ -28,6 +28,8 @@ def verify(path, version):
             info = plistlib.loads(archive.read(bundle + 'Info.plist'))
             assert info['CFBundleVersion'] == version
             assert info['CFBundleShortVersionString'] == version
+            assert info.get('LSApplicationCategoryType') == 'public.app-category.simulation-games', 'missing game category'
+            assert info.get('LSSupportsGameMode') is True, 'missing macOS Game Mode support'
             executable = bundle + 'MacOS/' + info['CFBundleExecutable']
             binary = archive.read(executable)
             magic, cpu = struct.unpack_from('<II', binary)

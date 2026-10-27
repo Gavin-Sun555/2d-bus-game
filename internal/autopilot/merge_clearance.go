@@ -10,8 +10,30 @@ import (
 // runway reserved in isLaneClearToChange. Front gaps remain subject to physical
 // headway/braking caps; rear and alongside traffic keep the normal clearance.
 func requiredMergeLaneClear(f autopilotFrame, heading, current, target float64) bool {
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	// Once both sections already fit the destination lane, this is a small
+	// recenter, not a new merge. A rear follower must not reserve our lane.
+	withinLane := true
+	targetLine := f.bus.Pos.Add(right.Mul(target - current))
+	for _, part := range f.bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		yaw := part.Heading - heading
+		half := part.HalfLen*math.Abs(math.Sin(yaw)) + part.HalfWid*math.Abs(math.Cos(yaw))
+		if math.Abs(part.Center.Sub(targetLine).Dot(right))+half > f.laneWidth/2-.25 {
+			withinLane = false
+			break
+		}
+	}
+	if withinLane {
+		return true
+	}
 	for _, ob := range f.obstacles {
+		if stoppedOriginFollowerClearsMerge(f, ob, heading, current, target) {
+			continue
+		}
 		if gap, ok := requiredMergeForwardGap(f, ob, heading, current, target); ok && gap >= 35 && f.speedAbs <= 85 {
 			continue
 		}
@@ -31,11 +53,32 @@ func requiredMergeLaneClear(f autopilotFrame, heading, current, target float64) 
 	return true
 }
 
+// A stopped follower in the lane we are leaving need not reserve a passing
+// slot in the destination lane. Keep a full body/braking gap behind the tail;
+// alongside vehicles and followers occupying the destination still must yield.
+func stoppedOriginFollowerClearsMerge(f autopilotFrame, ob VehicleObstacle, heading, current, target float64) bool {
+	shift := target - current
+	if math.Abs(shift) < .55*f.laneWidth || math.Abs(ob.Speed) > 3 || math.Cos(ob.Heading-heading) < .98 {
+		return false
+	}
+	u := sim.UnitFromAngle(heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	d := ob.Pos.Sub(f.bus.Pos)
+	if math.Abs(d.Dot(r)) > f.laneWidth*.2 {
+		return false
+	}
+	yaw := f.bus.Heading - heading
+	body := f.bus.BodyEnvelope()
+	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw)) - body.Center.Sub(f.bus.Pos).Dot(u)
+	braking := ob.Speed*ob.Speed/(2*220) + math.Abs(ob.Speed)*.2
+	return d.Dot(u) < -(extent + ob.Length/2 + 25 + braking)
+}
+
 func requiredMergeForwardGap(f autopilotFrame, ob VehicleObstacle, heading, current, target float64) (float64, bool) {
 	if math.Cos(ob.Heading-heading) < .98 {
 		return 0, false
 	}
-	forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	delta := ob.Pos.Sub(f.bus.Pos)
 	along := delta.Dot(forward)
@@ -57,11 +100,13 @@ func requiredMergeForwardGap(f autopilotFrame, ob VehicleObstacle, heading, curr
 }
 
 func (ad *AutopilotDriver) requiredMergeTrafficSpeed(f autopilotFrame) float64 {
-	request := ad.approachMerge
+	return mergeTrafficSpeed(f, ad.approachMerge)
+}
+
+func mergeTrafficSpeed(f autopilotFrame, request *sim.BusLaneMergeRequest) float64 {
 	right := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
-	base := ad.pointAt(f.s)
-	current := f.bus.Pos.Sub(base).Dot(right)
-	target := request.Target.Sub(base).Dot(right)
+	current := 0.0
+	target := request.Target.Sub(f.bus.Pos).Dot(right)
 	limit := math.Inf(1)
 	for _, ob := range f.obstacles {
 		gap, ok := requiredMergeForwardGap(f, ob, request.Heading, current, target)

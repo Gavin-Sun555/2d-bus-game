@@ -11,7 +11,7 @@ func (ad *AutopilotDriver) stationDepartureRoad(f autopilotFrame) (*sim.BusStop,
 		return nil, sim.Vec2{}, sim.Vec2{}, false
 	}
 	stop := f.world.Stops[ad.pathFromID]
-	forward := sim.Vec2{X: math.Cos(stop.Heading), Y: math.Sin(stop.Heading)}
+	forward := sim.UnitFromAngle(stop.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	relative := f.bus.Pos.Sub(stop.RoadCenter)
 	curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth
@@ -24,6 +24,10 @@ func (ad *AutopilotDriver) stationDepartureRoad(f autopilotFrame) (*sim.BusStop,
 // While the entire body still clears the road, give traffic in the target lane
 // time to pass before starting the merge. Waiting here leaves that lane open.
 func (ad *AutopilotDriver) stationDepartureTrafficSpeed(f autopilotFrame, target float64) float64 {
+	var departure departureSweepCache
+	if f.departureCache == nil {
+		f.departureCache = &departure
+	}
 	if len(f.obstacles) == 0 {
 		return target
 	}
@@ -50,7 +54,7 @@ func (ad *AutopilotDriver) stationDepartureTrafficSpeed(f autopilotFrame, target
 		behind := math.Max(180, math.Max(0, ob.Speed)*2.2+80)
 		ahead := math.Max(120, (f.bus.Length+ob.Length)/2+40)
 		if along >= -behind && along < ahead {
-			if ad.clearsStoppedDepartureFollower(f, ob) {
+			if ad.clearsStoppedDepartureFollower(f, ob) || ad.clearsYieldingCarDuringDeparture(f, ob) {
 				continue
 			}
 			return 0
@@ -76,7 +80,7 @@ func (ad *AutopilotDriver) clearsYieldingCarDuringDeparture(f autopilotFrame, ob
 	}
 	other := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 2, HalfWid: ob.Width/2 + 2}
 	body := sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length/2 + 2, HalfWid: f.bus.Width/2 + 2}
-	if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+	if departureBodyCollision(f, 0, 0, body, other) {
 		return false
 	}
 	for distance := 5.0; distance <= 220; distance += 5 {
@@ -87,16 +91,16 @@ func (ad *AutopilotDriver) clearsYieldingCarDuringDeparture(f autopilotFrame, ob
 		}
 		body.Center = position
 		body.Heading = math.Atan2(tangent.Y, tangent.X)
-		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+		if departureBodyCollision(f, 0, int(distance/5), body, other) {
 			return false
 		}
 	}
 	return true
 }
 
-// A stopped bus queue behind the bay cannot "pass first". Permit departure
-// only when the complete rear body is behind us and the full pull-out sweep
-// clears it. Moving, alongside and front traffic keep their normal priority.
+// A stopped bus behind or beside the rear of the bay cannot "pass first".
+// Permit departure only when the full pull-out sweep clears its complete body.
+// Moving traffic and vehicles ahead keep their normal priority.
 func (ad *AutopilotDriver) clearsStoppedDepartureFollower(f autopilotFrame, ob VehicleObstacle) bool {
 	if math.Abs(ob.Speed) >= 3 || len(ad.drivePath) < 2 {
 		return false
@@ -108,7 +112,12 @@ func (ad *AutopilotDriver) clearsStoppedDepartureFollower(f autopilotFrame, ob V
 	yaw := ob.Heading - math.Atan2(forward.Y, forward.X)
 	nose := ob.Pos.Sub(f.bus.Pos).Dot(forward) + ob.Length/2*math.Abs(math.Cos(yaw)) + ob.Width/2*math.Abs(math.Sin(yaw))
 	if nose >= -f.bus.Length/2-6 {
-		return false
+		// A stationary outer bus can be alongside our rear, rather than
+		// wholly behind it. Do not make it advance to release us: allow the
+		// full departure sweep below to prove a separated forward exit.
+		if nose > f.bus.Length/2 || roadSideClearance(f.bus, ob) <= 2 {
+			return false
+		}
 	}
 	pointAt := func(distance float64) (sim.Vec2, float64) {
 		p := ad.pointAt(f.s + distance)
@@ -121,7 +130,7 @@ func (ad *AutopilotDriver) clearsStoppedDepartureFollower(f autopilotFrame, ob V
 	for distance := 0.; distance <= 240; distance += 4 {
 		pos, heading := pointAt(distance)
 		body := sim.OBB{Center: pos.Add(errorPos), Heading: heading + errorHeading, HalfLen: f.bus.Length/2 + 2, HalfWid: f.bus.Width/2 + 2}
-		if hit, _, _ := sim.CheckOBBCollision(body, other); hit {
+		if departureBodyCollision(f, 1, int(distance/4), body, other) {
 			return false
 		}
 	}

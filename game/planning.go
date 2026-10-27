@@ -11,6 +11,14 @@ import (
 )
 
 func (g *Game) updatePlanningMode(dt float64) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyH) {
+		g.HideOtherRoutes = !g.HideOtherRoutes
+		if g.HideOtherRoutes {
+			g.HUD.AddToast(locale.T("已隐藏其他线路 [H]", "Other lines hidden [H]"), false)
+		} else {
+			g.HUD.AddToast(locale.T("已显示其他线路 [H]", "Other lines shown [H]"), false)
+		}
+	}
 	// Always lock rotation to 0 in planning mode for upright North-Up map orientation
 	g.Camera.Rotation = 0
 	g.Camera.TargetRotation = 0
@@ -60,6 +68,14 @@ func (g *Game) updatePlanningMode(dt float64) {
 			return
 		}
 
+		if g.HUD.SettingsBtnBounds.Contains(mouseScreen) {
+			g.Settings.IsOpen = true
+			return
+		}
+		if g.HUD.IsInsideTopBar(mouseScreen) {
+			return
+		}
+
 		// Check interactive buttons on planning panel first
 		if g.HUD.HandlePlanUndoClick(mouseScreen) {
 			g.UndoLastPlannedStop()
@@ -75,19 +91,12 @@ func (g *Game) updatePlanningMode(dt float64) {
 		}
 
 		// Check if clicked on a bus stop
-		mouseWorld := g.Camera.ScreenToWorld(mouseScreen)
-		clickedStopID := -1
-		for _, s := range g.World.Stops {
-			if s.Pos.Distance(mouseWorld) < 65 {
-				clickedStopID = s.ID
-				break
-			}
-		}
+		clickedStopID := g.World.StopAtScreen(g.Camera, mouseScreen, 12)
 
 		if clickedStopID >= 0 {
-			prevLen := len(g.Route.StopIDs)
-			g.Route.AddStop(clickedStopID)
-			if len(g.Route.StopIDs) > prevLen {
+			prevLen := len(g.planningRoute().StopIDs)
+			g.planningRoute().AddStop(clickedStopID)
+			if len(g.planningRoute().StopIDs) > prevLen {
 				g.planModeRouteModified = true
 			}
 			stopName := g.World.Stops[clickedStopID].LocalizedName()
@@ -146,17 +155,17 @@ func (g *Game) updatePlanningMode(dt float64) {
 
 // UndoLastPlannedStop cancels/removes the last station added to the planned route.
 func (g *Game) UndoLastPlannedStop() bool {
-	if g.Route == nil {
+	if g.planningRoute() == nil {
 		return false
 	}
-	if removedID, ok := g.Route.RemoveLastStop(); ok {
+	if removedID, ok := g.planningRoute().RemoveLastStop(); ok {
 		g.planModeRouteModified = true
 		stopName := fmt.Sprintf("#%d", removedID)
 		if g.World != nil && removedID >= 0 && removedID < len(g.World.Stops) {
 			stopName = g.World.Stops[removedID].LocalizedName()
 		}
-		if len(g.Route.StopIDs) > 0 {
-			g.HUD.AddToast(fmt.Sprintf(locale.T("已撤销最后一个站点 [%s] (路线剩余 %d 站)", "Removed last stop [%s] (%d remaining)"), stopName, len(g.Route.StopIDs)), false)
+		if len(g.planningRoute().StopIDs) > 0 {
+			g.HUD.AddToast(fmt.Sprintf(locale.T("已撤销最后一个站点 [%s] (路线剩余 %d 站)", "Removed last stop [%s] (%d remaining)"), stopName, len(g.planningRoute().StopIDs)), false)
 		} else {
 			g.HUD.AddWarningToast(fmt.Sprintf(locale.T("已撤销最后一个站点 [%s]，当前路线已为空！", "Removed last stop [%s], route is now empty!"), stopName))
 		}
@@ -168,10 +177,10 @@ func (g *Game) UndoLastPlannedStop() bool {
 
 // ClearPlannedRoute clears all stations from the planned route.
 func (g *Game) ClearPlannedRoute() {
-	if g.Route == nil {
+	if g.planningRoute() == nil {
 		return
 	}
-	g.Route.Clear()
+	g.planningRoute().Clear()
 	g.planModeRouteModified = true
 	g.HUD.AddToast(locale.T("已清空规划路线，请重新规划！", "Route cleared, please click stations to replan!"), false)
 }
@@ -188,50 +197,86 @@ func intSlicesEqual(a, b []int) bool {
 	return true
 }
 
-// TogglePlanMode toggles between Drive Mode and Route Planning Mode.
-// When returning to Drive Mode after replanning the route, both the player's bus
-// and all AI buses are reset to the first stop of the replanned route.
+// planningRoute keeps route editing independent of the service the player drives.
+func (g *Game) planningRoute() *sim.Route {
+	if g.IsPlanMode && g.planRoute != nil {
+		return g.planRoute
+	}
+	return g.Route
+}
+
+// PlanTransitLine opens any enabled service without changing the player's line.
+func (g *Game) PlanTransitLine(index int) bool {
+	if index < 0 || index >= g.LineCount || index >= len(g.Lines) {
+		return false
+	}
+	route := g.activeLines()[index]
+	if g.IsPlanMode && g.planningRoute() != route && !g.finishPlannedRoute() {
+		return false
+	}
+	if !g.IsPlanMode {
+		g.TogglePlanMode()
+	}
+	if g.planRoute != route {
+		g.planRoute = route
+		g.planModeInitialStops = append([]int(nil), route.StopIDs...)
+		g.planModeRouteModified = false
+	}
+	g.Camera.Pos = sim.Vec2{}
+	g.Camera.TargetPos = sim.Vec2{}
+	g.Camera.Zoom = .04
+	g.Camera.TargetZoom = .04
+	g.NetworkSelected = index
+	g.NetworkOpen = false
+	return true
+}
+
+// finishPlannedRoute dispatches changed services while keeping unrelated buses running.
+func (g *Game) finishPlannedRoute() bool {
+	route := g.planningRoute()
+	if len(route.StopIDs) == 0 {
+		g.HUD.AddWarningToast(locale.T("【路线未完成】请至少选择 1 个站点后再完成规划！", "[Empty Route] Select at least one stop before finishing!"))
+		return false
+	}
+	if g.planModeRouteModified || !intSlicesEqual(route.StopIDs, g.planModeInitialStops) {
+		if route == g.Route {
+			// Reconcile only this service's AI buses; other services retain their journeys.
+			g.resetBusesToRouteStart(false)
+		}
+		g.buildLineFleets(false)
+		g.resetOperations()
+		g.SyncStopsWithRoute()
+	}
+	g.planModeInitialStops = append([]int(nil), route.StopIDs...)
+	g.planModeRouteModified = false
+	return true
+}
+
+// TogglePlanMode toggles between driving and editing the selected service.
 func (g *Game) TogglePlanMode() {
 	if !g.IsPlanMode {
-		// Enter Plan Mode
+		g.syncCurrentLineSettings()
 		g.IsPlanMode = true
+		g.planRoute = g.Route
 		g.planModeInitialStops = append([]int(nil), g.Route.StopIDs...)
 		g.planModeRouteModified = false
-
-		// Instant transition to panoramic planning view
-		g.Camera.TargetPos = sim.Vec2{X: 0, Y: 0}
-		g.Camera.Pos = sim.Vec2{X: 0, Y: 0}
-		g.Camera.TargetZoom = 0.08
-		g.Camera.Zoom = 0.08
+		g.Camera.TargetPos = sim.Vec2{}
+		g.Camera.Pos = sim.Vec2{}
+		g.Camera.TargetZoom = 0.04
+		g.Camera.Zoom = 0.04
 		g.Camera.Rotation = 0
 		g.Camera.TargetRotation = 0
-		g.HUD.AddToast(locale.T("已进入【线路规划模式】：游戏运行与客流生成已暂停 (点击站点加入路线，按TAB返回)", "[Plan Mode] Simulation & passenger spawning paused (Click stops to add to route, press TAB to return)"), false)
-	} else {
-		// Exit Plan Mode -> Return to Driver Mode
-		if len(g.Route.StopIDs) == 0 {
-			g.HUD.AddWarningToast(locale.T("【路线未完成】当前路线为空，请至少点击选择 1 个站点规划路线后再返回驾驶！", "[Empty Route] Route is empty. Please select at least 1 stop before driving!"))
-			return
-		}
-
-		g.IsPlanMode = false
-
-		// Check if route was replanned
-		isReplanned := g.planModeRouteModified || !intSlicesEqual(g.Route.StopIDs, g.planModeInitialStops)
-		if isReplanned {
-			g.ResetBusesToRouteStart()
-			firstStopID := g.Route.StopIDs[0]
-			firstStopName := ""
-			if firstStopID >= 0 && firstStopID < len(g.World.Stops) {
-				firstStopName = g.World.Stops[firstStopID].LocalizedName()
-			}
-			g.HUD.AddToast(fmt.Sprintf(locale.T("已进入【驾驶模式】：路线重新规划完成！车辆与 AI 车队已就位始发站 [%s]，开始运营发车！", "[Drive Mode] Route replanned! Bus and AI fleet reset to starting station [%s]!"), firstStopName), true)
-		} else {
-			// Instant snap back to driver mode without resetting vehicle positions
-			g.Camera.FollowBus(g.Bus)
-			g.Camera.Pos = g.Camera.TargetPos
-			g.Camera.RestoreDrivingZoom()
-			g.Camera.Rotation = g.Camera.TargetRotation
-			g.HUD.AddToast(locale.T("已进入【驾驶模式】：开始运营发车！", "[Drive Mode] Starting operation!"), true)
-		}
+		g.HUD.AddToast(locale.T("已进入线路规划：点击站点添加，[H] 显示/隐藏其他线路，[TAB] 完成", "Planning: click stops, [H] toggle other lines, [TAB] finish"), false)
+		return
 	}
+	if !g.finishPlannedRoute() {
+		return
+	}
+	g.IsPlanMode = false
+	g.planRoute = nil
+	g.Camera.FollowBus(g.Bus)
+	g.Camera.Pos = g.Camera.TargetPos
+	g.Camera.RestoreDrivingZoom()
+	g.Camera.Rotation = g.Camera.TargetRotation
+	g.HUD.AddToast(locale.T("线路规划已完成，恢复运营。", "Route planning complete. Service resumed."), true)
 }

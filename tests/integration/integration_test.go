@@ -39,9 +39,9 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 			}
 
 			firstStop := g.World.Stops[0]
-			if g.Bus.Pos.Distance(firstStop.Pos) > 1.0 {
+			if g.Bus.Pos.Distance(firstStop.FrontBerthPosition()) > 1.0 {
 				t.Fatalf("[%s] Bus must spawn at initial stop bay 0: expected %v, got %v",
-					theme.DisplayName(), firstStop.Pos, g.Bus.Pos)
+					theme.DisplayName(), firstStop.FrontBerthPosition(), g.Bus.Pos)
 			}
 			if !firstStop.ContainsBus(g.Bus) {
 				t.Fatalf("[%s] Bus must be squarely inside initial stop bay 0", theme.DisplayName())

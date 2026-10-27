@@ -1,0 +1,303 @@
+{
+  "Bus": {
+    "GeometryVersion": 1,
+    "TrailerHeading": 1.679829236658234,
+    "TrailerInitialized": true,
+    "TerminalReplacementHold": false,
+    "Model": 2,
+    "PendingModel": null,
+    "StationMergeRequest": {
+      "StopID": 6,
+      "Departing": true,
+      "Remaining": 0.2833333333333333
+    },
+    "LaneMergeRequest": null,
+    "YieldingToBus": null,
+    "RoundaboutEntry": null,
+    "JunctionCorridor": null,
+    "Pos": {
+      "X": -8032.9279182276105,
+      "Y": -2614.0734777357256
+    },
+    "Heading": 1.5474148983949054,
+    "Speed": 0,
+    "SteeringAngle": -0.54,
+    "Gear": 1,
+    "TransmissionMode": 0,
+    "Length": 96,
+    "Width": 36,
+    "WheelBase": 60,
+    "MaxSpeedFwd": 388.8888888888889,
+    "MaxSpeedRev": 100,
+    "AccelRate": 195.5,
+    "BrakeRate": 380,
+    "HandbrakeRate": 600,
+    "FrictionRate": 70,
+    "MaxSteerAngle": 0.54,
+    "SteerTurnSpeed": 2.4,
+    "SteerReturnSpd": 3.5,
+    "IsBraking": true,
+    "IsHandbraking": false,
+    "IsReversing": false,
+    "DoorsOpen": false,
+    "DoorProgress": 0,
+    "PassengerCount": 41,
+    "Capacity": 85,
+    "Passengers": [
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 0
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 9
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 8
+      },
+      {
+        "PaidFare": 3,
+        "TargetStopID": 7
+      }
+    ],
+    "Durability": 100,
+    "OnShoulder": false,
+    "CrashCooldown": 0,
+    "TireTracks": null
+  },
+  "Driver": {
+    "DockDepartureRun": 0,
+    "SmoothDockDeparture": false,
+    "ArticulatedPath": true,
+    "Public": {
+      "State": 0,
+      "DisallowOncomingOvertake": true,
+      "BerserkMode": true,
+      "CruiseSpeedLimit": 388.8888888888889,
+      "BerserkMaxSpeed": 388.8888888888889,
+      "DwellTimer": 0,
+      "DwellTotal": 2.8,
+      "DwellFinished": false,
+      "DockedStopID": -1,
+      "LastTargetID": 7,
+      "WaypointIdx": 0,
+      "OvertakeState": 0,
+      "LaneOffset": 0,
+      "TargetLaneOffset": 0,
+      "LaneOffsetStart": -52,
+      "LaneOffsetProgress": 1,
+      "LaneOffsetDuration": 0.5473684210526316,
+      "OvertakeTimer": 0,
+      "CanSkipTargetStop": false,
+      "LastPathS": 5.465289405080056,
+      "LastRemaining": 3624.2270805692983,
+      "LastLateralErr": 102.92791822761046,
+      "LastPursuitPt": {
+        "X": -7930,
+        "Y": -2559.0734777357256
+      },
+      "LastTargetSpeed": 0
+    },
+    "QueueStopID": -1,
+    "Turn": null,
+    "Dock": null,
+    "SkippedStop": 6,
+    "SkippedPosition": {
+      "X": -8032.971281706459,
+      "Y": -2619.5387671408057
+    },
+    "SkippedServed": true,
+    "ParallelEntryCenter": null,
+    "ApproachMerge": null,
+    "ApproachMergeJoined": false,
+    "RoadSafetyHold": false,
+    "RoadRecoverySpeed": 0,
+    "MidLaneRecovery": null,
+    "MidLaneSweepClear": false,
+    "LastTargetLaneOffset": 0,
+    "DrivePath": [
+      {
+        "X": -7930,
+        "Y": -2619.5387671408057
+      },
+      {
+        "X": -7930,
+        "Y": 496
+      },
+      {
+        "X": -8029.12,
+        "Y": 836
+      },
+      {
+        "X": -8029.12,
+        "Y": 996
+      }
+    ],
+    "PathRevision": 2,
+    "PathFromID": 6,
+    "PathToID": 7,
+    "PathLane": 52,
+    "PathSynced": true,
+    "DepartureFromDock": false,
+    "PathSkipTarget": false,
+    "BypassStopID": -1,
+    "DirectRoundaboutExit": null,
+    "BusLaneJunction": null,
+    "RightTurnJunction": null,
+    "RightTurnHeading": -3.141592653589793,
+    "RightTurnWaiting": false,
+    "BusJunctionEntered": false,
+    "OrdinaryBusLeft": false,
+    "PathOrdinaryBusLeft": false,
+    "BusTurnHoldDistance": 0
+  }
+}

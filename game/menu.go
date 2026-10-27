@@ -30,9 +30,9 @@ func (g *Game) updateMainMenu() {
 	} else if inpututil.IsKeyJustPressed(ebiten.Key3) {
 		g.SelectedMapTheme = sim.MapThemeRiverValley
 	} else if inpututil.IsKeyJustPressed(ebiten.Key4) {
-		g.SelectedMapTheme = sim.MapThemeEmeraldLake
-	} else if inpututil.IsKeyJustPressed(ebiten.Key5) {
 		g.SelectedMapTheme = sim.MapThemeTwinCities
+	} else if inpututil.IsKeyJustPressed(ebiten.Key5) {
+		g.SelectedMapTheme = sim.MapThemeCustom
 	} else if inpututil.IsKeyJustPressed(ebiten.Key6) || inpututil.IsKeyJustPressed(ebiten.KeyC) {
 		g.SelectedMapTheme = sim.MapThemeCustom
 	}
@@ -50,9 +50,9 @@ func (g *Game) updateMainMenu() {
 
 	// Arrow keys / A / D
 	if inpututil.IsKeyJustPressed(ebiten.KeyLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
-		g.SelectedMapTheme = (g.SelectedMapTheme + 5) % 6
+		g.SelectedMapTheme = previousTheme(g.SelectedMapTheme)
 	} else if inpututil.IsKeyJustPressed(ebiten.KeyRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
-		g.SelectedMapTheme = (g.SelectedMapTheme + 1) % 6
+		g.SelectedMapTheme = g.SelectedMapTheme.Next()
 	}
 
 	// Enter or Space: Enter city!
@@ -66,6 +66,10 @@ func (g *Game) updateMainMenu() {
 		mx, my := ebiten.CursorPosition()
 		mPos := sim.Vec2{X: float64(mx), Y: float64(my)}
 
+		if g.menuContinueBounds.Contains(mPos) {
+			g.handleSave(true)
+			return
+		}
 		if g.menuLangBounds.Contains(mPos) {
 			newLang := locale.ToggleLanguage()
 			g.Settings.Language = newLang
@@ -77,13 +81,13 @@ func (g *Game) updateMainMenu() {
 			return
 		}
 
-		for i := 0; i < 6; i++ {
+		for i, theme := range sim.SelectableMapThemes() {
 			if g.menuCardBounds[i].Contains(mPos) {
-				if g.SelectedMapTheme == sim.MapTheme(i) {
+				if g.SelectedMapTheme == theme {
 					g.EnterCity(g.SelectedMapTheme)
 					return
 				}
-				g.SelectedMapTheme = sim.MapTheme(i)
+				g.SelectedMapTheme = theme
 				return
 			}
 		}
@@ -144,7 +148,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 
 	textui.DrawText(screen, titleText, headerStartX, titleY, 24, sim.RGBA(248, 250, 252, 255))
 
-	subText := locale.T("请选择营运城市与地图线路 (6 大独立地理风貌与拓扑路网 · 支持玩家自定义地图及热重载)", "Select city & route (6 distinct maps with road networks · Custom map & hot-reload supported)")
+	subText := locale.T("请选择营运城市与地图线路 (4 座大型城市 · 街区双侧设站 · 1～6 条线路 · 支持玩家自定义地图及热重载)", "Select city & route (4 expanded cities · Stops on both street sides · 1–6 lines · Custom map & hot-reload supported)")
 	subW, _ := textui.MeasureText(subText, 14)
 	textui.DrawText(screen, subText, (sw-subW)/2.0, titleY+42, 14, sim.RGBA(148, 163, 184, 255))
 
@@ -152,7 +156,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 	cardW := 192.0
 	cardH := 380.0
 	cardGap := 12.0
-	totalW := 6*cardW + 5*cardGap
+	totalW := 5*cardW + 4*cardGap
 	startX := (sw - totalW) / 2.0
 	startY := 115.0
 
@@ -160,7 +164,6 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		sim.MapThemeMetropolis,
 		sim.MapThemeCoastalBay,
 		sim.MapThemeRiverValley,
-		sim.MapThemeEmeraldLake,
 		sim.MapThemeTwinCities,
 		sim.MapThemeCustom,
 	}
@@ -169,7 +172,6 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		sim.RGBA(59, 130, 246, 255), // Metropolis: Royal Blue
 		sim.RGBA(6, 182, 212, 255),  // Coastal Bay: Ocean Cyan
 		sim.RGBA(16, 185, 129, 255), // River Valley: River Emerald
-		sim.RGBA(20, 184, 166, 255), // Emerald Lake: Teal
 		sim.RGBA(168, 85, 247, 255), // Twin Cities: High-tech Violet
 		sim.RGBA(245, 158, 11, 255), // Custom Map: Amber Gold
 	}
@@ -188,9 +190,9 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			tag:      locale.T("【01 都会 CBD】", "【01 Metropolis】"),
 			name:     locale.T("都会核心 (Metropolis)", "Metropolis CBD"),
 			sub:      locale.T("经典都会 · 商务高层群", "Classic Skyline & CBD"),
-			topo:     locale.T("• 5×5 经典棋盘快速干道", "• 5×5 High-density grid"),
+			topo:     locale.T("• 公交专用八车道主干路网", "• Bus-priority boulevard grid"),
 			landmark: locale.T("• 运河双子桥与喷泉环岛", "• Canal bridges & fountain"),
-			stops:    locale.T("• 12 座核心枢纽客运站", "• 12 Primary bus stops"),
+			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
 		{
 			tag:      locale.T("【02 海滨港湾】", "【02 Coastal Bay】"),
@@ -198,7 +200,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			sub:      locale.T("海景风情 · 国际深水港", "Scenic coast & seaport"),
 			topo:     locale.T("• 黄金海岸与高密港口路网", "• Ocean drive & freight grid"),
 			landmark: locale.T("• 1200m 跨海悬索特大桥", "• 1200m Suspension bridge"),
-			stops:    locale.T("• 12 座海滨国际客运站", "• 12 Coastal bay stations"),
+			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
 		{
 			tag:      locale.T("【03 溪谷江城】", "【03 River Valley】"),
@@ -206,31 +208,23 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			sub:      locale.T("天然大江 · 山城两岸立体拓扑", "River canyon & mountain city"),
 			topo:     locale.T("• 跨江斜拉双桥与沿江干道", "• Dual cable-stayed bridges"),
 			landmark: locale.T("• 滨江大道与观景高地", "• Riverside expressway"),
-			stops:    locale.T("• 12 座立体山水客运站", "• 12 River valley stations"),
+			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
 		{
-			tag:      locale.T("【04 湖畔水乡】", "【04 Emerald Lake】"),
-			name:     locale.T("湖岛水乡 (Emerald Lake)", "Emerald Lake Town"),
-			sub:      locale.T("巨型翠湖 · 湖心绿岛古镇水网", "Vast lake & historic canals"),
-			topo:     locale.T("• 环湖干道与东西向通航河渠", "• Lakeside loop road network"),
-			landmark: locale.T("• 四方长堤与汉白玉石拱桥", "• Causeway & stone bridges"),
-			stops:    locale.T("• 12 座水乡古镇名胜站", "• 12 Historic town stations"),
-		},
-		{
-			tag:      locale.T("【05 高新双城】", "【05 Twin Districts】"),
+			tag:      locale.T("【04 高新双城】", "【04 Twin Districts】"),
 			name:     locale.T("高新双城 (Twin Districts)", "Twin Tech Districts"),
 			sub:      locale.T("临空制造 · 硅谷软件双城融合", "Aerospace & software hub"),
 			topo:     locale.T("• 东西双城干道与中央快速路", "• Inter-district corridors"),
 			landmark: locale.T("• 跨区中央高架特大桥", "• Grade-separated overpass"),
-			stops:    locale.T("• 12 座高新智造枢纽站", "• 12 Hi-tech district stops"),
+			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
 		{
-			tag:      locale.T("【06 自定义地图】", "【06 Custom Map】"),
+			tag:      locale.T("【05 自定义地图】", "【05 Custom Map】"),
 			name:     locale.T("自定义地图 (Custom)", "Custom Map (JSON)"),
 			sub:      locale.T("custom_map.json 动态载入", "Dynamic custom_map.json"),
 			topo:     locale.T("• 自由扩展道路/站点/水系", "• User-defined roads & stops"),
 			landmark: locale.T("• 支持随时按 [R] 热重载", "• Hot reload with [R] anytime"),
-			stops:    locale.T("• 12 座自由规划客运站", "• Fully customizable stops"),
+			stops:    locale.T("• 站点数量由玩家地图定义", "• Fully customizable stops"),
 		},
 	}
 
@@ -305,8 +299,29 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 	textui.DrawText(screen, locale.T("▶ 开始营运 / 进入所选城市 (回车 / 空格)", "▶ Start Operation / Enter City (Enter / Space)"), btnX+24, btnY+14, 15, color.White)
 
 	// 5. Bottom Operation Tips
-	bottomY := btnY + btnH + 18.0
-	tips := locale.T("【操作提示】按数字键 [1-6/C] 或 [← / →] 切换城市 | 按 [L] 切换语言 | 按 [R] 重载自定义地图 | 驾驶途中点击右上角【主菜单】或按 ESC 退回更换", "【Controls】Keys [1-6/C] or [←/→] Select City | [L] Toggle Language | [R] Hot Reload Map | Click [Menu] or ESC to Change")
+	continueY := btnY + btnH + 12
+	g.menuContinueBounds = sim.Rect{X: btnX, Y: continueY, W: btnW, H: 40}
+	vector.DrawFilledRect(screen, float32(btnX), float32(continueY), float32(btnW), 40, sim.RGBA(51, 65, 85, 255), true)
+	label := locale.T("继续存档 [F9] · 暂无存档", "Continue [F9] · No save yet")
+	if g.hasSave {
+		label = locale.T("继续存档 [F9] · ", "Continue [F9] · ") + g.saveTime.Format("2006-01-02 15:04")
+	}
+	textui.DrawText(screen, label, btnX+20, continueY+12, 14, sim.RGBA(186, 230, 253, 255))
+	if g.saveMessage != "" {
+		textui.DrawText(screen, g.saveMessage, 24, sh-24, 12, sim.RGBA(251, 191, 36, 255))
+	}
+	bottomY := continueY + 54.0
+	tips := locale.T("【操作提示】按数字键 [1-5/C] 或 [← / →] 切换城市 | 按 [L] 切换语言 | 按 [R] 重载自定义地图 | 驾驶途中点击右上角【主菜单】或按 ESC 退回更换", "【Controls】Keys [1-5/C] or [←/→] Select City | [L] Toggle Language | [R] Hot Reload Map | Click [Menu] or ESC to Change")
 	tipW, _ := textui.MeasureText(tips, 12)
 	textui.DrawText(screen, tips, (sw-tipW)/2.0, bottomY, 12, sim.RGBA(148, 163, 184, 255))
+}
+
+func previousTheme(theme sim.MapTheme) sim.MapTheme {
+	themes := sim.SelectableMapThemes()
+	for i, t := range themes {
+		if t == theme {
+			return themes[(i+len(themes)-1)%len(themes)]
+		}
+	}
+	return themes[0]
 }

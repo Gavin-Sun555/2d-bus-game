@@ -34,7 +34,7 @@ func (g *Game) recordGreenWaits(dt float64) {
 		var intersection *sim.TrafficIntersection
 		if b != nil && ab.Driver != nil && ab.Route != nil && math.Abs(b.Speed) < 1 && !b.DoorsOpen && ab.Driver.State != autopilot.AutopilotStateDocked {
 			h := math.Round(b.Heading/(math.Pi/2)) * (math.Pi / 2)
-			u := sim.Vec2{X: math.Cos(h), Y: math.Sin(h)}
+			u := sim.UnitFromAngle(h)
 			for _, it := range g.TrafficLights.Intersections {
 				delta := it.Center.Sub(b.Pos)
 				gap := delta.Dot(u) - it.GetStopLineDistForHeading(h, g.Settings.GetLaneWidth()) - b.Length/2
@@ -54,7 +54,7 @@ func (g *Game) recordGreenWaits(dt float64) {
 			continue
 		}
 		obs := g.AIBusMgr.GetObstacles(ab.ID)
-		obs = append(obs, autopilot.VehicleObstacle{Pos: g.Bus.Pos, Heading: g.Bus.Heading, Speed: g.Bus.Speed, Length: g.Bus.Length, Width: g.Bus.Width, JunctionCorridor: g.Bus.JunctionCorridor})
+		obs = append(obs, autopilot.ObserveBus(g.Bus))
 		for _, c := range g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity) {
 			obs = append(obs, autopilot.VehicleObstacle{Pos: c.Pos, Heading: c.Heading, Speed: c.Speed, Length: c.Length, Width: c.Width, JunctionTurn: c.JunctionTurn, JunctionCorridor: c.JunctionCorridor})
 		}

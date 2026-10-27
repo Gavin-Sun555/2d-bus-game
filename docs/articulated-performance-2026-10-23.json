@@ -1,0 +1,83 @@
+{
+  "hardware": {
+    "cpu": "Apple M4",
+    "macOS": "27.0.1"
+  },
+  "fixedFrameBenchmark": {
+    "name": "BenchmarkArticulatedCongestedCity",
+    "seed": 20261023,
+    "warmupFrames": 600,
+    "measuredFrames": 1200,
+    "playerAndAIModel": "articulated",
+    "aiBuses": 8,
+    "cars": 864,
+    "before": "goos: darwin\ngoarch: arm64\npkg: github.com/Gavin-Sun555/2d-bus-game/game\ncpu: Apple M4\nBenchmarkArticulatedCongestedCity-10    \t    1200\t  13504443 ns/op\t       864.0 cars\t       100.0 health\t  538068 B/op\t    2022 allocs/op\nPASS\nok  \tgithub.com/Gavin-Sun555/2d-bus-game/game\t27.449s\n",
+    "after": "goos: darwin\ngoarch: arm64\npkg: github.com/Gavin-Sun555/2d-bus-game/game\ncpu: Apple M4\nBenchmarkArticulatedCongestedCity-10    \t    1200\t  10408214 ns/op\t       864.0 cars\t       100.0 health\t  538038 B/op\t    2022 allocs/op\nPASS\nok  \tgithub.com/Gavin-Sun555/2d-bus-game/game\t20.905s\n"
+  },
+  "realUpdateDraw": {
+    "seed": 5,
+    "warmupFrames": 600,
+    "measuredUpdates": 1200,
+    "cameraViewMultiplier": 4,
+    "aiBuses": 8,
+    "playerAndAIModel": "articulated",
+    "before": {
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 20029.119375,
+      "MeanUpdateTPS": 59.91276888078361,
+      "MeanDrawFPS": 53.72178276310264,
+      "UpdateP50MS": 12.295833,
+      "UpdateP95MS": 16.643958,
+      "UpdateP99MS": 17.150708,
+      "UpdateMaxMS": 37.397292,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1076,
+      "UpdateFrames": 1200,
+      "UpdateMS": 14249.283795999982,
+      "DrawSubmitMS": 1416.3512499999997
+    },
+    "after": {
+      "CarsMin": 864,
+      "CarsMax": 864,
+      "CarsFinal": 864,
+      "FleetBuses": 8,
+      "PlayerDamageSteps": 0,
+      "PlayerFinalDurability": 100,
+      "FleetMinDurability": 100,
+      "MeasuredWallMS": 20019.827417,
+      "MeanUpdateTPS": 59.94057665956751,
+      "MeanDrawFPS": 58.292210801429405,
+      "UpdateP50MS": 11.268833,
+      "UpdateP95MS": 15.519667,
+      "UpdateP99MS": 16.040042,
+      "UpdateMaxMS": 22.949209,
+      "Scene": "max-traffic-864-cars-8-buses-model2",
+      "Frames": 1167,
+      "UpdateFrames": 1200,
+      "UpdateMS": 12860.915244000003,
+      "DrawSubmitMS": 1595.1242989999996
+    }
+  },
+  "trajectoryComparison": {
+    "frames": 1800,
+    "beforeSHA256": "f0b9f03319431ba5f03de07367f0b6617d714f0c018567961d168a1d6ab42ada",
+    "afterSHA256": "f0b9f03319431ba5f03de07367f0b6617d714f0c018567961d168a1d6ab42ada"
+  },
+  "validation": {
+    "testsPassed": 8711,
+    "testsSkipped": 6,
+    "testsFailed": 0,
+    "soakFrames": 7200,
+    "savedGreenWaitReplayFrames": 3600,
+    "race": "passed",
+    "vet": "passed",
+    "macOSAppBuild": "passed",
+    "plistLint": "passed"
+  }
+}

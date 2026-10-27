@@ -14,7 +14,7 @@ func HasRoundaboutPriority(rb Roundabout, body OBB) bool {
 		return false
 	}
 	tangent := Vec2{X: radial.Y, Y: -radial.X}.Normalize()
-	return tangent.Dot(Vec2{X: math.Cos(body.Heading), Y: math.Sin(body.Heading)}) > .7
+	return tangent.Dot(UnitFromAngle(body.Heading)) > .7
 }
 
 // PredictRoundaboutBody follows circulating traffic along the ring and other
@@ -22,12 +22,12 @@ func HasRoundaboutPriority(rb Roundabout, body OBB) bool {
 func PredictRoundaboutBody(rb Roundabout, body OBB, speed, elapsed float64) OBB {
 	radial := body.Center.Sub(rb.Center)
 	radius := radial.Length()
-	forward := Vec2{X: math.Cos(body.Heading), Y: math.Sin(body.Heading)}
+	forward := UnitFromAngle(body.Heading)
 	tangent := Vec2{X: radial.Y, Y: -radial.X}.Normalize()
 	alignment := forward.Dot(tangent)
 	if radius >= rb.InnerRadius && radius <= rb.Radius+10 && math.Abs(alignment) > .7 {
 		turn := -math.Copysign(1, alignment) * speed * elapsed / radius
-		c, s := math.Cos(turn), math.Sin(turn)
+		s, c := math.Sincos(turn)
 		body.Center = rb.Center.Add(Vec2{X: radial.X*c - radial.Y*s, Y: radial.X*s + radial.Y*c})
 		body.Heading += turn
 	} else {

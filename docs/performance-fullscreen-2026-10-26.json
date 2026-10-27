@@ -1,0 +1,1676 @@
+{
+  "metadata": {
+    "draws": 55550,
+    "durationSeconds": 930.203155333,
+    "go": "go1.27.1",
+    "graphics": {
+      "GraphicsLibrary": 4,
+      "TotalGPUImageMemoryUsageInBytes": 46022816
+    },
+    "profileLastSeconds": 60,
+    "resolution": [
+      1280,
+      804
+    ],
+    "updates": 55744,
+    "warmupSeconds": 30
+  },
+  "unprofiled": {
+    "from": 30,
+    "to": 870,
+    "seconds": 840,
+    "updates": {
+      "n": 50399,
+      "mean": 11.615122291831186,
+      "p50": 11.593459,
+      "p95": 13.6925,
+      "p99": 14.591333,
+      "p99.9": 16.195917,
+      "max": 44.762417,
+      "gt16.667": 26,
+      "gt20": 11,
+      "gt25": 5,
+      "gt33.334": 1,
+      "gt50": 0,
+      "gt100": 0
+    },
+    "drawSubmit": {
+      "n": 50217,
+      "mean": 1.6897363830376166,
+      "p50": 1.732584,
+      "p95": 1.818959,
+      "p99": 2.242459,
+      "p99.9": 2.482125,
+      "max": 4.294875,
+      "gt16.667": 0,
+      "gt20": 0,
+      "gt25": 0,
+      "gt33.334": 0,
+      "gt50": 0,
+      "gt100": 0
+    },
+    "drawGap": {
+      "n": 50217,
+      "mean": 16.727417843240335,
+      "p50": 16.658708,
+      "p95": 17.156583,
+      "p99": 17.752833,
+      "p99.9": 34.383,
+      "max": 161.193375,
+      "gt16.667": 23975,
+      "gt20": 165,
+      "gt25": 151,
+      "gt33.334": 77,
+      "gt50": 16,
+      "gt100": 1
+    },
+    "updateTPS": 59.99880952380953,
+    "drawFPS": 59.78214285714286
+  },
+  "profiled": {
+    "from": 870,
+    "to": 930,
+    "seconds": 60,
+    "updates": {
+      "n": 3600,
+      "mean": 9.390267048611111,
+      "p50": 9.344083,
+      "p95": 9.821875,
+      "p99": 10.123458,
+      "p99.9": 11.751,
+      "max": 11.990375,
+      "gt16.667": 0,
+      "gt20": 0,
+      "gt25": 0,
+      "gt33.334": 0,
+      "gt50": 0,
+      "gt100": 0
+    },
+    "drawSubmit": {
+      "n": 3600,
+      "mean": 1.8187730994444444,
+      "p50": 1.80475,
+      "p95": 1.852833,
+      "p99": 2.405542,
+      "p99.9": 2.561,
+      "max": 4.382125,
+      "gt16.667": 0,
+      "gt20": 0,
+      "gt25": 0,
+      "gt33.334": 0,
+      "gt50": 0,
+      "gt100": 0
+    },
+    "drawGap": {
+      "n": 3600,
+      "mean": 16.66664284722222,
+      "p50": 16.660958,
+      "p95": 17.018792,
+      "p99": 17.34275,
+      "p99.9": 19.134167,
+      "max": 19.28275,
+      "gt16.667": 1728,
+      "gt20": 0,
+      "gt25": 0,
+      "gt33.334": 0,
+      "gt50": 0,
+      "gt100": 0
+    },
+    "updateTPS": 60.0,
+    "drawFPS": 60.0
+  },
+  "minutes": [
+    {
+      "from": 30,
+      "to": 90,
+      "seconds": 60,
+      "updates": {
+        "n": 3599,
+        "mean": 13.044102126146152,
+        "p50": 13.067791,
+        "p95": 14.491042,
+        "p99": 15.025458,
+        "p99.9": 15.647541,
+        "max": 19.078958,
+        "gt16.667": 2,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3570,
+        "mean": 1.606875205322129,
+        "p50": 1.584625,
+        "p95": 1.787708,
+        "p99": 2.142,
+        "p99.9": 2.499375,
+        "max": 3.720375,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3570,
+        "mean": 16.802671510364146,
+        "p50": 16.668959,
+        "p95": 17.256458,
+        "p99": 18.085417,
+        "p99.9": 41.585542,
+        "max": 161.193375,
+        "gt16.667": 1800,
+        "gt20": 22,
+        "gt25": 20,
+        "gt33.334": 4,
+        "gt50": 3,
+        "gt100": 1
+      },
+      "updateTPS": 59.983333333333334,
+      "drawFPS": 59.5
+    },
+    {
+      "from": 90,
+      "to": 150,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.598632632777777,
+        "p50": 12.461208,
+        "p95": 14.358583,
+        "p99": 15.636834,
+        "p99.9": 16.122792,
+        "max": 16.432208,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3542,
+        "mean": 1.7350602329192546,
+        "p50": 1.754084,
+        "p95": 1.8255,
+        "p99": 2.268791,
+        "p99.9": 2.377666,
+        "max": 2.475125,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3542,
+        "mean": 16.939972743647658,
+        "p50": 16.6655,
+        "p95": 17.294709,
+        "p99": 33.182958,
+        "p99.9": 49.245041,
+        "max": 49.594,
+        "gt16.667": 1757,
+        "gt20": 53,
+        "gt25": 53,
+        "gt33.334": 33,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 59.03333333333333
+    },
+    {
+      "from": 150,
+      "to": 210,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.673737835555556,
+        "p50": 12.525583,
+        "p95": 14.23375,
+        "p99": 16.078958,
+        "p99.9": 17.720542,
+        "max": 21.056375,
+        "gt16.667": 7,
+        "gt20": 1,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3528,
+        "mean": 1.6023107783446713,
+        "p50": 1.656917,
+        "p95": 1.779959,
+        "p99": 2.202167,
+        "p99.9": 2.382792,
+        "max": 4.06025,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3528,
+        "mean": 17.00644784580499,
+        "p50": 16.665959,
+        "p95": 17.295333,
+        "p99": 32.730291,
+        "p99.9": 50.916542,
+        "max": 52.000125,
+        "gt16.667": 1753,
+        "gt20": 58,
+        "gt25": 55,
+        "gt33.334": 29,
+        "gt50": 9,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 58.8
+    },
+    {
+      "from": 210,
+      "to": 270,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.705591329722223,
+        "p50": 12.585542,
+        "p95": 14.009458,
+        "p99": 14.516792,
+        "p99.9": 22.98425,
+        "max": 26.713542,
+        "gt16.667": 6,
+        "gt20": 4,
+        "gt25": 1,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3588,
+        "mean": 1.5683687700668896,
+        "p50": 1.604583,
+        "p95": 1.705625,
+        "p99": 2.043375,
+        "p99.9": 2.353875,
+        "max": 4.251333,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3588,
+        "mean": 16.722358951226308,
+        "p50": 16.66025,
+        "p95": 17.191417,
+        "p99": 17.921,
+        "p99.9": 42.848833,
+        "max": 54.467333,
+        "gt16.667": 1751,
+        "gt20": 11,
+        "gt25": 11,
+        "gt33.334": 4,
+        "gt50": 2,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 59.8
+    },
+    {
+      "from": 270,
+      "to": 330,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.786899461111112,
+        "p50": 12.849,
+        "p95": 13.814875,
+        "p99": 14.310167,
+        "p99.9": 16.027541,
+        "max": 18.912125,
+        "gt16.667": 2,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3601,
+        "mean": 1.56416792168842,
+        "p50": 1.57025,
+        "p95": 1.753792,
+        "p99": 2.107542,
+        "p99.9": 2.342958,
+        "max": 3.242625,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3601,
+        "mean": 16.66648605720633,
+        "p50": 16.655959,
+        "p95": 17.207042,
+        "p99": 17.694583,
+        "p99.9": 19.331167,
+        "max": 22.928916,
+        "gt16.667": 1700,
+        "gt20": 2,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.016666666666666
+    },
+    {
+      "from": 330,
+      "to": 390,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.269262944444444,
+        "p50": 12.105167,
+        "p95": 13.615666,
+        "p99": 14.389375,
+        "p99.9": 16.482667,
+        "max": 44.762417,
+        "gt16.667": 3,
+        "gt20": 3,
+        "gt25": 2,
+        "gt33.334": 1,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3592,
+        "mean": 1.5290293106904231,
+        "p50": 1.5585,
+        "p95": 1.774667,
+        "p99": 1.966708,
+        "p99.9": 2.40175,
+        "max": 3.766292,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3592,
+        "mean": 16.69929639922049,
+        "p50": 16.656333,
+        "p95": 17.1925,
+        "p99": 17.910416,
+        "p99.9": 30.679958,
+        "max": 71.219417,
+        "gt16.667": 1701,
+        "gt20": 7,
+        "gt25": 5,
+        "gt33.334": 3,
+        "gt50": 2,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 59.86666666666667
+    },
+    {
+      "from": 390,
+      "to": 450,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 12.004525796388888,
+        "p50": 11.864084,
+        "p95": 13.477875,
+        "p99": 14.132208,
+        "p99.9": 16.687833,
+        "max": 30.544417,
+        "gt16.667": 4,
+        "gt20": 3,
+        "gt25": 2,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3595,
+        "mean": 1.6113550161335188,
+        "p50": 1.6665,
+        "p95": 1.744167,
+        "p99": 2.183333,
+        "p99.9": 2.397333,
+        "max": 4.294875,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3595,
+        "mean": 16.68979148122392,
+        "p50": 16.654958,
+        "p95": 17.172792,
+        "p99": 17.647667,
+        "p99.9": 33.821042,
+        "max": 41.91575,
+        "gt16.667": 1701,
+        "gt20": 8,
+        "gt25": 7,
+        "gt33.334": 4,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 59.916666666666664
+    },
+    {
+      "from": 450,
+      "to": 510,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 11.42791489861111,
+        "p50": 11.330583,
+        "p95": 12.217667,
+        "p99": 12.743625,
+        "p99.9": 14.365,
+        "max": 19.072167,
+        "gt16.667": 1,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3601,
+        "mean": 1.7345361255206886,
+        "p50": 1.732917,
+        "p95": 1.790625,
+        "p99": 2.297666,
+        "p99.9": 2.494292,
+        "max": 2.652875,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3601,
+        "mean": 16.66651499583449,
+        "p50": 16.655208,
+        "p95": 17.18275,
+        "p99": 17.607792,
+        "p99.9": 19.540917,
+        "max": 23.299083,
+        "gt16.667": 1648,
+        "gt20": 2,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.016666666666666
+    },
+    {
+      "from": 510,
+      "to": 570,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 11.342123683055556,
+        "p50": 11.353458,
+        "p95": 12.401708,
+        "p99": 12.808584,
+        "p99.9": 13.684125,
+        "max": 14.38425,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3600,
+        "mean": 1.7573971472222223,
+        "p50": 1.74825,
+        "p95": 1.792875,
+        "p99": 2.341958,
+        "p99.9": 2.470542,
+        "max": 2.491208,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3600,
+        "mean": 16.66671078722222,
+        "p50": 16.65625,
+        "p95": 17.117792,
+        "p99": 17.451167,
+        "p99.9": 18.785,
+        "max": 19.245458,
+        "gt16.667": 1683,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.0
+    },
+    {
+      "from": 570,
+      "to": 630,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 10.771800108055556,
+        "p50": 10.695041,
+        "p95": 11.612125,
+        "p99": 12.381542,
+        "p99.9": 13.585416,
+        "max": 14.950458,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3599,
+        "mean": 1.7522449941650458,
+        "p50": 1.738166,
+        "p95": 1.790083,
+        "p99": 2.337291,
+        "p99.9": 2.452583,
+        "max": 3.81925,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3599,
+        "mean": 16.666705543206447,
+        "p50": 16.655917,
+        "p95": 17.129833,
+        "p99": 17.517583,
+        "p99.9": 19.419875,
+        "max": 21.501459,
+        "gt16.667": 1687,
+        "gt20": 1,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 59.983333333333334
+    },
+    {
+      "from": 630,
+      "to": 690,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 10.736881359444444,
+        "p50": 10.642667,
+        "p95": 11.539167,
+        "p99": 12.126,
+        "p99.9": 13.140333,
+        "max": 13.76975,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3601,
+        "mean": 1.78836987392391,
+        "p50": 1.77475,
+        "p95": 1.828542,
+        "p99": 2.3585,
+        "p99.9": 2.56225,
+        "max": 2.621084,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3601,
+        "mean": 16.666689680921966,
+        "p50": 16.656334,
+        "p95": 17.084208,
+        "p99": 17.413625,
+        "p99.9": 19.254667,
+        "max": 19.508959,
+        "gt16.667": 1679,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.016666666666666
+    },
+    {
+      "from": 690,
+      "to": 750,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 10.408857786111112,
+        "p50": 10.358375,
+        "p95": 10.877667,
+        "p99": 11.192334,
+        "p99.9": 12.915292,
+        "max": 13.293292,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3600,
+        "mean": 1.7887002077777778,
+        "p50": 1.776709,
+        "p95": 1.814834,
+        "p99": 2.377625,
+        "p99.9": 2.483958,
+        "max": 2.518208,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3600,
+        "mean": 16.66649954861111,
+        "p50": 16.654333,
+        "p95": 17.051291,
+        "p99": 17.35325,
+        "p99.9": 19.045292,
+        "max": 19.703291,
+        "gt16.667": 1657,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.0
+    },
+    {
+      "from": 750,
+      "to": 810,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 10.149392932222222,
+        "p50": 10.091834,
+        "p95": 10.72475,
+        "p99": 11.067791,
+        "p99.9": 13.176959,
+        "max": 17.588541,
+        "gt16.667": 1,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3600,
+        "mean": 1.8006226947222221,
+        "p50": 1.782875,
+        "p95": 1.848709,
+        "p99": 2.40675,
+        "p99.9": 2.527708,
+        "max": 3.32625,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3600,
+        "mean": 16.666597164444443,
+        "p50": 16.660708,
+        "p95": 17.037958,
+        "p99": 17.364334,
+        "p99.9": 19.513708,
+        "max": 24.003,
+        "gt16.667": 1717,
+        "gt20": 1,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.0
+    },
+    {
+      "from": 810,
+      "to": 870,
+      "seconds": 60,
+      "updates": {
+        "n": 3600,
+        "mean": 9.692386130833333,
+        "p50": 9.661042,
+        "p95": 10.081125,
+        "p99": 10.424667,
+        "p99.9": 12.065,
+        "max": 12.878416,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawSubmit": {
+        "n": 3600,
+        "mean": 1.8147041322222222,
+        "p50": 1.799166,
+        "p95": 1.849292,
+        "p99": 2.42525,
+        "p99.9": 2.534834,
+        "max": 2.634208,
+        "gt16.667": 0,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "drawGap": {
+        "n": 3600,
+        "mean": 16.666641539444445,
+        "p50": 16.661375,
+        "p95": 17.02825,
+        "p99": 17.31225,
+        "p99.9": 19.075625,
+        "max": 19.930667,
+        "gt16.667": 1741,
+        "gt20": 0,
+        "gt25": 0,
+        "gt33.334": 0,
+        "gt50": 0,
+        "gt100": 0
+      },
+      "updateTPS": 60.0,
+      "drawFPS": 60.0
+    }
+  ],
+  "slowUpdates": [
+    {
+      "Kind": "update",
+      "At": 363.087311833,
+      "MS": 44.762417,
+      "GapMS": 0,
+      "Tick": 21729,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.047792
+    },
+    {
+      "Kind": "update",
+      "At": 398.872150041,
+      "MS": 30.544417,
+      "GapMS": 0,
+      "Tick": 23877,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.055209
+    },
+    {
+      "Kind": "update",
+      "At": 399.538582458,
+      "MS": 29.027666,
+      "GapMS": 0,
+      "Tick": 23917,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.055209
+    },
+    {
+      "Kind": "update",
+      "At": 236.954876625,
+      "MS": 26.713542,
+      "GapMS": 0,
+      "Tick": 14162,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "update",
+      "At": 363.055181125,
+      "MS": 26.275875,
+      "GapMS": 0,
+      "Tick": 21728,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.047792
+    },
+    {
+      "Kind": "update",
+      "At": 236.987943416,
+      "MS": 24.565958,
+      "GapMS": 0,
+      "Tick": 14163,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "update",
+      "At": 237.012517,
+      "MS": 23.544291,
+      "GapMS": 0,
+      "Tick": 14164,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "update",
+      "At": 237.039814583,
+      "MS": 22.98425,
+      "GapMS": 0,
+      "Tick": 14165,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "update",
+      "At": 398.90920725,
+      "MS": 22.210541,
+      "GapMS": 0,
+      "Tick": 23878,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.055209
+    },
+    {
+      "Kind": "update",
+      "At": 158.603455708,
+      "MS": 21.056375,
+      "GapMS": 0,
+      "Tick": 9460,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.078501
+    },
+    {
+      "Kind": "update",
+      "At": 363.132080291,
+      "MS": 20.598875,
+      "GapMS": 0,
+      "Tick": 21730,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.047792
+    },
+    {
+      "Kind": "update",
+      "At": 237.339066791,
+      "MS": 19.293917,
+      "GapMS": 0,
+      "Tick": 14184,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.079083
+    },
+    {
+      "Kind": "update",
+      "At": 30.587914166,
+      "MS": 19.078958,
+      "GapMS": 0,
+      "Tick": 1781,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.113751
+    },
+    {
+      "Kind": "update",
+      "At": 479.188788541,
+      "MS": 19.072167,
+      "GapMS": 0,
+      "Tick": 28696,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.090459
+    },
+    {
+      "Kind": "update",
+      "At": 323.088443666,
+      "MS": 18.912125,
+      "GapMS": 0,
+      "Tick": 19330,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.038291
+    },
+    {
+      "Kind": "update",
+      "At": 31.237898375,
+      "MS": 18.383792,
+      "GapMS": 0,
+      "Tick": 1820,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.113751
+    },
+    {
+      "Kind": "update",
+      "At": 156.50291925,
+      "MS": 17.996125,
+      "GapMS": 0,
+      "Tick": 9334,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 200.543071291,
+      "MS": 17.824875,
+      "GapMS": 0,
+      "Tick": 11977,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.048334
+    },
+    {
+      "Kind": "update",
+      "At": 237.35836825,
+      "MS": 17.81975,
+      "GapMS": 0,
+      "Tick": 14185,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.079083
+    },
+    {
+      "Kind": "update",
+      "At": 200.567597,
+      "MS": 17.720542,
+      "GapMS": 0,
+      "Tick": 11978,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.048334
+    },
+    {
+      "Kind": "update",
+      "At": 293.488296416,
+      "MS": 17.670667,
+      "GapMS": 0,
+      "Tick": 17554,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.091292
+    },
+    {
+      "Kind": "update",
+      "At": 758.872902666,
+      "MS": 17.588541,
+      "GapMS": 0,
+      "Tick": 45477,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.089708
+    },
+    {
+      "Kind": "update",
+      "At": 156.575268833,
+      "MS": 16.73775,
+      "GapMS": 0,
+      "Tick": 9338,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 156.594673208,
+      "MS": 16.725333,
+      "GapMS": 0,
+      "Tick": 9339,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 156.630529833,
+      "MS": 16.714041,
+      "GapMS": 0,
+      "Tick": 9341,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 399.57423475,
+      "MS": 16.687833,
+      "GapMS": 0,
+      "Tick": 23918,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045
+    },
+    {
+      "Kind": "update",
+      "At": 156.7180235,
+      "MS": 16.623959,
+      "GapMS": 0,
+      "Tick": 9346,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 156.737292083,
+      "MS": 16.62225,
+      "GapMS": 0,
+      "Tick": 9347,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "update",
+      "At": 312.554948916,
+      "MS": 16.573,
+      "GapMS": 0,
+      "Tick": 18698,
+      "Profile": false,
+      "GCInSurroundingSecond": 3,
+      "GCPauseInSurroundingSecondMS": 0.131333
+    },
+    {
+      "Kind": "update",
+      "At": 256.356883916,
+      "MS": 16.571916,
+      "GapMS": 0,
+      "Tick": 15326,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045417
+    }
+  ],
+  "slowDrawGaps": [
+    {
+      "Kind": "draw",
+      "At": 88.612539708,
+      "MS": 2.450458,
+      "GapMS": 161.193375,
+      "Tick": 5257,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.039499
+    },
+    {
+      "Kind": "draw",
+      "At": 363.152685125,
+      "MS": 1.474583,
+      "GapMS": 71.219417,
+      "Tick": 21730,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.047792
+    },
+    {
+      "Kind": "draw",
+      "At": 88.668543375,
+      "MS": 2.06575,
+      "GapMS": 56.003667,
+      "Tick": 5261,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.039499
+    },
+    {
+      "Kind": "draw",
+      "At": 88.723706708,
+      "MS": 1.874083,
+      "GapMS": 55.163333,
+      "Tick": 5265,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.039499
+    },
+    {
+      "Kind": "draw",
+      "At": 237.036067166,
+      "MS": 1.830584,
+      "GapMS": 54.467333,
+      "Tick": 14164,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "draw",
+      "At": 237.088999458,
+      "MS": 1.834208,
+      "GapMS": 52.932292,
+      "Tick": 14167,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.087084
+    },
+    {
+      "Kind": "draw",
+      "At": 156.786649458,
+      "MS": 1.72475,
+      "GapMS": 52.000125,
+      "Tick": 9349,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.19181175,
+      "MS": 1.743625,
+      "GapMS": 51.138792,
+      "Tick": 9373,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 156.83774475,
+      "MS": 1.787625,
+      "GapMS": 51.095292,
+      "Tick": 9352,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.0903725,
+      "MS": 1.730541,
+      "GapMS": 50.916542,
+      "Tick": 9367,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 156.939430375,
+      "MS": 1.733833,
+      "GapMS": 50.866292,
+      "Tick": 9358,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 156.888564083,
+      "MS": 1.756625,
+      "GapMS": 50.819333,
+      "Tick": 9355,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.85206925,
+      "MS": 1.720333,
+      "GapMS": 50.609042,
+      "Tick": 9413,
+      "Profile": false,
+      "GCInSurroundingSecond": 0,
+      "GCPauseInSurroundingSecondMS": 0.0
+    },
+    {
+      "Kind": "draw",
+      "At": 157.140672958,
+      "MS": 1.788083,
+      "GapMS": 50.300458,
+      "Tick": 9370,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 156.989712416,
+      "MS": 1.740792,
+      "GapMS": 50.282041,
+      "Tick": 9361,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 363.202882041,
+      "MS": 1.458584,
+      "GapMS": 50.196916,
+      "Tick": 21734,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.047792
+    },
+    {
+      "Kind": "draw",
+      "At": 157.241678041,
+      "MS": 1.737584,
+      "GapMS": 49.866291,
+      "Tick": 9376,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.039455958,
+      "MS": 1.734667,
+      "GapMS": 49.743542,
+      "Tick": 9364,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 139.434757875,
+      "MS": 1.755583,
+      "GapMS": 49.594,
+      "Tick": 8308,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045292
+    },
+    {
+      "Kind": "draw",
+      "At": 157.901501291,
+      "MS": 1.759875,
+      "GapMS": 49.432041,
+      "Tick": 9416,
+      "Profile": false,
+      "GCInSurroundingSecond": 0,
+      "GCPauseInSurroundingSecondMS": 0.0
+    },
+    {
+      "Kind": "draw",
+      "At": 157.386240041,
+      "MS": 1.795459,
+      "GapMS": 49.428958,
+      "Tick": 9385,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 139.26768025,
+      "MS": 1.75925,
+      "GapMS": 49.292709,
+      "Tick": 8298,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045292
+    },
+    {
+      "Kind": "draw",
+      "At": 139.350994583,
+      "MS": 1.764708,
+      "GapMS": 49.270542,
+      "Tick": 8303,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045292
+    },
+    {
+      "Kind": "draw",
+      "At": 139.484002916,
+      "MS": 1.773292,
+      "GapMS": 49.245041,
+      "Tick": 8311,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045292
+    },
+    {
+      "Kind": "draw",
+      "At": 157.950441375,
+      "MS": 1.735666,
+      "GapMS": 48.940084,
+      "Tick": 9419,
+      "Profile": false,
+      "GCInSurroundingSecond": 0,
+      "GCPauseInSurroundingSecondMS": 0.0
+    },
+    {
+      "Kind": "draw",
+      "At": 139.633811041,
+      "MS": 1.756834,
+      "GapMS": 48.873333,
+      "Tick": 8320,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.045292
+    },
+    {
+      "Kind": "draw",
+      "At": 157.336811083,
+      "MS": 1.728667,
+      "GapMS": 47.612625,
+      "Tick": 9382,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.289198458,
+      "MS": 1.718125,
+      "GapMS": 47.520417,
+      "Tick": 9379,
+      "Profile": false,
+      "GCInSurroundingSecond": 1,
+      "GCPauseInSurroundingSecondMS": 0.046458
+    },
+    {
+      "Kind": "draw",
+      "At": 157.433504291,
+      "MS": 1.779959,
+      "GapMS": 47.26425,
+      "Tick": 9388,
+      "Profile": false,
+      "GCInSurroundingSecond": 0,
+      "GCPauseInSurroundingSecondMS": 0.0
+    },
+    {
+      "Kind": "draw",
+      "At": 237.376191833,
+      "MS": 1.815125,
+      "GapMS": 44.059458,
+      "Tick": 14185,
+      "Profile": false,
+      "GCInSurroundingSecond": 2,
+      "GCPauseInSurroundingSecondMS": 0.079083
+    }
+  ],
+  "scene": {
+    "carsMin": 680,
+    "carsMax": 864,
+    "fullscreenAll": true,
+    "focusedAll": true,
+    "playerDistance": 36603.91509104149,
+    "fleetDistance": 1377140.8716334696,
+    "healthMin": 100,
+    "fleetHealthMin": 100,
+    "GC": 1449,
+    "GCPauseMS": 63.752993
+  },
+  "environment": [
+    {
+      "time": "2026-10-26T11:22:30.672484-07:00",
+      "process": "80980 00:49  98.2 204848 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t87%; discharging; 7:15 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:23:00.693589-07:00",
+      "process": "80980 01:19  93.2 206528 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t87%; discharging; 7:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:23:30.715062-07:00",
+      "process": "80980 01:49  95.7 223056 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t87%; discharging; 7:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:24:00.735886-07:00",
+      "process": "80980 02:19 101.6 223456 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t87%; discharging; 6:55 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:24:30.757231-07:00",
+      "process": "80980 02:49  92.0 225104 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t86%; discharging; 6:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:25:00.778211-07:00",
+      "process": "80980 03:19  92.1 225648 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t86%; discharging; 6:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:25:30.795972-07:00",
+      "process": "80980 03:49  93.7 225616 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t86%; discharging; 6:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:26:00.818020-07:00",
+      "process": "80980 04:19  98.1 225760 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t86%; discharging; 6:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:26:30.835137-07:00",
+      "process": "80980 04:49 101.5 225808 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t86%; discharging; 6:25 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:27:00.852026-07:00",
+      "process": "80980 05:19  94.9 225856 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t85%; discharging; 6:15 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:27:30.877951-07:00",
+      "process": "80980 05:49  89.9 225856 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t85%; discharging; 6:15 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:28:00.899163-07:00",
+      "process": "80980 06:19  88.3 225120 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t85%; discharging; 6:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:28:30.917633-07:00",
+      "process": "80980 06:49  86.0 225136 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t85%; discharging; 6:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:29:00.934745-07:00",
+      "process": "80980 07:19  86.3 225136 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t84%; discharging; 5:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:29:30.959759-07:00",
+      "process": "80980 07:49  91.9 225152 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t84%; discharging; 5:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:30:00.977413-07:00",
+      "process": "80980 08:19  87.2 225152 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t84%; discharging; 5:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:30:31.002162-07:00",
+      "process": "80980 08:50  90.1 225152 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t84%; discharging; 5:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:31:01.028504-07:00",
+      "process": "80980 09:20  85.0 222256 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t83%; discharging; 5:15 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:31:31.054799-07:00",
+      "process": "80980 09:50  87.9 222288 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t83%; discharging; 5:15 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:32:01.081301-07:00",
+      "process": "80980 10:20  84.9 222368 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t83%; discharging; 5:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:32:31.107582-07:00",
+      "process": "80980 10:50  83.1 222400 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t83%; discharging; 5:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:33:01.134073-07:00",
+      "process": "80980 11:20  84.8 219760 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t83%; discharging; 4:55 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:33:31.151846-07:00",
+      "process": "80980 11:50  85.0 220096 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:34:01.178051-07:00",
+      "process": "80980 12:20  81.7 220112 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:45 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:34:31.200633-07:00",
+      "process": "80980 12:50  84.3 220112 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:35:01.226321-07:00",
+      "process": "80980 13:20  80.5 220128 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:35 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:35:31.244432-07:00",
+      "process": "80980 13:50  79.9 220160 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:25 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:36:01.270947-07:00",
+      "process": "80980 14:20  76.0 220160 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t82%; discharging; 4:25 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:36:31.296879-07:00",
+      "process": "80980 14:50  75.7 220720 Ss",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t81%; discharging; 4:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:37:01.323338-07:00",
+      "process": "80980 15:20  74.5 221616 Rs",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t81%; discharging; 4:05 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    },
+    {
+      "time": "2026-10-26T11:37:31.358374-07:00",
+      "process": "",
+      "power": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=23068771)\t81%; discharging; 3:55 remaining present: true\n",
+      "thermal": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded\n"
+    }
+  ],
+  "verification": {
+    "productionSourcesUnchanged": true,
+    "changedSources": [],
+    "saveUnchanged": true,
+    "sourceFileCount": 438
+  },
+  "limitations": [
+    "Draw callback intervals are not GPU presentation timestamps.",
+    "Live cars fell from 864 to 650 by the end; unprofiled measurement range was 680\u2013864.",
+    "Player was nearly stationary for the final approximately 423 seconds.",
+    "Late CPU profile phase shares conflict with wall-clock callback shares; no hotspot ranking inferred from this profile.",
+    "Supplementary 180-second runtime trace was unfocused and later affected by a macOS automation prompt; excluded.",
+    "pmset reporting no warnings does not establish unchanged CPU frequency or temperature.",
+    "Standalone fullscreen harness uses production Game.Update/Draw/LayoutF; packaged app Game Mode was not qualified."
+  ],
+  "artifacts": {
+    "raw": "dist/performance-fullscreen-2026-10-26",
+    "longHarnessSHA256": "234699cf732491d880fcca357e11c00826267f23659a90f500904782605d0361",
+    "binarySHA256": "9e387d9ab52ed355710542e4ce20ddf475fc372450a9b01311b1509cfbe02662"
+  }
+}

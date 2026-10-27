@@ -17,7 +17,7 @@ import (
 // 7. Verification across all Berserk top speed settings (60, 80, 100, 120 km/h)
 func TestBerserkModeBorrowLaneOvertakingOn2LaneRoad(t *testing.T) {
 	lw := 52.0
-	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	w := legacyMetropolisWorld(lw)
 
 	// Stops along 2-lane road "北二路" (Y = -600 * MapGridScale, Eastbound)
 	// Road segment: P1: {-2600*MapGridScale, -600*MapGridScale}, P2: {2600*MapGridScale, -600*MapGridScale}, Lanes: 2, Type: RoadStreet2Lane
@@ -213,7 +213,7 @@ func TestBerserkModeBorrowLaneOvertakingOn2LaneRoad(t *testing.T) {
 // road centerline into the oncoming traffic lane.
 func TestAutopilotRightTurnInto2LaneRoad(t *testing.T) {
 	lw := 52.0
-	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	w := legacyMetropolisWorld(lw)
 
 	// In Metropolis:
 	// Eastbound on 北二路 (Y = -1800.0, lane center Y = -1774.0)
@@ -279,7 +279,7 @@ func TestAutopilotRightTurnInto2LaneRoad(t *testing.T) {
 // and returns safely without ever touching the opposite shoulder.
 func TestAutopilotBerserkRightTurnInto2LaneDoesNotOvertakeIntoOppositeShoulder(t *testing.T) {
 	lw := 52.0
-	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	w := legacyMetropolisWorld(lw)
 	// This regression requires the original southbound destination platform.
 	w.Stops[2].Heading = math.Pi / 2
 	w.Stops[2].UpdateGeometry(lw)
@@ -376,4 +376,34 @@ func TestAutopilotBerserkRightTurnInto2LaneDoesNotOvertakeIntoOppositeShoulder(t
 	if !overtakeInitiatedAfterStraight {
 		t.Fatalf("Expected borrow-lane overtake to initiate after completing the right turn and straightening out")
 	}
+}
+
+// Frozen pre-expansion road fixture for narrow-road regression scenarios.
+func legacyMetropolisWorld(lw float64) *sim.World {
+	w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+	w.Roads = w.Roads[:10]
+	w.Stops = w.Stops[:12]
+	for i := range w.Roads {
+		r := &w.Roads[i]
+		if r.P1.X == -5200*sim.MapGridScale {
+			r.P1.X = -2600 * sim.MapGridScale
+		}
+		if r.P2.X == 5200*sim.MapGridScale {
+			r.P2.X = 2600 * sim.MapGridScale
+		}
+		if r.P1.Y == -2400*sim.MapGridScale {
+			r.P1.Y = -1200 * sim.MapGridScale
+		}
+		if r.P2.Y == 2400*sim.MapGridScale {
+			r.P2.Y = 1200 * sim.MapGridScale
+		}
+		if i == 1 || i == 3 || i == 6 || i == 8 {
+			r.Lanes = 2
+			r.Type = sim.RoadStreet2Lane
+		}
+	}
+	w.MatchStopRoadLanes(lw)
+	w.RebuildIntersections()
+	sim.ClearRoutePathCache()
+	return w
 }

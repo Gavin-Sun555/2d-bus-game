@@ -18,12 +18,23 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 	if to == nil {
 		return nil
 	}
-	h2 := sim.Vec2{X: math.Cos(to.Heading), Y: math.Sin(to.Heading)}
+	if !skipArrival {
+		to = forwardDockStop(to)
+	}
+	long := len(options) > 0 && options[0].LongVehicle
+	bayStraight := apBayStraight
+	mergeLength, departureStraight := 160., 25.
+	if long {
+		bayStraight = 160
+		mergeLength = 360
+		departureStraight = 120
+	}
+	h2 := sim.UnitFromAngle(to.Heading)
 	destination := to.Pos
 	if skipArrival {
 		destination = stopRoadPoint(to, lw, w)
 	}
-	bayEntry := destination.Sub(h2.Mul(apBayStraight))
+	bayEntry := destination.Sub(h2.Mul(bayStraight))
 	if w == nil || from == nil || from.ID == to.ID {
 		return []sim.Vec2{destination.Sub(h2.Mul(650)), bayEntry, destination}
 	}
@@ -38,7 +49,7 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 		return dedupePath([]sim.Vec2{origin, bayEntry, destination})
 	}
 
-	h1 := sim.Vec2{X: math.Cos(from.Heading), Y: math.Sin(from.Heading)}
+	h1 := sim.UnitFromAngle(from.Heading)
 	n := len(raw)
 	out := make([]sim.Vec2, 0, n+4)
 
@@ -55,8 +66,10 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 		seg := raw[2].Sub(lane1)
 		segLen := seg.Length()
 		if segLen > 1e-6 && seg.Mul(1/segLen).Dot(h1) > 0.9 {
-			mergeDist := math.Min(160.0, segLen*0.4)
-			out = append(out, raw[0].Add(h1.Mul(25.0)), lane1.Add(h1.Mul(mergeDist)))
+			mergeDist := math.Min(mergeLength, segLen*0.4)
+			// A short approach may end before a long bus's nominal straight
+			// pull-out. Keep the merge ahead of that straight, never behind it.
+			out = append(out, raw[0].Add(h1.Mul(math.Min(departureStraight, mergeDist*.25))), lane1.Add(h1.Mul(mergeDist)))
 			start = 2
 		}
 	}
@@ -73,7 +86,10 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 		segLen := seg.Length()
 		if segLen > 1e-6 && seg.Mul(1/segLen).Dot(h2) > 0.9 {
 			taperDist := math.Min(170.0, segLen*0.4)
-			tail = []sim.Vec2{lane2.Sub(h2.Mul(taperDist + apBayStraight)), bayEntry, to.Pos}
+			if long {
+				taperDist = math.Min(340, segLen*.45)
+			}
+			tail = []sim.Vec2{lane2.Sub(h2.Mul(taperDist + bayStraight)), bayEntry, to.Pos}
 			end = n - 2
 		}
 	}
@@ -119,6 +135,8 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		}
 	}
 	if ad.pathFromID != from.ID || ad.pathToID != to.ID {
+		ad.dockDepartureRun = 0
+		ad.smoothDockDeparture = false
 		ad.midLaneRecovery = nil
 		ad.approachMerge = nil
 		ad.approachMergeJoined = false
@@ -131,7 +149,7 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		ad.busJunctionEntered = false
 	}
 	if ad.stationDock != nil && ad.stationDock.stopID != to.ID {
-		ad.departureFromDock = from != nil && from.ID == ad.stationDock.stopID && ad.stationDock.rank > 0
+		ad.departureFromDock = from != nil && from.ID == ad.stationDock.stopID
 		ad.stationDock = nil
 	}
 	if ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID != from.ID {
@@ -139,7 +157,8 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 	}
 	skipFrom := ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID == from.ID
 	ad.directRoundaboutExit = nil
-	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft})
+	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath})
+	ad.pathRevision = currentDrivePathRevision
 	if skipFrom {
 		ad.prependSkippedDeparture(lw, w)
 	}
@@ -273,9 +292,9 @@ func (ad *AutopilotDriver) cornerSpeedLimit(s, speed float64) float64 {
 	limit := math.Inf(1)
 	decel := apCornerDecel
 	if ad.BerserkMode {
-		decel = 140.0 // Planned deceleration when anticipating corners from high speed
+		decel = 160.0 // Firmer braking, while preserving the corner speed caps.
 		if ad.GetBerserkCruiseSpeed() >= 550.0 {
-			decel = 165.0
+			decel = 190.0
 		}
 	}
 	horizon := speed*speed/(2*decel) + 100.0
@@ -350,6 +369,10 @@ func (ad *AutopilotDriver) basePathPosition(pos sim.Vec2, world *sim.World, head
 		if segLen := seg.Length(); segLen > 1e-6 {
 			segDir := seg.Mul(1.0 / segLen)
 			segRight := sim.Vec2{X: -segDir.Y, Y: segDir.X}
+			if ad.busLaneJunction != nil && !ad.busJunctionEntered && world != nil && !world.InsideJunction(pos, laneWidth, 0) {
+				u := sim.UnitFromAngle(approachRoadHeading(heading))
+				segRight = sim.Vec2{X: -u.Y, Y: u.X}
+			}
 			effOffset := ad.LaneOffset
 			if world != nil && !world.InsideJunction(pos, laneWidth, 0) {
 				wpt := ad.drivePath[wIdx]
@@ -370,4 +393,11 @@ func (ad *AutopilotDriver) basePathPosition(pos sim.Vec2, world *sim.World, head
 	}
 
 	return pos
+}
+
+func forwardDockStop(stop *sim.BusStop) *sim.BusStop {
+	if stop == nil {
+		return nil
+	}
+	return stop.ForwardDockStop()
 }

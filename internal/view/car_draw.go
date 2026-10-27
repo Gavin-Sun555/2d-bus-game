@@ -24,8 +24,7 @@ func drawSingleCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
 	if !cam.IsPointVisible(c.Pos, math.Hypot(c.Length, c.Width)/2+150) {
 		return
 	}
-	cosH := math.Cos(c.Heading)
-	sinH := math.Sin(c.Heading)
+	sinH, cosH := math.Sincos(c.Heading)
 
 	// Car shadow
 	shadowOffset := sim.Vec2{X: 4, Y: 5}
@@ -42,7 +41,7 @@ func drawCarDetails(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) {
 }
 
 func drawCarDetailsWithBeams(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar, beams bool) {
-	cosH, sinH := math.Cos(c.Heading), math.Sin(c.Heading)
+	sinH, cosH := math.Sincos(c.Heading)
 	// Main Car Body
 	drawRotatedBox(screen, cam, c.Pos, cosH, sinH, c.Length, c.Width, c.Color)
 

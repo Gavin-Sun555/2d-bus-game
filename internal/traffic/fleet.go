@@ -10,6 +10,10 @@ import (
 
 // AIBus represents an autonomous transit bus operating along the city's bus route
 type AIBus struct {
+	Retiring            bool // Finish this lap, alight at the terminal, then leave service.
+	retireReady         bool
+	LineIndex           int
+	AssignedSpeedRange  sim.SpeedRange
 	ID                  int
 	MaxSpeedKPH         int
 	CanOvertake         bool
@@ -42,19 +46,23 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 		ab.Bus.JunctionCorridor = nil
 		ab.Bus.YieldingToBus = nil
 		ab.Bus.ClearPassengers()
+		ab.Bus.ResetArticulation()
 		ab.LastExchangedStopID = -1
 		if ab.Driver != nil {
 			ab.Driver.Reset()
+			ab.Driver.QueueAtStation(startID)
 		}
 	}
 }
 
 // updateDeadlock applies this bus's independent stationary recovery clock.
-func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSystem, world *sim.World) {
+func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSystem, world *sim.World) bool {
 	ab.DeadlockTimer = ab.DeadlockTracker.Update(ab.DeadlockTimer, dt, ab.Bus.Pos, ab.Bus.Speed, jammed)
 	if ab.DeadlockTimer >= tls.DeadlockTimeoutAt(ab.Bus.Pos) {
 		ab.ResetToStartingStation(world)
+		return true
 	}
+	return false
 }
 
 // AIBusManager oversees all AI buses operating on the active city route
@@ -68,6 +76,7 @@ type AIBusManager struct {
 	CurrentMap    sim.MapTheme
 	CurrentLane   float64
 	ActiveRoute   *sim.Route
+	Routes        []*sim.Route
 }
 
 // NewAIBusManager creates the AI bus manager with default 0 AI buses
@@ -173,7 +182,20 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		routeStops = routeStops[:len(routeStops)-1]
 	}
 
+	lineSlots := make(map[int]int)
 	for i := 0; i < abm.BusCount; i++ {
+		if len(abm.Routes) > 1 {
+			targetRoute = abm.Routes[i%len(abm.Routes)]
+			if targetRoute == nil || len(targetRoute.StopIDs) == 0 {
+				continue
+			}
+			startStop = world.Stops[targetRoute.StopIDs[0]]
+			routeStops = targetRoute.StopIDs
+			baseSlot = 0
+			if len(playerBus) > 0 && playerBus[0] != nil && playerBus[0].Pos.Distance(startStop.Pos) < 120 {
+				baseSlot = 1
+			}
+		}
 		var st *sim.BusStop
 		var slot int
 		var currIdx int
@@ -195,10 +217,15 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 			slot = slotInStop
 		}
 
-		stCos := math.Cos(st.Heading)
-		stSin := math.Sin(st.Heading)
+		if len(abm.Routes) > 1 {
+			st = startStop
+			currIdx = 0
+			slot = baseSlot + lineSlots[st.ID]
+			lineSlots[st.ID]++
+		}
+		stSin, stCos := math.Sincos(st.Heading)
 		stBack := sim.Vec2{X: -stCos, Y: -stSin}
-		spawnPos := st.Pos.Add(stBack.Mul(float64(slot) * queueSpacing))
+		spawnPos := st.FrontBerthPosition().Add(stBack.Mul(float64(slot) * queueSpacing))
 
 		busRoute := &sim.Route{
 			Name:         targetRoute.Name,
@@ -217,11 +244,20 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		rangeKPH := abm.BusSpeedRange.Normalize(50, 80)
 		speedKPH := rangeKPH.Sample()
 		driver := autopilot.NewAutopilotDriver()
+		driver.QueueAtStation(st.ID)
 		driver.DisallowOncomingOvertake = true
 		driver.BerserkMode = speedKPH > rangeKPH.MinKPH
 		driver.BerserkMaxSpeed = sim.SpeedKPH(speedKPH)
 		driver.CruiseSpeedLimit = sim.SpeedKPH(speedKPH)
 		bus.MaxSpeedFwd = sim.SpeedKPH(speedKPH)
+		queuedBuses := make([]*sim.Bus, 0, len(newBuses)+1)
+		if len(playerBus) > 0 && playerBus[0] != nil {
+			queuedBuses = append(queuedBuses, playerBus[0])
+		}
+		for _, placed := range newBuses {
+			queuedBuses = append(queuedBuses, placed.Bus)
+		}
+		sim.PlaceBusInStationQueue(bus, st, queuedBuses, laneWidth)
 		aiColor := busColors[i%len(busColors)]
 		newBuses = append(newBuses, &AIBus{
 			ID:          i + 1,
@@ -245,14 +281,7 @@ func (abm *AIBusManager) GetObstacles(excludeID int) []autopilot.VehicleObstacle
 		if b.ID == excludeID {
 			continue
 		}
-		obs = append(obs, autopilot.VehicleObstacle{
-			Pos:              b.Bus.Pos,
-			JunctionCorridor: b.Bus.JunctionCorridor,
-			Heading:          b.Bus.Heading,
-			Speed:            b.Bus.Speed,
-			Length:           b.Bus.Length,
-			Width:            b.Bus.Width,
-		})
+		obs = append(obs, autopilot.ObserveBus(b.Bus))
 	}
 	return obs
 }

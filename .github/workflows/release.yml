@@ -1,6 +1,8 @@
 name: Test and release
 
 on:
+  pull_request:
+    branches: [main]
   push:
     tags: ['v*']
   workflow_dispatch:
@@ -30,9 +32,10 @@ jobs:
       - run: go vet ./...
       # Atomic coverage counters combined with race instrumentation make the
       # long simulation matrix exceed Go's default ten-minute timeout.
+      # Articulated high-traffic cases also need more than 40 minutes under race.
       # Run both complete checks independently without skipping test cases.
       - name: Full tests and race detection
-        run: xvfb-run -a go test -race -timeout=30m -count=1 ./...
+        run: xvfb-run -a go test -race -timeout=90m -count=1 ./...
       - name: Full tests and coverage
         run: xvfb-run -a go test -timeout=20m -count=1 -coverprofile=coverage.out ./...
       - name: Release qualification
@@ -95,6 +98,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - name: Require passing release qualification
+        run: python3 scripts/verify_release_qualification.py
       - uses: actions/download-artifact@v4
         with:
           pattern: busgame-*

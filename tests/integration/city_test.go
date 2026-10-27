@@ -25,13 +25,9 @@ func TestMapThemesRoundaboutsAndBridges(t *testing.T) {
 	if rv != sim.MapThemeRiverValley || rv.ShortName() != "溪谷江城" {
 		t.Fatalf("Expected next theme to be River Valley, got %v (%s)", rv, rv.ShortName())
 	}
-	l := rv.Next()
-	if l != sim.MapThemeEmeraldLake || l.ShortName() != "湖畔水乡" {
-		t.Fatalf("Expected next theme to be Emerald Lake, got %v (%s)", l, l.ShortName())
-	}
-	tc := l.Next()
-	if tc != sim.MapThemeTwinCities || tc.ShortName() != "高新双城" {
-		t.Fatalf("Expected next theme to be Twin Cities, got %v (%s)", tc, tc.ShortName())
+	tc := rv.Next()
+	if tc != sim.MapThemeTwinCities {
+		t.Fatal("retired lake should not be selectable")
 	}
 	cust := tc.Next()
 	if cust != sim.MapThemeCustom || cust.ShortName() != "自定义" {
@@ -57,8 +53,8 @@ func TestMapThemesRoundaboutsAndBridges(t *testing.T) {
 	if len(wm.Waters) == 0 {
 		t.Fatal("Metropolis map should have water bodies (canal)")
 	}
-	if len(wm.Stops) != 12 {
-		t.Fatalf("Metropolis map should have 12 stops, got %d", len(wm.Stops))
+	if len(wm.Stops) < 150 {
+		t.Fatalf("Metropolis map should have dense block stops, got %d", len(wm.Stops))
 	}
 
 	// 3. Test Coastal Bay Map (coastal boulevard & 1200m sea suspension bridge)
@@ -322,7 +318,7 @@ func TestFiveDistinctCityMapsAndMainMenu(t *testing.T) {
 	if g.World.Theme != sim.MapThemeEmeraldLake {
 		t.Fatalf("World theme must be Emerald Lake")
 	}
-	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+	if g.Bus.Pos.Distance(g.World.Stops[0].FrontBerthPosition()) > 1.0 {
 		t.Fatalf("Bus must spawn inside Station Bay 0")
 	}
 	if g.Bus.Speed != 0 || !g.Bus.DoorsOpen {
@@ -346,7 +342,7 @@ func TestFiveDistinctCityMapsAndMainMenu(t *testing.T) {
 	if g.State != game.StatePlaying || g.World.Theme != sim.MapThemeTwinCities {
 		t.Fatalf("Entering Twin Cities map failed")
 	}
-	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+	if g.Bus.Pos.Distance(g.World.Stops[0].FrontBerthPosition()) > 1.0 {
 		t.Fatalf("Bus must reposition to Stop 0 of the new city")
 	}
 
@@ -477,7 +473,7 @@ func TestCustomMapLoadingValidationAndReloading(t *testing.T) {
 	if g.World.Theme != sim.MapThemeCustom {
 		t.Fatalf("Expected Game to be on Custom Map theme")
 	}
-	if g.Bus.Pos.Distance(g.World.Stops[0].Pos) > 1.0 {
+	if g.Bus.Pos.Distance(g.World.Stops[0].FrontBerthPosition()) > 1.0 {
 		t.Fatalf("Bus should spawn at stop 0 in custom map")
 	}
 

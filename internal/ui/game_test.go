@@ -20,8 +20,8 @@ func TestSettingsAndCustomLaneWidth(t *testing.T) {
 
 	// Test World dynamic lane width update
 	world := sim.NewWorld(52.0)
-	if len(world.Stops) != 12 {
-		t.Fatalf("Expected 12 bus stops in expanded world, got %d", len(world.Stops))
+	if len(world.Stops) < 150 {
+		t.Fatalf("Expected dense block stops in expanded world, got %d", len(world.Stops))
 	}
 
 	initialStopPos := world.Stops[0].Pos

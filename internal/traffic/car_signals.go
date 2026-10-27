@@ -12,9 +12,9 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 	}
 	lookAhead := math.Max(f.laneWidth*1.5+85, f.car.Speed*f.car.Speed/(2*220)+60)
 	halfLen := f.car.Length * 0.5
-	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
+	sinH, cosH := math.Sincos(f.car.Heading)
 	bumper := sim.Vec2{X: f.car.Pos.X + cosH*halfLen, Y: f.car.Pos.Y + sinH*halfLen}
-	for _, inter := range f.tls.Intersections {
+	for _, inter := range f.nearbyJunctions() {
 		stopLine := inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth)
 		delta := inter.Center.Sub(bumper)
 		forward := delta.X*cosH + delta.Y*sinH
@@ -24,9 +24,11 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		}
 		wantLeft, wantRight := carIntersectionTurns(f, inter)
 		// Apply each junction's own intent so a later right turn cannot exempt
-		// a straight movement through an earlier red light.
+		// a straight movement through an earlier red light. The planned movement
+		// is authoritative; a lane-position fallback must not select the left
+		// arrow for a path that will actually proceed straight.
 		signal := sim.TrafficLightSystem{Intersections: []*sim.TrafficIntersection{inter}}
-		if stop, distance := signal.CheckStopForVehicle(bumper, f.car.Heading, lookAhead, f.laneWidth, wantLeft, wantRight); stop {
+		if stop, distance := signal.CheckStopForVehicleAtSpeed(bumper, f.car.Heading, lookAhead, f.laneWidth, wantLeft, wantRight, false, f.car.Speed, true); stop {
 			f.car.IsBraking = true
 			if distance <= 14.0 {
 				return 0
@@ -36,7 +38,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 	}
 
 	// Both green-light movements and right turns on red require a clear box.
-	for _, inter := range f.tls.Intersections {
+	for _, inter := range f.nearbyJunctions() {
 		stopLine := inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth)
 		delta := inter.Center.Sub(bumper)
 		forward := delta.X*cosH + delta.Y*sinH
@@ -77,7 +79,7 @@ func canFollowCommittedThroughBus(f carFrame, bus *sim.Bus, inter *sim.TrafficIn
 	if request == nil || request.Remaining <= 0 || !request.Joined || request.RightTurn || bus.Speed <= 15 || request.Junction.Distance(inter.Center) > 1 || math.Cos(f.car.Heading-request.Heading) < .98 {
 		return false
 	}
-	forward := sim.Vec2{X: math.Cos(request.Heading), Y: math.Sin(request.Heading)}
+	forward := sim.UnitFromAngle(request.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	return bus.Pos.Sub(f.car.Pos).Dot(forward) > 0 && math.Abs(f.car.Pos.Sub(request.Target).Dot(right)) < f.laneWidth*.35
 }
@@ -88,9 +90,9 @@ func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) 
 	if f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return targetSpd
 	}
-	cosH, sinH := math.Cos(f.car.Heading), math.Sin(f.car.Heading)
+	sinH, cosH := math.Sincos(f.car.Heading)
 	bumperPos := f.car.Pos.Add(sim.Vec2{X: cosH * f.car.Length * 0.5, Y: sinH * f.car.Length * 0.5})
-	for _, inter := range f.tls.Intersections {
+	for _, inter := range f.nearbyJunctions() {
 		if !(f.car.Pos.Distance(inter.Center) < 140.0) {
 			continue
 		}
