@@ -1005,15 +1005,16 @@
     ],
     "gates": {
       "playerProgress": true,
-      "fleetProgress": false,
       "fps": true,
       "tps": true,
       "gapP99": false,
       "gapP999": true,
       "gapOver100Reviewed": true,
       "health": true,
-      "measurementValidity": true
-    }
+      "measurementValidity": true,
+      "confirmedControllerDeadlocksCleared": false
+    },
+    "waitDurationAuditOnly": true
   },
   "preFixNativePerformance": {
     "analysisWindowSeconds": [
@@ -1100,23 +1101,20 @@
   "releaseBlockers": [
     {
       "priority": "P1",
-      "kind": "AI buses still stopped at the end of the native soak",
-      "count": 11,
-      "busIDs": [
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        37,
-        38,
-        39,
-        40
+      "kind": "Confirmed bus controller interlocks, independent of car congestion",
+      "count": 2,
+      "busPairs": [
+        [
+          18,
+          23
+        ],
+        [
+          19,
+          20
+        ]
       ],
-      "longestWaitSeconds": 798.7666666662689,
-      "evidence": "native/end-state.json and native/metadata.json"
+      "isolation": "Zero cars, each pair alone, both buses move 0 px over 20 seconds while signals allow movement",
+      "evidence": "dist/bus-priority-audit-2026-10-27/pair18-23.jsonl and pair19-20.jsonl"
     },
     {
       "priority": "P2",
@@ -1125,5 +1123,31 @@
       "gateMS": 25
     }
   ],
-  "publicationGuardTest": "Accepted PASS/local-pass, refused HOLD/wrong-version/missing-decision/missing-file, and refused the real candidate."
+  "publicationGuardTest": "Accepted PASS/local-pass, refused HOLD/wrong-version/missing-decision/missing-file, and refused the real candidate.",
+  "baselineCommit": "423a3e847c691027649d57b541315179ef872c57",
+  "baselineEvidenceScope": "Original full race, coverage and 900-second native performance; latest priority patch has separate validation below.",
+  "priorityUpdate": {
+    "policy": {
+      "normalCongestionBlocksRelease": false,
+      "waitingTimeAloneBlocksRelease": false,
+      "playerAutopilotHasCarYieldPriority": true,
+      "unsafeAlongsideOrCommittedCarsClearFirst": true
+    },
+    "normalRegression": {
+      "passed": 10052,
+      "failed": 0,
+      "skipped": 24
+    },
+    "changedAreaRace": {
+      "passed": 680,
+      "failed": 0,
+      "skipped": 0
+    },
+    "completeRaceRerun": false,
+    "native15MinuteRerun": false,
+    "soakLeafScenes": 21,
+    "soakSimulatedSeconds": 2520,
+    "sourceSHA256ExcludingDocs": "ef04c3ebba246db618cc178a2a5fd6d044ff2640a6567defd847a5e497c403fc",
+    "report": "../bus-priority-qualification-2026-10-27.md"
+  }
 }

@@ -16,16 +16,23 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 	}
 	previous := car.YieldingToBus
 	car.YieldingToBus = nil
+	chosenLimit := math.Inf(1)
+	grant := func(bus *sim.Bus, limit float64) {
+		// Player autopilot has dispatch priority when several buses can use
+		// this safe slot. Keep every physical braking cap, including AI caps.
+		if car.YieldingToBus == nil || bus == f.bus || (car.YieldingToBus != f.bus && limit < chosenLimit) {
+			car.YieldingToBus = bus
+			chosenLimit = limit
+		}
+		car.IsBraking = true
+		target = math.Min(target, limit)
+	}
 	for _, bus := range f.buses {
 		if bus == nil || bus.DoorsOpen {
 			continue
 		}
 		if limit, ok := laneBusYieldLimit(f, bus, previous); ok {
-			if car.YieldingToBus == nil || limit < target {
-				car.YieldingToBus = bus
-			}
-			car.IsBraking = true
-			target = math.Min(target, limit)
+			grant(bus, limit)
 		}
 		if bus.StationMergeRequest == nil || bus.StationMergeRequest.Remaining <= 0 {
 			continue
@@ -56,11 +63,7 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 			continue
 		}
 		limit := math.Sqrt(2 * 220 * math.Max(0, gap-8))
-		if car.YieldingToBus == nil || limit < target {
-			car.YieldingToBus = bus
-		}
-		car.IsBraking = true
-		target = math.Min(target, limit)
+		grant(bus, limit)
 	}
 	return target
 }

@@ -1,0 +1,233 @@
+{
+  "date": "2026-10-27",
+  "version": "0.0.7",
+  "policy": {
+    "normalCongestionBlocksRelease": false,
+    "waitingTimeAloneBlocksRelease": false,
+    "playerAutopilotHasCarYieldPriority": true,
+    "unsafeAlongsideOrCommittedCarsClearFirst": true
+  },
+  "sourceSHA256ExcludingDocs": "ef04c3ebba246db618cc178a2a5fd6d044ff2640a6567defd847a5e497c403fc",
+  "baselineCommit": "423a3e847c691027649d57b541315179ef872c57",
+  "normalRegression": {
+    "passed": 10052,
+    "failed": 0,
+    "skipped": 24
+  },
+  "changedAreaRace": {
+    "passed": 680,
+    "failed": 0,
+    "skipped": 0
+  },
+  "completeRaceRerun": false,
+  "native15MinuteRerun": false,
+  "soakLeafScenes": 21,
+  "soakSimulatedSeconds": 2520,
+  "counterfactualSimulatedSeconds": 20,
+  "counterfactuals": {
+    "no-cars": [
+      {
+        "id": 17,
+        "distancePX": 825.5430274831074,
+        "cars": 0,
+        "zeroCaps": [
+          "obstacles",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 18,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "obstacles",
+          "planned_speed",
+          "station_departure"
+        ]
+      },
+      {
+        "id": 19,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 20,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "obstacles",
+          "planned_speed",
+          "station_departure"
+        ]
+      },
+      {
+        "id": 21,
+        "distancePX": 131.3679641482716,
+        "cars": 0,
+        "zeroCaps": [
+          "following",
+          "obstacles",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 22,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "following",
+          "obstacles",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 23,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "merge_clearance",
+          "turn_hold"
+        ]
+      },
+      {
+        "id": 37,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "junction_admission",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 38,
+        "distancePX": 71.66255455052942,
+        "cars": 0,
+        "zeroCaps": [
+          "following",
+          "obstacles",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 39,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "control_sweep",
+          "following",
+          "obstacles",
+          "planned_speed",
+          "turn_merge"
+        ]
+      },
+      {
+        "id": 40,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "following",
+          "obstacles",
+          "planned_speed",
+          "turn_lane_clearance",
+          "turn_merge"
+        ]
+      }
+    ],
+    "pair18-23": [
+      {
+        "id": 18,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "obstacles",
+          "planned_speed",
+          "station_departure"
+        ]
+      },
+      {
+        "id": 23,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "merge_clearance",
+          "turn_hold"
+        ]
+      }
+    ],
+    "pair19-20": [
+      {
+        "id": 19,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 20,
+        "distancePX": 0,
+        "cars": 0,
+        "zeroCaps": [
+          "obstacles",
+          "planned_speed",
+          "station_departure"
+        ]
+      }
+    ],
+    "pair39-40": [
+      {
+        "id": 39,
+        "distancePX": 449.95264291784116,
+        "cars": 0,
+        "zeroCaps": [
+          "following",
+          "obstacles",
+          "planned_speed"
+        ]
+      },
+      {
+        "id": 40,
+        "distancePX": 502.89483735423244,
+        "cars": 0,
+        "zeroCaps": [
+          "planned_speed",
+          "signal"
+        ]
+      }
+    ]
+  },
+  "directCarBusYieldCyclesFoundInThe11StoppedBuses": 0,
+  "priorityFix": {
+    "crossedLaneUnitCases": 288,
+    "closedLoopCases": 12,
+    "closedLoopBefore": {
+      "allFailed": true,
+      "busDistancePX": 0,
+      "carYieldGranted": false
+    },
+    "closedLoopAfter": {
+      "allPassed": true,
+      "busMergedWithoutContact": true,
+      "carResumedAfterBus": true
+    },
+    "playerGrantCannotBeDisplacedByAI": true,
+    "unsafePlayerRequestDoesNotPreemptSafeAI": true
+  },
+  "remainingConfirmedControllerLocks": [
+    [
+      18,
+      23
+    ],
+    [
+      19,
+      20
+    ]
+  ],
+  "otherLongWaits": "observations only; not classified as blockers merely by duration",
+  "releaseDecision": "HOLD_CONFIRMED_BUS_CONTROLLER_LOCKS_AND_UNRESOLVED_PREVIOUS_FRAME_P99",
+  "performanceEvidence": "Existing 15-minute figures belong to baseline commit423a3e8; not measured again after this priority patch.",
+  "evidenceDirectory": "dist/bus-priority-audit-2026-10-27"
+}

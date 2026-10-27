@@ -13,11 +13,16 @@ func laneBusYieldLimit(f carFrame, bus, previous *sim.Bus) (float64, bool) {
 	}
 	forward := sim.UnitFromAngle(request.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
-	if math.Abs(f.car.Pos.Sub(request.Target).Dot(right)) > f.laneWidth*.40 {
+	body := bus.BodyEnvelope()
+	// The car may occupy an intermediate lane of a multi-lane return. It
+	// must reserve the same rear slot as a car in the final destination lane.
+	current := body.Center.Sub(request.Target).Dot(right)
+	lateral := f.car.Pos.Sub(request.Target).Dot(right)
+	margin := math.Max(f.laneWidth*.40, (f.car.Width+bus.Width)/2+10)
+	if lateral < math.Min(0, current)-margin || lateral > math.Max(0, current)+margin {
 		return 0, false
 	}
 	yaw := bus.Heading - request.Heading
-	body := bus.BodyEnvelope()
 	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw))
 	gap := body.Center.Sub(f.car.Pos).Dot(forward) - extent - f.car.Length/2 - 30
 	minGap := -8.0
