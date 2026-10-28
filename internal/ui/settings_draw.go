@@ -223,8 +223,8 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 	textui.DrawText(screen, locale.T("AI 公交数量与限速统一在 [T] 线路管理中设定。", "Set AI bus counts and limits in [T] Transit Lines."), modalX+26, modalY+392, 12, sim.RGBA(148, 163, 184, 255))
 	s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 478, W: 256, H: 30}
 	s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 478, W: 256, H: 30}
-	operationsButton(screen, s.saveBounds, locale.T("保存 / 覆盖存档 [F5]", "Save / Overwrite [F5]"), false)
-	operationsButton(screen, s.loadBounds, locale.T("读取存档 [F9]", "Load save [F9]"), false)
+	operationsButton(screen, s.saveBounds, locale.T("选择存档并保存 [F5]", "Save to slot [F5]"), false)
+	operationsButton(screen, s.loadBounds, locale.T("选择存档并读取 [F9]", "Load from slot [F9]"), false)
 	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 516, W: 528, H: 32}
 	operationsButton(screen, s.operationsBounds, locale.T("票价设置与运营统计 [O]", "Fares & operating statistics [O]"), true)
 

@@ -1,0 +1,334 @@
+{
+  "Bus": {
+    "GeometryVersion": 1,
+    "TrailerHeading": 1.4849246853925109,
+    "TrailerInitialized": true,
+    "TerminalReplacementHold": false,
+    "Model": 2,
+    "PendingModel": null,
+    "StationMergeRequest": null,
+    "LaneMergeRequest": null,
+    "YieldingToBus": null,
+    "RoundaboutEntry": null,
+    "JunctionCorridor": null,
+    "Pos": {
+      "X": -15830.387177896295,
+      "Y": 662.5607104279896
+    },
+    "Heading": 1.7215475121644548,
+    "Speed": 0,
+    "SteeringAngle": 0.54,
+    "Gear": 1,
+    "TransmissionMode": 0,
+    "Length": 96,
+    "Width": 36,
+    "WheelBase": 60,
+    "MaxSpeedFwd": 687,
+    "MaxSpeedRev": 100,
+    "AccelRate": 195.5,
+    "BrakeRate": 380,
+    "HandbrakeRate": 600,
+    "FrictionRate": 70,
+    "MaxSteerAngle": 0.54,
+    "SteerTurnSpeed": 2.4,
+    "SteerReturnSpd": 3.5,
+    "IsBraking": true,
+    "IsHandbraking": false,
+    "IsReversing": false,
+    "DoorsOpen": false,
+    "DoorProgress": 0,
+    "PassengerCount": 0,
+    "Capacity": 85,
+    "Passengers": [],
+    "Durability": 100,
+    "OnShoulder": false,
+    "CrashCooldown": 0,
+    "TireTracks": null
+  },
+  "Driver": {
+    "DockDepartureRun": 0,
+    "SmoothDockDeparture": false,
+    "ArticulatedPath": true,
+    "Public": {
+      "State": 0,
+      "DisallowOncomingOvertake": false,
+      "BerserkMode": true,
+      "CruiseSpeedLimit": 0,
+      "BerserkMaxSpeed": 667,
+      "DwellTimer": 0,
+      "DwellTotal": 2.8,
+      "DwellFinished": false,
+      "DockedStopID": -1,
+      "LastTargetID": 84,
+      "WaypointIdx": 0,
+      "OvertakeState": 2,
+      "LaneOffset": 99.12000000000079,
+      "TargetLaneOffset": 99.12000000000079,
+      "LaneOffsetStart": 99.12000000000079,
+      "LaneOffsetProgress": 1,
+      "LaneOffsetDuration": 1,
+      "OvertakeTimer": 0,
+      "CanSkipTargetStop": false,
+      "LastPathS": 21.706249138605816,
+      "LastRemaining": 3218.4249844671394,
+      "LastLateralErr": 50.732822103705985,
+      "LastPursuitPt": {
+        "X": -15881.12,
+        "Y": 710.5607104279896
+      },
+      "LastTargetSpeed": 0
+    },
+    "QueueStopID": -1,
+    "Turn": null,
+    "Dock": null,
+    "SkippedStop": 232,
+    "SkippedPosition": {
+      "X": -15829.12,
+      "Y": 640.8544612893838
+    },
+    "SkippedServed": false,
+    "ParallelEntryCenter": null,
+    "ApproachMerge": null,
+    "ApproachMergeJoined": false,
+    "RoadSafetyHold": false,
+    "RoadRecoverySpeed": 0,
+    "MidLaneRecovery": null,
+    "MidLaneSweepClear": false,
+    "LastTargetLaneOffset": 99.12000000000079,
+    "DrivePath": [
+      {
+        "X": -15782,
+        "Y": 640.8544612893838
+      },
+      {
+        "X": -15782,
+        "Y": 900
+      },
+      {
+        "X": -15782,
+        "Y": 1350
+      },
+      {
+        "X": -15781.177706249999,
+        "Y": 1364.5405437499999
+      },
+      {
+        "X": -15778.754649999997,
+        "Y": 1379.9783499999999
+      },
+      {
+        "X": -15774.796568750002,
+        "Y": 1396.24768125
+      },
+      {
+        "X": -15769.369200000001,
+        "Y": 1413.2828
+      },
+      {
+        "X": -15762.53828125,
+        "Y": 1431.01796875
+      },
+      {
+        "X": -15754.36955,
+        "Y": 1449.3874499999997
+      },
+      {
+        "X": -15744.928743749997,
+        "Y": 1468.3255062499998
+      },
+      {
+        "X": -15734.281600000006,
+        "Y": 1487.7664000000004
+      },
+      {
+        "X": -15722.493856250001,
+        "Y": 1507.64439375
+      },
+      {
+        "X": -15709.63125,
+        "Y": 1527.89375
+      },
+      {
+        "X": -15695.759518750001,
+        "Y": 1548.44873125
+      },
+      {
+        "X": -15680.944399999997,
+        "Y": 1569.2435999999996
+      },
+      {
+        "X": -15665.251631250005,
+        "Y": 1590.2126187500003
+      },
+      {
+        "X": -15648.746949999999,
+        "Y": 1611.2900499999998
+      },
+      {
+        "X": -15631.49609375,
+        "Y": 1632.41015625
+      },
+      {
+        "X": -15613.564799999998,
+        "Y": 1653.5071999999998
+      },
+      {
+        "X": -15595.018806249998,
+        "Y": 1674.5154437499996
+      },
+      {
+        "X": -15575.923850000003,
+        "Y": 1695.3691500000002
+      },
+      {
+        "X": -15556.34566875,
+        "Y": 1716.00258125
+      },
+      {
+        "X": -15536.35,
+        "Y": 1736.35
+      },
+      {
+        "X": -15516.002581249999,
+        "Y": 1756.3456687499997
+      },
+      {
+        "X": -15495.36915,
+        "Y": 1775.9238500000001
+      },
+      {
+        "X": -15474.515443749999,
+        "Y": 1795.01880625
+      },
+      {
+        "X": -15453.507200000002,
+        "Y": 1813.5648000000003
+      },
+      {
+        "X": -15432.41015625,
+        "Y": 1831.49609375
+      },
+      {
+        "X": -15411.29005,
+        "Y": 1848.74695
+      },
+      {
+        "X": -15390.21261875,
+        "Y": 1865.25163125
+      },
+      {
+        "X": -15369.2436,
+        "Y": 1880.9443999999996
+      },
+      {
+        "X": -15348.44873125,
+        "Y": 1895.7595187499999
+      },
+      {
+        "X": -15327.89375,
+        "Y": 1909.63125
+      },
+      {
+        "X": -15307.64439375,
+        "Y": 1922.4938562500001
+      },
+      {
+        "X": -15287.7664,
+        "Y": 1934.2816
+      },
+      {
+        "X": -15268.325506250001,
+        "Y": 1944.92874375
+      },
+      {
+        "X": -15249.38745,
+        "Y": 1954.36955
+      },
+      {
+        "X": -15231.01796875,
+        "Y": 1962.53828125
+      },
+      {
+        "X": -15213.2828,
+        "Y": 1969.3692
+      },
+      {
+        "X": -15196.247681249999,
+        "Y": 1974.79656875
+      },
+      {
+        "X": -15179.97835,
+        "Y": 1978.75465
+      },
+      {
+        "X": -15164.54054375,
+        "Y": 1981.17770625
+      },
+      {
+        "X": -15150,
+        "Y": 1982
+      },
+      {
+        "X": -14054,
+        "Y": 1982
+      },
+      {
+        "X": -13714,
+        "Y": 2029.12
+      },
+      {
+        "X": -13554,
+        "Y": 2029.12
+      }
+    ],
+    "PathRevision": 3,
+    "PathFromID": 232,
+    "PathToID": 84,
+    "PathLane": 52,
+    "PathSynced": true,
+    "DepartureFromDock": false,
+    "PathSkipTarget": false,
+    "BypassStopID": -1,
+    "DirectRoundaboutExit": null,
+    "BusLaneJunction": null,
+    "RightTurnJunction": null,
+    "RightTurnHeading": 0,
+    "RightTurnWaiting": false,
+    "BusJunctionEntered": false,
+    "OrdinaryBusLeft": false,
+    "PathOrdinaryBusLeft": false,
+    "BusTurnHoldDistance": 0
+  },
+  "Route": {
+    "Name": "Line 1",
+    "Color": {
+      "R": 16,
+      "G": 185,
+      "B": 129,
+      "A": 255
+    },
+    "StopIDs": [
+      232,
+      84,
+      86,
+      88,
+      90,
+      92,
+      94,
+      96,
+      98,
+      278,
+      83,
+      82,
+      81,
+      79,
+      78,
+      77,
+      75,
+      74,
+      232
+    ],
+    "CurrentIndex": 1,
+    "TotalTrips": 0
+  }
+}

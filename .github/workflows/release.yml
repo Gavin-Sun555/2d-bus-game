@@ -7,6 +7,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -30,12 +34,8 @@ jobs:
           fi
       - run: go mod verify
       - run: go vet ./...
-      # Atomic coverage counters combined with race instrumentation make the
-      # long simulation matrix exceed Go's default ten-minute timeout.
-      # Articulated high-traffic cases also need more than 40 minutes under race.
-      # Run both complete checks independently without skipping test cases.
-      - name: Full tests and race detection
-        run: xvfb-run -a go test -race -timeout=90m -count=1 ./...
+      - name: Verify race partitioning
+        run: python3 scripts/test_race_shards.py
       - name: Full tests and coverage
         run: xvfb-run -a go test -timeout=20m -count=1 -coverprofile=coverage.out ./...
       - name: Release qualification
@@ -47,8 +47,33 @@ jobs:
           name: coverage
           path: coverage.out
 
+  race:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install graphics and audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev xvfb
+      # The unsharded suite exceeded 90 minutes on the hosted runner. Keep
+      # every top-level test and its subtests, partitioned into eight jobs.
+      - name: Full-suite race partition
+        run: xvfb-run -a python3 scripts/run_race_shard.py --index ${{ matrix.shard }} --count 8 --output race-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: race-${{ matrix.shard }}
+          path: race-results/
+          if-no-files-found: error
+
   build:
-    needs: test
+    needs: [test, race]
     strategy:
       fail-fast: false
       matrix:

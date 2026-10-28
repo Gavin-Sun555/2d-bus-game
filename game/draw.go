@@ -10,6 +10,7 @@ import (
 func (g *Game) Draw(screen *ebiten.Image) {
 	if g.State == StateMainMenu {
 		g.drawMainMenu(screen)
+		g.drawSavePicker(screen)
 		return
 	}
 
@@ -75,4 +76,5 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.OperationsPanel != nil {
 		g.OperationsPanel.Draw(screen, g.Settings.Fare, g.Operations, g.World)
 	}
+	g.drawSavePicker(screen)
 }

@@ -67,7 +67,7 @@ func (g *Game) updateMainMenu() {
 		mPos := sim.Vec2{X: float64(mx), Y: float64(my)}
 
 		if g.menuContinueBounds.Contains(mPos) {
-			g.handleSave(true)
+			g.openSavePicker(true)
 			return
 		}
 		if g.menuLangBounds.Contains(mPos) {
@@ -302,10 +302,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 	continueY := btnY + btnH + 12
 	g.menuContinueBounds = sim.Rect{X: btnX, Y: continueY, W: btnW, H: 40}
 	vector.DrawFilledRect(screen, float32(btnX), float32(continueY), float32(btnW), 40, sim.RGBA(51, 65, 85, 255), true)
-	label := locale.T("继续存档 [F9] · 暂无存档", "Continue [F9] · No save yet")
-	if g.hasSave {
-		label = locale.T("继续存档 [F9] · ", "Continue [F9] · ") + g.saveTime.Format("2006-01-02 15:04")
-	}
+	label := locale.T("读取存档 [F9] · 10 个存档槽位", "Load game [F9] · 10 save slots")
 	textui.DrawText(screen, label, btnX+20, continueY+12, 14, sim.RGBA(186, 230, 253, 255))
 	if g.saveMessage != "" {
 		textui.DrawText(screen, g.saveMessage, 24, sh-24, 12, sim.RGBA(251, 191, 36, 255))

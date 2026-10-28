@@ -1,0 +1,69 @@
+{
+  "maximum": {
+    "baseline": {
+      "mean_ms": 10.64721,
+      "runs_ms": [
+        10.641504,
+        10.652916
+      ]
+    },
+    "direct256": {
+      "mean_ms": 10.578047999999999,
+      "runs_ms": [
+        10.553377,
+        10.602719
+      ]
+    },
+    "reduction_percent": 0.6495786220052091
+  },
+  "ordinary": {
+    "baseline": {
+      "mean_ms": 5.2777075,
+      "runs_ms": [
+        5.272707,
+        5.282708
+      ]
+    },
+    "direct256": {
+      "mean_ms": 5.264749500000001,
+      "runs_ms": [
+        5.271515,
+        5.257984
+      ]
+    },
+    "reduction_percent": 0.24552326933615642
+  },
+  "late": {
+    "baseline": {
+      "mean_ms": 13.197249585833333,
+      "runs_ms": [
+        13.143844890000004,
+        13.250654281666662
+      ]
+    },
+    "direct256": {
+      "mean_ms": 13.106467414999992,
+      "runs_ms": [
+        13.151288284999987,
+        13.061646544999997
+      ]
+    },
+    "reduction_percent": 0.6878870498197687
+  },
+  "cache_bytes": {
+    "before": 15376,
+    "after": 30736,
+    "49_bus_increase_bytes": 752640
+  },
+  "trajectory_sha256": "9c9370f2825fe913e841cbdc53b9764085099060ab7597427f0248a718e32630",
+  "native_fullscreen_retested": false,
+  "validation": {
+    "all-tests": {
+      "skip": 24,
+      "pass": 10125
+    },
+    "pose-race": {
+      "pass": 405
+    }
+  }
+}

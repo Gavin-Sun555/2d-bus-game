@@ -49,6 +49,39 @@ func CorridorsSeparated(a, b []OBB) bool {
 }
 
 func separatedBodies(a, b []OBB) bool {
+	if len(a) < 8 || len(b) < 16 || len(b) > 512 {
+		return separatedBodiesScan(a, b)
+	}
+	var storage [64]corridorBodyGroup
+	groups, ok := groupCorridorBodies(b, storage[:])
+	if !ok {
+		return separatedBodiesScan(a, b)
+	}
+	for _, x := range a {
+		lo, hi, valid := looseBodyBounds(x)
+		if !valid {
+			return separatedBodiesScan(a, b)
+		}
+		for _, g := range groups {
+			if hi.X < g.lo.X || g.hi.X < lo.X || hi.Y < g.lo.Y || g.hi.Y < lo.Y {
+				continue
+			}
+			for _, y := range b[g.begin:g.end] {
+				r := x.HalfLen + x.HalfWid + y.HalfLen + y.HalfWid
+				d := x.Center.Sub(y.Center)
+				if d.Dot(d) > r*r {
+					continue
+				}
+				if hit, _, _ := CheckOBBCollision(x, y); hit {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func separatedBodiesScan(a, b []OBB) bool {
 	for _, x := range a {
 		for _, y := range b {
 			r := x.HalfLen + x.HalfWid + y.HalfLen + y.HalfWid

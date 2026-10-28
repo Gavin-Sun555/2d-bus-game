@@ -1,0 +1,1260 @@
+{
+  "version": "0.0.7",
+  "date": "2026-10-27",
+  "decision": "HOLD",
+  "published": false,
+  "normalRegression": {
+    "passed": 9740,
+    "failed": 0,
+    "skipped": 24
+  },
+  "race": {
+    "passed": 9740,
+    "failed": 0,
+    "skipped": 24
+  },
+  "raceSameCompleteTestSet": true,
+  "raceGameSeconds": 1642.411,
+  "coverage": {
+    "allStatementsPercent": 70.3,
+    "gameStatementsPercent": 80.5
+  },
+  "qualification": {
+    "passed": 338,
+    "failed": 0,
+    "skipped": 6
+  },
+  "soakScenes": [
+    {
+      "name": "TestMixedTrafficSpeedSoak/0",
+      "status": "pass"
+    },
+    {
+      "name": "TestMixedTrafficSpeedSoak/3",
+      "status": "pass"
+    },
+    {
+      "name": "TestMixedTrafficSpeedSoak/4",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map0/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map0/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map1/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map1/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map2/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map2/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map3/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map3/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map4/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map4/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map5/berserkfalse",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease005TrafficSoak/map5/berserktrue",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map0",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map1",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map2",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map3",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map4",
+      "status": "pass"
+    },
+    {
+      "name": "TestRelease007MixedFleetSoak/map5",
+      "status": "pass"
+    }
+  ],
+  "soakSimulatedSeconds": 2520,
+  "nativePerformance": {
+    "analysisWindowSeconds": [
+      30,
+      900
+    ],
+    "drawFPS": 59.239080459770115,
+    "updateTPS": 59.99080459770115,
+    "drawSubmitMeanMS": 1.4038729768714295,
+    "drawSubmitP99MS": 1.6595,
+    "updateMeanMS": 12.369558875996264,
+    "updateP99MS": 15.51384803,
+    "gapP99MS": 31.076580539999966,
+    "gapP999MS": 49.49354582100008,
+    "gapMaxMS": 94.734417,
+    "gapsOver50MS": 42,
+    "gapsOver100MS": 0,
+    "carsMin": 755,
+    "carsMax": 864,
+    "playerMinHealth": 100,
+    "fleetMinHealth": 100,
+    "badFocusOrFullscreenEvents": 0,
+    "playerDistancePX": 59987.43810847966,
+    "fleetDistancePX": 3034342.2082790765,
+    "resolution": [
+      1280,
+      804
+    ],
+    "graphics": {
+      "GraphicsLibrary": 4,
+      "TotalGPUImageMemoryUsageInBytes": 46383264
+    },
+    "allocMBPerSecond": 41.10077272847507,
+    "gcCount": 683,
+    "playerMaxWaitSeconds": 102.46666666666214,
+    "fleetProgress": [
+      {
+        "currentWaitSeconds": 13.016666666666893,
+        "distancePX": 64108.981328886155,
+        "health": 100,
+        "id": 1,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 79.0499999999968,
+        "position": {
+          "X": 3357.29265044618,
+          "Y": 24.828650700234377
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 17.33333333333363,
+        "distancePX": 47437.70544916507,
+        "health": 100,
+        "id": 2,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 74.74999999999704,
+        "position": {
+          "X": -7983.83137606406,
+          "Y": 1259.5212944946545
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.15,
+        "distancePX": 74868.22370675168,
+        "health": 100,
+        "id": 3,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 64.53333333333096,
+        "position": {
+          "X": 7618.001030319081,
+          "Y": -542.6045877049647
+        },
+        "speed": 8.896039377319092,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 55503.77647975815,
+        "health": 100,
+        "id": 4,
+        "lastTargetSpeed": 277.77777777777777,
+        "longestWaitSeconds": 77.53333333333022,
+        "position": {
+          "X": -3717.985401125622,
+          "Y": 2180.870269216008
+        },
+        "speed": 270.19573402741895,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.03333333333333333,
+        "distancePX": 50114.521412953356,
+        "health": 100,
+        "id": 5,
+        "lastTargetSpeed": 166.66666666666669,
+        "longestWaitSeconds": 77.56666666666355,
+        "position": {
+          "X": -3717.9902445044636,
+          "Y": 2464.248472362386
+        },
+        "speed": 166.21375860855218,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 11.033333333333461,
+        "distancePX": 58706.1657010887,
+        "health": 100,
+        "id": 6,
+        "lastTargetSpeed": 333.33333333333337,
+        "longestWaitSeconds": 115.38333333332807,
+        "position": {
+          "X": 4085.3337672930197,
+          "Y": -1260.9547836309828
+        },
+        "speed": 35.19,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 45.483333333332034,
+        "distancePX": 90697.92181784492,
+        "health": 100,
+        "id": 7,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 72.81666666666382,
+        "position": {
+          "X": -7975.689740919288,
+          "Y": -2263.9162796763057
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 74639.1671176258,
+        "health": 100,
+        "id": 8,
+        "lastTargetSpeed": 388.8888888888889,
+        "longestWaitSeconds": 75.98333333333031,
+        "position": {
+          "X": 26.069953651278695,
+          "Y": 840.7902152156239
+        },
+        "speed": 388.8888888888889,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 18.73333333333355,
+        "distancePX": 60136.22805343432,
+        "health": 100,
+        "id": 9,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 31.916666666666135,
+        "position": {
+          "X": -8635.796620239222,
+          "Y": 3673.4042882644117
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 63026.441030637,
+        "health": 100,
+        "id": 10,
+        "lastTargetSpeed": 444.44444444444446,
+        "longestWaitSeconds": 38.88333333333241,
+        "position": {
+          "X": -8374.92323966431,
+          "Y": 3521.9995589212976
+        },
+        "speed": 395.0044864374769,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 27.433333333333056,
+        "distancePX": 87888.36451989459,
+        "health": 100,
+        "id": 11,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 42.96666666666551,
+        "position": {
+          "X": -7774.040372227404,
+          "Y": -6657.48185033054
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.5166666666666666,
+        "distancePX": 84571.37730261628,
+        "health": 100,
+        "id": 12,
+        "lastTargetSpeed": 10.105723898721294,
+        "longestWaitSeconds": 38.41666666666577,
+        "position": {
+          "X": -8432.44360600497,
+          "Y": -3574.6600316332588
+        },
+        "speed": 10.462047435849911,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.016666666666666666,
+        "distancePX": 95108.85505076883,
+        "health": 100,
+        "id": 13,
+        "lastTargetSpeed": 70,
+        "longestWaitSeconds": 28.916666666666305,
+        "position": {
+          "X": -7479.511702587851,
+          "Y": -7375.194968920735
+        },
+        "speed": 69.12044444444344,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 17.966666666666928,
+        "distancePX": 69163.81184059041,
+        "health": 100,
+        "id": 14,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 77.43333333333022,
+        "position": {
+          "X": -7670.102739779048,
+          "Y": -4857.3090288774065
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 1.2500000000000004,
+        "distancePX": 70486.783740334,
+        "health": 100,
+        "id": 15,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 32.41666666666611,
+        "position": {
+          "X": -8344.991404452468,
+          "Y": -7175.351527968362
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 84764.80033776972,
+        "health": 100,
+        "id": 16,
+        "lastTargetSpeed": 70,
+        "longestWaitSeconds": 74.48333333333039,
+        "position": {
+          "X": -15772.168592267748,
+          "Y": -25.999999998470763
+        },
+        "speed": 70.55740682320831,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 551.4499999998271,
+        "distancePX": 29055.730878950606,
+        "health": 100,
+        "id": 17,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 551.4499999998271,
+        "position": {
+          "X": 358.5914507177471,
+          "Y": -7225.9662301280405
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 679.0666666663777,
+        "distancePX": 9978.656089343762,
+        "health": 100,
+        "id": 18,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 679.0666666663777,
+        "position": {
+          "X": -110.07298132443536,
+          "Y": -6051.834968101619
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 798.7666666662689,
+        "distancePX": 2985.137273032984,
+        "health": 100,
+        "id": 19,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 798.7666666662689,
+        "position": {
+          "X": -4081.9124821446817,
+          "Y": -6181.223471006723
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 797.3999999996034,
+        "distancePX": 3163.8560865933428,
+        "health": 100,
+        "id": 20,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 797.3999999996034,
+        "position": {
+          "X": -4131.867299518132,
+          "Y": -6220.489016047279
+        },
+        "speed": 0,
+        "state": "出站汇入"
+      },
+      {
+        "currentWaitSeconds": 579.1833333331352,
+        "distancePX": 27505.02111227556,
+        "health": 100,
+        "id": 21,
+        "lastTargetSpeed": 0.49633289746851245,
+        "longestWaitSeconds": 579.1833333331352,
+        "position": {
+          "X": -76.30663548929068,
+          "Y": -6647.875851787801
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 649.2999999997381,
+        "distancePX": 23367.555500218677,
+        "health": 100,
+        "id": 22,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 649.2999999997381,
+        "position": {
+          "X": -77.69154979177897,
+          "Y": -6285.7742062792195
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 675.3666666663811,
+        "distancePX": 21149.54178377121,
+        "health": 100,
+        "id": 23,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 675.3666666663811,
+        "position": {
+          "X": -48.081375489121605,
+          "Y": -5963.2349019882995
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 92847.72781346891,
+        "health": 100,
+        "id": 24,
+        "lastTargetSpeed": 80,
+        "longestWaitSeconds": 74.4333333333304,
+        "position": {
+          "X": -7773.288800847694,
+          "Y": -619.370126874615
+        },
+        "speed": 85.9055541412346,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 23.433333333333284,
+        "distancePX": 80026.40181673167,
+        "health": 100,
+        "id": 25,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 62.93333333333104,
+        "position": {
+          "X": 15522.72578192536,
+          "Y": -542.716444144069
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.016666666666666666,
+        "distancePX": 59912.58684064844,
+        "health": 100,
+        "id": 26,
+        "lastTargetSpeed": 166.66666666666669,
+        "longestWaitSeconds": 60.1833333333312,
+        "position": {
+          "X": 14940.31371250017,
+          "Y": -77.99932839546005
+        },
+        "speed": 165.50000000000003,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 28.249999999999677,
+        "distancePX": 80552.5037449378,
+        "health": 100,
+        "id": 27,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 32.38333333333278,
+        "position": {
+          "X": 15418.00000000004,
+          "Y": -542.713585436194
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.05,
+        "distancePX": 73317.59117494538,
+        "health": 100,
+        "id": 28,
+        "lastTargetSpeed": 97.84144745564537,
+        "longestWaitSeconds": 33.099999999999405,
+        "position": {
+          "X": 15782.000000212882,
+          "Y": -6623.26117443835
+        },
+        "speed": 102.99243079341102,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.016666666666666666,
+        "distancePX": 97521.0737607988,
+        "health": 100,
+        "id": 29,
+        "lastTargetSpeed": 106.28178281481944,
+        "longestWaitSeconds": 25.98333333333314,
+        "position": {
+          "X": 7981.999963418891,
+          "Y": 2645.8422436380943
+        },
+        "speed": 110.86689521032523,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 11.233333333333471,
+        "distancePX": 93355.83607201533,
+        "health": 100,
+        "id": 30,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 35.93333333333258,
+        "position": {
+          "X": 7981.999999999989,
+          "Y": -4857.43975828702
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.03333333333333333,
+        "distancePX": 74427.19650429451,
+        "health": 100,
+        "id": 31,
+        "lastTargetSpeed": 80.7118526851331,
+        "longestWaitSeconds": 33.26666666666606,
+        "position": {
+          "X": 7982.0000000000055,
+          "Y": 2370.4898416243054
+        },
+        "speed": 93.93330958782781,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 12.250000000000188,
+        "distancePX": 97492.26928755625,
+        "health": 100,
+        "id": 32,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 34.9999999999993,
+        "position": {
+          "X": 11517.996120041596,
+          "Y": -2342.5675611409374
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 70.63333333333061,
+        "distancePX": 75545.24905629877,
+        "health": 100,
+        "id": 33,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 70.63333333333061,
+        "position": {
+          "X": -5182.293967312748,
+          "Y": -7083.813498483383
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 70.58333333333061,
+        "distancePX": 75602.93515581303,
+        "health": 100,
+        "id": 34,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 70.58333333333061,
+        "position": {
+          "X": -5418.0484089822985,
+          "Y": -7068.780224627961
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 6.716666666666648,
+        "distancePX": 54991.47588425571,
+        "health": 100,
+        "id": 35,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 74.4333333333304,
+        "position": {
+          "X": -15417.99999999998,
+          "Y": 2340.8143146963225
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 17.750000000000274,
+        "distancePX": 69166.88461805234,
+        "health": 100,
+        "id": 36,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 131.26666666666327,
+        "position": {
+          "X": -12242.62977212873,
+          "Y": -7070.000000006371
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 201.48333333338581,
+        "distancePX": 66220.6731029201,
+        "health": 100,
+        "id": 37,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 201.48333333338581,
+        "position": {
+          "X": -4446.594820205284,
+          "Y": -7070.000341170217
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 185.93333333337344,
+        "distancePX": 55584.112943096225,
+        "health": 100,
+        "id": 38,
+        "lastTargetSpeed": 0.4937932237362794,
+        "longestWaitSeconds": 185.93333333337344,
+        "position": {
+          "X": -4748.251475725007,
+          "Y": -7070.000000000011
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 459.0999999999111,
+        "distancePX": 43288.14462659528,
+        "health": 100,
+        "id": 39,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 459.0999999999111,
+        "position": {
+          "X": -4082.2892886429004,
+          "Y": -6618.083016414474
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 465.74999999990507,
+        "distancePX": 27411.245322367275,
+        "health": 100,
+        "id": 40,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 465.74999999990507,
+        "position": {
+          "X": -4129.552686721272,
+          "Y": -6438.279223457518
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 14.333333333333625,
+        "distancePX": 65988.63751945697,
+        "health": 100,
+        "id": 41,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 40.883333333332295,
+        "position": {
+          "X": -11882.004282005613,
+          "Y": 1257.1298851378529
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0,
+        "distancePX": 63780.544697821475,
+        "health": 100,
+        "id": 42,
+        "lastTargetSpeed": 80,
+        "longestWaitSeconds": 33.58333333333271,
+        "position": {
+          "X": -13267.258248986785,
+          "Y": 98.1074360945125
+        },
+        "speed": 79.60352692442288,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.18333333333333332,
+        "distancePX": 80515.48132738499,
+        "health": 100,
+        "id": 43,
+        "lastTargetSpeed": 40.931860828930176,
+        "longestWaitSeconds": 31.649999999999483,
+        "position": {
+          "X": -8481.747979661073,
+          "Y": 3625.99520212365
+        },
+        "speed": 40.95268638776712,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 0.016666666666666666,
+        "distancePX": 81319.59063169894,
+        "health": 100,
+        "id": 44,
+        "lastTargetSpeed": 388.8888888888889,
+        "longestWaitSeconds": 45.79999999999868,
+        "position": {
+          "X": -8068.557378752101,
+          "Y": 3677.999999964268
+        },
+        "speed": 325.83333333333303,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 22.033333333333363,
+        "distancePX": 70870.27119984129,
+        "health": 100,
+        "id": 45,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 115.63333333332805,
+        "position": {
+          "X": -6065.371358189556,
+          "Y": 3648.1560337640085
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 1.6999999999999988,
+        "distancePX": 63951.4737701484,
+        "health": 100,
+        "id": 46,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 115.74999999999471,
+        "position": {
+          "X": -4129.613480997518,
+          "Y": 4627.115452225002
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 6.299999999999983,
+        "distancePX": 49494.620885226715,
+        "health": 100,
+        "id": 47,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 248.53333333342326,
+        "position": {
+          "X": -4086.0642169718876,
+          "Y": 4858.145145004739
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 18.216666666666914,
+        "distancePX": 94696.25064717326,
+        "health": 100,
+        "id": 48,
+        "lastTargetSpeed": 0.4933070218212521,
+        "longestWaitSeconds": 66.03333333333087,
+        "position": {
+          "X": -14980.377284306185,
+          "Y": 3521.86326406665
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      }
+    ],
+    "fleetWaitOver120Seconds": [
+      {
+        "currentWaitSeconds": 551.4499999998271,
+        "distancePX": 29055.730878950606,
+        "health": 100,
+        "id": 17,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 551.4499999998271,
+        "position": {
+          "X": 358.5914507177471,
+          "Y": -7225.9662301280405
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 679.0666666663777,
+        "distancePX": 9978.656089343762,
+        "health": 100,
+        "id": 18,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 679.0666666663777,
+        "position": {
+          "X": -110.07298132443536,
+          "Y": -6051.834968101619
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 798.7666666662689,
+        "distancePX": 2985.137273032984,
+        "health": 100,
+        "id": 19,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 798.7666666662689,
+        "position": {
+          "X": -4081.9124821446817,
+          "Y": -6181.223471006723
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 797.3999999996034,
+        "distancePX": 3163.8560865933428,
+        "health": 100,
+        "id": 20,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 797.3999999996034,
+        "position": {
+          "X": -4131.867299518132,
+          "Y": -6220.489016047279
+        },
+        "speed": 0,
+        "state": "出站汇入"
+      },
+      {
+        "currentWaitSeconds": 579.1833333331352,
+        "distancePX": 27505.02111227556,
+        "health": 100,
+        "id": 21,
+        "lastTargetSpeed": 0.49633289746851245,
+        "longestWaitSeconds": 579.1833333331352,
+        "position": {
+          "X": -76.30663548929068,
+          "Y": -6647.875851787801
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 649.2999999997381,
+        "distancePX": 23367.555500218677,
+        "health": 100,
+        "id": 22,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 649.2999999997381,
+        "position": {
+          "X": -77.69154979177897,
+          "Y": -6285.7742062792195
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 675.3666666663811,
+        "distancePX": 21149.54178377121,
+        "health": 100,
+        "id": 23,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 675.3666666663811,
+        "position": {
+          "X": -48.081375489121605,
+          "Y": -5963.2349019882995
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 17.750000000000274,
+        "distancePX": 69166.88461805234,
+        "health": 100,
+        "id": 36,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 131.26666666666327,
+        "position": {
+          "X": -12242.62977212873,
+          "Y": -7070.000000006371
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 201.48333333338581,
+        "distancePX": 66220.6731029201,
+        "health": 100,
+        "id": 37,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 201.48333333338581,
+        "position": {
+          "X": -4446.594820205284,
+          "Y": -7070.000341170217
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 185.93333333337344,
+        "distancePX": 55584.112943096225,
+        "health": 100,
+        "id": 38,
+        "lastTargetSpeed": 0.4937932237362794,
+        "longestWaitSeconds": 185.93333333337344,
+        "position": {
+          "X": -4748.251475725007,
+          "Y": -7070.000000000011
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 459.0999999999111,
+        "distancePX": 43288.14462659528,
+        "health": 100,
+        "id": 39,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 459.0999999999111,
+        "position": {
+          "X": -4082.2892886429004,
+          "Y": -6618.083016414474
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 465.74999999990507,
+        "distancePX": 27411.245322367275,
+        "health": 100,
+        "id": 40,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 465.74999999990507,
+        "position": {
+          "X": -4129.552686721272,
+          "Y": -6438.279223457518
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      },
+      {
+        "currentWaitSeconds": 6.299999999999983,
+        "distancePX": 49494.620885226715,
+        "health": 100,
+        "id": 47,
+        "lastTargetSpeed": 0,
+        "longestWaitSeconds": 248.53333333342326,
+        "position": {
+          "X": -4086.0642169718876,
+          "Y": 4858.145145004739
+        },
+        "speed": 0,
+        "state": "巡航行驶"
+      }
+    ],
+    "gates": {
+      "playerProgress": true,
+      "fps": true,
+      "tps": true,
+      "gapP99": false,
+      "gapP999": true,
+      "gapOver100Reviewed": true,
+      "health": true,
+      "measurementValidity": true
+    },
+    "waitDurationAuditOnly": true
+  },
+  "preFixNativePerformance": {
+    "analysisWindowSeconds": [
+      30,
+      900
+    ],
+    "drawFPS": 59.58620689655172,
+    "updateTPS": 59.99885057471264,
+    "drawSubmitMeanMS": 1.3201129246913648,
+    "drawSubmitP99MS": 1.6311037500000003,
+    "updateMeanMS": 12.188134477116376,
+    "updateP99MS": 15.268347179999997,
+    "gapP99MS": 19.103523870000004,
+    "gapP999MS": 34.357277464,
+    "gapMaxMS": 52.429875,
+    "gapsOver50MS": 13,
+    "gapsOver100MS": 0,
+    "carsMin": 754,
+    "carsMax": 864,
+    "playerMinHealth": 100,
+    "fleetMinHealth": 100,
+    "badFocusOrFullscreenEvents": 0,
+    "playerDistancePX": 44938.19483909057,
+    "fleetDistancePX": 2894951.597532661,
+    "resolution": [
+      1280,
+      804
+    ],
+    "graphics": {
+      "GraphicsLibrary": 4,
+      "TotalGPUImageMemoryUsageInBytes": 46383264
+    },
+    "allocMBPerSecond": 40.67135228363485,
+    "gcCount": 679,
+    "playerMaxWaitSeconds": 336.38333333335606,
+    "gates": {
+      "progress": false,
+      "fps": true,
+      "tps": true,
+      "gapP99": true,
+      "gapP999": true,
+      "gapOver100Reviewed": true,
+      "health": true,
+      "measurementValidity": true
+    }
+  },
+  "blockerReplay": {
+    "seconds": 120,
+    "playerDistancePX": 15500.8,
+    "leaderID": 46,
+    "leaderDistancePX": 16349.0,
+    "longestWaitSeconds": 20.15,
+    "health": 100
+  },
+  "customBerserkFreshReplay": {
+    "seconds": 360,
+    "distancePX": 38097.2,
+    "longestWaitSeconds": 19.95,
+    "health": 100
+  },
+  "discardedScope": "Applying the skipped-bay change to ordinary mode caused a custom-map contact at 23.03s. Final change is berserk-only; both modes separately rechecked.",
+  "nativeInvalidAttempt": "Previous overnight attempt had no monitor and produced no samples; excluded regardless of launcher exit code.",
+  "userSaveReplay": {
+    "seconds": 120,
+    "distancePX": 12192.6,
+    "longestWaitSeconds": 11.28,
+    "healthBefore": 97,
+    "healthAfter": 97,
+    "targetBefore": 4,
+    "targetAfter": 0
+  },
+  "userSaveSHA256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+  "sourceSHA256": "9c6ab8c779e575dafd5e40b47ad76fba4a5007c10c0f800be4671d7038843e05",
+  "sourceFileCount": 526,
+  "sourceFingerprintScope": "Git-tracked and non-ignored workspace files excluding docs to avoid a self-reference",
+  "historicalQualification": "0.0.7-qualification-initial.json",
+  "platformStatus": {
+    "darwinArm64": "native tested; candidate archive verified separately after preparation commit",
+    "darwinAmd64": "cross-build passed; not natively tested",
+    "windowsAmd64": "cross-build passed; not natively tested",
+    "linuxAmd64": "pending platform CI"
+  },
+  "evidenceDirectory": "dist/release-0.0.7-final/",
+  "releaseBlockers": [
+    {
+      "priority": "P2",
+      "kind": "Draw callback interval P99 exceeds the proposed 25 ms gate",
+      "actualMS": 31.076580539999966,
+      "gateMS": 25
+    }
+  ],
+  "publicationGuardTest": "Accepted PASS/local-pass, refused HOLD/wrong-version/missing-decision/missing-file, and refused the real candidate.",
+  "baselineCommit": "423a3e847c691027649d57b541315179ef872c57",
+  "baselineEvidenceScope": "Original full race, coverage and 900-second native performance; latest priority patch has separate validation below.",
+  "priorityUpdate": {
+    "policy": {
+      "normalCongestionBlocksRelease": false,
+      "waitingTimeAloneBlocksRelease": false,
+      "playerAutopilotHasCarYieldPriority": true,
+      "unsafeAlongsideOrCommittedCarsClearFirst": true
+    },
+    "normalRegression": {
+      "passed": 10052,
+      "failed": 0,
+      "skipped": 24
+    },
+    "changedAreaRace": {
+      "passed": 680,
+      "failed": 0,
+      "skipped": 0
+    },
+    "completeRaceRerun": false,
+    "native15MinuteRerun": false,
+    "soakLeafScenes": 21,
+    "soakSimulatedSeconds": 2520,
+    "sourceSHA256ExcludingDocs": "ef04c3ebba246db618cc178a2a5fd6d044ff2640a6567defd847a5e497c403fc",
+    "report": "../bus-priority-qualification-2026-10-27.md"
+  },
+  "resolvedControllerBlockers": [
+    {
+      "priority": "P1",
+      "kind": "Confirmed bus controller interlocks, independent of car congestion",
+      "count": 2,
+      "busPairs": [
+        [
+          18,
+          23
+        ],
+        [
+          19,
+          20
+        ]
+      ],
+      "isolation": "Zero cars, each pair alone, both buses move 0 px over 20 seconds while signals allow movement",
+      "evidence": "dist/bus-priority-audit-2026-10-27/pair18-23.jsonl and pair19-20.jsonl"
+    }
+  ],
+  "interlockUpdate": {
+    "date": "2026-10-27",
+    "baselineCommit": "cd0fd5b4406df06303141d4eda0db8118f0c2534",
+    "sourceSHA256ExcludingDocs": "b409ff86ca37defd8e8aa84fa36dbe53274f6f41a47e6b5be198107a979ee194",
+    "sourceFingerprintAlgorithm": "SHA256 of sorted non-ignored tracked/untracked paths excluding docs; path NUL bytes NUL",
+    "fixedBusPairs": [
+      [
+        18,
+        23
+      ],
+      [
+        19,
+        20
+      ]
+    ],
+    "isolatedRegression": {
+      "variants": 8,
+      "secondsPerVariant": 120,
+      "before": "all eight fail with zero progress",
+      "after": "all eight pass; no physical body contact or hard boundary contact",
+      "reverseUpdateOrder": true,
+      "reloadAfterSeconds": 5,
+      "distancePX": {
+        "18": 6547.9,
+        "23": 10509.2,
+        "19": 8068.4,
+        "20": 13087.7
+      }
+    },
+    "normalRegression": {
+      "passed": 10072,
+      "skipped": 24,
+      "failed": 0
+    },
+    "changedAreaRace": {
+      "passed": 253,
+      "skipped": 0,
+      "failed": 0
+    },
+    "finalScopeGuardRace": {
+      "passed": 11,
+      "skipped": 0,
+      "failed": 0
+    },
+    "finalTargeted": {
+      "passed": 20,
+      "skipped": 0,
+      "failed": 0
+    },
+    "completeRaceRerun": false,
+    "soakLeafScenes": [
+      "TestMixedTrafficSpeedSoak/0",
+      "TestMixedTrafficSpeedSoak/3",
+      "TestMixedTrafficSpeedSoak/4",
+      "TestRelease005TrafficSoak/map0/berserkfalse",
+      "TestRelease005TrafficSoak/map0/berserktrue",
+      "TestRelease005TrafficSoak/map1/berserkfalse",
+      "TestRelease005TrafficSoak/map1/berserktrue",
+      "TestRelease005TrafficSoak/map2/berserkfalse",
+      "TestRelease005TrafficSoak/map2/berserktrue",
+      "TestRelease005TrafficSoak/map3/berserkfalse",
+      "TestRelease005TrafficSoak/map3/berserktrue",
+      "TestRelease005TrafficSoak/map4/berserkfalse",
+      "TestRelease005TrafficSoak/map4/berserktrue",
+      "TestRelease005TrafficSoak/map5/berserkfalse",
+      "TestRelease005TrafficSoak/map5/berserktrue",
+      "TestRelease007MixedFleetSoak/map0",
+      "TestRelease007MixedFleetSoak/map1",
+      "TestRelease007MixedFleetSoak/map2",
+      "TestRelease007MixedFleetSoak/map3",
+      "TestRelease007MixedFleetSoak/map4",
+      "TestRelease007MixedFleetSoak/map5"
+    ],
+    "soakSimulatedSeconds": 2520,
+    "native15MinuteRerun": false,
+    "fleetReplay": {
+      "seconds": 120,
+      "aiBuses": 48,
+      "carsTarget": 864,
+      "carsObservedAtEnd": 748,
+      "minimumFleetHealth": 100,
+      "previouslyStoppedBusDistancesPX": {
+        "17": 793.5405097118123,
+        "18": 3679.9740220176104,
+        "19": 5661.217002633805,
+        "20": 6022.08937396296,
+        "21": 2613.9314953981666,
+        "22": 3357.704689805856,
+        "23": 3620.5336670953257,
+        "37": 10880.356443685836,
+        "38": 3517.8205813511104,
+        "39": 5042.044427376205,
+        "40": 6434.010502398068
+      }
+    },
+    "userSaveSHA256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+    "releaseDecision": "HOLD",
+    "remainingReason": "Prior native draw interval P99 31.08 ms versus proposed 25 ms; not remeasured in this traffic fix",
+    "evidenceDirectory": "dist/bus-interlock-fix-2026-10-27",
+    "report": "../bus-interlock-fix-2026-10-27.md"
+  },
+  "trafficQualification": {
+    "confirmedControllerDeadlocksCleared": true,
+    "normalCongestionBlocksRelease": false,
+    "waitingTimeAloneBlocksRelease": false
+  }
+}

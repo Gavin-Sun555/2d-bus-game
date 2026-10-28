@@ -2,7 +2,6 @@ package game
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -31,9 +30,9 @@ type Game struct {
 	menuStartBounds    sim.Rect
 	menuLangBounds     sim.Rect
 	menuContinueBounds sim.Rect
+	activeSaveSlot     int
+	savePicker         saveSlotPicker
 	savePathOverride   string
-	hasSave            bool
-	saveTime           time.Time
 	saveMessage        string
 
 	Bus             *sim.Bus
@@ -159,17 +158,20 @@ func NewGame(width, height int) *Game {
 
 	g.OperationsPanel = ui.NewOperationsPanel()
 	g.resetOperations()
-	g.refreshSaveInfo()
 	return g
 }
 
 func (g *Game) Update() error {
+	if g.savePicker.open {
+		g.updateSavePicker()
+		return nil
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyF9) {
-		g.handleSave(true)
+		g.openSavePicker(true)
 		return nil
 	}
 	if g.State == StatePlaying && inpututil.IsKeyJustPressed(ebiten.KeyF5) {
-		g.handleSave(false)
+		g.openSavePicker(false)
 		return nil
 	}
 	if g.State == StateMainMenu {
@@ -207,12 +209,12 @@ func (g *Game) Update() error {
 	g.Settings.Update(g.Camera)
 	if g.Settings.LoadRequested {
 		g.Settings.LoadRequested = false
-		g.handleSave(true)
+		g.openSavePicker(true)
 		return nil
 	}
 	if g.Settings.SaveRequested {
 		g.Settings.SaveRequested = false
-		g.handleSave(false)
+		g.openSavePicker(false)
 		return nil
 	}
 	g.syncAISpeedRanges()

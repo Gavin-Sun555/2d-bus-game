@@ -25,7 +25,7 @@ type busPredictionEntry struct {
 	pose  busPredictionPose
 }
 type busPredictionCache struct {
-	entries      [128]busPredictionEntry
+	entries      [256]busPredictionEntry
 	hits, misses uint64
 }
 
@@ -58,7 +58,7 @@ func (b *Bus) predictionEntry(pos Vec2, heading float64) (*busPredictionEntry, b
 		hash ^= 0x517cc1b727220a95
 	}
 	cache := b.predictionCache
-	entry := &cache.entries[hash&127]
+	entry := &cache.entries[hash&255]
 	if entry.valid && entry.key == key {
 		cache.hits++
 		return entry, true

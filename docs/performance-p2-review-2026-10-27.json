@@ -1,0 +1,330 @@
+{
+  "date": "2026-10-27",
+  "sourceCommit": "e6ab238520099516851785b9eb17ed4ad0c2aa59",
+  "scope": "research only; no production changes, no GitHub commit/push",
+  "nativeReanalysis": {
+    "sourceCommit": "423a3e8",
+    "note": "Historical native callbacks, not a new measurement. Callback durations are wall time; outside-callback residual is not a GPU/scheduler causal label.",
+    "overall": {
+      "frames": 51538,
+      "gapP99MS": 31.076580539990708,
+      "gapP999MS": 49.493545821006364,
+      "maxGapMS": 94.7344169999269,
+      "over25": 557,
+      "over33_334": 189,
+      "over50": 42,
+      "slowWithMultipleUpdates": 551,
+      "slowWithOutsideCallbacksOver8MS": 6,
+      "slowUpdateTotalMedianMS": 30.325042,
+      "slowOutsideMedianMS": 0.9330830000032151
+    },
+    "windows": {
+      "30-120": {
+        "frames": 5290,
+        "gapP99MS": 32.851913490004414,
+        "gapP999MS": 50.63995825000298,
+        "maxGapMS": 51.17854200000238,
+        "over25": 92,
+        "over33_334": 45,
+        "over50": 9,
+        "slowWithMultipleUpdates": 92,
+        "slowWithOutsideCallbacksOver8MS": 0,
+        "slowUpdateTotalMedianMS": 30.95475,
+        "slowOutsideMedianMS": 0.8947085000007178,
+        "gcCount": 66,
+        "stwPauseTotalMS": 2.761295,
+        "allocationMBPerSecond": 37.921330351328415,
+        "carsMin": 843,
+        "carsMax": 864
+      },
+      "120-300": {
+        "frames": 10444,
+        "gapP99MS": 33.319594440001765,
+        "gapP999MS": 49.631209374997624,
+        "maxGapMS": 52.60016700000847,
+        "over25": 332,
+        "over33_334": 102,
+        "over50": 8,
+        "slowWithMultipleUpdates": 332,
+        "slowWithOutsideCallbacksOver8MS": 0,
+        "slowUpdateTotalMedianMS": 30.1691665,
+        "slowOutsideMedianMS": 0.9328119999985329,
+        "gcCount": 140,
+        "stwPauseTotalMS": 5.936448,
+        "allocationMBPerSecond": 41.720321959183615,
+        "carsMin": 829,
+        "carsMax": 843
+      },
+      "300-600": {
+        "frames": 17960,
+        "gapP99MS": 18.153850440006636,
+        "gapP999MS": 32.55484537498888,
+        "maxGapMS": 34.61258300001191,
+        "over25": 40,
+        "over33_334": 5,
+        "over50": 0,
+        "slowWithMultipleUpdates": 40,
+        "slowWithOutsideCallbacksOver8MS": 0,
+        "slowUpdateTotalMedianMS": 30.2190415,
+        "slowOutsideMedianMS": 0.9252494999853713,
+        "gcCount": 240,
+        "stwPauseTotalMS": 9.985418,
+        "allocationMBPerSecond": 41.39770681015615,
+        "carsMin": 792,
+        "carsMax": 829
+      },
+      "600-900": {
+        "frames": 17844,
+        "gapP99MS": 18.855937880038017,
+        "gapP999MS": 75.81265953094093,
+        "maxGapMS": 94.7344169999269,
+        "over25": 93,
+        "over33_334": 37,
+        "over50": 25,
+        "slowWithMultipleUpdates": 87,
+        "slowWithOutsideCallbacksOver8MS": 6,
+        "slowUpdateTotalMedianMS": 30.598333,
+        "slowOutsideMedianMS": 0.997625999963148,
+        "gcCount": 236,
+        "stwPauseTotalMS": 9.723921,
+        "allocationMBPerSecond": 41.46932508442989,
+        "carsMin": 755,
+        "carsMax": 792
+      }
+    },
+    "worst20": [
+      {
+        "at": 717.584162959,
+        "gapMS": 94.7344169999269,
+        "updates": 5,
+        "updateTotalMS": 91.97629099999999,
+        "maxUpdateMS": 18.475291,
+        "previousDrawMS": 1.598083,
+        "outsideCallbacksMS": 1.1600429999269153
+      },
+      {
+        "at": 717.678649,
+        "gapMS": 94.48604099998192,
+        "updates": 5,
+        "updateTotalMS": 91.87045899999998,
+        "maxUpdateMS": 18.539709,
+        "previousDrawMS": 1.595291,
+        "outsideCallbacksMS": 1.0202909999819383
+      },
+      {
+        "at": 717.301916917,
+        "gapMS": 94.41829200000029,
+        "updates": 5,
+        "updateTotalMS": 91.800417,
+        "maxUpdateMS": 18.708875,
+        "previousDrawMS": 1.588167,
+        "outsideCallbacksMS": 1.0297080000002978
+      },
+      {
+        "at": 717.489428542,
+        "gapMS": 93.76891700003398,
+        "updates": 5,
+        "updateTotalMS": 91.10179099999999,
+        "maxUpdateMS": 18.307583,
+        "previousDrawMS": 1.606125,
+        "outsideCallbacksMS": 1.0610010000339827
+      },
+      {
+        "at": 717.395659625,
+        "gapMS": 93.74270800003615,
+        "updates": 5,
+        "updateTotalMS": 91.027624,
+        "maxUpdateMS": 18.281292,
+        "previousDrawMS": 1.621917,
+        "outsideCallbacksMS": 1.0931670000361464
+      },
+      {
+        "at": 717.77210425,
+        "gapMS": 93.45525000003363,
+        "updates": 5,
+        "updateTotalMS": 90.837083,
+        "maxUpdateMS": 18.214166,
+        "previousDrawMS": 1.585375,
+        "outsideCallbacksMS": 1.0327920000336235
+      },
+      {
+        "at": 717.8649505,
+        "gapMS": 92.84624999997959,
+        "updates": 5,
+        "updateTotalMS": 90.201166,
+        "maxUpdateMS": 18.150584,
+        "previousDrawMS": 1.596167,
+        "outsideCallbacksMS": 1.0489169999795962
+      },
+      {
+        "at": 717.957652542,
+        "gapMS": 92.70204200004173,
+        "updates": 5,
+        "updateTotalMS": 90.07537500000001,
+        "maxUpdateMS": 18.156708,
+        "previousDrawMS": 1.576959,
+        "outsideCallbacksMS": 1.0497080000417185
+      },
+      {
+        "at": 718.047735167,
+        "gapMS": 90.08262500003639,
+        "updates": 5,
+        "updateTotalMS": 87.46304,
+        "maxUpdateMS": 17.802416,
+        "previousDrawMS": 1.57475,
+        "outsideCallbacksMS": 1.044835000036386
+      },
+      {
+        "at": 718.313776042,
+        "gapMS": 89.55912499993701,
+        "updates": 5,
+        "updateTotalMS": 86.942585,
+        "maxUpdateMS": 19.602917,
+        "previousDrawMS": 1.562292,
+        "outsideCallbacksMS": 1.0542479999370187
+      },
+      {
+        "at": 718.1370625,
+        "gapMS": 89.32733299991469,
+        "updates": 5,
+        "updateTotalMS": 86.69570900000001,
+        "maxUpdateMS": 17.765917,
+        "previousDrawMS": 1.59175,
+        "outsideCallbacksMS": 1.0398739999146756
+      },
+      {
+        "at": 718.48880075,
+        "gapMS": 87.64525000003687,
+        "updates": 5,
+        "updateTotalMS": 84.995876,
+        "maxUpdateMS": 17.05525,
+        "previousDrawMS": 1.592667,
+        "outsideCallbacksMS": 1.056707000036866
+      },
+      {
+        "at": 718.4011555,
+        "gapMS": 87.3794579999867,
+        "updates": 5,
+        "updateTotalMS": 84.71291699999999,
+        "maxUpdateMS": 17.015,
+        "previousDrawMS": 1.5845,
+        "outsideCallbacksMS": 1.0820409999867024
+      },
+      {
+        "at": 718.224216917,
+        "gapMS": 87.15441700007887,
+        "updates": 5,
+        "updateTotalMS": 84.474875,
+        "maxUpdateMS": 17.252291,
+        "previousDrawMS": 1.581625,
+        "outsideCallbacksMS": 1.0979170000788656
+      },
+      {
+        "at": 718.574135417,
+        "gapMS": 85.33466699998371,
+        "updates": 5,
+        "updateTotalMS": 82.61233399999999,
+        "maxUpdateMS": 18.032958,
+        "previousDrawMS": 1.558792,
+        "outsideCallbacksMS": 1.1635409999837236
+      },
+      {
+        "at": 718.6546765,
+        "gapMS": 80.54108300007101,
+        "updates": 5,
+        "updateTotalMS": 77.910042,
+        "maxUpdateMS": 15.916542,
+        "previousDrawMS": 1.570458,
+        "outsideCallbacksMS": 1.0605830000710057
+      },
+      {
+        "at": 718.731047459,
+        "gapMS": 76.37095899997348,
+        "updates": 5,
+        "updateTotalMS": 73.775541,
+        "maxUpdateMS": 14.937375,
+        "previousDrawMS": 1.560209,
+        "outsideCallbacksMS": 1.0352089999734773
+      },
+      {
+        "at": 717.13177225,
+        "gapMS": 76.27595799999654,
+        "updates": 4,
+        "updateTotalMS": 73.624875,
+        "maxUpdateMS": 18.625083,
+        "previousDrawMS": 1.590958,
+        "outsideCallbacksMS": 1.0601249999965319
+      },
+      {
+        "at": 717.207498625,
+        "gapMS": 75.72637499993107,
+        "updates": 4,
+        "updateTotalMS": 73.103957,
+        "maxUpdateMS": 18.583,
+        "previousDrawMS": 1.587334,
+        "outsideCallbacksMS": 1.035083999931075
+      },
+      {
+        "at": 718.791587542,
+        "gapMS": 60.54008299997804,
+        "updates": 4,
+        "updateTotalMS": 57.915666,
+        "maxUpdateMS": 14.527292,
+        "previousDrawMS": 1.5655,
+        "outsideCallbacksMS": 1.0589169999780381
+      }
+    ]
+  },
+  "currentProfile": {
+    "measuredTicks": 3600,
+    "warmupTicks": 300,
+    "includesCalibrationAndStartup": true,
+    "hasDraw": false,
+    "cpuSamplesSeconds": 42.78,
+    "diagnosticMeanUpdateMS": 12.642678,
+    "bytesPerUpdate": 131925,
+    "allocsPerUpdate": 276,
+    "carsAtEnd": 864,
+    "playerHealthAtEnd": 100,
+    "poseCacheHitPercent": 44.06,
+    "cumulativeCPUPercent": {
+      "AIBusManager.Update": 52.1,
+      "TrafficManager.Update": 36.82,
+      "Bus.AtPose": 13.88,
+      "advanceTrailer": 13.18,
+      "junctionQueueSpeed": 13.09,
+      "roundaboutEntryObstacleSpeed": 7.46,
+      "controlSweptSpeed": 7.32,
+      "junctionSweptSpeed": 5.66,
+      "CheckOBBCollision": 4.86,
+      "separatedBodies": 4.72,
+      "JunctionLeaderGap": 4.18
+    },
+    "warning": "Nested costs are not additive. Profile timings are not optimization A/B or native full-screen qualification."
+  },
+  "scratchProbe": {
+    "includesCalibrationAndWarmup": true,
+    "measuredTicks": 600,
+    "appendCalls": 334637,
+    "noTurnOrTooFewPointsFallbacks": 0,
+    "suffixMismatchFallbacks": 0,
+    "cachedSuffixPaths": 334637,
+    "templateRebuilds": 12860,
+    "sampleAppendCalls": 700340,
+    "capacityGrowthCalls": 58522,
+    "timingUsedAsOptimizationEvidence": false
+  },
+  "nextOptions": [
+    "junction derived geometry and conservative grouped broad phase",
+    "exact OBB axes/radius reuse",
+    "exact pose-cache conflict diagnosis",
+    "per-consumer conservative sweep candidates",
+    "junction buffer capacity/lifecycle audit",
+    "bounded static render chunks and measured command batching",
+    "representative PGO and trace-justified scheduling experiments"
+  ],
+  "native15MinuteRerun": false,
+  "published": false,
+  "evidenceDirectory": "dist/p2-review-2026-10-27",
+  "followUpReport": "performance-p2-experiment-2026-10-27.json"
+}

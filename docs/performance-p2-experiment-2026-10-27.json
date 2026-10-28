@@ -1,0 +1,886 @@
+{
+  "date": "2026-10-27",
+  "baseCommit": "e6ab238520099516851785b9eb17ed4ad0c2aa59",
+  "localOnly": true,
+  "committed": false,
+  "pushed": false,
+  "sourceSHA256": {
+    "internal/sim/junction_traffic.go": "4c24882939f61b835a1d0038594aec733716e344c984e878305ce91950e6cd76",
+    "internal/sim/corridor_groups.go": "d53ba3499f2b4d62e1fff06f38d99457be1968421b0c64b83f93b97515c11a61",
+    "internal/sim/types.go": "37ebc53c1ff4e0f4c04b40a2dec3b9aef80eb9221066bf38825ca103f608a99f"
+  },
+  "baseline": {
+    "drawFPS": 58.773563218390805,
+    "updateTPS": 59.97586206896552,
+    "updateMeanMS": 12.8294315624294,
+    "updateP99MS": 16.129652,
+    "drawSubmitMeanMS": 1.3498588124107636,
+    "drawSubmitP99MS": 1.6748615599999999,
+    "gapP99MS": 31.926282880000002,
+    "gapP999MS": 68.7406890880001,
+    "gapMaxMS": 146.380209,
+    "gapsOver50MS": 142,
+    "gapsOver100MS": 17,
+    "allocMBPerSecond": 41.58949760729639,
+    "carsMin": 772,
+    "carsMax": 864,
+    "playerDistancePX": 18973.481342651874,
+    "fleetDistancePX": 2916696.9819778427,
+    "playerMaxWaitSeconds": 532.183333333178,
+    "playerMinHealth": 100,
+    "fleetMinHealth": 100,
+    "badFocusOrFullscreenEvents": 0
+  },
+  "candidate": {
+    "drawFPS": 59.03448275862069,
+    "updateTPS": 59.97816091954023,
+    "updateMeanMS": 12.675802841359925,
+    "updateP99MS": 15.908750399999997,
+    "drawSubmitMeanMS": 1.3496414847546703,
+    "drawSubmitP99MS": 1.6724090299999996,
+    "gapP99MS": 31.138194279999894,
+    "gapP999MS": 59.65281550000104,
+    "gapMaxMS": 106.659125,
+    "gapsOver50MS": 112,
+    "gapsOver100MS": 14,
+    "allocMBPerSecond": 41.691640824198316,
+    "carsMin": 772,
+    "carsMax": 864,
+    "playerDistancePX": 18973.481342651874,
+    "fleetDistancePX": 2916651.5052790577,
+    "playerMaxWaitSeconds": 532.2166666665113,
+    "playerMinHealth": 100,
+    "fleetMinHealth": 100,
+    "badFocusOrFullscreenEvents": 0
+  },
+  "analysisWindowSeconds": [
+    30,
+    900
+  ],
+  "nativeComparedRoundsPerVersion": 1,
+  "nativePerformanceGatesPassed": false,
+  "gates": {
+    "fps": true,
+    "tps": true,
+    "gapP99": false,
+    "gapP999": false,
+    "gapOver100Reviewed": true,
+    "health": true,
+    "measurementValidity": true
+  },
+  "fixedSimulationTrials": {
+    "step1a": {
+      "variants": {
+        "baseline": [
+          10.853798,
+          10.99746,
+          11.000751
+        ],
+        "step1a": [
+          11.242615,
+          11.141808,
+          11.14913
+        ]
+      },
+      "medianMS": {
+        "baseline": 10.99746,
+        "step1a": 11.14913
+      },
+      "reductionPercent": -1.3791366370052627
+    },
+    "step1b": {
+      "variants": {
+        "baseline": [
+          10.865924,
+          10.943199,
+          10.899608
+        ],
+        "step1b": [
+          10.743852,
+          10.640905,
+          10.677836
+        ]
+      },
+      "medianMS": {
+        "baseline": 10.899608,
+        "step1b": 10.677836
+      },
+      "reductionPercent": 2.034678678352486
+    },
+    "step2": {
+      "variants": {
+        "step1b": [
+          10.683339,
+          10.753117,
+          10.674518
+        ],
+        "step2": [
+          10.687281,
+          10.659142,
+          10.595212
+        ]
+      },
+      "medianMS": {
+        "step1b": 10.683339,
+        "step2": 10.659142
+      },
+      "reductionPercent": 0.22649285958258325
+    },
+    "step2axis": {
+      "variants": {
+        "step1b": [
+          10.677629,
+          10.697104,
+          10.818627
+        ],
+        "step2axis": [
+          10.658852,
+          10.623684,
+          10.704063
+        ]
+      },
+      "medianMS": {
+        "step1b": 10.697104,
+        "step2axis": 10.658852
+      },
+      "reductionPercent": 0.3575921109115088
+    }
+  },
+  "trajectory": [
+    {
+      "variant": "baseline",
+      "sha256": "9c9370f2825fe913e841cbdc53b9764085099060ab7597427f0248a718e32630",
+      "ticks": 1800
+    },
+    {
+      "variant": "step1b",
+      "sha256": "9c9370f2825fe913e841cbdc53b9764085099060ab7597427f0248a718e32630",
+      "ticks": 1800
+    },
+    {
+      "variant": "final",
+      "sha256": "9c9370f2825fe913e841cbdc53b9764085099060ab7597427f0248a718e32630",
+      "ticks": 1800
+    }
+  ],
+  "normalRegression": {
+    "passed": 10077,
+    "skipped": 24,
+    "failed": 0
+  },
+  "targetedRace": {
+    "passed": 347,
+    "skipped": 0,
+    "failed": 0
+  },
+  "completeRaceRerun": false,
+  "soakLeafScenes": [
+    "TestMixedTrafficSpeedSoak/0",
+    "TestMixedTrafficSpeedSoak/3",
+    "TestMixedTrafficSpeedSoak/4",
+    "TestRelease005TrafficSoak/map0/berserkfalse",
+    "TestRelease005TrafficSoak/map0/berserktrue",
+    "TestRelease005TrafficSoak/map1/berserkfalse",
+    "TestRelease005TrafficSoak/map1/berserktrue",
+    "TestRelease005TrafficSoak/map2/berserkfalse",
+    "TestRelease005TrafficSoak/map2/berserktrue",
+    "TestRelease005TrafficSoak/map3/berserkfalse",
+    "TestRelease005TrafficSoak/map3/berserktrue",
+    "TestRelease005TrafficSoak/map4/berserkfalse",
+    "TestRelease005TrafficSoak/map4/berserktrue",
+    "TestRelease005TrafficSoak/map5/berserkfalse",
+    "TestRelease005TrafficSoak/map5/berserktrue",
+    "TestRelease007MixedFleetSoak/map0",
+    "TestRelease007MixedFleetSoak/map1",
+    "TestRelease007MixedFleetSoak/map2",
+    "TestRelease007MixedFleetSoak/map3",
+    "TestRelease007MixedFleetSoak/map4",
+    "TestRelease007MixedFleetSoak/map5"
+  ],
+  "soakSimulatedSeconds": 2520,
+  "sourceSaveSHA256": "4d77de63d2960d078fa6f82dde5fe43ecca4bab09f23f61fe4f78e0f00fea880",
+  "discarded": [
+    "eager derived-segment corridor cache: 1.38 percent slower in three paired trials",
+    "prepared radius/axes structure: marginal app-level gain, removed in favor of two-line axes reuse"
+  ],
+  "kept": [
+    "conservative groups of 8 corridor bodies with original scan fallback",
+    "derive perpendicular OBB axes from existing exact directions"
+  ],
+  "invalidNativeAttempt": {
+    "firstUnfocusedSeconds": 258,
+    "includedInStatistics": false
+  },
+  "waitingPolicy": "Duration alone does not block release. Baseline contains long waits; no new causal classification made by these performance changes.",
+  "evidenceDirectory": "dist/p2-experiment-2026-10-27",
+  "diagnosticProfiles": {
+    "earlySimulationWindow": {
+      "obstacleSpeed": {
+        "cpuSeconds": 6.59,
+        "cumulativePercent": 15.8
+      },
+      "AtPose": {
+        "cpuSeconds": 5.84,
+        "cumulativePercent": 14.0
+      },
+      "advanceTrailer": {
+        "cpuSeconds": 5.61,
+        "cumulativePercent": 13.45
+      },
+      "junctionQueueSpeed": {
+        "cpuSeconds": 5.31,
+        "cumulativePercent": 12.73
+      },
+      "controlSweptSpeed": {
+        "cpuSeconds": 3.27,
+        "cumulativePercent": 7.84
+      },
+      "roundaboutEntryObstacleSpeed": {
+        "cpuSeconds": 2.83,
+        "cumulativePercent": 6.78
+      },
+      "junctionSweptSpeed": {
+        "cpuSeconds": 2.41,
+        "cumulativePercent": 5.78
+      },
+      "CheckOBBCollision": {
+        "cpuSeconds": 2.11,
+        "cumulativePercent": 5.06
+      },
+      "articulatedSweptSpeed": {
+        "cpuSeconds": 1.67,
+        "cumulativePercent": 4.0
+      },
+      "separatedBodies": {
+        "cpuSeconds": 1.25,
+        "cumulativePercent": 3.0
+      },
+      "stationDepartureTrafficSpeed": {
+        "cpuSeconds": 0.15,
+        "cumulativePercent": 0.36
+      }
+    },
+    "lateSimulationWindow": {
+      "AtPose": {
+        "cpuSeconds": 1.51,
+        "cumulativePercent": 20.66
+      },
+      "advanceTrailer": {
+        "cpuSeconds": 1.41,
+        "cumulativePercent": 19.29
+      },
+      "junctionSweptSpeed": {
+        "cpuSeconds": 0.93,
+        "cumulativePercent": 12.72
+      },
+      "junctionQueueSpeed": {
+        "cpuSeconds": 0.69,
+        "cumulativePercent": 9.44
+      },
+      "obstacleSpeed": {
+        "cpuSeconds": 0.68,
+        "cumulativePercent": 9.3
+      },
+      "controlSweptSpeed": {
+        "cpuSeconds": 0.54,
+        "cumulativePercent": 7.39
+      },
+      "articulatedSweptSpeed": {
+        "cpuSeconds": 0.41,
+        "cumulativePercent": 5.61
+      },
+      "separatedBodies": {
+        "cpuSeconds": 0.16,
+        "cumulativePercent": 2.19
+      },
+      "CheckOBBCollision": {
+        "cpuSeconds": 0.15,
+        "cumulativePercent": 2.05
+      },
+      "stationDepartureTrafficSpeed": {
+        "cpuSeconds": 0.03,
+        "cumulativePercent": 0.41
+      }
+    },
+    "lateSimulatedSeconds": [
+      230,
+      240
+    ],
+    "lateProfiledUpdates": 600,
+    "lateProfiledWallMS": {
+      "mean": 13.833067578333333,
+      "p50": 12.4793335,
+      "p95": 19.82975415,
+      "p99": 20.7883025,
+      "max": 21.867083
+    },
+    "warning": "Offline same-seed reconstruction, with CPU profiler and no Draw; this is diagnostic, not native FPS A/B or a bit-exact restore of all runtime state."
+  },
+  "nativeIntervalBreakdown": {
+    "baseline": {
+      "sourceCommit": "e6ab238-local-baseline",
+      "note": "Historical native callbacks, not a new measurement. Callback durations are wall time; outside-callback residual is not a GPU/scheduler causal label.",
+      "overall": {
+        "frames": 51133,
+        "gapP99MS": 31.926282880002645,
+        "gapP999MS": 68.74068908799504,
+        "maxGapMS": 146.38020900000015,
+        "over25": 714,
+        "over33_334": 300,
+        "over50": 142,
+        "slowWithMultipleUpdates": 714,
+        "slowWithOutsideCallbacksOver8MS": 1,
+        "slowUpdateTotalMedianMS": 30.3279585,
+        "slowOutsideMedianMS": 0.9526674999994054
+      },
+      "windows": {
+        "30-120": {
+          "frames": 5259,
+          "gapP99MS": 33.110114999996235,
+          "gapP999MS": 52.33738349200315,
+          "maxGapMS": 146.38020900000015,
+          "over25": 109,
+          "over33_334": 50,
+          "over50": 16,
+          "slowWithMultipleUpdates": 109,
+          "slowWithOutsideCallbacksOver8MS": 1,
+          "slowUpdateTotalMedianMS": 30.667541,
+          "slowOutsideMedianMS": 0.9020419999957632,
+          "gcCount": 66,
+          "stwPauseTotalMS": 2.811086,
+          "allocationMBPerSecond": 37.78937248872721,
+          "carsMin": 843,
+          "carsMax": 864
+        },
+        "120-300": {
+          "frames": 10217,
+          "gapP99MS": 47.45908500000098,
+          "gapP999MS": 101.44796014399748,
+          "maxGapMS": 106.63941699999668,
+          "over25": 374,
+          "over33_334": 156,
+          "over50": 77,
+          "slowWithMultipleUpdates": 374,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 30.149646500000003,
+          "slowOutsideMedianMS": 0.9488749999977415,
+          "gcCount": 131,
+          "stwPauseTotalMS": 5.503746,
+          "allocationMBPerSecond": 41.3435550354999,
+          "carsMin": 830,
+          "carsMax": 843
+        },
+        "300-600": {
+          "frames": 17657,
+          "gapP99MS": 31.851783520007654,
+          "gapP999MS": 70.17932334401617,
+          "maxGapMS": 90.30783400004339,
+          "over25": 231,
+          "over33_334": 94,
+          "over50": 49,
+          "slowWithMultipleUpdates": 231,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 30.466793,
+          "slowOutsideMedianMS": 1.059625000016574,
+          "gcCount": 255,
+          "stwPauseTotalMS": 10.401516,
+          "allocationMBPerSecond": 44.30000365066461,
+          "carsMin": 803,
+          "carsMax": 830
+        },
+        "600-900": {
+          "frames": 18000,
+          "gapP99MS": 17.58394699002451,
+          "gapP999MS": 20.003251541945247,
+          "maxGapMS": 24.74879199996849,
+          "over25": 0,
+          "over33_334": 0,
+          "over50": 0,
+          "slowWithMultipleUpdates": 0,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 0,
+          "slowOutsideMedianMS": 0,
+          "gcCount": 235,
+          "stwPauseTotalMS": 9.607719,
+          "allocationMBPerSecond": 40.315403277959575,
+          "carsMin": 772,
+          "carsMax": 803
+        }
+      },
+      "worst20": [
+        {
+          "at": 31.87417925,
+          "gapMS": 146.38020900000015,
+          "updates": 5,
+          "updateTotalMS": 60.450125,
+          "maxUpdateMS": 13.180875,
+          "previousDrawMS": 1.338792,
+          "outsideCallbacksMS": 84.59129200000014
+        },
+        {
+          "at": 235.978320875,
+          "gapMS": 106.63941699999668,
+          "updates": 5,
+          "updateTotalMS": 104.115126,
+          "maxUpdateMS": 20.942417,
+          "previousDrawMS": 1.543583,
+          "outsideCallbacksMS": 0.9807079999966817
+        },
+        {
+          "at": 235.871681458,
+          "gapMS": 105.93762500002413,
+          "updates": 5,
+          "updateTotalMS": 103.428876,
+          "maxUpdateMS": 21.183542,
+          "previousDrawMS": 1.552125,
+          "outsideCallbacksMS": 0.9566240000241208
+        },
+        {
+          "at": 235.765743833,
+          "gapMS": 104.19770799998673,
+          "updates": 5,
+          "updateTotalMS": 101.668082,
+          "maxUpdateMS": 20.401375,
+          "previousDrawMS": 1.550625,
+          "outsideCallbacksMS": 0.979000999986738
+        },
+        {
+          "at": 234.441287791,
+          "gapMS": 103.4270000000106,
+          "updates": 5,
+          "updateTotalMS": 100.748001,
+          "maxUpdateMS": 21.228208,
+          "previousDrawMS": 1.592459,
+          "outsideCallbacksMS": 1.0865400000105865
+        },
+        {
+          "at": 234.952272416,
+          "gapMS": 103.22858300000348,
+          "updates": 5,
+          "updateTotalMS": 100.645542,
+          "maxUpdateMS": 22.14625,
+          "previousDrawMS": 1.614,
+          "outsideCallbacksMS": 0.9690410000034717
+        },
+        {
+          "at": 234.543918166,
+          "gapMS": 102.63037499998973,
+          "updates": 5,
+          "updateTotalMS": 99.98483300000001,
+          "maxUpdateMS": 20.656584,
+          "previousDrawMS": 1.640167,
+          "outsideCallbacksMS": 1.0053749999897121
+        },
+        {
+          "at": 235.559213041,
+          "gapMS": 102.60912499998653,
+          "updates": 5,
+          "updateTotalMS": 99.932625,
+          "maxUpdateMS": 20.401459,
+          "previousDrawMS": 1.560667,
+          "outsideCallbacksMS": 1.1158329999865373
+        },
+        {
+          "at": 235.661546125,
+          "gapMS": 102.33308400000851,
+          "updates": 5,
+          "updateTotalMS": 99.763835,
+          "maxUpdateMS": 20.210917,
+          "previousDrawMS": 1.561167,
+          "outsideCallbacksMS": 1.008082000008514
+        },
+        {
+          "at": 234.849043833,
+          "gapMS": 102.19158300000686,
+          "updates": 5,
+          "updateTotalMS": 98.964416,
+          "maxUpdateMS": 20.026625,
+          "previousDrawMS": 2.181958,
+          "outsideCallbacksMS": 1.0452090000068637
+        },
+        {
+          "at": 234.6455475,
+          "gapMS": 101.62933399999474,
+          "updates": 5,
+          "updateTotalMS": 99.071417,
+          "maxUpdateMS": 20.12225,
+          "previousDrawMS": 1.564917,
+          "outsideCallbacksMS": 0.9929999999947512
+        },
+        {
+          "at": 235.456603916,
+          "gapMS": 101.48741599999767,
+          "updates": 5,
+          "updateTotalMS": 98.980917,
+          "maxUpdateMS": 19.930333,
+          "previousDrawMS": 1.545666,
+          "outsideCallbacksMS": 0.9608329999976633
+        },
+        {
+          "at": 234.74685225,
+          "gapMS": 101.30474999999706,
+          "updates": 5,
+          "updateTotalMS": 98.78079100000001,
+          "maxUpdateMS": 19.891041,
+          "previousDrawMS": 1.539833,
+          "outsideCallbacksMS": 0.9841259999970475
+        },
+        {
+          "at": 235.153953208,
+          "gapMS": 101.142249999981,
+          "updates": 5,
+          "updateTotalMS": 98.423376,
+          "maxUpdateMS": 19.829417,
+          "previousDrawMS": 1.57575,
+          "outsideCallbacksMS": 1.1431239999810003
+        },
+        {
+          "at": 235.3551165,
+          "gapMS": 100.62666700000023,
+          "updates": 5,
+          "updateTotalMS": 98.07333299999999,
+          "maxUpdateMS": 19.765333,
+          "previousDrawMS": 1.571958,
+          "outsideCallbacksMS": 0.981376000000239
+        },
+        {
+          "at": 235.052810958,
+          "gapMS": 100.53854200000956,
+          "updates": 5,
+          "updateTotalMS": 97.951168,
+          "maxUpdateMS": 19.735125,
+          "previousDrawMS": 1.573709,
+          "outsideCallbacksMS": 1.013665000009567
+        },
+        {
+          "at": 235.254489833,
+          "gapMS": 100.53662500001792,
+          "updates": 5,
+          "updateTotalMS": 98.006959,
+          "maxUpdateMS": 19.959417,
+          "previousDrawMS": 1.555833,
+          "outsideCallbacksMS": 0.973833000017919
+        },
+        {
+          "at": 236.0689995,
+          "gapMS": 90.67862499998114,
+          "updates": 5,
+          "updateTotalMS": 88.125458,
+          "maxUpdateMS": 21.643208,
+          "previousDrawMS": 1.54725,
+          "outsideCallbacksMS": 1.0059169999811388
+        },
+        {
+          "at": 360.38522275,
+          "gapMS": 90.30783400004339,
+          "updates": 5,
+          "updateTotalMS": 87.582208,
+          "maxUpdateMS": 17.62825,
+          "previousDrawMS": 1.618917,
+          "outsideCallbacksMS": 1.106709000043395
+        },
+        {
+          "at": 360.474894083,
+          "gapMS": 89.67133299995567,
+          "updates": 5,
+          "updateTotalMS": 87.386083,
+          "maxUpdateMS": 17.961958,
+          "previousDrawMS": 1.323958,
+          "outsideCallbacksMS": 0.9612919999556624
+        }
+      ]
+    },
+    "candidate": {
+      "sourceCommit": "e6ab238-local-candidate",
+      "note": "Historical native callbacks, not a new measurement. Callback durations are wall time; outside-callback residual is not a GPU/scheduler causal label.",
+      "overall": {
+        "frames": 51360,
+        "gapP99MS": 31.13819427998795,
+        "gapP999MS": 59.65281550002975,
+        "maxGapMS": 106.65912499999308,
+        "over25": 567,
+        "over33_334": 258,
+        "over50": 112,
+        "slowWithMultipleUpdates": 567,
+        "slowWithOutsideCallbacksOver8MS": 2,
+        "slowUpdateTotalMedianMS": 30.491625,
+        "slowOutsideMedianMS": 0.9452490000016596
+      },
+      "windows": {
+        "30-120": {
+          "frames": 5307,
+          "gapP99MS": 32.13452803999997,
+          "gapP999MS": 51.27928969399835,
+          "maxGapMS": 52.81424999999729,
+          "over25": 72,
+          "over33_334": 45,
+          "over50": 12,
+          "slowWithMultipleUpdates": 72,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 31.4442295,
+          "slowOutsideMedianMS": 0.899083500000371,
+          "gcCount": 66,
+          "stwPauseTotalMS": 2.765376,
+          "allocationMBPerSecond": 37.79885490739476,
+          "carsMin": 843,
+          "carsMax": 864
+        },
+        "120-300": {
+          "frames": 10354,
+          "gapP99MS": 35.38905648999502,
+          "gapP999MS": 100.62572570100512,
+          "maxGapMS": 106.65912499999308,
+          "over25": 287,
+          "over33_334": 130,
+          "over50": 58,
+          "slowWithMultipleUpdates": 287,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 30.305292,
+          "slowOutsideMedianMS": 0.9484999999899983,
+          "gcCount": 132,
+          "stwPauseTotalMS": 5.599836,
+          "allocationMBPerSecond": 41.75640626412727,
+          "carsMin": 830,
+          "carsMax": 843
+        },
+        "300-600": {
+          "frames": 17699,
+          "gapP99MS": 31.302270519958032,
+          "gapP999MS": 63.35856536801615,
+          "maxGapMS": 87.6861670000153,
+          "over25": 208,
+          "over33_334": 83,
+          "over50": 42,
+          "slowWithMultipleUpdates": 208,
+          "slowWithOutsideCallbacksOver8MS": 2,
+          "slowUpdateTotalMedianMS": 30.4216665,
+          "slowOutsideMedianMS": 1.033959000012807,
+          "gcCount": 255,
+          "stwPauseTotalMS": 10.656995,
+          "allocationMBPerSecond": 44.35862478735471,
+          "carsMin": 803,
+          "carsMax": 830
+        },
+        "600-900": {
+          "frames": 18000,
+          "gapP99MS": 17.606101340031724,
+          "gapP999MS": 19.95687541604798,
+          "maxGapMS": 24.757625000006556,
+          "over25": 0,
+          "over33_334": 0,
+          "over50": 0,
+          "slowWithMultipleUpdates": 0,
+          "slowWithOutsideCallbacksOver8MS": 0,
+          "slowUpdateTotalMedianMS": 0,
+          "slowOutsideMedianMS": 0,
+          "gcCount": 235,
+          "stwPauseTotalMS": 9.671546,
+          "allocationMBPerSecond": 40.29238853427114,
+          "carsMin": 772,
+          "carsMax": 803
+        }
+      },
+      "worst20": [
+        {
+          "at": 235.890437042,
+          "gapMS": 106.65912499999308,
+          "updates": 5,
+          "updateTotalMS": 104.149084,
+          "maxUpdateMS": 21.476917,
+          "previousDrawMS": 1.535333,
+          "outsideCallbacksMS": 0.9747079999930861
+        },
+        {
+          "at": 235.994946042,
+          "gapMS": 104.50900000000729,
+          "updates": 5,
+          "updateTotalMS": 101.765666,
+          "maxUpdateMS": 21.212917,
+          "previousDrawMS": 1.59075,
+          "outsideCallbacksMS": 1.1525840000072947
+        },
+        {
+          "at": 235.783777917,
+          "gapMS": 104.49062500001105,
+          "updates": 5,
+          "updateTotalMS": 101.98341400000001,
+          "maxUpdateMS": 20.48225,
+          "previousDrawMS": 1.554458,
+          "outsideCallbacksMS": 0.9527530000110431
+        },
+        {
+          "at": 235.475161542,
+          "gapMS": 103.93799999999942,
+          "updates": 5,
+          "updateTotalMS": 101.349042,
+          "maxUpdateMS": 21.086417,
+          "previousDrawMS": 1.538,
+          "outsideCallbacksMS": 1.0509579999994259
+        },
+        {
+          "at": 234.871268625,
+          "gapMS": 102.97224999999344,
+          "updates": 5,
+          "updateTotalMS": 100.456166,
+          "maxUpdateMS": 22.117291,
+          "previousDrawMS": 1.5565,
+          "outsideCallbacksMS": 0.9595839999934412
+        },
+        {
+          "at": 235.578040375,
+          "gapMS": 102.87883300000544,
+          "updates": 5,
+          "updateTotalMS": 100.335874,
+          "maxUpdateMS": 20.6915,
+          "previousDrawMS": 1.5545,
+          "outsideCallbacksMS": 0.9884590000054345
+        },
+        {
+          "at": 234.567067292,
+          "gapMS": 101.37995799999544,
+          "updates": 5,
+          "updateTotalMS": 98.819208,
+          "maxUpdateMS": 19.900333,
+          "previousDrawMS": 1.57425,
+          "outsideCallbacksMS": 0.9864999999954307
+        },
+        {
+          "at": 235.679287292,
+          "gapMS": 101.24691699999744,
+          "updates": 5,
+          "updateTotalMS": 98.691917,
+          "maxUpdateMS": 20.032625,
+          "previousDrawMS": 1.55325,
+          "outsideCallbacksMS": 1.001749999997429
+        },
+        {
+          "at": 234.465687334,
+          "gapMS": 101.22083400000292,
+          "updates": 5,
+          "updateTotalMS": 98.6995,
+          "maxUpdateMS": 20.415333,
+          "previousDrawMS": 1.565625,
+          "outsideCallbacksMS": 0.9557090000029262
+        },
+        {
+          "at": 235.171982625,
+          "gapMS": 100.76200000000313,
+          "updates": 5,
+          "updateTotalMS": 98.23329000000001,
+          "maxUpdateMS": 19.815958,
+          "previousDrawMS": 1.543917,
+          "outsideCallbacksMS": 0.9847930000031226
+        },
+        {
+          "at": 234.768296375,
+          "gapMS": 100.65258299999869,
+          "updates": 5,
+          "updateTotalMS": 98.114667,
+          "maxUpdateMS": 19.723292,
+          "previousDrawMS": 1.568083,
+          "outsideCallbacksMS": 0.9698329999986868
+        },
+        {
+          "at": 234.667643792,
+          "gapMS": 100.57650000001672,
+          "updates": 5,
+          "updateTotalMS": 98.05129099999999,
+          "maxUpdateMS": 19.928667,
+          "previousDrawMS": 1.568625,
+          "outsideCallbacksMS": 0.9565840000167327
+        },
+        {
+          "at": 235.371223542,
+          "gapMS": 100.3876249999962,
+          "updates": 5,
+          "updateTotalMS": 97.879459,
+          "maxUpdateMS": 19.660417,
+          "previousDrawMS": 1.547875,
+          "outsideCallbacksMS": 0.9602909999962037
+        },
+        {
+          "at": 234.971539042,
+          "gapMS": 100.27041699999018,
+          "updates": 5,
+          "updateTotalMS": 97.74558499999999,
+          "maxUpdateMS": 19.689542,
+          "previousDrawMS": 1.547209,
+          "outsideCallbacksMS": 0.9776229999901886
+        },
+        {
+          "at": 235.071220625,
+          "gapMS": 99.68158300000596,
+          "updates": 5,
+          "updateTotalMS": 97.051375,
+          "maxUpdateMS": 19.497708,
+          "previousDrawMS": 1.545708,
+          "outsideCallbacksMS": 1.08450000000596
+        },
+        {
+          "at": 235.270835917,
+          "gapMS": 98.85329200000115,
+          "updates": 5,
+          "updateTotalMS": 96.35954199999999,
+          "maxUpdateMS": 19.508709,
+          "previousDrawMS": 1.550792,
+          "outsideCallbacksMS": 0.9429580000011555
+        },
+        {
+          "at": 360.493772292,
+          "gapMS": 87.6861670000153,
+          "updates": 5,
+          "updateTotalMS": 85.449543,
+          "maxUpdateMS": 17.764375,
+          "previousDrawMS": 1.283834,
+          "outsideCallbacksMS": 0.9527900000152982
+        },
+        {
+          "at": 361.343528959,
+          "gapMS": 86.93520900004614,
+          "updates": 5,
+          "updateTotalMS": 84.735292,
+          "maxUpdateMS": 17.605459,
+          "previousDrawMS": 1.313,
+          "outsideCallbacksMS": 0.8869170000461395
+        },
+        {
+          "at": 360.580308542,
+          "gapMS": 86.53624999999465,
+          "updates": 5,
+          "updateTotalMS": 84.333875,
+          "maxUpdateMS": 16.951,
+          "previousDrawMS": 1.292625,
+          "outsideCallbacksMS": 0.909749999994645
+        },
+        {
+          "at": 360.837314125,
+          "gapMS": 86.33154099999274,
+          "updates": 5,
+          "updateTotalMS": 83.83333400000001,
+          "maxUpdateMS": 17.873959,
+          "previousDrawMS": 1.46775,
+          "outsideCallbacksMS": 1.0304569999927367
+        }
+      ]
+    }
+  },
+  "over100IntervalReview": {
+    "reviewedCount": 14,
+    "atSeconds": [
+      234.465687334,
+      235.994946042
+    ],
+    "updatesPerInterval": [
+      5
+    ],
+    "maxOutsideCallbacksMS": 1.1525840000072947,
+    "interpretation": "All 14 long intervals cluster near235s and contain five updates. Callback wall time dominates; offline profile locates heavy computation, but per-frame scheduler/CPU separation is not directly traced."
+  },
+  "localBuild": {
+    "binary": "busgame",
+    "application": "2D Bus Simulator.app",
+    "sha256": "425301a5c6eae277db66524236af8b1ea53c8e607d7bad091fc75dfa0d521fc0",
+    "baseCommit": "e6ab238520099516851785b9eb17ed4ad0c2aa59",
+    "uncommittedChanges": true
+  }
+}

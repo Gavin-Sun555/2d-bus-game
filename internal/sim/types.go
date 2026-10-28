@@ -130,11 +130,11 @@ func CheckOBBCollision(a, b OBB) (bool, Vec2, float64) {
 
 	// Local axes of A
 	uA := UnitFromAngle(a.Heading)
-	vA := Vec2{X: -math.Sin(a.Heading), Y: math.Cos(a.Heading)}
+	vA := Vec2{X: -uA.Y, Y: uA.X}
 
 	// Local axes of B
 	uB := UnitFromAngle(b.Heading)
-	vB := Vec2{X: -math.Sin(b.Heading), Y: math.Cos(b.Heading)}
+	vB := Vec2{X: -uB.Y, Y: uB.X}
 
 	axes := [4]Vec2{uA, vA, uB, vB}
 	d := a.Center.Sub(b.Center)

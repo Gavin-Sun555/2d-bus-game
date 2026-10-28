@@ -71,26 +71,9 @@ type gameSave struct {
 }
 
 func (g *Game) savePath() (string, error) {
-	if g.savePathOverride != "" {
-		return g.savePathOverride, nil
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "2d-bus-game", "save.json"), nil
+	return g.saveSlotPath(g.activeSaveSlot)
 }
-func (g *Game) refreshSaveInfo() {
-	path, err := g.savePath()
-	if err != nil {
-		return
-	}
-	info, err := os.Stat(path)
-	g.hasSave = err == nil && info.Mode().IsRegular()
-	if g.hasSave {
-		g.saveTime = info.ModTime()
-	}
-}
+
 func snapshotBus(bus *sim.Bus, driver *autopilot.AutopilotDriver, ids map[*sim.Bus]int) savedBus {
 	state := savedBus{Bus: *bus, YieldingTo: -1, Driver: driver.Snapshot()}
 	if id, ok := ids[bus.YieldingToBus]; ok {
@@ -189,7 +172,6 @@ func (g *Game) SaveGame() error {
 	if err = os.Rename(f.Name(), path); err != nil {
 		return err
 	}
-	g.refreshSaveInfo()
 	return nil
 }
 func readSave(path string) (gameSave, error) {
@@ -351,7 +333,7 @@ func (g *Game) LoadGame() error {
 	next := &Game{Width: g.Width, Height: g.Height, State: StatePlaying, SelectedMapTheme: s.World.Theme, World: s.World, Settings: &s.Settings, Lines: s.Lines,
 		LineCount: s.LineCount, PlayerLine: s.PlayerLine, LineFleets: s.LineFleets, Bus: &s.Player.Bus, Camera: &s.Camera, HUD: ui.NewHUD(), TrafficLights: s.Lights,
 		TrafficMgr: &traffic.TrafficManager{}, AIBusMgr: traffic.NewAIBusManager(), OperationsPanel: ui.NewOperationsPanel(), Cash: s.Cash,
-		IsPlanMode: s.Planning, HideOtherRoutes: s.HideOtherRoutes, planModeInitialStops: s.InitialStops, planModeRouteModified: s.RouteModified, savePathOverride: g.savePathOverride}
+		IsPlanMode: s.Planning, HideOtherRoutes: s.HideOtherRoutes, planModeInitialStops: s.InitialStops, planModeRouteModified: s.RouteModified, savePathOverride: g.savePathOverride, activeSaveSlot: g.activeSaveSlot}
 	next.Route = next.Lines[next.PlayerLine]
 	next.NetworkSelected = next.PlayerLine
 	if next.IsPlanMode {
@@ -429,27 +411,7 @@ func (g *Game) LoadGame() error {
 	sim.ActiveWorldForRoute = g.World
 	sim.ClearRoutePathCache()
 	locale.CurrentLanguage = g.Settings.Language
-	g.refreshSaveInfo()
 	return nil
-}
-func (g *Game) handleSave(load bool) {
-	var err error
-	if load {
-		err = g.LoadGame()
-	} else {
-		err = g.SaveGame()
-	}
-	if err != nil {
-		g.saveMessage = locale.T("存档操作失败：", "Save operation failed: ") + err.Error()
-		g.HUD.AddWarningToast(g.saveMessage)
-		return
-	}
-	if load {
-		g.saveMessage = locale.T("存档已读取，继续运营。", "Save loaded. Service resumed.")
-	} else {
-		g.saveMessage = locale.T("已保存当前进度。", "Progress saved.")
-	}
-	g.HUD.AddToast(g.saveMessage, true)
 }
 
 // Keep the retained cars in their original order, along with stable IDs. Only

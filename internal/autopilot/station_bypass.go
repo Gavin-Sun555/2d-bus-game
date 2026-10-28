@@ -78,6 +78,13 @@ func (ad *AutopilotDriver) prependSkippedDeparture(lw float64, world *sim.World)
 		points = append(points, point)
 	}
 	ad.drivePath = dedupePath(points)
+	// The actual road can have a dedicated bus lane that was unavailable
+	// when the skip was requested before the first leg was prepared.
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	desired := passage.position.Sub(start).Dot(right)
+	if math.Abs(ad.LaneOffset-desired) > 1e-6 {
+		ad.holdLaneOffset(desired)
+	}
 }
 
 func (ad *AutopilotDriver) holdSkippedDepartureLane(bus *sim.Bus, world *sim.World, lw, dt, speed float64) bool {
@@ -88,6 +95,13 @@ func (ad *AutopilotDriver) holdSkippedDepartureLane(bus *sim.Bus, world *sim.Wor
 	forward := sim.UnitFromAngle(passage.stop.Heading)
 	if bus.Pos.Sub(passage.stop.RoadCenter).Dot(forward) > bus.Length/2+80 || math.Cos(bus.Heading-passage.stop.Heading) < .85 || world.InsideJunction(bus.Pos, lw, 0) {
 		return false
+	}
+	// Reconcile restored road-only legs with their real path origin. A saved
+	// fallback lane reference must not push the held passage into the shoulder.
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	desired := passage.position.Sub(ad.drivePath[0]).Dot(right)
+	if math.Abs(ad.LaneOffset-desired) > 1e-6 {
+		ad.holdLaneOffset(desired)
 	}
 	ad.TargetLaneOffset = ad.LaneOffset
 	ad.progressLaneOffset(dt, speed)
