@@ -27,6 +27,7 @@ const (
 
 // TrafficIntersection manages signal phases and stop lines for an intersection
 type TrafficIntersection struct {
+	BusPriorityQueue   []BusSignalRequest `json:",omitempty"`
 	approachDimensions approachDimensionsCache
 	ID                 int
 	Center             Vec2
@@ -77,9 +78,10 @@ type RoadCamera struct {
 
 // TrafficLightSystem coordinates all city intersections and surveillance cameras
 type TrafficLightSystem struct {
-	junctionIndex *junctionIndex
-	Intersections []*TrafficIntersection
-	RoadCameras   []*RoadCamera
+	BusPriorityEnabled bool `json:",omitempty"`
+	junctionIndex      *junctionIndex
+	Intersections      []*TrafficIntersection
+	RoadCameras        []*RoadCamera
 }
 
 func NewTrafficLightSystem() *TrafficLightSystem {
@@ -196,13 +198,14 @@ func (tls *TrafficLightSystem) BuildForWorld(w *World) {
 	tls.RoadCameras = make([]*RoadCamera, 0)
 
 	if w.Theme == MapThemeMetropolis {
+		scale := w.GridScale()
 		tls.RoadCameras = []*RoadCamera{
-			{ID: 0, Pos: Vec2{X: 1950 * MapGridScale, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0, Lanes: 4},
-			{ID: 1, Pos: Vec2{X: -1950 * MapGridScale, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0, Lanes: 4},
-			{ID: 2, Pos: Vec2{X: 0, Y: -300 * MapGridScale}, RoadName: "城市中轴大道 (北段)", IsEW: false, RoadCoord: 0, Lanes: 4},
-			{ID: 3, Pos: Vec2{X: 0, Y: 300 * MapGridScale}, RoadName: "城市中轴大道 (南段)", IsEW: false, RoadCoord: 0, Lanes: 4},
-			{ID: 4, Pos: Vec2{X: 650 * MapGridScale, Y: -1200 * MapGridScale}, RoadName: "北环六车道快速路", IsEW: true, RoadCoord: -1200 * MapGridScale, Lanes: 6},
-			{ID: 5, Pos: Vec2{X: -650 * MapGridScale, Y: 1200 * MapGridScale}, RoadName: "南环快速路", IsEW: true, RoadCoord: 1200 * MapGridScale, Lanes: 4},
+			{ID: 0, Pos: Vec2{X: 1950 * scale, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0, Lanes: 4},
+			{ID: 1, Pos: Vec2{X: -1950 * scale, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0, Lanes: 4},
+			{ID: 2, Pos: Vec2{X: 0, Y: -300 * scale}, RoadName: "城市中轴大道 (北段)", IsEW: false, RoadCoord: 0, Lanes: 4},
+			{ID: 3, Pos: Vec2{X: 0, Y: 300 * scale}, RoadName: "城市中轴大道 (南段)", IsEW: false, RoadCoord: 0, Lanes: 4},
+			{ID: 4, Pos: Vec2{X: 650 * scale, Y: -1200 * scale}, RoadName: "北环六车道快速路", IsEW: true, RoadCoord: -1200 * scale, Lanes: 6},
+			{ID: 5, Pos: Vec2{X: -650 * scale, Y: 1200 * scale}, RoadName: "南环快速路", IsEW: true, RoadCoord: 1200 * scale, Lanes: 4},
 		}
 	} else {
 		camID := 0

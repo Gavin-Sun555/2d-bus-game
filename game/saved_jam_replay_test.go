@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 // Optional local reproduction: copies/reads a save without changing its source.
@@ -22,6 +23,16 @@ func TestSavedJamReplay(t *testing.T) {
 	}
 	initialPos, initialHealth := g.Bus.Pos, g.Bus.Durability
 	initialTarget := g.Route.GetCurrentTargetStopID()
+	type aiStart struct {
+		pos      sim.Vec2
+		target   int
+		distance float64
+		last     sim.Vec2
+	}
+	aiStarts := map[int]*aiStart{}
+	for _, ab := range g.AIBusMgr.Buses {
+		aiStarts[ab.ID] = &aiStart{pos: ab.Bus.Pos, target: ab.Route.GetCurrentTargetStopID(), last: ab.Bus.Pos}
+	}
 	ticks := 3600
 	if value := os.Getenv("BUS_REPLAY_TICKS"); value != "" {
 		n, err := strconv.Atoi(value)
@@ -33,6 +44,12 @@ func TestSavedJamReplay(t *testing.T) {
 	for tick := 0; tick <= ticks; tick++ {
 		if err := g.Update(); err != nil {
 			t.Fatal(err)
+		}
+		for _, ab := range g.AIBusMgr.Buses {
+			if st, ok := aiStarts[ab.ID]; ok {
+				st.distance += ab.Bus.Pos.Distance(st.last)
+				st.last = ab.Bus.Pos
+			}
 		}
 		if tick%300 == 0 {
 			d := g.AutopilotDriver.DiagnoseStop(g.Bus, g.Route, g.World, g.TrafficLights, g.obstacles, g.Settings.GetLaneWidth())
@@ -77,6 +94,11 @@ func TestSavedJamReplay(t *testing.T) {
 				t.Log("fleet " + string(b))
 			}
 		}
+	}
+	for _, ab := range g.AIBusMgr.Buses {
+		st := aiStarts[ab.ID]
+		t.Logf("AI%d: initialPos=%.1f,%.1f initialTarget=%d finalPos=%.1f,%.1f finalTarget=%d dist=%.1f speed=%.1f state=%v",
+			ab.ID, st.pos.X, st.pos.Y, st.target, ab.Bus.Pos.X, ab.Bus.Pos.Y, ab.Route.GetCurrentTargetStopID(), st.distance, ab.Bus.Speed, ab.Driver.State)
 	}
 	if g.Bus.Pos.Distance(initialPos) < 2000 || g.Route.GetCurrentTargetStopID() == initialTarget {
 		t.Fatalf("saved jam did not resume service: start%v pos%v target%d", initialPos, g.Bus.Pos, g.Route.GetCurrentTargetStopID())

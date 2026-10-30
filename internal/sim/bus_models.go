@@ -92,7 +92,14 @@ func (b *Bus) RequestModel(model BusModel) bool {
 // terminal alighting and before boarding. Keep the service slot's pointer stable
 // for traffic priority links and operating statistics; reset vehicle condition.
 func (b *Bus) ReplaceModelAtTerminus(route *Route, stop int, sites ...VehicleHandoverSite) bool {
-	if b.PendingModel == nil || !b.PendingModel.Valid() || route == nil || !route.IsTerminusIndex(route.CurrentIndex) || route.GetCurrentTargetStopID() != stop || !b.DoorsOpen || math.Abs(b.Speed) > 3 || b.PassengerCount != 0 || len(b.Passengers) != 0 {
+	if b.PendingModel == nil || !b.PendingModel.Valid() || route == nil || !b.DoorsOpen || math.Abs(b.Speed) > 3 || b.PassengerCount != 0 || len(b.Passengers) != 0 {
+		return false
+	}
+	isTerminus := (route.IsTerminusIndex(route.CurrentIndex) && route.GetCurrentTargetStopID() == stop) ||
+		(b.PassengerService.IsTerminus && (b.PassengerService.StopID == stop || route.IsTerminus(stop))) ||
+		(route.IsTerminusIndex(b.PassengerService.RouteIndex) && (b.PassengerService.StopID == stop || route.IsTerminus(stop))) ||
+		(route.IsTerminus(stop) && (b.PassengerService.StopID == stop || b.PassengerService.RouteIndex == 0))
+	if !isTerminus {
 		return false
 	}
 	fresh := NewBus(b.Pos.X, b.Pos.Y, b.Heading)
@@ -103,6 +110,7 @@ func (b *Bus) ReplaceModelAtTerminus(route *Route, stop int, sites ...VehicleHan
 	fresh.MaxSpeedFwd = b.MaxSpeedFwd
 	fresh.TransmissionMode = b.TransmissionMode
 	fresh.DoorsOpen, fresh.DoorProgress = b.DoorsOpen, b.DoorProgress
+	fresh.PassengerService = b.PassengerService
 	*b = *fresh
 	return true
 }

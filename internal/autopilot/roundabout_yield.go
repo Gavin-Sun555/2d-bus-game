@@ -40,6 +40,7 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 			continue
 		}
 		s := entryPosition(points, f.bus.Pos, forward)
+		staticRange := roundaboutStaticEntryRange(f, points, forward, s)
 		// Hold with the whole body outside circulating traffic. Once committed,
 		// continue through the gap instead of stopping in front of a following car.
 		yieldDistance := -rb.Radius - f.bus.Length/2 - 16 - f.bus.Pos.Sub(rb.Center).Dot(forward)
@@ -67,7 +68,10 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 			if parallel && separation.Clears(sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}, false) {
 				continue
 			}
-			traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
+			body := roundaboutObstacleAt(rb, obstacle, 0)
+			if !staticRange.excludes(body) {
+				traffic = append(traffic, body)
+			}
 			selected = append(selected, obstacleIndex)
 		}
 		scratch.ringBodies, scratch.ringIndices = traffic, selected
@@ -115,6 +119,20 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 	for i := 1; i < len(points); i++ {
 		total += points[i].Distance(points[i-1])
 	}
+	if !(s < total-2) {
+		return false
+	}
+	var priorityStorage [128]int
+	priorityReady := false
+	if len(points) >= 2 {
+		if priority, ok := roundaboutMovingCandidates(f, rb, priorityStorage[:0], selection...); ok {
+			if len(priority) == 0 {
+				return false
+			}
+			selection = [][]int{priority}
+			priorityReady = true
+		}
+	}
 	for distance := 0.0; s+distance < total-2; distance += 8 {
 		position := entryPointAt(points, forward, s+distance)
 		tangent := entryPointAt(points, forward, s+distance+2).Sub(position)
@@ -132,9 +150,11 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 			obstacle := f.obstacles[index]
 			// Only circulating traffic has priority here. A following vehicle
 			// on the approach must not make the bus stop at the yield line.
-			obstacleBody := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}
-			if !sim.HasRoundaboutPriority(*rb, obstacleBody) {
-				continue
+			if !priorityReady {
+				obstacleBody := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}
+				if !sim.HasRoundaboutPriority(*rb, obstacleBody) {
+					continue
+				}
 			}
 			for time := math.Max(0, arrival-0.6); time <= arrival+0.8; time += 0.08 {
 				other := roundaboutObstacleAt(rb, obstacle, time)

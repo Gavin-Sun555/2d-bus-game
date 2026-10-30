@@ -14,8 +14,9 @@ type roundaboutReservation struct {
 
 // Long vehicles need the complete ring width while their trailer turns.
 // Drain already-admitted cars before admitting one, then hold new arrivals
-// until the last section is clear. All motion and collision rules still run.
-func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.World, count int) {
+// until the last section is clear. Short buses may use a separated entrance
+// once the owner begins leaving. All motion and collision rules still run.
+func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.World, count int, laneWidth float64) {
 	var storage [1 + 6*MaxBusesPerLine]*sim.Bus
 	buses := storage[:0]
 	if player != nil {
@@ -166,6 +167,9 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 				forward = b.RoundaboutEntry.Forward
 			}
 			if rb.Center.Sub(b.Pos).Dot(forward) <= 0 || b.Pos.Distance(rb.Center) > rb.Radius+450 {
+				continue
+			}
+			if b != r.owner && r.entered && reservedOwnerLeaving(r.owner, rb) && shortBusClearsReservedEntry(b, r.owner, rb, forward, laneWidth) {
 				continue
 			}
 			r.holds[j] = sim.RoundaboutAdmissionHold{Center: rb.Center, Forward: forward, StopDistance: rb.YieldLineDistance() + b.Length/2 + 8}

@@ -66,3 +66,30 @@ func TestLeadingCarClearsStoppedArticulatedMerge(t *testing.T) {
 		})
 	}
 }
+
+func TestLeadingCarClearsStoppedStationMergeBetweenTwoArticulatedBuses(t *testing.T) {
+	player := sim.NewBus(-13359.862722606757, -42.01754412813188, -3.0277862000510196)
+	player.SetModel(sim.BusArticulated)
+	player.TrailerHeading = -3.066952296879403
+	player.StationMergeRequest = &sim.BusStationMergeRequest{StopID: 74, Remaining: 0.283333}
+
+	ai0 := sim.NewBus(-13324.14873746123, -89.70680791808735, -3.0274233117392746)
+	ai0.SetModel(sim.BusArticulated)
+	ai0.TrailerHeading = -3.0843070880569625
+	ai0.StationMergeRequest = &sim.BusStationMergeRequest{StopID: 74, Remaining: 0.283333}
+
+	car := &sim.TrafficCar{
+		Pos:     sim.Vec2{X: -13398.240526926289, Y: -77.99999999999993},
+		Heading: math.Pi,
+		Length:  46,
+		Width:   22,
+	}
+
+	if !carClearsStoppedBusAhead(car, player) || !carClearsStoppedBusAhead(car, ai0) {
+		t.Fatal("leading car ahead of both merging articulated buses must clear to release mutual station merge jam")
+	}
+	tm := &TrafficManager{}
+	if got := tm.busFollowingSpeed(carFrame{car: car, buses: []*sim.Bus{player, ai0}}, 166.7); got != 166.7 {
+		t.Fatalf("expected leading car to keep target speed 166.7, got %.2f", got)
+	}
+}

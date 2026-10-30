@@ -68,6 +68,8 @@ const (
 // AutopilotDriver encapsulates autonomous driving intelligence for both the player's bus
 // (when autopilot is enabled) and background AI route buses.
 type AutopilotDriver struct {
+	stationQueries                 stationDecisionCache
+	stationQueriesActive           bool
 	temporaryGeometry              *temporaryGeometry
 	disableSweepCandidates         bool
 	roundaboutEntryGeometry        sim.RoundaboutEntryGeometry
@@ -86,6 +88,13 @@ type AutopilotDriver struct {
 	roadRecoverySpeed              float64
 	midLaneRecovery                *sim.BusLaneMergeRequest
 	midLaneSweepClear              bool
+	arrivalEscapeRetry             float64
+	sidecarEscapeRetry             float64
+	sidecarPresteer                float64
+	sidecarPresteerValid           bool
+	sidecarEscapeActive            bool
+	departurePresteerValid         bool
+	departureEscapeActive          bool
 	State                          AutopilotState
 	DisallowOncomingOvertake       bool    // Fleet vehicles may pass only in same-direction lanes.
 	BerserkMode                    bool    // true if Berserk mode is active (player bus fast straightaways)
@@ -151,7 +160,7 @@ func NewAutopilotDriver() *AutopilotDriver {
 		State:              AutopilotStateCruising,
 		BerserkMaxSpeed:    apBerserkCruiseSpeed,
 		DwellTimer:         0,
-		DwellTotal:         2.8,
+		DwellTotal:         0, // Retained for save compatibility; passengers determine dwell.
 		DwellFinished:      false,
 		DockedStopID:       -1,
 		LastTargetID:       -1,
@@ -189,6 +198,12 @@ func (ad *AutopilotDriver) Reset() {
 	ad.ordinaryBusLeft = false
 	ad.pathOrdinaryBusLeft = false
 	ad.busTurnHoldDistance = 0
+	ad.arrivalEscapeRetry = 0
+	ad.sidecarEscapeRetry = 0
+	ad.sidecarPresteer, ad.sidecarPresteerValid = 0, false
+	ad.sidecarEscapeActive = false
+	ad.departurePresteerValid = false
+	ad.departureEscapeActive = false
 	ad.roadSafetyHold = false
 	ad.roadRecoverySpeed = 0
 	ad.midLaneRecovery = nil
@@ -229,6 +244,24 @@ func (ad *AutopilotDriver) DrivePath() []sim.Vec2 {
 	return ad.drivePath
 }
 
+// PrepareInitialLeg initializes a newly dispatched bus midway through a leg.
+// The first control tick localizes globally; no terminal departure or boarding
+// is fabricated for the untraveled portion of the route.
+func (ad *AutopilotDriver) PrepareInitialLeg(bus *sim.Bus, w *sim.World, r *sim.Route, lw float64) bool {
+	if bus == nil || w == nil || r == nil || len(r.StopIDs) < 2 || r.CurrentIndex < 0 || r.CurrentIndex >= len(r.StopIDs) {
+		return false
+	}
+	from := r.StopIDs[(r.CurrentIndex-1+len(r.StopIDs))%len(r.StopIDs)]
+	to := r.StopIDs[r.CurrentIndex]
+	if from < 0 || to < 0 || from >= len(w.Stops) || to >= len(w.Stops) {
+		return false
+	}
+	ad.Reset()
+	ad.articulatedPath = bus.IsArticulated()
+	ad.PrepareLeg(w, w.Stops[from], w.Stops[to], lw)
+	return len(ad.drivePath) > 1
+}
+
 // ComputeControls calculates vehicle inputs (throttle, brake, steer, handbrake, toggleDoors)
 // along with navigation guidance for any bus following a Route in World.
 func (ad *AutopilotDriver) ComputeControls(
@@ -247,6 +280,8 @@ func (ad *AutopilotDriver) ComputeControls(
 	bus.SetNextAccelerationScale(response)
 	if ad != nil {
 		ad.roundaboutEdgeRetry = math.Max(0, ad.roundaboutEdgeRetry-dt)
+		ad.arrivalEscapeRetry = math.Max(0, ad.arrivalEscapeRetry-dt)
+		ad.sidecarEscapeRetry = math.Max(0, ad.sidecarEscapeRetry-dt)
 	}
 	bus.StationMergeRequest = nil
 	bus.LaneMergeRequest = nil
@@ -254,6 +289,9 @@ func (ad *AutopilotDriver) ComputeControls(
 	if ad == nil || route == nil || len(route.StopIDs) == 0 || world == nil || len(world.Stops) == 0 {
 		return 0.0, 1.0, 0.0, true, false, false
 	}
+	ad.stationQueries = stationDecisionCache{}
+	ad.stationQueriesActive = true
+	defer func() { ad.stationQueriesActive = false; ad.stationQueries = stationDecisionCache{} }()
 	world.BeginBoundaryQueries(laneWidth)
 	defer world.EndBoundaryQueries()
 	bus.PreparePosePredictions()
@@ -329,8 +367,26 @@ func (ad *AutopilotDriver) ComputeControls(
 		ad.departureFromDock = false
 	}
 	frameForDock := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, targetStop: targetStop, laneWidth: laneWidth, s: ad.LastPathS, speedAbs: speedAbs, remaining: remDist, distToStop: distToStop}
+	ad.clearPassedBusLaneJunction(frameForDock)
 	ad.requestStationMerge(frameForDock)
 	if inputs, active := ad.stationDockControls(frameForDock); active {
+		if (ad.sidecarEscapeActive || (inputs.throttle == 0 && inputs.brake > 0)) && !inputs.isDocked && !inputs.toggleDoors {
+			desired, _, _, _ := ad.pursuitSteering(frameForDock)
+			if escapeSteer, clear := ad.stationArrivalEscape(frameForDock, desired); clear {
+				bus.SetNextAccelerationScale(1)
+				th, br := ad.longitudinalControls(bus.Speed, stationArrivalCrawlSpeed(frameForDock))
+				ad.LastTargetSpeed = stationArrivalCrawlSpeed(frameForDock)
+				return th, br, escapeSteer, false, false, false
+			}
+			if escapeSteer, clear := ad.sidecarEscape(frameForDock, desired); clear {
+				bus.SetNextAccelerationScale(1)
+				th, br := ad.longitudinalControls(bus.Speed, 18)
+				ad.LastTargetSpeed = 18
+				return th, br, escapeSteer, false, false, false
+			} else if ad.sidecarPresteerValid {
+				return 0, 1, escapeSteer, false, false, false
+			}
+		}
 		return inputs.throttle, inputs.brake, inputs.steer, false, inputs.toggleDoors, inputs.isDocked
 	}
 
@@ -359,7 +415,7 @@ func (ad *AutopilotDriver) ComputeControls(
 		maxDockSpeed = 26.0 // Snap into docked state smoothly as bus enters the bay
 	}
 	inBaseLane := math.Abs(ad.LaneOffset) < 10.0
-	isBerserkOuterDock := ad.BerserkMode && ad.stationDock != nil && ad.stationDock.rank > 0 && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
+	isBerserkOuterDock := ad.BerserkMode && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
 		(speedAbs < 15.0 || (ad.OvertakeState != OvertakePassing && speedAbs < maxDockSpeed))
 	platformDockReady := targetStop.ContainsBus(bus)
 	fallbackDockReady := inBaseLane && (alignedNearBay || restingAtStop)
@@ -367,7 +423,7 @@ func (ad *AutopilotDriver) ComputeControls(
 		platformDockReady = false
 		fallbackDockReady = false
 		if speedAbs < maxDockSpeed && distToStop < targetStop.Length+bus.OverallLength()+64 {
-			for _, berth := range availableStationBerths(bus, targetStop, obstacles) {
+			for _, berth := range ad.availableStationBerths(bus, targetStop, obstacles) {
 				if atSelectedStationBerth(bus, berth, targetStop.Heading) {
 					platformDockReady = true
 					break
@@ -375,8 +431,21 @@ func (ad *AutopilotDriver) ComputeControls(
 			}
 		}
 	}
+	outerDockReady := isBerserkOuterDock
+	bayDockReady := (platformDockReady || fallbackDockReady) && ad.stationBoardingCapacity(bus, targetStop, obstacles)
 	if !ad.CanSkipTargetStop && ad.State != AutopilotStateDeparting && speedAbs < maxDockSpeed &&
-		(platformDockReady || isBerserkOuterDock || fallbackDockReady) {
+		(outerDockReady || bayDockReady) && stationBoardingPoseClear(frameForDock) {
+		if outerDockReady {
+			rank := 1
+			if targetStop.ContainsBus(bus) {
+				rank = 0
+			}
+			if ad.stationDock == nil {
+				ad.stationDock = &stationDockPlan{stopID: targetStop.ID, rank: rank, target: bus.Pos}
+			} else if rank > 0 {
+				ad.stationDock.rank = rank
+			}
+		}
 		ad.beginDocking(targetStop)
 		if speedAbs < 15.0 && !bus.DoorsOpen && bus.DoorProgress <= 0.05 {
 			toggleDoors = true
@@ -420,6 +489,30 @@ func (ad *AutopilotDriver) ComputeControls(
 		targetSpd = math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, ad.busTurnHoldDistance-10)))
 	}
 
+	if targetSpd <= .5 {
+		if escapeSteer, clear := ad.stationArrivalEscape(frame, steer); clear {
+			steer, targetSpd = escapeSteer, stationArrivalCrawlSpeed(frame)
+			bus.SetNextAccelerationScale(1)
+		}
+	}
+	if targetSpd <= .5 || ad.departureEscapeActive {
+		if escapeSteer, clear := ad.stationDepartureEscape(frame, steer); clear {
+			steer, targetSpd = escapeSteer, 18
+			bus.SetNextAccelerationScale(1)
+		} else if ad.departurePresteerValid {
+			return 0, 1, escapeSteer, false, false, false
+		} else if ad.departureEscapeActive {
+			targetSpd = 0
+		}
+	}
+	if targetSpd <= .5 || ad.sidecarEscapeActive {
+		if escapeSteer, clear := ad.sidecarEscape(frame, steer); clear {
+			steer, targetSpd = escapeSteer, 18
+			bus.SetNextAccelerationScale(1)
+		} else if ad.sidecarPresteerValid {
+			steer, targetSpd = escapeSteer, 0
+		}
+	}
 	if targetSpd <= .5 && ad.tryRoundaboutEdgeRecovery(frame, steer) {
 		th, br, st := ad.roundaboutEdgeControls(frame)
 		return th, br, st, false, false, false
@@ -438,6 +531,7 @@ func (ad *AutopilotDriver) ComputeControls(
 // autopilotFrame contains observations shared by steering and speed planning for
 // one control tick. It is passed by value; persistent state stays on the driver.
 type autopilotFrame struct {
+	forwardEscape  *forwardEscapeScan
 	departureCache *departureSweepCache
 	bus            *sim.Bus
 	world          *sim.World

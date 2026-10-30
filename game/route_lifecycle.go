@@ -34,6 +34,7 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 		g.Bus.DoorsOpen = true // Ready at the starting station bay for passenger boarding
 		g.Bus.OnShoulder = false
 		g.Bus.ClearPassengers()
+		g.Bus.PassengerService = sim.PassengerService{}
 		g.Bus.ResetArticulation()
 	}
 
@@ -57,7 +58,7 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 		firstStop.WaitingPassengers = 4 + sim.RandomIntn(4)
 	}
 
-	// 3. Reset AI bus fleet queuing behind player bus at first stop
+	// 3. Redistribute the initial AI fleet along the route, keeping the player at its start.
 
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
@@ -114,6 +115,7 @@ func (g *Game) ResetToStartingStation() {
 		g.Bus.IsBraking = false
 		g.Bus.DoorsOpen = false
 		g.Bus.ClearPassengers()
+		g.Bus.PassengerService = sim.PassengerService{}
 		g.Bus.ResetArticulation()
 	}
 
@@ -121,7 +123,7 @@ func (g *Game) ResetToStartingStation() {
 		g.AutopilotDriver.Reset()
 		g.AutopilotDriver.State = autopilot.AutopilotStateDocked
 		g.AutopilotDriver.DockedStopID = startStop.ID
-		g.AutopilotDriver.DwellTimer = 4.0
+		g.AutopilotDriver.DwellTimer = g.Bus.PassengerServiceRemaining()
 		g.AutopilotDriver.DwellFinished = false
 	}
 

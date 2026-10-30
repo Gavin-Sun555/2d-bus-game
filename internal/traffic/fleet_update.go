@@ -69,6 +69,12 @@ func (abm *AIBusManager) Update(
 		abm.obstacles = obstacles
 		if ab.Driver != nil {
 			ab.Driver.DisallowOncomingOvertake = true
+			if ab.Driver.State == autopilot.AutopilotStateDocked && ab.Bus.DoorsOpen {
+				if _, retired := abm.serviceDockedStation(ab, playerBus, world, obstacles, laneWidth, dt); retired {
+					hasRetired = true
+					continue
+				}
+			}
 		}
 		throttle, brake, steer, handbrake, toggleDoors, isDocked := ab.Driver.ComputeControls(
 			ab.Bus,
@@ -80,84 +86,22 @@ func (abm *AIBusManager) Update(
 			dt,
 		)
 
+		ab.recoverPassedStation(world, laneWidth, dt, throttle == 0 && brake > 0 && !isDocked)
 		ab.Bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
 
 		// Passenger exchange simulation when parked at station
-		if isDocked && ab.Bus.DoorsOpen && !((ab.Bus.PendingModel != nil || ab.Retiring) && ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) && math.Abs(ab.Bus.Speed) > 3) {
-			targetStopID := ab.Route.GetCurrentTargetStopID()
-			if targetStopID >= 0 && targetStopID < len(world.Stops) {
-				st := world.Stops[targetStopID]
-
-				if ab.LastExchangedStopID != targetStopID {
-					ab.LastExchangedStopID = targetStopID
-					// 1. Alight passengers destined for this stop
-					offCount := ab.Bus.RemovePassengersAlightingAt(targetStopID)
-					if ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
-						offCount += ab.Bus.ClearPassengers()
-					}
-					abm.Operations.Alight(ab.ID, targetStopID, offCount)
-					if ab.Retiring && ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
-						ab.Route.AdvanceToNextStop()
-						abm.Operations.Track(ab.ID, ab.Bus, ab.Route, dt)
-						ab.retireReady = true
-						ab.Bus.LaneMergeRequest = nil
-						ab.Bus.StationMergeRequest = nil
-						ab.Bus.JunctionCorridor = nil
-						hasRetired = true
-					}
-				}
-
-				if ab.Bus.PendingModel != nil && ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) && !ab.retireReady {
-					ab.Bus.TerminalReplacementHold = true
-					site := sim.VehicleHandoverSite{Stop: st, World: world, LaneWidth: laneWidth}
-					for _, ob := range obstacles {
-						if ob.Bus != nil {
-							for _, part := range ob.Bus.BodyParts() {
-								if part.HalfLen > 0 {
-									part.HalfLen += 2
-									part.HalfWid += 2
-									site.Obstacles = append(site.Obstacles, part)
-								}
-							}
-						} else {
-							site.Obstacles = append(site.Obstacles, sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 2, HalfWid: ob.Width/2 + 2})
-						}
-					}
-					if !ab.Bus.ReplaceModelAtTerminus(ab.Route, targetStopID, site) {
-						if ab.Bus.PendingModel != nil && *ab.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
-							ab.Bus.TerminalReplacementHold = false
-						}
-						ab.DeadlockTimer = 0
-						continue
-					}
-				}
-				if ab.retireReady {
-					continue
-				}
-				// 2. Board waiting passengers with downstream destinations:
-				// Because only 1 route is planned per map, passengers board any bus that arrives.
-				// As long as there is available capacity on the bus, all waiting passengers board.
-				boardSpace := ab.Bus.Capacity - len(ab.Bus.Passengers)
-				if st.WaitingPassengers > 0 && boardSpace > 0 {
-					candidates := ab.Route.GetUpcomingCandidateStopIDsForStop(targetStopID)
-					if len(candidates) == 0 && len(ab.Route.StopIDs) > 0 {
-						for _, id := range ab.Route.StopIDs {
-							if id != targetStopID {
-								candidates = append(candidates, id)
-							}
-						}
-					}
-					take := st.WaitingPassengers
-					if take > boardSpace {
-						take = boardSpace
-					}
-					actualBoarded, _ := abm.Operations.Board(ab.ID, ab.Bus, ab.Route, targetStopID, take, candidates)
-					st.WaitingPassengers -= actualBoarded
-					ab.PassengersCarried += actualBoarded
-				}
+		if isDocked && ab.Bus.DoorsOpen {
+			hold, retired := abm.serviceDockedStation(ab, playerBus, world, obstacles, laneWidth, dt)
+			if retired {
+				hasRetired = true
+				continue
+			}
+			if hold {
+				continue
 			}
 		} else if !isDocked {
 			ab.LastExchangedStopID = -1
+			ab.Bus.PassengerService = sim.PassengerService{}
 		}
 
 		// Boundary clearance check to keep AI bus safely on road
@@ -317,4 +261,121 @@ func (abm *AIBusManager) Update(
 			}
 		}
 	}
+}
+
+func (abm *AIBusManager) dockedBusesAtStop(st *sim.BusStop, playerBus *sim.Bus) []*sim.Bus {
+	if st == nil {
+		return nil
+	}
+	var buses []*sim.Bus
+	if playerBus != nil && playerBus.DoorsOpen && math.Abs(playerBus.Speed) <= 3 && !playerBus.TerminalReplacementHold &&
+		(st.ContainsBus(playerBus) || (playerBus.PassengerService.Active && playerBus.PassengerService.StopID == st.ID)) {
+		buses = append(buses, playerBus)
+	}
+	for _, other := range abm.Buses {
+		if other.Bus == nil || !other.Bus.DoorsOpen || math.Abs(other.Bus.Speed) > 3 || other.Retiring || other.retireReady {
+			continue
+		}
+		if other.Bus.PendingModel != nil && other.Route != nil && other.Route.IsTerminusIndex(other.Route.CurrentIndex) {
+			continue
+		}
+		atStop := (other.Bus.PassengerService.Active && other.Bus.PassengerService.StopID == st.ID) ||
+			(other.Driver != nil && other.Driver.State == autopilot.AutopilotStateDocked &&
+				(other.Driver.DockedStopID == st.ID || (other.Route != nil && other.Route.GetCurrentTargetStopID() == st.ID)))
+		if atStop {
+			buses = append(buses, other.Bus)
+		}
+	}
+	return buses
+}
+
+func (abm *AIBusManager) serviceDockedStation(
+	ab *AIBus,
+	playerBus *sim.Bus,
+	world *sim.World,
+	obstacles []autopilot.VehicleObstacle,
+	laneWidth, dt float64,
+) (hold, retired bool) {
+	if (ab.Bus.PendingModel != nil || ab.Retiring) && ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) && math.Abs(ab.Bus.Speed) > 3 {
+		return false, false
+	}
+	targetStopID := ab.Route.GetCurrentTargetStopID()
+	if targetStopID < 0 || targetStopID >= len(world.Stops) {
+		return false, false
+	}
+	st := world.Stops[targetStopID]
+	isTerminus := ab.Route.IsTerminusIndex(ab.Route.CurrentIndex)
+	candidates := ab.Route.GetUpcomingCandidateStopIDsForStop(targetStopID)
+	if len(candidates) == 0 && len(ab.Route.StopIDs) > 0 {
+		for _, id := range ab.Route.StopIDs {
+			if id != targetStopID {
+				candidates = append(candidates, id)
+			}
+		}
+	}
+
+	newlyJoined := false
+	if ab.LastExchangedStopID != targetStopID || !ab.Bus.PassengerService.Active || ab.Bus.PassengerService.StopID != targetStopID {
+		ab.LastExchangedStopID = targetStopID
+		newlyJoined = true
+		offCount := ab.Bus.CountPassengersAlightingAt(targetStopID)
+		if isTerminus {
+			offCount = len(ab.Bus.Passengers)
+		}
+		ab.Bus.BeginStationService(targetStopID, ab.Route.CurrentIndex, offCount, isTerminus, candidates, abm.PassengerRates[ab.Bus.Model])
+	}
+
+	_, boardedNow, _ := ab.Bus.StepStationService(ab.ID, st, ab.Route, abm.Operations)
+	ab.PassengersCarried += boardedNow
+
+	if ab.Retiring && isTerminus {
+		if ab.Bus.PassengerServiceRemaining() > 0 {
+			ab.Bus.TerminalReplacementHold = true
+			ab.DeadlockTimer = 0
+			return true, false
+		}
+		ab.Route.AdvanceToNextStop()
+		abm.Operations.Track(ab.ID, ab.Bus, ab.Route, dt)
+		ab.retireReady = true
+		ab.Bus.LaneMergeRequest = nil
+		ab.Bus.StationMergeRequest = nil
+		ab.Bus.JunctionCorridor = nil
+		return true, true
+	}
+
+	if ab.Bus.PendingModel != nil && isTerminus && !ab.retireReady {
+		ab.Bus.TerminalReplacementHold = true
+		if ab.Bus.PassengerService.AlightingTarget > 0 || len(ab.Bus.Passengers) > 0 {
+			ab.DeadlockTimer = 0
+			return true, false
+		}
+		site := sim.VehicleHandoverSite{Stop: st, World: world, LaneWidth: laneWidth}
+		for _, ob := range obstacles {
+			if ob.Bus != nil {
+				for _, part := range ob.Bus.BodyParts() {
+					if part.HalfLen > 0 {
+						part.HalfLen += 2
+						part.HalfWid += 2
+						site.Obstacles = append(site.Obstacles, part)
+					}
+				}
+			} else {
+				site.Obstacles = append(site.Obstacles, sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 2, HalfWid: ob.Width/2 + 2})
+			}
+		}
+		if !ab.Bus.ReplaceModelAtTerminus(ab.Route, targetStopID, site) {
+			if ab.Bus.PendingModel != nil && *ab.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
+				ab.Bus.TerminalReplacementHold = false
+			}
+			ab.DeadlockTimer = 0
+			return true, false
+		}
+		ab.Bus.SetStationServiceRates(abm.PassengerRates[ab.Bus.Model].ForModel(ab.Bus.Model))
+		newlyJoined = true
+	}
+	if ab.retireReady {
+		return true, true
+	}
+	sim.RebalanceStationBoarding(st, abm.dockedBusesAtStop(st, playerBus), newlyJoined)
+	return false, false
 }

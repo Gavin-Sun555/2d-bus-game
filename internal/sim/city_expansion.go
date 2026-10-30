@@ -13,11 +13,12 @@ func BuiltinMapThemes() []MapTheme {
 func SelectableMapThemes() []MapTheme { return append(BuiltinMapThemes(), MapThemeCustom) }
 
 func (w *World) PerimeterBounds() (float64, float64) {
-	x, y := 3200.0*MapGridScale, 1480.0*MapGridScale
+	scale := w.GridScale()
+	x, y := 3200.0*scale, 1480.0*scale
 	for _, r := range w.Roads {
 		for _, p := range []Vec2{r.P1, r.P2} {
-			x = math.Max(x, math.Abs(p.X)+600*MapGridScale)
-			y = math.Max(y, math.Abs(p.Y)+280*MapGridScale)
+			x = math.Max(x, math.Abs(p.X)+600*scale)
+			y = math.Max(y, math.Abs(p.Y)+280*scale)
 		}
 	}
 	return x, y

@@ -165,6 +165,14 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 	if b.CrashCooldown > 0 {
 		b.CrashCooldown -= dt
 	}
+	b.advancePassengerService(dt)
+	// Pending front/rear door work is a physical door interlock, shared by
+	// manual driving and every AI controller. It also stops a restored bus
+	// whose doors were inconsistently saved as closed during active service.
+	if b.PassengerServiceRemaining() > 0 {
+		b.DoorsOpen = true
+		toggleDoors = false
+	}
 	// 1. Doors control
 	if toggleDoors {
 		// Only allow door opening if bus is stopped or crawling into bay (< 15 px/s)

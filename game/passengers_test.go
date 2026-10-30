@@ -190,10 +190,13 @@ func TestRepeatedDockingAtSameStopBoardsPassengers(t *testing.T) {
 	g.Bus.Speed = 0
 	s0.WaitingPassengers = 15
 
-	// 1. First docking: open doors -> passengers board
+	// 1. First docking: open doors -> passengers board gradually (2s/person)
 	g.Bus.DoorsOpen = true
 	g.boardedThisStop = false
 	g.updateDriverMode(0.016)
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.updateDriverMode(1.0)
+	}
 
 	if g.Bus.PassengerCount != 15 {
 		t.Fatalf("Expected 15 passengers on board after first docking, got %d", g.Bus.PassengerCount)
@@ -212,6 +215,9 @@ func TestRepeatedDockingAtSameStopBoardsPassengers(t *testing.T) {
 	// Reopen doors at the SAME station -> all 10 must board!
 	g.Bus.DoorsOpen = true
 	g.updateDriverMode(0.016)
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.updateDriverMode(1.0)
+	}
 
 	if g.Bus.PassengerCount != 25 {
 		t.Fatalf("Expected 25 passengers on board after reopening doors at same stop, got %d", g.Bus.PassengerCount)
@@ -223,6 +229,9 @@ func TestRepeatedDockingAtSameStopBoardsPassengers(t *testing.T) {
 	// 3. Keep doors open, new passengers arrive while parked
 	s0.WaitingPassengers = 8
 	g.updateDriverMode(0.016)
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.updateDriverMode(1.0)
+	}
 
 	if g.Bus.PassengerCount != 33 {
 		t.Fatalf("Expected 33 passengers on board after continuous open door boarding, got %d", g.Bus.PassengerCount)
@@ -277,6 +286,9 @@ func TestOnlyPlannedRouteStopsGeneratePassengersAndDestinationsStrictlyOnRoute(t
 	s0.WaitingPassengers = 20
 
 	g.updateDriverMode(0.016)
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.updateDriverMode(1.0)
+	}
 
 	if g.Bus.PassengerCount != 20 {
 		t.Fatalf("Expected 20 passengers on board, got %d", g.Bus.PassengerCount)
@@ -298,70 +310,174 @@ func TestStopBoardingToastMessages(t *testing.T) {
 	g.Bus.Speed = 0
 	g.Bus.DoorsOpen = true
 
-	// Scenario 1: Stop has 0 waiting passengers, bus is not full (passengerCount = 0).
-	// Must NOT say "当前车厢已满载！". Must say "本站无乘客上下车！".
-	stop.WaitingPassengers = 0
-	g.Bus.ClearPassengers()
-	g.HUD.Toasts = nil
-	g.boardedThisStop = false
-	_ = g.Update()
-
-	if len(g.HUD.Toasts) == 0 {
-		t.Fatal("Expected toast to be added")
-	}
-	lastToast := g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
-	if strings.Contains(lastToast, "已满载") {
-		t.Fatalf("Bus is empty and no passengers boarded, but toast said full! got: %s", lastToast)
-	}
-	if !strings.Contains(lastToast, "无乘客") {
-		t.Fatalf("Expected toast to mention no passengers, got: %s", lastToast)
-	}
-
-	// Scenario 2: 2 passengers alight, but 0 passengers waiting, bus is not full.
-	// Must say "下客 2 人，本站无乘客上车！", NOT "当前车厢已满载！".
-	stop.WaitingPassengers = 0
+	// Docking shows alighting count only, without boarding count or revenue.
+	stop.WaitingPassengers = 3
 	g.Bus.ClearPassengers()
 	g.Bus.Passengers = append(g.Bus.Passengers, sim.Passenger{TargetStopID: stop.ID}, sim.Passenger{TargetStopID: stop.ID})
 	g.Bus.PassengerCount = len(g.Bus.Passengers)
 	g.HUD.Toasts = nil
 	g.boardedThisStop = false
 	_ = g.Update()
-
-	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
-	if strings.Contains(lastToast, "已满载") {
-		t.Fatalf("Bus has space and no one boarded, but toast said full! got: %s", lastToast)
+	if len(g.HUD.Toasts) != 1 {
+		t.Fatalf("Expected 1 alighting toast on docking, got: %v", g.HUD.Toasts)
 	}
-	if !strings.Contains(lastToast, "下客 2 人") || !strings.Contains(lastToast, "无乘客上车") {
-		t.Fatalf("Expected toast to say alighted 2, no boarding, got: %s", lastToast)
+	lastToast := g.HUD.Toasts[0].Text
+	if !strings.Contains(lastToast, "下客 2 人") || strings.Contains(lastToast, "上客") || strings.Contains(lastToast, "营收") {
+		t.Fatalf("Expected toast to show only alighting count, got: %s", lastToast)
 	}
 
-	// Scenario 3: Bus is truly at full capacity, and 4 passengers are waiting.
-	// Must say "当前车厢已满载，无法上客！".
-	stop.WaitingPassengers = 4
+	// Additional passengers arriving while docked show new passenger count without revenue.
+	g.HUD.Toasts = nil
+	stop.WaitingPassengers = 5
+	_ = g.Update()
+	if len(g.HUD.Toasts) != 1 {
+		t.Fatalf("Expected 1 additional passenger toast while docked, got: %v", g.HUD.Toasts)
+	}
+	addToast := g.HUD.Toasts[0].Text
+	if !strings.Contains(addToast, "站台新增 2 名乘客") || strings.Contains(addToast, "营收") {
+		t.Fatalf("Expected additional passenger toast without revenue, got: %s", addToast)
+	}
+
+	// Step through passenger service until all 2 alighting and 5 boarding complete.
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.Bus.Update(1.0, 0, 0, 0, false, false)
+		g.updatePassengerExchange(false)
+	}
+	g.HUD.Toasts = nil
+	g.Bus.DoorsOpen = false
+	g.updatePassengerExchange(false)
+	if len(g.HUD.Toasts) != 1 {
+		t.Fatalf("Expected 1 departure summary toast when closing doors, got: %v", g.HUD.Toasts)
+	}
+	summary := g.HUD.Toasts[0].Text
+	if !strings.Contains(summary, "本站共下客 2 人") || !strings.Contains(summary, "上客 5 人") || !strings.Contains(summary, "营收 +$15") {
+		t.Fatalf("Expected departure summary toast with 2 alighted, 5 boarded, +$15, got: %s", summary)
+	}
+}
+
+func TestStationMinimumDwellDependsOnBoardingAndAlightingCounts(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(sim.MapThemeMetropolis)
+	g.Settings.AutopilotEnabled = true
+
+	stop := g.World.Stops[0]
+	// 1. 0 boarding, 0 alighting -> 0s minimum dwell time; autopilot closes doors immediately once open.
+	stop.WaitingPassengers = 0
 	g.Bus.ClearPassengers()
-	for i := 0; i < g.Bus.Capacity; i++ {
-		g.Bus.Passengers = append(g.Bus.Passengers, sim.Passenger{TargetStopID: 9999})
+	g.Bus.PassengerService = sim.PassengerService{}
+	g.Bus.Pos = stop.FrontBerthPosition()
+	g.Bus.Heading = stop.Heading
+	g.Bus.Speed = 0
+	g.Bus.DoorsOpen = true
+	g.Bus.DoorProgress = 1.0
+	g.boardedThisStop = false
+	g.AutopilotDriver.Reset()
+	g.AutopilotDriver.State = autopilot.AutopilotStateDocked
+	g.AutopilotDriver.DockedStopID = stop.ID
+
+	g.updatePassengerExchange(false)
+	if g.Bus.PassengerServiceRemaining() != 0 {
+		t.Fatalf("expected 0s minimum dwell when 0 boarded and 0 alighted, got %.2f", g.Bus.PassengerServiceRemaining())
+	}
+	g.updateDriverMode(1. / 60)
+	if g.Bus.DoorsOpen {
+		t.Fatal("expected doors to start closing immediately when minimum dwell is 0s")
+	}
+
+	// 2. 2 boarding (4s) and 3 alighting (3s) -> max(4s, 3s) = 4s minimum dwell before doors can close.
+	g.Route.CurrentIndex = 0
+	stop.WaitingPassengers = 2
+	g.Bus.ClearPassengers()
+	g.Bus.PassengerService = sim.PassengerService{}
+	g.Bus.Passengers = []sim.Passenger{
+		{TargetStopID: stop.ID},
+		{TargetStopID: stop.ID},
+		{TargetStopID: stop.ID},
 	}
 	g.Bus.PassengerCount = len(g.Bus.Passengers)
-	g.HUD.Toasts = nil
+	g.Bus.Pos = stop.FrontBerthPosition()
+	g.Bus.Heading = stop.Heading
+	g.Bus.Speed = 0
+	g.Bus.DoorsOpen = true
+	g.Bus.DoorProgress = 1.0
 	g.boardedThisStop = false
-	_ = g.Update()
+	g.AutopilotDriver.Reset()
+	g.AutopilotDriver.State = autopilot.AutopilotStateDocked
+	g.AutopilotDriver.DockedStopID = stop.ID
 
-	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
-	if !strings.Contains(lastToast, "已满载") || !strings.Contains(lastToast, "无法上客") {
-		t.Fatalf("Expected toast to say full capacity cannot board, got: %s", lastToast)
+	g.updatePassengerExchange(false)
+	if math.Abs(g.Bus.PassengerServiceRemaining()-4.0) > 1e-9 {
+		t.Fatalf("expected max(2*2s, 3*1s) = 4s minimum dwell, got %.2f", g.Bus.PassengerServiceRemaining())
+	}
+	for tick := 0; tick < 60*4-1; tick++ {
+		g.updateDriverMode(1. / 60)
+		if !g.Bus.DoorsOpen || g.Bus.Speed != 0 {
+			t.Fatalf("tick %d: bus closed doors or departed before 4s minimum dwell finished", tick)
+		}
+	}
+	// Tick 240 finishes the 4s service; the following tick closes the doors.
+	g.updateDriverMode(1. / 60)
+	g.updateDriverMode(1. / 60)
+	if g.Bus.DoorsOpen {
+		t.Fatal("expected doors to close after 4s minimum dwell finished")
+	}
+}
+
+func TestPlayerAndAIBusShareStationPassengersEvenlyAndGradually(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(sim.MapThemeMetropolis)
+	g.Settings.AIBusCount = 1
+	g.AIBusMgr.BuildFleet(g.World, 1, g.Settings.GetLaneWidth(), g.Bus)
+
+	stop := g.World.Stops[g.Route.StopIDs[0]]
+	for _, s := range g.World.Stops {
+		s.WaitingPassengers = 0
+	}
+	stop.WaitingPassengers = 6
+
+	g.Bus.ClearPassengers()
+	g.Bus.Pos = stop.FrontBerthPosition()
+	g.Bus.Heading = stop.Heading
+	g.Bus.Speed = 0
+	g.Bus.DoorsOpen = true
+	g.Bus.DoorProgress = 1.0
+	g.boardedThisStop = false
+
+	ab := g.AIBusMgr.Buses[0]
+	ab.Bus.ClearPassengers()
+	ab.Route.CurrentIndex = 0
+	ab.Driver.Reset()
+	ab.Bus.Pos = stop.RearBerthPosition()
+	ab.Bus.Heading = stop.Heading
+	ab.Bus.Speed = 0
+	ab.Bus.DoorsOpen = true
+	ab.Bus.DoorProgress = 1.0
+	ab.Driver.State = autopilot.AutopilotStateDocked
+	ab.Driver.DockedStopID = stop.ID
+	ab.LastExchangedStopID = -1
+
+	activeStop, _ := g.activeDockedStop()
+	if activeStop == nil || activeStop.ID != stop.ID {
+		t.Fatalf("expected activeDockedStop to return stop %d", stop.ID)
 	}
 
-	// Scenario 4: Normal boarding (bus has space, 3 passengers waiting).
-	// Must say "上客 3 人，营收 +$9！".
-	stop.WaitingPassengers = 3
-	g.Bus.ClearPassengers()
-	g.HUD.Toasts = nil
-	g.boardedThisStop = false
-	_ = g.Update()
+	g.updatePassengerExchange(false)
+	g.AIBusMgr.Update(0, g.Bus, g.World, nil, nil, g.Settings.GetLaneWidth())
 
-	lastToast = g.HUD.Toasts[len(g.HUD.Toasts)-1].Text
-	if !strings.Contains(lastToast, "上客 3 人") || !strings.Contains(lastToast, "营收 +$9") {
-		t.Fatalf("Expected toast to say boarded 3 and revenue, got: %s", lastToast)
+	if g.Bus.PassengerService.BoardingTarget != 6 || ab.Bus.PassengerService.BoardingTarget != 6 {
+		t.Fatalf("expected both doors to work from the shared queue of 6, got player=%d ai=%d", g.Bus.PassengerService.BoardingTarget, ab.Bus.PassengerService.BoardingTarget)
+	}
+	if g.Bus.PassengerCount != 0 || ab.Bus.PassengerCount != 0 || stop.WaitingPassengers != 6 {
+		t.Fatalf("expected gradual boarding (0 onboard at t=0s), got player=%d ai=%d waiting=%d", g.Bus.PassengerCount, ab.Bus.PassengerCount, stop.WaitingPassengers)
+	}
+
+	for step := 1; step <= 3; step++ {
+		g.Bus.Update(2.0, 0, 0, 0, false, false)
+		g.updatePassengerExchange(false)
+		g.AIBusMgr.Update(2.0, g.Bus, g.World, nil, nil, g.Settings.GetLaneWidth())
+		if g.Bus.PassengerCount != step || ab.Bus.PassengerCount != step || stop.WaitingPassengers != 6-2*step {
+			t.Fatalf("step %d (t=%ds): expected player=%d ai=%d waiting=%d, got player=%d ai=%d waiting=%d",
+				step, step*2, step, step, 6-2*step, g.Bus.PassengerCount, ab.Bus.PassengerCount, stop.WaitingPassengers)
+		}
 	}
 }

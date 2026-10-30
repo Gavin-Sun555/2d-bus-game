@@ -1,0 +1,326 @@
+{
+  "branch": "main",
+  "head": "b3d933e16edb8614b4c765bf8c93d8f1c71b84c2",
+  "dirty": true,
+  "baselineIncludesStage1": true,
+  "warmupTicks": 300,
+  "measuredTicks": 1800,
+  "timingRunsPerVariant": 3,
+  "drawMeasured": false,
+  "scenes": {
+    "slot1": {
+      "baselineMedianMS": 5.3050235244444455,
+      "candidateMedianMS": 5.210593535555545,
+      "medianReductionPercent": 1.7800107474318705,
+      "pairedReductionPercent": [
+        1.486004019721665,
+        1.6291840521342804,
+        2.3600065382717417
+      ],
+      "baselineP99MS": [
+        6.233709,
+        6.284167,
+        6.333375
+      ],
+      "candidateP99MS": [
+        6.220541,
+        6.354916,
+        6.16625
+      ]
+    },
+    "ordinary8": {
+      "baselineMedianMS": 4.901472417222218,
+      "candidateMedianMS": 4.852842548888896,
+      "medianReductionPercent": 0.9921481586319225,
+      "pairedReductionPercent": [
+        1.315387081919528,
+        0.1618104200272863,
+        1.8569843690660948
+      ],
+      "baselineP99MS": [
+        6.305708,
+        6.263209,
+        6.348542
+      ],
+      "candidateP99MS": [
+        6.246292,
+        6.338,
+        6.266084
+      ]
+    },
+    "maximum48": {
+      "baselineMedianMS": 10.84728749388887,
+      "candidateMedianMS": 10.374304290555537,
+      "medianReductionPercent": 4.360382294650178,
+      "pairedReductionPercent": [
+        4.375654730575462,
+        3.4317469757903063,
+        5.491311325547732
+      ],
+      "baselineP99MS": [
+        13.724291,
+        13.149417,
+        13.105042
+      ],
+      "candidateP99MS": [
+        12.728667,
+        12.781625,
+        12.590667
+      ]
+    },
+    "roundabout48": {
+      "baselineMedianMS": 6.651862574444445,
+      "candidateMedianMS": 6.62850988944445,
+      "medianReductionPercent": 0.3510698655999511,
+      "pairedReductionPercent": [
+        0.3282436335327876,
+        0.3510698655999511,
+        1.1440540752786
+      ],
+      "baselineP99MS": [
+        7.465,
+        7.518042,
+        7.424709
+      ],
+      "candidateP99MS": [
+        7.524958,
+        7.455167,
+        7.37725
+      ]
+    }
+  },
+  "profiles": {
+    "slot1": {
+      "cpuNS": {
+        "other": 420000000,
+        "cars": 4430000000,
+        "ai_buses": 2500000000,
+        "player": 470000000,
+        "collisions": 120000000,
+        "world": 10000000
+      },
+      "cpuPercent": {
+        "other": 5.283018867924528,
+        "cars": 55.723270440251575,
+        "ai_buses": 31.446540880503143,
+        "player": 5.911949685534591,
+        "collisions": 1.509433962264151,
+        "world": 0.12578616352201258
+      },
+      "hotCumPercent": {
+        "junctionQueueSpeed": 18.24,
+        "junctionScanCandidates": 3.02,
+        "AtPose": 6.29,
+        "advanceTrailer": 5.91,
+        "controlSweptSpeed": 3.27,
+        "junctionSweptSpeed": 2.77,
+        "orderedJunctionCandidates": 1.51
+      },
+      "metrics": {
+        "Ticks": 1800,
+        "Warmup": 300,
+        "Buses": 16,
+        "CarsMin": 793,
+        "CarsMax": 793,
+        "CarsFinal": 793,
+        "MeanMS": 5.022496681666665,
+        "P50MS": 4.956584,
+        "P95MS": 5.622791,
+        "P99MS": 5.970708,
+        "MaxMS": 6.656542,
+        "BytesPerTick": 267925.7288888889,
+        "AllocsPerTick": 405.86055555555555,
+        "GCCount": 17,
+        "GCPauseMS": 0.749332,
+        "PlayerHealthStart": 100,
+        "PlayerHealthEnd": 100,
+        "FleetMinHealth": 100,
+        "PlayerDistance": 0,
+        "PoseHits": 780216,
+        "PoseMisses": 257330,
+        "FleetDistance": 9923.35831372465,
+        "FleetMoved": 7
+      }
+    },
+    "ordinary8": {
+      "cpuNS": {
+        "cars": 3480000000,
+        "ai_buses": 2490000000,
+        "player": 750000000,
+        "collisions": 200000000,
+        "other": 490000000
+      },
+      "cpuPercent": {
+        "cars": 46.963562753036435,
+        "ai_buses": 33.60323886639676,
+        "player": 10.121457489878543,
+        "collisions": 2.699055330634278,
+        "other": 6.612685560053981
+      },
+      "hotCumPercent": {
+        "junctionQueueSpeed": 15.92,
+        "junctionScanCandidates": 1.75,
+        "roundaboutEntryObstacleSpeed": 17.54,
+        "AtPose": 7.02,
+        "advanceTrailer": 6.61,
+        "controlSweptSpeed": 4.99,
+        "junctionSweptSpeed": 1.89,
+        "orderedJunctionCandidates": 1.08
+      },
+      "metrics": {
+        "Ticks": 1800,
+        "Warmup": 300,
+        "Buses": 8,
+        "CarsMin": 864,
+        "CarsMax": 864,
+        "CarsFinal": 864,
+        "MeanMS": 4.764649467777776,
+        "P50MS": 4.7975,
+        "P95MS": 5.763833,
+        "P99MS": 6.147083,
+        "MaxMS": 6.818833,
+        "BytesPerTick": 98142.84,
+        "AllocsPerTick": 144.18277777777777,
+        "GCCount": 7,
+        "GCPauseMS": 0.302583,
+        "PlayerHealthStart": 100,
+        "PlayerHealthEnd": 100,
+        "FleetMinHealth": 100,
+        "PlayerDistance": 4556.8549928283555,
+        "PoseHits": 167990,
+        "PoseMisses": 426934,
+        "FleetDistance": 25947.971318319243,
+        "FleetMoved": 8
+      }
+    },
+    "maximum48": {
+      "cpuNS": {
+        "ai_buses": 8740000000,
+        "cars": 5360000000,
+        "player": 820000000,
+        "other": 740000000,
+        "collisions": 240000000
+      },
+      "cpuPercent": {
+        "ai_buses": 54.9685534591195,
+        "cars": 33.710691823899374,
+        "player": 5.1572327044025155,
+        "other": 4.654088050314465,
+        "collisions": 1.509433962264151
+      },
+      "hotCumPercent": {
+        "junctionQueueSpeed": 10.88,
+        "roundaboutEntryObstacleSpeed": 9.81,
+        "AtPose": 12.45,
+        "advanceTrailer": 11.45,
+        "controlSweptSpeed": 6.86,
+        "junctionSweptSpeed": 4.47,
+        "prepareBusPerception": 0.31,
+        "orderedJunctionCandidates": 0.63
+      },
+      "metrics": {
+        "Ticks": 1800,
+        "Warmup": 300,
+        "Buses": 48,
+        "CarsMin": 864,
+        "CarsMax": 864,
+        "CarsFinal": 864,
+        "MeanMS": 10.193341885000017,
+        "P50MS": 10.235667,
+        "P95MS": 12.206875,
+        "P99MS": 12.540209,
+        "MaxMS": 13.580209,
+        "BytesPerTick": 113542.07111111112,
+        "AllocsPerTick": 255.31,
+        "GCCount": 7,
+        "GCPauseMS": 0.433792,
+        "PlayerHealthStart": 100,
+        "PlayerHealthEnd": 100,
+        "FleetMinHealth": 100,
+        "PlayerDistance": 3317.8305505994267,
+        "PoseHits": 1973216,
+        "PoseMisses": 2062490,
+        "FleetDistance": 101024.45778964683,
+        "FleetMoved": 47
+      }
+    },
+    "roundabout48": {
+      "cpuNS": {
+        "cars": 5880000000,
+        "ai_buses": 2900000000,
+        "other": 600000000,
+        "player": 650000000,
+        "collisions": 190000000
+      },
+      "cpuPercent": {
+        "cars": 57.534246575342465,
+        "ai_buses": 28.37573385518591,
+        "other": 5.870841487279844,
+        "player": 6.3600782778864975,
+        "collisions": 1.8590998043052838
+      },
+      "hotCumPercent": {
+        "junctionQueueSpeed": 21.14,
+        "roundaboutEntryObstacleSpeed": 8.02,
+        "AtPose": 3.03,
+        "advanceTrailer": 2.54,
+        "controlSweptSpeed": 2.64,
+        "orderedJunctionCandidates": 0.49
+      },
+      "metrics": {
+        "Ticks": 1800,
+        "Warmup": 300,
+        "Buses": 48,
+        "CarsMin": 720,
+        "CarsMax": 857,
+        "CarsFinal": 720,
+        "MeanMS": 6.639528602222228,
+        "P50MS": 6.619583,
+        "P95MS": 7.189041,
+        "P99MS": 7.488917,
+        "MaxMS": 17.390792,
+        "BytesPerTick": 256373.70222222223,
+        "AllocsPerTick": 425.65833333333336,
+        "GCCount": 18,
+        "GCPauseMS": 0.762464,
+        "PlayerHealthStart": 100,
+        "PlayerHealthEnd": 100,
+        "FleetMinHealth": 100,
+        "PlayerDistance": 2412.8254831355566,
+        "PoseHits": 1425089,
+        "PoseMisses": 620039,
+        "FleetDistance": 40804.678867058574,
+        "FleetMoved": 48
+      }
+    }
+  },
+  "baselineBinarySHA256": "19d4cbfad5df0430ac9ebb0b08cef07c01a3ea541c39dcdc8eabe408d20b92bc",
+  "candidateBinarySHA256": "a8a02d1cf5ba1a328e30cd240865b840fb98f171462738685b3fd02a208651c3",
+  "discardedPrototype": "global-entry-prototype",
+  "sourceFiles": [
+    "internal/traffic/car_update.go",
+    "internal/traffic/stop_range.go"
+  ],
+  "testFile": "internal/traffic/stop_range_test.go",
+  "validation": {
+    "regression": {
+      "passed": 10184,
+      "skipped": 24,
+      "failures": []
+    },
+    "race": {
+      "passed": 43,
+      "skipped": 0,
+      "failures": []
+    }
+  },
+  "applicationSHA256": "4d2c79248d14db92fcab89bccf8f1862371c354f0ce184d66c9d5915bd45dd44",
+  "saveSHA256": "e58c8bfdc76a1ee8da78181fba0b057e4857034a7b456d39bd27b5738c79bbc1",
+  "profiledSaveSHA256": "e58c8bfdc76a1ee8da78181fba0b057e4857034a7b456d39bd27b5738c79bbc1",
+  "trajectoryHashes": {
+    "trace-8-baseline": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-8-candidate": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-48-baseline": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656",
+    "trace-48-candidate": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656"
+  }
+}

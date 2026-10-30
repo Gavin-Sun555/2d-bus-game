@@ -22,7 +22,8 @@ func TestOccupiedStationDoesNotHoldUnfinishedArticulatedTurn(t *testing.T) {
 				bus.SetModel(sim.BusArticulated)
 				ad := NewAutopilotDriver()
 				ad.BerserkMode = true
-				obs := []VehicleObstacle{ObserveBus(lead)}
+				front := sim.NewBus(stop.FrontBerthPosition().X, stop.FrontBerthPosition().Y, h)
+				obs := []VehicleObstacle{ObserveBus(lead), ObserveBus(front)}
 				if len(availableStationBerths(bus, stop, obs)) != 0 {
 					t.Fatal("fixture must have an occupied platform")
 				}

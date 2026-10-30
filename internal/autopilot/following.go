@@ -14,7 +14,7 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 	forward := sim.UnitFromAngle(f.bus.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	for _, obs := range f.obstacles {
-		if ad.clearsSkippedStopBay(f, obs) || ad.clearsServedStationQueue(f, obs) {
+		if ad.clearsSkippedStopBay(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) {
 			continue
 		}
 		// The short ordinary-mode obstacle ray is measured to the leader's

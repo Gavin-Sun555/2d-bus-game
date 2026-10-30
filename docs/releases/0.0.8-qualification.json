@@ -1,0 +1,37 @@
+{
+  "version": "0.0.8",
+  "date": "2026-10-30",
+  "decision": "LOCAL_PASS_PENDING_PLATFORM_CI",
+  "statusScope": "Snapshot at release commit. GitHub Release is published only after the tag workflow passes normal tests, all race shards, soak, all platform builds and archive verification.",
+  "normalRegression": {
+    "skip": 24,
+    "pass": 10180
+  },
+  "qualification": {
+    "skip": 6,
+    "pass": 348
+  },
+  "coverageStatementsPercent": 71.2,
+  "trafficQualification": {
+    "confirmedControllerDeadlocksCleared": true,
+    "normalCongestionBlocksRelease": false,
+    "waitingTimeAloneBlocksRelease": false,
+    "collisionAndBoundaryChecksRetained": true,
+    "terminalModelSwitchJamFixed": true,
+    "berserk8LaneOvertakingVerified": true,
+    "largeRoadNetworkModeValidated": true,
+    "saveSlotManagementVerified": true
+  },
+  "platformStatus": {
+    "darwinArm64": "Native local regression/replay/UI validation; final package and CI required.",
+    "darwinAmd64": "Cross-build only; CI build and archive verification required.",
+    "windowsAmd64": "Cross-build only; CI build and archive verification required.",
+    "linuxAmd64": "Full native CI tests/race/soak and build required."
+  },
+  "publicationAuthorization": {
+    "githubUser": "Gavin-Sun555",
+    "request": "发布到github吧，用我的github用户名"
+  },
+  "evidenceDirectory": "dist/release-0.0.8-2026-10-30/"
+}
+

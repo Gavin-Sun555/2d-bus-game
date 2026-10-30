@@ -20,17 +20,21 @@ func (g *Game) rollAlightingForNextStop() {
 		return
 	}
 	targetStopID := g.Route.GetCurrentTargetStopID()
-	if targetStopID < 0 || g.Bus.PassengerCount == 0 {
+	staying := max(0, g.Bus.PassengerCount-g.Bus.PassengerService.AlightingTarget)
+	if targetStopID < 0 || staying == 0 {
 		g.stopBellRung = false
 		g.passengersAlighting = 0
 		return
 	}
 
 	alighting := g.Bus.CountPassengersAlightingAt(targetStopID)
+	if g.Bus.PassengerService.Active && g.Bus.PassengerService.StopID == targetStopID {
+		alighting = max(0, alighting-g.Bus.PassengerService.AlightingTarget)
+	}
 	// If heading to the terminus of the route, all remaining passengers on board will alight
 	if g.Route.IsTerminusIndex(g.Route.CurrentIndex) {
-		if g.Bus.PassengerCount > alighting {
-			alighting = g.Bus.PassengerCount
+		if staying > alighting {
+			alighting = staying
 		}
 	}
 
@@ -57,6 +61,9 @@ func (g *Game) updateDriverMode(dt float64) {
 	}
 
 	// Update bus kinematics
+	if g.vehicleAudio != nil {
+		g.vehicleAudio.throttle = throttle
+	}
 	g.Bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
 	if g.skipCooldown > 0 {
 		g.skipCooldown -= dt
@@ -70,6 +77,9 @@ func (g *Game) updateDriverMode(dt float64) {
 	// Camera follows bus
 	g.Camera.FollowBus(g.Bus)
 
+	// Departure reminders run first, so an urgent next-stop announcement
+	// cannot be overwritten by safety speech later in the same tick.
+	g.trackAnnouncementDeparture()
 	g.updateStopApproach()
 
 	g.updatePassengerExchange(toggleDoors)

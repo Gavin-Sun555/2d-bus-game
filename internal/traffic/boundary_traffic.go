@@ -80,6 +80,10 @@ func (tm *TrafficManager) updateBoundaryTraffic(bus *sim.Bus, density int, laneW
 		tm.Cars = append(tm.Cars, nil)
 		copy(tm.Cars[index+1:], tm.Cars[index:])
 		tm.Cars[index] = car
+		if index < len(tm.junctionScratch) {
+			copy(tm.junctionScratch[index+1:], tm.junctionScratch[index:len(tm.junctionScratch)-1])
+			tm.junctionScratch[index] = carJunctionScratch{}
+		}
 		tm.pendingExits = tm.pendingExits[1:]
 	}
 }

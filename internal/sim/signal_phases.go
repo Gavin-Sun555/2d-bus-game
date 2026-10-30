@@ -11,7 +11,9 @@ func (tls *TrafficLightSystem) Update(dt float64) {
 			inter.Cooldown -= dt
 		}
 
-		inter.advancePhase()
+		if !tls.BusPriorityEnabled || !inter.advanceBusPriority() {
+			inter.advancePhase()
+		}
 
 	}
 

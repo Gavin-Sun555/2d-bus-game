@@ -35,9 +35,17 @@ func (p *preview) Draw(screen *ebiten.Image) {
 	p.done = true
 	w := sim.NewWorld(52, sim.MapThemeMetropolis)
 	r := sim.GetStandardRouteForMap(w.Theme, w)
+	routes := make([]*sim.Route, 6)
+	for i := range routes {
+		line := *r
+		line.Name = fmt.Sprintf("Line %d", i+1)
+		routes[i] = &line
+	}
 	o := sim.NewTransitOperations(w, r, 52, sim.DefaultFarePolicy())
 	for id := 0; id <= 8; id++ {
 		v := o.Vehicle(id)
+		v.Route = routes[id%len(routes)]
+		v.LineName = v.Route.Name
 		v.Revenue = 123 + id
 		v.Boarded = 50
 		v.Alighted = 34
@@ -49,14 +57,14 @@ func (p *preview) Draw(screen *ebiten.Image) {
 	}
 	for _, lang := range []locale.Language{locale.LanguageZH, locale.LanguageEN} {
 		locale.CurrentLanguage = lang
-		for tab := 0; tab < 3; tab++ {
+		for tab := 0; tab < 4; tab++ {
 			panel := ui.NewOperationsPanel()
 			panel.IsOpen = true
 			panel.Tab = tab
 			f := sim.DefaultFarePolicy()
 			f.Mode = sim.FareByDistance
 			screen.Clear()
-			panel.Draw(screen, f, o, w)
+			panel.Draw(screen, f, o, w, routes...)
 			img := image.NewRGBA(screen.Bounds())
 			screen.ReadPixels(img.Pix)
 			file, err := os.Create(filepath.Join(p.output, fmt.Sprintf("operations-%d-%d.png", lang, tab)))

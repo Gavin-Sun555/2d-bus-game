@@ -235,7 +235,7 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 	if tls != nil {
 		tls.PrepareJunctionIndex(laneWidth)
 	}
-	tm.updateRoundaboutReservations(bus, w, activeCount)
+	tm.updateRoundaboutReservations(bus, w, activeCount, laneWidth)
 	tm.spatialActive = !tm.disableSpatial && activeCount > 64
 	if tm.spatialActive {
 		tm.spatial.build(tm.Cars[:activeCount])

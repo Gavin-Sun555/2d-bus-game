@@ -21,18 +21,24 @@ const (
 )
 
 type Game struct {
-	Width  int
-	Height int
+	stopNames      *stopNameStore
+	stopNameEditor *stopNameEditor
+	vehicleAudio   *vehicleAudio
+	announcements  *announcementState
+	Width          int
+	Height         int
 
 	State              GameState
 	SelectedMapTheme   sim.MapTheme
-	menuCardBounds     [6]sim.Rect
-	menuStartBounds    sim.Rect
+	menuCardBounds      [6]sim.Rect
+	menuLargeGridBounds sim.Rect
+	menuStartBounds     sim.Rect
 	menuLangBounds     sim.Rect
 	menuContinueBounds sim.Rect
 	activeSaveSlot     int
 	savePicker         saveSlotPicker
 	savePathOverride   string
+	pendingSaveName    *string
 	saveMessage        string
 
 	Bus             *sim.Bus
@@ -127,6 +133,7 @@ func NewGame(width, height int) *Game {
 	g.initializeLineFleets()
 	// Adapt traffic lights and civilian AI traffic to active world network
 	g.TrafficMgr.AIBusMgr = g.AIBusMgr
+	g.syncPassengerRates()
 	g.syncAISpeedRanges()
 	g.TrafficLights.BuildForWorld(g.World)
 	g.TrafficMgr.BuildForWorld(g.World, traffic.MaxTrafficCars, initLaneWidth)
@@ -141,6 +148,13 @@ func NewGame(width, height int) *Game {
 	}
 	g.Bus = sim.NewBus(firstStop.Pos.X, firstStop.Pos.Y, firstStop.Heading)
 	g.Bus.MaxSpeedFwd = g.Settings.GetBusMaxSpeed()
+	if playerModel := g.LineFleets[g.PlayerLine].PlayerModel; playerModel.Valid() && playerModel != sim.BusStandard {
+		g.Bus.SetModel(playerModel)
+		if g.Bus.Model == sim.BusArticulated {
+			sim.EnsureLongBusBays(g.World, g.Route)
+			g.Bus.ResetArticulation()
+		}
+	}
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
 
@@ -162,6 +176,15 @@ func NewGame(width, height int) *Game {
 }
 
 func (g *Game) Update() error {
+	audioDriving := false
+	if g.announcements != nil {
+		g.syncAnnouncements(g.announcementsAllowed())
+	}
+	defer func() { g.updateVehicleAudio(audioDriving); g.updateAnnouncements(audioDriving) }()
+	if g.stopNameEditor != nil {
+		g.updateStopNameEditor()
+		return nil
+	}
 	if g.savePicker.open {
 		g.updateSavePicker()
 		return nil
@@ -217,6 +240,7 @@ func (g *Game) Update() error {
 		g.openSavePicker(false)
 		return nil
 	}
+	g.syncPassengerRates()
 	g.syncAISpeedRanges()
 	g.syncCurrentLineSettings()
 	if g.Settings.OpenNetworkRequested {
@@ -255,6 +279,14 @@ func (g *Game) Update() error {
 		}
 		g.Settings.AIBusFleetChanged = false
 		g.HUD.AddToast(fmt.Sprintf("路线AI公交车队已调度就绪: 共 %d 辆 (环线循环)", g.Settings.AIBusCount), true)
+	}
+
+	// Check if Large Road Network mode was toggled in Settings
+	if g.Settings.LargeRoadNetworkChanged {
+		g.Settings.LargeRoadNetworkChanged = false
+		if g.SelectedMapTheme == sim.MapThemeMetropolis {
+			g.SetMapTheme(sim.MapThemeMetropolis)
+		}
 	}
 
 	if g.Settings.IsOpen {
@@ -296,6 +328,7 @@ func (g *Game) Update() error {
 	if !g.IsPlanMode {
 		g.trackOperations(0)
 		// Traffic lights update
+		g.updateBusSignalPriority()
 		g.TrafficLights.Update(dt)
 
 		// AI Traffic vehicles update with dynamic lane width and active world for roundabout navigation
@@ -326,6 +359,7 @@ func (g *Game) Update() error {
 		g.updatePlanningMode(dt)
 	} else {
 		g.updateDriverMode(dt)
+		audioDriving = true
 	}
 
 	if !g.IsPlanMode {

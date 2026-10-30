@@ -9,9 +9,10 @@ import (
 )
 
 func (r *Route) GetRouteDescription(world *World) string {
-	if !r.cachedDescDirty && r.cachedDesc != "" {
+	if !r.cachedDescDirty && r.cachedDesc != "" && r.cachedDescLanguage == locale.CurrentLanguage {
 		return r.cachedDesc
 	}
+	r.cachedDescLanguage = locale.CurrentLanguage
 	if len(r.StopIDs) == 0 {
 		r.cachedDesc = "未规划站点 (点击站点图标添加)"
 		r.cachedDescDirty = false
@@ -24,9 +25,9 @@ func (r *Route) GetRouteDescription(world *World) string {
 			prefix = ""
 		}
 		if i == r.CurrentIndex {
-			desc += fmt.Sprintf("%s[%s ★]", prefix, world.Stops[id].Name)
+			desc += fmt.Sprintf("%s[%s ★]", prefix, world.Stops[id].LocalizedName())
 		} else {
-			desc += fmt.Sprintf("%s%s", prefix, world.Stops[id].Name)
+			desc += fmt.Sprintf("%s%s", prefix, world.Stops[id].LocalizedName())
 		}
 	}
 	r.cachedDesc = desc

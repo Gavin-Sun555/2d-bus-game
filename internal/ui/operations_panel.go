@@ -16,7 +16,8 @@ type OperationsPanel struct {
 	IsOpen                       bool
 	Tab, Scroll, SelectedVehicle int
 	closeBounds, vehicleBounds   sim.Rect
-	tabBounds, modeBounds        [3]sim.Rect
+	tabBounds                    [4]sim.Rect
+	modeBounds                   [3]sim.Rect
 	fieldBounds                  [7][2]sim.Rect
 }
 
@@ -27,7 +28,7 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 		p.IsOpen = false
 		return
 	}
-	for i, key := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3} {
+	for i, key := range []ebiten.Key{ebiten.Key1, ebiten.Key2, ebiten.Key3, ebiten.Key4} {
 		if inpututil.IsKeyJustPressed(key) {
 			p.Tab = i
 			p.Scroll = 0
@@ -53,7 +54,7 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 			return
 		}
 	}
-	if p.Tab != 0 && p.vehicleBounds.Contains(pos) {
+	if (p.Tab == 1 || p.Tab == 2) && p.vehicleBounds.Contains(pos) {
 		ids := operationsVehicleIDs(o)
 		options := append([]int{-1}, ids...)
 		for i, id := range options {
@@ -142,7 +143,7 @@ func operationsButton(screen *ebiten.Image, r sim.Rect, s string, selected bool)
 	vector.DrawFilledRect(screen, float32(r.X), float32(r.Y), float32(r.W), float32(r.H), c, true)
 	operationsText(screen, s, r.X+12, r.Y+9, 13)
 }
-func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim.TransitOperations, w *sim.World) {
+func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim.TransitOperations, w *sim.World, routes ...*sim.Route) {
 	if !p.IsOpen {
 		return
 	}
@@ -155,12 +156,12 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 	operationsText(screen, locale.T("票价与运营统计", "Fares & Operations"), x+24, y+20, 20)
 	p.closeBounds = sim.Rect{X: x + width - 105, Y: y + 14, W: 85, H: 34}
 	operationsButton(screen, p.closeBounds, locale.T("关闭", "Close"), false)
-	titles := []string{locale.T("1 票价设置", "1 Fares"), locale.T("2 站间距离 / 客流", "2 Route / Passengers"), locale.T("3 车辆运营", "3 Vehicles")}
+	titles := []string{locale.T("1 票价设置", "1 Fares"), locale.T("2 站间距离 / 客流", "2 Route / Passengers"), locale.T("3 车辆运营", "3 Vehicles"), locale.T("4 线路统计", "4 Lines")}
 	for i, title := range titles {
-		p.tabBounds[i] = sim.Rect{X: x + 24 + float64(i)*(width-48)/3, Y: y + 64, W: (width-48)/3 - 12, H: 34}
+		p.tabBounds[i] = sim.Rect{X: x + 24 + float64(i)*(width-48)/4, Y: y + 64, W: (width-48)/4 - 12, H: 34}
 		operationsButton(screen, p.tabBounds[i], title, p.Tab == i)
 	}
-	if p.Tab != 0 {
+	if p.Tab == 1 || p.Tab == 2 {
 		p.vehicleBounds = sim.Rect{X: x + width - 258, Y: y + 104, W: 234, H: 34}
 		operationsButton(screen, p.vehicleBounds, operationsVehicleName(p.SelectedVehicle)+"  >", false)
 	}
@@ -174,9 +175,39 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 	}
 	if p.Tab == 1 {
 		p.drawStations(screen, o, w, x, y+40, width, height-40)
-	} else {
+	} else if p.Tab == 2 {
 		p.drawVehicles(screen, o, x, y+40, width, height-40)
+	} else {
+		p.drawLines(screen, o, routes, x, y, width, height)
 	}
+}
+
+func (p *OperationsPanel) drawLines(screen *ebiten.Image, o *sim.TransitOperations, routes []*sim.Route, x, y, width, height float64) {
+	operationsText(screen, locale.T("各线路运营概况", "Service statistics by line"), x+24, y+120, 15)
+	columns := []float64{24, 210, 348, 500, 690, 806}
+	headers := []string{locale.T("线路", "Line"), locale.T("全程 km", "Route km"), locale.T("平均站距 m", "Avg. spacing m"), locale.T("平均速度 km/h", "Average km/h"), locale.T("统计车辆", "Tracked buses"), locale.T("完成圈数", "Laps")}
+	for i, h := range headers {
+		operationsText(screen, h, x+columns[i], y+164, 13)
+	}
+	rows := max(1, int((height-290)/34))
+	p.Scroll = min(p.Scroll, max(0, len(routes)-rows))
+	for row := 0; row < rows && p.Scroll+row < len(routes); row++ {
+		l := o.LineSummary(routes[p.Scroll+row])
+		speed := locale.T("待完成首圈", "Awaiting full lap")
+		if v, ok := l.AverageKPH(); ok {
+			speed = fmt.Sprintf("%.1f", v)
+		}
+		spacing := "—"
+		if l.Legs > 0 {
+			spacing = fmt.Sprintf("%.0f", l.AverageSpacingKM*1000)
+		}
+		fields := []string{l.Name, fmt.Sprintf("%.3f", l.TotalKM), spacing, speed, fmt.Sprint(l.Vehicles), fmt.Sprint(l.CompletedLaps)}
+		for col, value := range fields {
+			operationsText(screen, value, x+columns[col], y+202+float64(row)*34, 13)
+		}
+	}
+	operationsText(screen, locale.T("均速按该线路已完成圈次的总里程 / 总时间计算，计入等灯、堵车和靠站。", "Speed uses completed-lap distance / time, including lights, traffic and dwell."), x+24, y+height-84, 12)
+	operationsText(screen, locale.T("平均站距按规划道路里程计算；未完成整圈时显示“待完成首圈”。", "Spacing uses planned road distance. Speed appears after a full lap."), x+24, y+height-56, 12)
 }
 
 func (p *OperationsPanel) drawFares(screen *ebiten.Image, f sim.FarePolicy, x, y, width float64) {

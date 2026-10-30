@@ -85,6 +85,10 @@ func (g *Game) updateStopApproach() {
 			(g.AutopilotDriver != nil && g.AutopilotDriver.PathTargetStopID() == targetStop.ID && g.AutopilotDriver.LastRemaining < 120.0) &&
 			forwardProj > 15.0 && cosHeading < 0.55
 
+		if !isDocked && g.shouldPreannounceStop(targetStop, distToTarget, isValidStopApproach && forwardProj < 55) {
+			g.announceNextStop(targetStop)
+		}
+
 		// 1. Chime bell notification when approaching within 550px
 		if distToTarget < 550 && g.stopBellRung && !g.bellToastShown && isAlignedHeading && isOnStopRoad && isArrivingAtStop {
 			g.bellToastShown = true
@@ -100,7 +104,7 @@ func (g *Game) updateStopApproach() {
 			if g.Settings.AutopilotEnabled && canSkip && forwardProj < 55.0 && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID
-				oldName := targetStop.Name
+				oldName := targetStop.LocalizedName()
 				g.Route.AdvanceToNextStop()
 				newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 				g.rollAlightingForNextStop()
@@ -111,10 +115,10 @@ func (g *Game) updateStopApproach() {
 				g.Bus.IsHandbraking = false
 				if isOccupied {
 					g.HUD.AddToast(fmt.Sprintf(locale.T("【🤖 AI自主飞站】[%s] 检测到前方已有车靠站且无下车乘客，自动飞站提速！下一站: [%s]",
-						"[🤖 AI Skip] [%s] Station occupied & no alighting pax, skipping stop! Next: [%s]"), oldName, newTarget.Name), true)
+						"[🤖 AI Skip] [%s] Station occupied & no alighting pax, skipping stop! Next: [%s]"), oldName, newTarget.LocalizedName()), true)
 				} else {
 					g.HUD.AddToast(fmt.Sprintf(locale.T("【🤖 AI自主飞站】[%s] 站台无人且车内无下车乘客，自动飞站提速！下一站: [%s]",
-						"[🤖 AI Skip] [%s] Station empty & no alighting pax, skipping stop! Next: [%s]"), oldName, newTarget.Name), true)
+						"[🤖 AI Skip] [%s] Station empty & no alighting pax, skipping stop! Next: [%s]"), oldName, newTarget.LocalizedName()), true)
 				}
 			}
 
@@ -123,7 +127,7 @@ func (g *Game) updateStopApproach() {
 				if canSkip {
 					g.lastSkippedStopID = targetStop.ID
 					g.skipCooldown = 0.5
-					oldName := targetStop.Name
+					oldName := targetStop.LocalizedName()
 					g.Route.AdvanceToNextStop()
 					newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 					g.rollAlightingForNextStop()
@@ -133,9 +137,9 @@ func (g *Game) updateStopApproach() {
 					g.Bus.IsBraking = false
 					g.Bus.IsHandbraking = false
 					if isOccupied {
-						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 前方站台已有车靠站且本车无人下车，已飞站！下一站: [%s]", oldName, newTarget.Name), true)
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 前方站台已有车靠站且本车无人下车，已飞站！下一站: [%s]", oldName, newTarget.LocalizedName()), true)
 					} else {
-						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 站内无人且无人按铃，已飞站！下一站: [%s]", oldName, newTarget.Name), true)
+						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 站内无人且无人按铃，已飞站！下一站: [%s]", oldName, newTarget.LocalizedName()), true)
 					}
 				} else {
 					reasons := ""
@@ -145,7 +149,7 @@ func (g *Game) updateStopApproach() {
 					if targetStop.WaitingPassengers > 0 && !isOccupied {
 						reasons += fmt.Sprintf("站台有 %d 人候车且前方无其他车辆靠站 ", targetStop.WaitingPassengers)
 					}
-					g.HUD.AddWarningToast(fmt.Sprintf("【不可飞站】[%s] %s，必须进站停靠！", targetStop.Name, reasons))
+					g.HUD.AddWarningToast(fmt.Sprintf("【不可飞站】[%s] %s，必须进站停靠！", targetStop.LocalizedName(), reasons))
 				}
 			}
 
@@ -173,7 +177,7 @@ func (g *Game) updateStopApproach() {
 				// Lawful skip when station is empty or occupied with no bell rung (Point 4: pass straight through in outer or through lane)
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID
-				oldName := targetStop.Name
+				oldName := targetStop.LocalizedName()
 				g.Route.AdvanceToNextStop()
 				newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
 				g.rollAlightingForNextStop()
@@ -183,16 +187,16 @@ func (g *Game) updateStopApproach() {
 				g.Bus.IsBraking = false
 				g.Bus.IsHandbraking = false
 				if isOccupied {
-					g.HUD.AddToast(fmt.Sprintf(locale.T("【⚡ 快速飞站】顺利掠过 [%s]（站台已有车靠站）！已自动飞站，下一站: [%s]", "【⚡ Fast Skip】Glided past [%s] (occupied)! Next stop: [%s]"), oldName, newTarget.Name), true)
+					g.HUD.AddToast(fmt.Sprintf(locale.T("【⚡ 快速飞站】顺利掠过 [%s]（站台已有车靠站）！已自动飞站，下一站: [%s]", "【⚡ Fast Skip】Glided past [%s] (occupied)! Next stop: [%s]"), oldName, newTarget.LocalizedName()), true)
 				} else {
-					g.HUD.AddToast(fmt.Sprintf(locale.T("【⚡ 快速飞站】顺利掠过 [%s]！已自动飞站，下一站: [%s]", "【⚡ Fast Skip】Glided past [%s]! Next stop: [%s]"), oldName, newTarget.Name), true)
+					g.HUD.AddToast(fmt.Sprintf(locale.T("【⚡ 快速飞站】顺利掠过 [%s]！已自动飞站，下一站: [%s]", "【⚡ Fast Skip】Glided past [%s]! Next stop: [%s]"), oldName, newTarget.LocalizedName()), true)
 				}
 			} else if isAIMissed && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
 				// AI Autopilot genuinely missed the station after overshooting:
 				// Directly skip this station and deduct $50 fine (only in AI mode), and immediately continue driving!
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID
-				oldName := targetStop.Name
+				oldName := targetStop.LocalizedName()
 				if g.Settings.TrafficFinesEnabled {
 					g.Cash -= 50
 				}
@@ -216,10 +220,10 @@ func (g *Game) updateStopApproach() {
 				g.Bus.IsHandbraking = false
 				if g.Settings.TrafficFinesEnabled {
 					g.HUD.AddWarningToast(fmt.Sprintf(locale.T("【⚠️ 站台过头·漏站罚款 -$50】AI未能及时靠站，已越过 [%s] 站！扣除罚款 -$50，下一站: [%s]",
-						"[⚠️ Missed Stop Fine -$50] AI failed to dock in time and overshot [%s]! Fined -$50, next stop: [%s]"), oldName, newTarget.Name))
+						"[⚠️ Missed Stop Fine -$50] AI failed to dock in time and overshot [%s]! Fined -$50, next stop: [%s]"), oldName, newTarget.LocalizedName()))
 				} else {
 					g.HUD.AddWarningToast(fmt.Sprintf(locale.T("【⚠️ 站台过头·漏站免罚】AI未能及时靠站，已越过 [%s] 站 (已豁免罚款)！下一站: [%s]",
-						"[⚠️ Missed Stop Waived] AI failed to dock in time and overshot [%s] (fines waived)! Next stop: [%s]"), oldName, newTarget.Name))
+						"[⚠️ Missed Stop Waived] AI failed to dock in time and overshot [%s] (fines waived)! Next stop: [%s]"), oldName, newTarget.LocalizedName()))
 				}
 			}
 		}

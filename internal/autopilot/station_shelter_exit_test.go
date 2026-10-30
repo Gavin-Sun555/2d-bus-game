@@ -162,9 +162,11 @@ func TestStationQueueRealignmentWaitsForOccupiedForwardBerth(t *testing.T) {
 	stop := w.Stops[6]
 	p := stop.FrontBerthPosition()
 	front := sim.NewBus(p.X, p.Y, stop.Heading)
-	originalTarget := ad.stationDock.target
-	ad.ComputeControls(&saved.Bus, &sim.Route{StopIDs: []int{5, 6, 7}, CurrentIndex: 1}, w, nil, []VehicleObstacle{ObserveBus(front)}, 52, 1./60)
-	if ad.stationDock == nil || !ad.stationDock.waiting || ad.stationDock.target != originalTarget {
+	p = stop.RearBerthPosition()
+	rear := sim.NewBus(p.X, p.Y, stop.Heading)
+	front.DoorsOpen, rear.DoorsOpen = true, true
+	_, _, _, _, doors, docked := ad.ComputeControls(&saved.Bus, &sim.Route{StopIDs: []int{5, 6, 7}, CurrentIndex: 1}, w, nil, []VehicleObstacle{ObserveBus(front), ObserveBus(rear)}, 52, 1./60)
+	if doors || docked || (ad.stationDock != nil && !ad.stationDock.waiting) {
 		t.Fatal("occupied forward berth was treated as free")
 	}
 }

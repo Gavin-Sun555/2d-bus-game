@@ -11,6 +11,16 @@ import (
 )
 
 func (g *Game) updatePlanningMode(dt float64) {
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || (ebiten.IsKeyPressed(ebiten.KeyShift) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)) {
+		x, y := ebiten.CursorPosition()
+		point := sim.Vec2{X: float64(x), Y: float64(y)}
+		if !g.HUD.IsInsideTopBar(point) && !g.HUD.IsInsidePlanPanel(point) {
+			if id := g.World.StopAtScreen(g.Camera, point, 12); id >= 0 {
+				g.openStopNameEditor(id)
+				return
+			}
+		}
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyH) {
 		g.HideOtherRoutes = !g.HideOtherRoutes
 		if g.HideOtherRoutes {
@@ -38,9 +48,13 @@ func (g *Game) updatePlanningMode(dt float64) {
 	}
 
 	// Mouse Zoom with expanded range for large map
+	minZoom := 0.04
+	if g.World != nil && g.World.LargeGrid {
+		minZoom = 0.01
+	}
 	_, wheelY := ebiten.Wheel()
 	if wheelY != 0 {
-		g.Camera.TargetZoom = sim.Clamp(g.Camera.TargetZoom+wheelY*0.03, 0.04, 1.4)
+		g.Camera.TargetZoom = sim.Clamp(g.Camera.TargetZoom+wheelY*0.03, minZoom, 1.4)
 		g.Camera.Zoom = g.Camera.TargetZoom
 	}
 
@@ -224,8 +238,12 @@ func (g *Game) PlanTransitLine(index int) bool {
 	}
 	g.Camera.Pos = sim.Vec2{}
 	g.Camera.TargetPos = sim.Vec2{}
-	g.Camera.Zoom = .04
-	g.Camera.TargetZoom = .04
+	planZoom := .04
+	if g.World != nil && g.World.LargeGrid {
+		planZoom = .012
+	}
+	g.Camera.Zoom = planZoom
+	g.Camera.TargetZoom = planZoom
 	g.NetworkSelected = index
 	g.NetworkOpen = false
 	return true
@@ -262,11 +280,15 @@ func (g *Game) TogglePlanMode() {
 		g.planModeRouteModified = false
 		g.Camera.TargetPos = sim.Vec2{}
 		g.Camera.Pos = sim.Vec2{}
-		g.Camera.TargetZoom = 0.04
-		g.Camera.Zoom = 0.04
+		planZoom := 0.04
+		if g.World != nil && g.World.LargeGrid {
+			planZoom = 0.012
+		}
+		g.Camera.TargetZoom = planZoom
+		g.Camera.Zoom = planZoom
 		g.Camera.Rotation = 0
 		g.Camera.TargetRotation = 0
-		g.HUD.AddToast(locale.T("已进入线路规划：点击站点添加，[H] 显示/隐藏其他线路，[TAB] 完成", "Planning: click stops, [H] toggle other lines, [TAB] finish"), false)
+		g.HUD.AddToast(locale.T("路线规划：左键加站，右键改名，[H] 其他线路，[TAB] 完成", "Planning: click to add, right-click to rename, [H] other lines, [TAB] finish"), false)
 		return
 	}
 	if !g.finishPlannedRoute() {

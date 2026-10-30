@@ -267,6 +267,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	textui.DrawText(screen, locale.T("换挡: [Shift/Ctrl]升降 [R/N/G]切挡 [P]AI [B]狂暴 [Shift+B]切速", "Shift: [Shift/Ctrl] [R/N/G] [P]AI [B]Berserk [Shift+B]Speed"), dashX+70, dashY+38, 10, sim.RGBA(148, 163, 184, 220))
 
 	// Health and Steering info row
+	textui.DrawText(screen, locale.T("[H]长鸣 [F8]静音", "[H]Hold [F8]Mute"), dashX+12, dashY+60, 9, sim.RGBA(148, 163, 184, 220))
 	durCol := sim.RGBA(34, 197, 94, 255)
 	if bus.Durability < 35 {
 		durCol = sim.RGBA(239, 68, 68, 255)
@@ -301,6 +302,9 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		promptText := locale.Tf("已停靠在 [%s]! 按 [E] 开门上下客", "Stopped at [%s]! Press [E] to open doors", activeStop.LocalizedName())
 		if bus.DoorsOpen {
 			promptText = locale.T("上下客完成! 按 [E] 关门准备发车 >>", "Boarding complete! Press [E] to close doors >>")
+			if remaining := bus.PassengerServiceRemaining(); remaining > 0 {
+			promptText = locale.Tf("上下客中，还需约 %.0f 秒，暂不能关门", "Passenger exchange: %.0f s left; keep doors open", math.Ceil(remaining))
+			}
 		}
 		textui.DrawText(screen, promptText, promptX+20, promptY+15, 13, sim.RGBA(250, 204, 21, 255))
 	} else if targetStop != nil {

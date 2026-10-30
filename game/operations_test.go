@@ -22,22 +22,29 @@ func TestPlayerFareAndStationLedger(t *testing.T) {
 	g.Bus.DoorsOpen = true
 	g.Bus.DoorProgress = 1
 	cash := g.Cash
-	g.updatePassengerExchange(false)
+	stepExchange := func() {
+		g.updatePassengerExchange(false)
+		for g.Bus.PassengerServiceRemaining() > 0 {
+			g.Bus.Update(1.0, 0, 0, 0, false, false)
+			g.updatePassengerExchange(false)
+		}
+	}
+	stepExchange()
 	if g.Cash-cash != 35 || g.Operations.Revenue != 35 || g.Operations.Vehicle(0).Boarded != 5 {
 		t.Fatal("player fare not credited exactly once")
 	}
-	g.updatePassengerExchange(false)
+	stepExchange()
 	if g.Cash-cash != 35 {
 		t.Fatal("open doors charged the same passengers twice")
 	}
 	stop.WaitingPassengers = 2
-	g.updatePassengerExchange(false)
+	stepExchange()
 	if g.Cash-cash != 49 || g.Operations.Stations[0].Boarded != 7 {
 		t.Fatal("continuous boarding not charged")
 	}
 	g.Settings.Fare.Fixed = 0
 	stop.WaitingPassengers = 1
-	g.updatePassengerExchange(false)
+	stepExchange()
 	if g.Cash-cash != 49 || g.Operations.Vehicle(0).Boarded != 8 {
 		t.Fatal("free boarding accounting failed")
 	}
@@ -96,6 +103,8 @@ func TestFleetFareRevenueReachesCompanyCash(t *testing.T) {
 	g.Bus.Pos = stop.Pos.Add(sim.Vec2{X: 600})
 	g.Bus.DoorsOpen = false
 	g.Bus.DoorProgress = 0
+	ab.Route.CurrentIndex = 0
+	ab.Driver.Reset()
 	ab.Bus.Pos = stop.Pos
 	ab.Bus.Heading = stop.Heading
 	ab.Bus.DoorsOpen = true
@@ -111,6 +120,16 @@ func TestFleetFareRevenueReachesCompanyCash(t *testing.T) {
 	cash := g.Cash
 	if err := g.Update(); err != nil {
 		t.Fatal(err)
+	}
+	for ab.Bus.PassengerServiceRemaining() > 0 {
+		for _, s := range g.World.Stops {
+			if s.ID != stop.ID {
+				s.WaitingPassengers = 0
+			}
+		}
+		if err := g.Update(); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if g.Cash-cash != 20 || g.Operations.Vehicle(ab.ID).Revenue != 20 || g.Operations.Stations[stop.ID].Boarded != 4 {
 		t.Fatalf("AI income not linked: cash%d stats%+v", g.Cash-cash, g.Operations.Vehicle(ab.ID))

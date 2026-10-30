@@ -68,13 +68,14 @@ type LineFleetPlan struct {
 
 // ConfigureLineFleets reconciles stable per-line vehicle slots. Changing one
 // service never respawns vehicles on another service or reassigns their fares.
-func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, lw float64, player *sim.Bus, reset bool) {
+func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, lw float64, player *sim.Bus, reset bool, traffic ...[]*sim.TrafficCar) {
 	previous := map[int]*AIBus{}
 	for _, b := range m.Buses {
 		previous[b.ID] = b
 	}
 	buses := make([]*AIBus, 0)
 	pending := []*AIBus{}
+	initialLines := map[int]bool{}
 	m.Routes = nil
 	m.BusCount = 0
 	for line, p := range plans {
@@ -82,11 +83,22 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 			continue
 		}
 		c := p.Settings.Normalize()
+		initialLines[line] = reset
+		if !reset {
+			initialLines[line] = true
+			for _, old := range previous {
+				if old.LineIndex == line && slices.Equal(old.Route.StopIDs, p.Route.StopIDs) {
+					initialLines[line] = false
+					break
+				}
+			}
+		}
 		if c.Counts()[sim.BusArticulated] > 0 || c.PlayerModel == sim.BusArticulated {
 			sim.EnsureLongBusBays(w, p.Route)
 		}
 		m.Routes = append(m.Routes, p.Route)
 		builder := NewAIBusManager()
+		builder.stationOnlyBuild = true
 		builder.ActiveRoute = p.Route
 		builder.BusSpeedRange = c.SpeedRange
 		// The existing dispatcher supplies legal bay positions and driver initialization.
@@ -181,11 +193,34 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 		others = append(others, b.Bus)
 	}
 	for _, b := range pending {
+		if initialLines[b.LineIndex] {
+			continue
+		}
 		stop := w.Stops[b.Route.GetCurrentTargetStopID()]
 		sim.PlaceBusInStationQueue(b.Bus, stop, others, lw)
 		b.Driver.QueueAtStation(stop.ID)
 		others = append(others, b.Bus)
 		buses = append(buses, b)
+	}
+	var cars []*sim.TrafficCar
+	if len(traffic) > 0 {
+		cars = traffic[0]
+	}
+	for line := range plans {
+		if !initialLines[line] {
+			continue
+		}
+		var fresh []*AIBus
+		for _, b := range pending {
+			if b.LineIndex == line {
+				fresh = append(fresh, b)
+			}
+		}
+		distributeInitialLine(fresh, w, lw, others, cars)
+		for _, b := range fresh {
+			others = append(others, b.Bus)
+			buses = append(buses, b)
+		}
 	}
 
 	slices.SortFunc(buses, func(a, b *AIBus) int { return a.ID - b.ID })

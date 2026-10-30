@@ -17,12 +17,12 @@ func TestRoundaboutReservationDrainsBeforeAdmission(t *testing.T) {
 	owner := reservationBus(-500, sim.BusArticulated)
 	car := &sim.TrafficCar{InRoundabout: true}
 	tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
-	tm.updateRoundaboutReservations(owner, w, 1)
+	tm.updateRoundaboutReservations(owner, w, 1, 52)
 	if owner.RoundaboutAdmissionHold == nil || !tm.roundaboutReserved(sim.Vec2{}) {
 		t.Fatal("new long bus must wait for circulating car")
 	}
 	car.InRoundabout = false
-	tm.updateRoundaboutReservations(owner, w, 1)
+	tm.updateRoundaboutReservations(owner, w, 1, 52)
 	if owner.RoundaboutAdmissionHold != nil {
 		t.Fatal("drained ring must release owner")
 	}
@@ -33,7 +33,7 @@ func TestRoundaboutReservationAdmitsOrdinaryQueueLeader(t *testing.T) {
 	long := reservationBus(-580, sim.BusArticulated)
 	lead := reservationBus(-420, sim.BusStandard)
 	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: lead}}}}
-	tm.updateRoundaboutReservations(long, w, 0)
+	tm.updateRoundaboutReservations(long, w, 0, 52)
 	if tm.roundaboutReservations[0].owner != lead || long.RoundaboutAdmissionHold == nil || lead.RoundaboutAdmissionHold != nil {
 		t.Fatal("head of queue must clear before long follower")
 	}
@@ -43,17 +43,17 @@ func TestRoundaboutReservationRetainsTailAndReleases(t *testing.T) {
 	w := &sim.World{Roundabouts: []sim.Roundabout{{Radius: 220, InnerRadius: 105}}}
 	b := reservationBus(-500, sim.BusArticulated)
 	tm := &TrafficManager{}
-	tm.updateRoundaboutReservations(b, w, 0)
+	tm.updateRoundaboutReservations(b, w, 0, 52)
 	b.Pos = sim.Vec2{X: 180, Y: 26}
-	tm.updateRoundaboutReservations(b, w, 0)
+	tm.updateRoundaboutReservations(b, w, 0, 52)
 	b.Pos.X = 300
-	tm.updateRoundaboutReservations(b, w, 0)
+	tm.updateRoundaboutReservations(b, w, 0, 52)
 	if !tm.roundaboutReserved(sim.Vec2{}) {
 		t.Fatal("tail still occupies ring")
 	}
 	b.Pos.X = 600
 	b.RoundaboutEntry = nil
-	tm.updateRoundaboutReservations(b, w, 0)
+	tm.updateRoundaboutReservations(b, w, 0, 52)
 	if tm.roundaboutReserved(sim.Vec2{}) {
 		t.Fatal("complete vehicle cleared ring")
 	}
@@ -63,7 +63,7 @@ func TestRoundaboutReservationDoesNotChangeShortFleet(t *testing.T) {
 	w := &sim.World{Roundabouts: []sim.Roundabout{{Radius: 220, InnerRadius: 105}}}
 	b := reservationBus(-400, sim.BusStandard)
 	tm := &TrafficManager{}
-	tm.updateRoundaboutReservations(b, w, 0)
+	tm.updateRoundaboutReservations(b, w, 0, 52)
 	if tm.roundaboutReserved(sim.Vec2{}) || b.RoundaboutAdmissionHold != nil {
 		t.Fatal("ordinary fleet acquired long-vehicle reservation")
 	}
@@ -76,18 +76,18 @@ func TestRoundaboutReservationAcceptsLateLeaderAndCancellation(t *testing.T) {
 	intent := lead.RoundaboutEntry
 	lead.RoundaboutEntry = nil
 	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: lead}}}}
-	tm.updateRoundaboutReservations(long, w, 0)
+	tm.updateRoundaboutReservations(long, w, 0, 52)
 	if tm.roundaboutReservations[0].owner != long {
 		t.Fatal("long arrival should initially reserve ring")
 	}
 	lead.RoundaboutEntry = intent
-	tm.updateRoundaboutReservations(long, w, 0)
+	tm.updateRoundaboutReservations(long, w, 0, 52)
 	if tm.roundaboutReservations[0].owner != lead {
 		t.Fatal("late-published physical leader trapped by follower")
 	}
 	lead.RoundaboutEntry = nil
 	long.RoundaboutEntry = nil
-	tm.updateRoundaboutReservations(long, w, 0)
+	tm.updateRoundaboutReservations(long, w, 0, 52)
 	if tm.roundaboutReserved(sim.Vec2{}) {
 		t.Fatal("cancelled approach retained reservation")
 	}
@@ -128,7 +128,7 @@ func TestAbreastArticulatedEntrantsDoNotReserveAgainstInnerLeader(t *testing.T) 
 	}
 	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{ID: 1, Bus: outer}}}, roundaboutReservations: []roundaboutReservation{{owner: outer}}}
 	for tick := 0; tick < 5; tick++ {
-		tm.updateRoundaboutReservations(inner, w, 0)
+		tm.updateRoundaboutReservations(inner, w, 0, 52)
 		if tm.roundaboutReservations[0].owner != inner || inner.RoundaboutAdmissionHold != nil || outer.RoundaboutAdmissionHold == nil {
 			t.Fatal("outer nose lead blocked the inner entrance")
 		}

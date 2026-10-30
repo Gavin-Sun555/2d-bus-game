@@ -5,24 +5,35 @@ import (
 	"math"
 )
 
-// Front-first, longitudinal platform positions. A long bus reserves the whole
-// platform; cars in the roadway do not consume a passenger berth.
+// Two front-first positions, independent of vehicle model. The rear position
+// follows the lead's actual tail and may overhang the painted platform.
 func availableStationBerths(bus *sim.Bus, stop *sim.BusStop, obstacles []VehicleObstacle) []sim.Vec2 {
-	targets := []sim.Vec2{stop.FrontBerthPosition()}
-	if stop.HasTwoBerths() && !bus.IsArticulated() {
-		targets = append(targets, stop.RearBerthPosition())
+	if !stationBoardingCapacity(bus, stop, obstacles) {
+		return nil
 	}
-	for _, ob := range obstacles {
-		if ob.Length < 65 {
-			continue
+	var storage [2]sim.Vec2
+	var queue sim.Vec2
+	var occupied bool
+	if stop.HasTwoBerths() {
+		queue, occupied = stationQueueTarget(bus, stop, obstacles)
+	}
+	return availableStationBerthsInto(bus, stop, obstacles, storage[:0], queue, occupied)
+}
+
+// The caller owns storage. Capacity and queue geometry may already have been
+// established by an earlier branch of the same control decision.
+func availableStationBerthsInto(bus *sim.Bus, stop *sim.BusStop, obstacles []VehicleObstacle, storage []sim.Vec2, queue sim.Vec2, occupied bool) []sim.Vec2 {
+	targets := append(storage[:0], stop.FrontBerthPosition())
+	if stop.HasTwoBerths() {
+		rear := stop.RearBerthPosition()
+		if occupied {
+			rear = queue
 		}
-		body := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length / 2, HalfWid: ob.Width / 2}
-		if !stop.OccupiesBerth(body) {
-			continue
-		}
-		long := ob.Length > 150 || (ob.Bus != nil && ob.Bus.IsArticulated())
-		if stop.HasTwoBerths() && (bus.IsArticulated() || long) && !stationFollowerBehind(bus, ob, stop.Heading) {
-			return nil
+		candidate := *bus
+		candidate.Pos, candidate.Heading = rear, stop.Heading
+		candidate.ResetArticulation()
+		if stop.ContainsBus(&candidate) {
+			targets = append(targets, rear)
 		}
 	}
 	clear := targets[:0]
@@ -37,9 +48,18 @@ func availableStationBerths(bus *sim.Bus, stop *sim.BusStop, obstacles []Vehicle
 			if offset.Dot(offset) > reach*reach {
 				continue
 			}
-			body := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 8, HalfWid: ob.Width/2 + 2}
-			if hit, _, _ := candidate.CollidesBody(body); hit {
-				free = false
+			for _, body := range predictedObstacleBodies(ob, 0) {
+				if body.HalfLen <= 0 {
+					continue
+				}
+				body.HalfLen += 8
+				body.HalfWid += 2
+				if hit, _, _ := candidate.CollidesBody(body); hit {
+					free = false
+					break
+				}
+			}
+			if !free {
 				break
 			}
 		}
@@ -50,11 +70,63 @@ func availableStationBerths(bus *sim.Bus, stop *sim.BusStop, obstacles []Vehicle
 	return clear
 }
 
+// Queued followers do not reserve their leader's free berth. Two buses ahead
+// (or already serving alongside this stop) do prevent a third admission.
+func stationBoardingCapacity(bus *sim.Bus, stop *sim.BusStop, obstacles []VehicleObstacle) bool {
+	if !stop.HasTwoBerths() {
+		return true
+	}
+	u := sim.UnitFromAngle(stop.Heading)
+	count := 0
+	for _, ob := range obstacles {
+		if ob.Length < 65 || math.Cos(ob.Heading-stop.Heading) < .8 {
+			continue
+		}
+		body := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length / 2, HalfWid: ob.Width / 2}
+		inBay := stop.OccupiesBerth(body)
+		serving := ob.Bus != nil && ob.Bus.DoorsOpen && math.Abs(ob.Speed) < 3 && (stop.ContainsBus(ob.Bus) || (ob.Bus.PassengerService.Active && ob.Bus.PassengerService.StopID == stop.ID))
+		if !inBay && !serving {
+			continue
+		}
+		if !serving && (stationFollowerBehind(bus, ob, stop.Heading) || stationQueuedNoseClearsBerth(bus, ob, stop.Heading)) {
+			continue
+		}
+		if !serving && ob.Pos.Sub(bus.Pos).Dot(u) < 0 {
+			continue
+		}
+		count++
+		if count >= 2 {
+			return false
+		}
+	}
+	return true
+}
+
 func atSelectedStationBerth(bus *sim.Bus, target sim.Vec2, heading float64) bool {
 	u := sim.UnitFromAngle(heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
 	d := bus.Pos.Sub(target)
-	return math.Abs(d.Dot(u)) < 10 && math.Abs(d.Dot(r)) < 10 && math.Abs(sim.NormalizeAngle(bus.Heading-heading)) < .15
+	return math.Abs(d.Dot(u)) < 10 && math.Abs(d.Dot(r)) < 10 && math.Abs(sim.NormalizeAngle(bus.Heading-heading)) < .2
+}
+
+func stationBoardingPoseClear(f autopilotFrame) bool {
+	if f.world != nil && f.bus.CheckBoundaries(f.world, f.laneWidth).Zone == sim.ZoneHardBarrier {
+		return false
+	}
+	for _, ob := range f.obstacles {
+		if ob.Bus == nil && ob.Length < 65 && math.Cos(ob.Heading-f.targetStop.Heading) > .9 {
+			u := sim.UnitFromAngle(f.targetStop.Heading)
+			r := sim.Vec2{X: -u.Y, Y: u.X}
+			d := ob.Pos.Sub(f.bus.Pos)
+			if d.Dot(u) > 0 && math.Abs(d.Dot(r)) < (f.bus.Width+ob.Width)/2+8 && d.Dot(u)-(f.bus.Length+ob.Length)/2 < 35 {
+				return false
+			}
+		}
+		if sweepBodiesCollision(f.bus.BodyParts(), ob, 0, .5, .5) {
+			return false
+		}
+	}
+	return true
 }
 
 // A full passenger platform can still have safe staging space behind its
@@ -96,12 +168,75 @@ func stationQueueTarget(bus *sim.Bus, stop *sim.BusStop, obstacles []VehicleObst
 // ahead of the bus already pulling in. Require separated full envelopes; the
 // target-position collision checks below still protect the actual berth.
 func stationFollowerBehind(bus *sim.Bus, ob VehicleObstacle, heading float64) bool {
-	if math.Cos(bus.Heading-heading) < .9 || math.Cos(ob.Heading-heading) < .9 {
+	if math.Cos(bus.Heading-heading) < .9 {
+		return false
+	}
+	if math.Cos(ob.Heading-heading) < .9 {
+		// A stationary bus still straightening at the rear entrance does not
+		// reserve the lead's berth. Keep moving/crossing traffic conservative;
+		// separated full longitudinal envelopes remain mandatory below.
+		if ob.Bus == nil || math.Abs(ob.Speed) >= 3 || math.Cos(ob.Heading-heading) < .8 {
+			return false
+		}
+	}
+	forward := sim.UnitFromAngle(heading)
+	ownRear, _ := stationBodyRange(bus, forward)
+	otherExtent := math.Abs(math.Cos(ob.Heading-heading))*ob.Length/2 + math.Abs(math.Sin(ob.Heading-heading))*ob.Width/2
+	otherFront := ob.Pos.Dot(forward) + otherExtent
+	if ob.Bus != nil {
+		_, otherFront = stationBodyRange(ob.Bus, forward)
+	}
+	return otherFront+2 <= ownRear
+}
+
+func stationQueuedNoseClearsBerth(bus *sim.Bus, ob VehicleObstacle, heading float64) bool {
+	if !bus.IsArticulated() || math.Cos(bus.Heading-heading) < .9 || math.Cos(ob.Heading-heading) < .9 {
 		return false
 	}
 	forward := sim.UnitFromAngle(heading)
-	own := bus.BodyEnvelope()
-	ownExtent := math.Abs(math.Cos(own.Heading-heading))*own.HalfLen + math.Abs(math.Sin(own.Heading-heading))*own.HalfWid
-	otherExtent := math.Abs(math.Cos(ob.Heading-heading))*ob.Length/2 + math.Abs(math.Sin(ob.Heading-heading))*ob.Width/2
-	return ob.Pos.Dot(forward)+otherExtent+2 <= own.Center.Dot(forward)-ownExtent
+	otherFront := math.Inf(1)
+	if ob.Bus != nil {
+		_, otherFront = stationBodyRange(ob.Bus, forward)
+	}
+	// A follower's nose may be beside a yawed trailer while still well
+	// behind the leading powered section. Do not let that queued nose
+	// reserve the lead berth; the candidate placement and complete curve
+	// still have to clear every real body below.
+	if ob.Bus == nil || ob.Bus.DoorsOpen || math.Abs(ob.Speed) >= 3 {
+		return false
+	}
+	powered := bus.BodyParts()[0]
+	yaw := powered.Heading - heading
+	poweredRear := powered.Center.Dot(forward) - powered.HalfLen*math.Abs(math.Cos(yaw)) - powered.HalfWid*math.Abs(math.Sin(yaw))
+	if otherFront+12 > poweredRear {
+		return false
+	}
+	for _, body := range ob.Bus.BodyParts() {
+		if body.HalfLen > 0 {
+			body.HalfLen += .5
+			body.HalfWid += .5
+			if hit, _, _ := bus.CollidesBody(body); hit {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// Project each real section directly onto the platform axis. Projecting the
+// combined yawed envelope a second time invents extra rear/front reach and can
+// make a separated follower reserve its leader's otherwise free boarding berth.
+func stationBodyRange(bus *sim.Bus, forward sim.Vec2) (rear, front float64) {
+	rear, front = math.Inf(1), math.Inf(-1)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		u := sim.UnitFromAngle(part.Heading)
+		extent := math.Abs(u.Dot(forward))*part.HalfLen + math.Abs(u.Dot(right))*part.HalfWid
+		center := part.Center.Dot(forward)
+		rear, front = math.Min(rear, center-extent), math.Max(front, center+extent)
+	}
+	return rear, front
 }

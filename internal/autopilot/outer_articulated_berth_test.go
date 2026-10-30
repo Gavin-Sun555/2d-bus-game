@@ -78,7 +78,7 @@ func TestOuterArticulatedBoardingRejectsUnsafePoses(t *testing.T) {
 				bus.Speed = 20
 				f.speedAbs = 20
 			case "tail outside":
-				bus.Pos.X -= 100
+				bus.Pos.X -= 220
 			case "overlap":
 				f.obstacles = []VehicleObstacle{ObserveBus(sim.NewBus(bus.Pos.X, bus.Pos.Y, 0))}
 			case "wrong direction":

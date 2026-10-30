@@ -24,12 +24,11 @@ func TestUnifiedStationQueueCapacity(t *testing.T) {
 					if !st.ContainsBus(a) || a.Pos.Distance(st.FrontBerthPosition()) > .01 {
 						t.Fatal("first bus not at front", a.Pos)
 					}
-					if first == BusArticulated || next == BusArticulated {
-						if st.ContainsBus(b) {
-							t.Fatal("long bus shares platform")
-						}
-					} else if !st.ContainsBus(b) || b.Pos.Distance(st.RearBerthPosition()) > .01 {
-						t.Fatal("second short bus not at rear", b.Pos)
+					if !st.ContainsBus(b) {
+						t.Fatal("second vehicle cannot board", b.Pos)
+					}
+					if first != BusArticulated && b.Pos.Distance(st.RearBerthPosition()) > .01 {
+						t.Fatal("second vehicle not behind short lead", b.Pos)
 					}
 					if st.ContainsBus(c) {
 						t.Fatal("third vehicle admitted")

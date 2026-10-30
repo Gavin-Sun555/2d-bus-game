@@ -132,7 +132,11 @@ func (tm *TrafficManager) prepareBusPerception(bus *sim.Bus, w *sim.World) {
 	clear(tm.observedParked[:])
 	if w != nil {
 		for i, b := range busesToCheck {
+			rangeReady := busStopRangeReady(b)
 			for _, stop := range w.Stops {
+				if stopOutsideBusRange(stop, b, rangeReady) {
+					continue
+				}
 				if stop.ContainsBus(b) {
 					tm.observedParked[i] = true
 					break

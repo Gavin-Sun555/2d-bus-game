@@ -30,6 +30,7 @@ func TestFareControlsAndOperationsPanelLayout(t *testing.T) {
 	o := sim.NewTransitOperations(w, r, 52, sim.DefaultFarePolicy())
 	for id := 0; id <= 8; id++ {
 		v := o.Vehicle(id)
+		v.Route, v.LineName = r, r.Name
 		v.Revenue = 123 + id
 		v.Boarded = 50
 		v.Alighted = 34
@@ -43,13 +44,13 @@ func TestFareControlsAndOperationsPanelLayout(t *testing.T) {
 	defer func() { locale.CurrentLanguage = original }()
 	for _, lang := range []locale.Language{locale.LanguageZH, locale.LanguageEN} {
 		locale.CurrentLanguage = lang
-		for tab := 0; tab < 3; tab++ {
+		for tab := 0; tab < 4; tab++ {
 			p := NewOperationsPanel()
 			p.IsOpen = true
 			p.Tab = tab
 			screen := ebiten.NewImage(1280, 720)
 			f.Mode = sim.FareByDistance
-			p.Draw(screen, f, o, w)
+			p.Draw(screen, f, o, w, r)
 			if p.closeBounds.X+p.closeBounds.W > 1280 || p.tabBounds[2].Y+p.tabBounds[2].H > 720 {
 				t.Fatal("panel controls outside viewport")
 			}

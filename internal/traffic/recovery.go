@@ -16,6 +16,12 @@ func (tm *TrafficManager) DespawnCar(index int) {
 		return
 	}
 	tm.Cars = append(tm.Cars[:index], tm.Cars[index+1:]...)
+	// Keep immutable geometry scratch with the same vehicle after slot shifts.
+	// The owner check remains the fallback for untracked population edits.
+	if index < len(tm.junctionScratch) {
+		copy(tm.junctionScratch[index:], tm.junctionScratch[index+1:])
+		tm.junctionScratch[len(tm.junctionScratch)-1] = carJunctionScratch{}
+	}
 }
 
 // DespawnAndResetCar resets a deadlocked car by repositioning it to a clear section of road,

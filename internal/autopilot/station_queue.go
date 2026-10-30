@@ -18,11 +18,15 @@ func (ad *AutopilotDriver) stationQueueControls(bus *sim.Bus, stop *sim.BusStop,
 	}
 	u := sim.UnitFromAngle(stop.Heading)
 	right := sim.Vec2{X: -u.Y, Y: u.X}
-	targets := availableStationBerths(bus, stop, obstacles)
+	targets := ad.availableStationBerths(bus, stop, obstacles)
 	targetPosition := stop.FrontBerthPosition()
 	berthAvailable := len(targets) > 0
 	if berthAvailable {
 		targetPosition = targets[0]
+	} else if target, occupied := ad.stationQueueTarget(bus, stop, obstacles); occupied {
+		// A third vehicle stages behind the actual rear envelope. The first
+		// two vehicles may board even when their tails overhang the platform.
+		targetPosition = target
 	} else if stop.HasTwoBerths() {
 		targetPosition = stop.Pos.Sub(u.Mul(stop.Length/2 + sim.StationBerthGap + bus.Length/2))
 	}
@@ -47,7 +51,7 @@ func (ad *AutopilotDriver) stationQueueControls(bus *sim.Bus, stop *sim.BusStop,
 		gap := d.Dot(u) - bus.Length/2 - halfAlong - 24
 		target = math.Min(target, math.Sqrt(2*135*math.Max(0, gap)))
 	}
-	if berthAvailable && atSelectedStationBerth(bus, targetPosition, stop.Heading) && math.Abs(bus.Speed) < 8 {
+	if berthAvailable && atSelectedStationBerth(bus, targetPosition, stop.Heading) && math.Abs(bus.Speed) < 8 && stationBoardingPoseClear(autopilotFrame{bus: bus, targetStop: stop, obstacles: obstacles}) {
 		// Do not begin boarding while another bus is still beside this berth.
 		blocked := false
 		for _, ob := range obstacles {

@@ -1,0 +1,154 @@
+{
+  "branch": "main",
+  "head": "b3d933e16edb8614b4c765bf8c93d8f1c71b84c2",
+  "dirty": true,
+  "warmup": 300,
+  "ticks": 1800,
+  "repetitionsPerVariant": 3,
+  "drawMeasured": false,
+  "stage2Implemented": false,
+  "scenes": {
+    "slot1": {
+      "baselineMedianMS": 5.728403609999992,
+      "candidateMedianMS": 5.362045424444439,
+      "medianReductionPercent": 6.395467402401723,
+      "pairedReductionPercent": [
+        6.092661725130178,
+        6.395467402401723,
+        6.627421082364259
+      ],
+      "baselineP99MS": [
+        6.575917,
+        6.763958,
+        6.811625
+      ],
+      "candidateP99MS": [
+        6.135,
+        6.353584,
+        6.5075
+      ],
+      "bytesDelta": [
+        -2.866666666639503,
+        3.2133333333185874,
+        -3.1155555555596948
+      ],
+      "allocsDelta": [
+        -0.002777777777737356,
+        0.004444444444402507,
+        -0.0033333333333303017
+      ]
+    },
+    "ordinary8": {
+      "baselineMedianMS": 5.306148731111107,
+      "candidateMedianMS": 4.946140872777781,
+      "medianReductionPercent": 6.784729878047346,
+      "pairedReductionPercent": [
+        5.248073926646468,
+        6.524473183371404,
+        7.3936254249042594
+      ],
+      "baselineP99MS": [
+        6.557042,
+        6.951667,
+        6.627958
+      ],
+      "candidateP99MS": [
+        6.417959,
+        6.439084,
+        6.311542
+      ],
+      "bytesDelta": [
+        -0.062222222215496004,
+        -3.2222222222189885,
+        -0.062222222215496004
+      ],
+      "allocsDelta": [
+        -0.0005555555555361025,
+        -0.00444444444445935,
+        0.0
+      ]
+    },
+    "maximum48": {
+      "baselineMedianMS": 11.17141544666668,
+      "candidateMedianMS": 10.831309173333322,
+      "medianReductionPercent": 3.0444331334471886,
+      "pairedReductionPercent": [
+        2.8411212686922704,
+        2.1010254142060925,
+        3.0528067067972064
+      ],
+      "baselineP99MS": [
+        13.904958,
+        13.495459,
+        13.871292
+      ],
+      "candidateP99MS": [
+        13.440333,
+        13.295792,
+        13.325292
+      ],
+      "bytesDelta": [
+        -124.77777777778101,
+        -79.84444444444671,
+        35.40888888889458
+      ],
+      "allocsDelta": [
+        -0.03333333333333144,
+        -0.006666666666660603,
+        0.013888888888885731
+      ]
+    },
+    "roundabout48": {
+      "baselineMedianMS": 6.875921113888881,
+      "candidateMedianMS": 6.696784651111108,
+      "medianReductionPercent": 2.605272221869004,
+      "pairedReductionPercent": [
+        3.270578170912164,
+        3.1743326899164814,
+        2.1245036376720483
+      ],
+      "baselineP99MS": [
+        7.800708,
+        7.740458,
+        7.772584
+      ],
+      "candidateP99MS": [
+        7.457958,
+        7.543209,
+        7.600041
+      ],
+      "bytesDelta": [
+        0.23111111111938953,
+        3.1155555555596948,
+        -0.6488888888852671
+      ],
+      "allocsDelta": [
+        0.0011111111111290484,
+        0.0033333333333303017,
+        -0.0049999999999954525
+      ]
+    }
+  },
+  "trajectoryHashes": {
+    "trace-8-baseline": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-8-candidate": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-48-baseline": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656",
+    "trace-48-candidate": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656"
+  },
+  "baselineBinarySHA256": "47d0c3d3c3b229a4c7ae47b6baf555a38e726d00de916aa0a803360ef444f6c4",
+  "candidateBinarySHA256": "19d4cbfad5df0430ac9ebb0b08cef07c01a3ea541c39dcdc8eabe408d20b92bc",
+  "validation": {
+    "regression": {
+      "passed": 10182,
+      "skipped": 24,
+      "failures": []
+    },
+    "race": {
+      "passed": 12,
+      "skipped": 0,
+      "failures": []
+    }
+  },
+  "applicationSHA256": "b121610677a1d0286bcac99fd75584ef50cc11f67b805af7fc17d044b61e105e",
+  "saveSHA256": "e58c8bfdc76a1ee8da78181fba0b057e4857034a7b456d39bd27b5738c79bbc1"
+}

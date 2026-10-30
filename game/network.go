@@ -89,6 +89,13 @@ func (g *Game) SelectPlayerLine(index int) bool {
 	operations := g.Operations
 	g.resetBusesToRouteStart(false)
 	g.Bus.SetModel(g.LineFleets[index].PlayerModel)
+	if g.Bus.Model == sim.BusArticulated {
+		sim.EnsureLongBusBays(g.World, g.Route)
+		g.Bus.ResetArticulation()
+	}
+	if g.Settings != nil {
+		g.Settings.PlayerModel = g.LineFleets[index].PlayerModel
+	}
 	g.AIBusMgr.Buses = fleet
 
 	g.Camera.Pos = g.Bus.Pos

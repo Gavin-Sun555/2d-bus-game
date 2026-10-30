@@ -44,8 +44,8 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	if approach.isApproachingIntersection && turning {
 		inter := approach.approachingInter
 		if ad.busLaneJunction == nil && approach.isUpcomingLeft && approach.distToStopLine > 350 {
-			curbQueue := busLaneTrafficScore(f, forward, right, 3, true)
-			innerQueue := busLaneTrafficScore(f, forward, right, 0, true)
+			curbQueue := ad.busLaneTrafficScore(f, forward, right, 3, true)
+			innerQueue := ad.busLaneTrafficScore(f, forward, right, 0, true)
 			if innerQueue+1 < curbQueue && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, -3*f.laneWidth, f.laneWidth) {
 				ad.ordinaryBusLeft = true
 				var from, to *sim.BusStop
@@ -127,14 +127,14 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	// Protected bus priority by default; use a general through lane only when
 	// its queue or moving traffic is materially better, and return once clear.
 	desiredLane := 3
-	best := busLaneTrafficScore(f, forward, right, 3, approach.isApproachingIntersection)
+	best := ad.busLaneTrafficScore(f, forward, right, 3, approach.isApproachingIntersection)
 	candidates := []int{2, 1}
 	if !approach.isApproachingIntersection {
 		candidates = append(candidates, 0)
 	}
 	if ad.BerserkMode {
 		for _, lane := range candidates {
-			score := busLaneTrafficScore(f, forward, right, lane, approach.isApproachingIntersection)
+			score := ad.busLaneTrafficScore(f, forward, right, lane, approach.isApproachingIntersection)
 			if score+1 < best {
 				best = score
 				desiredLane = lane
@@ -154,23 +154,37 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	// A frozen fractional offset is not a completed lane return.
 	if math.Abs(desired-ad.TargetLaneOffset) > 1 && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
 		ad.TargetLaneOffset = desired
-		ad.OvertakeState = OvertakeChangingLane
+		if desired < ad.LaneOffset {
+			ad.OvertakeState = OvertakeChangingLane
+		} else {
+			ad.OvertakeState = OvertakeReturning
+		}
 	}
 	ad.progressLaneOffset(dt, f.speedAbs)
 	if math.Abs(ad.LaneOffset-ad.TargetLaneOffset) < 1 {
-		ad.OvertakeState = OvertakeNone
+		if math.Abs(ad.TargetLaneOffset) < 1 {
+			ad.OvertakeState = OvertakeNone
+		} else {
+			ad.OvertakeState = OvertakePassing
+		}
 	}
 	return true
 }
 
-func busLaneTrafficScore(f autopilotFrame, forward, right sim.Vec2, lane int, queueOnly bool) float64 {
+func (ad *AutopilotDriver) busLaneTrafficScore(f autopilotFrame, forward, right sim.Vec2, lane int, queueOnly bool) float64 {
 	center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
 	roadCenter := sim.Vec2{Y: center}
 	if !ew {
 		roadCenter = sim.Vec2{X: center}
 	}
 	score := 0.0
-	horizon := math.Max(650, f.speedAbs*2.5+150)
+	cruiseSpeed := f.speedAbs
+	if ad != nil && ad.BerserkMode {
+		cruiseSpeed = ad.GetBerserkCruiseSpeed()
+	} else if cruiseSpeed < apBerserkCruiseSpeed {
+		cruiseSpeed = apBerserkCruiseSpeed
+	}
+	horizon := math.Max(650, cruiseSpeed*2.5+150)
 	if queueOnly {
 		horizon = 1800
 		if f.tls != nil {
@@ -197,9 +211,17 @@ func busLaneTrafficScore(f autopilotFrame, forward, right sim.Vec2, lane int, qu
 			continue
 		}
 		if ob.Speed < 20 {
-			score += 4
+			score += 4.0 * (1.0 + math.Max(0.0, (horizon-d)/horizon))
 		} else if !queueOnly {
-			score += 3 * math.Max(0, 1-ob.Speed/math.Max(150, f.speedAbs))
+			if ob.Speed < cruiseSpeed {
+				slowdown := (cruiseSpeed - ob.Speed) / cruiseSpeed
+				w := 1.0 + 2.5*slowdown
+				if ob.Speed < cruiseSpeed*0.85 {
+					w = math.Max(w, 2.5)
+				}
+				distWeight := math.Max(0.0, (horizon-d)/horizon)
+				score += w * (1.0 + distWeight)
+			}
 		}
 	}
 	return score

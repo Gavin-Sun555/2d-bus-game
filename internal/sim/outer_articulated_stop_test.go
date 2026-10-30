@@ -10,7 +10,7 @@ func TestOuterArticulatedBoardingRequiresWholePlatformLength(t *testing.T) {
 		u := Vec2{X: math.Cos(h), Y: math.Sin(h)}
 		r := Vec2{X: -u.Y, Y: u.X}
 		s := NewBusStop(0, "test", Vec2{}, h, 8, RGBA(0, 0, 0, 255), 52)
-		for _, along := range []float64{-100, 0, 96, 140} {
+		for _, along := range []float64{-220, -100, 0, 96, 140} {
 			p := s.Pos.Add(u.Mul(along)).Sub(r.Mul(61))
 			b := NewBus(p.X, p.Y, h)
 			b.SetModel(BusArticulated)

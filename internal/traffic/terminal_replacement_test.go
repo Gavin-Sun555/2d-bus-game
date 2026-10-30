@@ -18,6 +18,9 @@ func serveFleetStop(m *AIBusManager, b *AIBus, w *sim.World, index, waiting int)
 	b.Driver.QueueAtStation(st.ID)
 	b.LastExchangedStopID = -1
 	m.Update(1./60, nil, w, nil, nil, 52)
+	for len(m.Buses) > 0 && b.Bus.PassengerServiceRemaining() > 0 {
+		m.Update(1.0, nil, w, nil, nil, 52)
+	}
 }
 
 func TestFleetReplacesOnlyOnTerminalArrivalAndBoardsNewCapacity(t *testing.T) {
@@ -91,6 +94,8 @@ func TestRetirementRecordsCompletedLapBeforeRemovingVehicle(t *testing.T) {
 	m := NewAIBusManager()
 	m.ConfigureLineFleets(plans, w, 52, nil, false)
 	b := m.Buses[0]
+	b.Route.CurrentIndex = 0 // This fixture measures a complete terminal-to-terminal lap.
+	b.Bus.Pos = w.Stops[0].FrontBerthPosition()
 	m.Operations = sim.NewTransitOperations(w, b.Route, 52, sim.DefaultFarePolicy())
 	m.Operations.Track(b.ID, b.Bus, b.Route, 0)
 	b.Bus.Speed = 100

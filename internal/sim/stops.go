@@ -8,16 +8,21 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 )
 
+// DefaultStopMaxWaiting is a high guardrail, independent of passenger arrival rates.
+const DefaultStopMaxWaiting = 2048
+
 // BusStop represents a bus stop station in the city
 type BusStop struct {
-	ID         int
-	Name       string
-	RoadCenter Vec2    // Center of the adjacent road
-	Heading    float64 // Direction of the road beside it
-	RoadLanes  int     // Number of lanes on the adjacent road (2 or 4)
-	Pos        Vec2    // Center of stop bay (computed from RoadCenter and laneWidth)
-	Length     float64 // Length of stop bay along heading
-	Width      float64 // Width of stop bay
+	ID           int
+	Name         string
+	CustomNameZH string  `json:"-"`
+	CustomNameEN string  `json:"-"`
+	RoadCenter   Vec2    // Center of the adjacent road
+	Heading      float64 // Direction of the road beside it
+	RoadLanes    int     // Number of lanes on the adjacent road (2 or 4)
+	Pos          Vec2    // Center of stop bay (computed from RoadCenter and laneWidth)
+	Length       float64 // Length of stop bay along heading
+	Width        float64 // Width of stop bay
 
 	WaitingPassengers int
 	MaxWaiting        int
@@ -33,6 +38,12 @@ type BusStop struct {
 
 // LocalizedName returns the station name localized according to CurrentLanguage
 func (s *BusStop) LocalizedName() string {
+	if locale.CurrentLanguage == locale.LanguageEN && s.CustomNameEN != "" {
+		return s.CustomNameEN
+	}
+	if locale.CurrentLanguage != locale.LanguageEN && s.CustomNameZH != "" {
+		return s.CustomNameZH
+	}
 	if locale.CurrentLanguage == locale.LanguageEN {
 		if idx := strings.Index(s.Name, "("); idx != -1 {
 			if end := strings.Index(s.Name, ")"); end > idx {
@@ -46,6 +57,12 @@ func (s *BusStop) LocalizedName() string {
 // CleanName returns the clean, concise station name without redundant bilingual parenthetical text
 // (Chinese only in Chinese mode, English only in English mode)
 func (s *BusStop) CleanName() string {
+	if locale.CurrentLanguage == locale.LanguageEN && s.CustomNameEN != "" {
+		return s.CustomNameEN
+	}
+	if locale.CurrentLanguage != locale.LanguageEN && s.CustomNameZH != "" {
+		return s.CustomNameZH
+	}
 	if idx := strings.Index(s.Name, "("); idx != -1 {
 		if locale.CurrentLanguage == locale.LanguageEN {
 			if end := strings.Index(s.Name, ")"); end > idx {
@@ -72,7 +89,7 @@ func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes
 		Length:            StandardStopLength,
 		Width:             44,
 		WaitingPassengers: waitPax,
-		MaxWaiting:        45,
+		MaxWaiting:        DefaultStopMaxWaiting,
 		SpawnInterval:     20.0 + RandomFloat64()*15.0, // 20-35s passenger arrival rate
 		AccentColor:       accent,
 	}
@@ -115,9 +132,10 @@ func (s *BusStop) ContainsBus(bus *Bus) bool {
 	dx := bus.Pos.X - s.Pos.X
 	dy := bus.Pos.Y - s.Pos.Y
 
-	// Both sections must fit longitudinally in the boarding platform.
+	// Rear vehicles may overhang a standard platform; their powered section
+	// still has to reach the boarding area.
 	forward := Vec2{X: cosH, Y: sinH}
-	if !s.containsBusLength(bus, forward) {
+	if !s.containsBoardingLength(bus, forward) {
 		return false
 	}
 
@@ -208,6 +226,30 @@ func (s *BusStop) containsBusLength(bus *Bus, forward Vec2) bool {
 		yaw := part.Heading - s.Heading
 		extent := math.Abs(math.Cos(yaw))*part.HalfLen + math.Abs(math.Sin(yaw))*part.HalfWid
 		if math.Abs(part.Center.Sub(s.Pos).Dot(forward))+extent > s.Length/2+2 {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *BusStop) containsBoardingLength(bus *Bus, forward Vec2) bool {
+	if s.containsBusLength(bus, forward) {
+		return true
+	}
+	if !s.HasTwoBerths() {
+		return false
+	}
+	along := bus.Pos.Sub(s.Pos).Dot(forward)
+	if along < -s.Length/2-2 {
+		return false
+	}
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		yaw := part.Heading - s.Heading
+		extent := math.Abs(math.Cos(yaw))*part.HalfLen + math.Abs(math.Sin(yaw))*part.HalfWid
+		if part.Center.Sub(s.Pos).Dot(forward)+extent > s.Length/2+2 {
 			return false
 		}
 	}

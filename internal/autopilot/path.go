@@ -98,7 +98,11 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 		out = append(out, raw[i])
 	}
 	out = append(out, tail...)
-	return smoothRoundaboutDepartures(w, dedupePath(out), lw)
+	path := dedupePath(out)
+	if long && !skipArrival {
+		path, _, _ = joinFoldedArrival(w, path, destination, to.Heading, lw)
+	}
+	return smoothRoundaboutDepartures(w, path, lw)
 }
 
 func dedupePath(pts []sim.Vec2) []sim.Vec2 {

@@ -6,10 +6,12 @@ import (
 	"math"
 )
 
-const currentDrivePathRevision = 3
+const currentDrivePathRevision = 4
 
 // DriverSnapshot stores controller progress without serializing world pointers.
 type DriverSnapshot struct {
+	DepartureEscapeActive  bool                     `json:",omitempty"`
+	SidecarEscapeActive    bool                     `json:",omitempty"`
 	RoundaboutEdgeRecovery *RoundaboutEdgeRecovery  `json:",omitempty"`
 	PathReturnHold         *sim.BusLaneMergeRequest `json:",omitempty"`
 	DockDepartureRun       float64
@@ -54,14 +56,17 @@ type TurnSnapshot struct {
 	Entered         bool
 }
 type DockSnapshot struct {
-	Waiting      bool
-	StopID, Rank int
-	Target       sim.Vec2
-	Points       []sim.Vec2
+	AlignmentRecovery bool `json:",omitempty"`
+	Waiting           bool
+	StopID, Rank      int
+	Target            sim.Vec2
+	Points            []sim.Vec2
 }
 
 func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	s := DriverSnapshot{Public: *ad, SkippedStop: -1, ArticulatedPath: ad.articulatedPath, DockDepartureRun: ad.dockDepartureRun, SmoothDockDeparture: ad.smoothDockDeparture}
+	s.SidecarEscapeActive = ad.sidecarEscapeActive
+	s.DepartureEscapeActive = ad.departureEscapeActive
 	queue := ad.queueStopID
 	s.QueueStopID = &queue
 	s.ParallelEntryCenter = ad.parallelEntryCenter
@@ -101,7 +106,7 @@ func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	}
 	if ad.stationDock != nil {
 		d := ad.stationDock
-		s.Dock = &DockSnapshot{StopID: d.stopID, Rank: d.rank, Target: d.target, Points: d.points, Waiting: d.waiting}
+		s.Dock = &DockSnapshot{StopID: d.stopID, Rank: d.rank, Target: d.target, Points: d.points, Waiting: d.waiting, AlignmentRecovery: d.alignmentRecovery}
 	}
 	if ad.skippedDeparture != nil {
 		s.SkippedStop = ad.skippedDeparture.stop.ID
@@ -120,6 +125,8 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 		return nil, fmt.Errorf("invalid saved autopilot progress")
 	}
 	ad := s.Public
+	ad.sidecarEscapeActive = s.SidecarEscapeActive
+	ad.departureEscapeActive = s.DepartureEscapeActive
 	ad.articulatedPath = s.ArticulatedPath
 	ad.dockDepartureRun = s.DockDepartureRun
 	ad.smoothDockDeparture = s.SmoothDockDeparture
@@ -175,7 +182,7 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 	}
 	if s.Dock != nil {
 		d := s.Dock
-		ad.stationDock = &stationDockPlan{stopID: d.StopID, rank: d.Rank, target: d.Target, points: d.Points, waiting: d.Waiting}
+		ad.stationDock = &stationDockPlan{stopID: d.StopID, rank: d.Rank, target: d.Target, points: d.Points, waiting: d.Waiting, alignmentRecovery: d.AlignmentRecovery}
 	}
 	if s.SkippedStop >= 0 {
 		ad.skippedDeparture = &skippedStopDeparture{stop: w.Stops[s.SkippedStop], position: s.SkippedPosition, served: s.SkippedServed}
@@ -188,7 +195,24 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 // Preserve an in-progress turn/dock rather than moving its pursuit target across
 // traffic on load; the next leg then obtains the new geometry normally.
 func (ad *AutopilotDriver) refreshUnenteredSavedPath(w *sim.World) {
-	if ad.pathRevision == currentDrivePathRevision || len(ad.drivePath) < 2 || !ad.pathSynced || ad.stationDock != nil || ad.skippedDeparture != nil || ad.directRoundaboutExit != nil || ad.approachMerge != nil || ad.midLaneRecovery != nil {
+	if len(ad.drivePath) < 2 || !ad.pathSynced || ad.stationDock != nil || ad.skippedDeparture != nil || ad.directRoundaboutExit != nil || ad.approachMerge != nil || ad.midLaneRecovery != nil {
+		return
+	}
+	if ad.articulatedPath && !ad.pathSkipTarget {
+		to := w.Stops[ad.pathToID]
+		if path, prefix, changed := joinFoldedArrival(w, ad.drivePath, to.FrontBerthPosition(), to.Heading, ad.pathLane); changed && ad.LastPathS+64 < prefix {
+			// Preserve customized departure/turn prefixes from the saved leg.
+			// Only replace the folded arrival while it is still safely ahead.
+			ad.drivePath, ad.pathRevision, ad.pathSynced = path, currentDrivePathRevision, false
+			ad.WaypointIdx = 0
+			ad.cumLen = make([]float64, len(path))
+			for i := 1; i < len(path); i++ {
+				ad.cumLen[i] = ad.cumLen[i-1] + path[i].Distance(path[i-1])
+			}
+			return
+		}
+	}
+	if ad.pathRevision == currentDrivePathRevision {
 		return
 	}
 	path := buildAutopilotDrivePath(w, w.Stops[ad.pathFromID], w.Stops[ad.pathToID], ad.pathLane, false, ad.pathSkipTarget, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath})

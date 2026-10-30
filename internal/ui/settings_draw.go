@@ -17,6 +17,11 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		return
 	}
 
+	if s.PassengerTimingOpen {
+		s.drawPassengerTiming(screen)
+		return
+	}
+
 	if len(cam) > 0 && cam[0] != nil {
 		s.CameraViewMode = cam[0].Mode
 	}
@@ -29,7 +34,7 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 
 	// Modal card
 	modalW := 580.0
-	modalH := 624.0
+	modalH := 700.0
 	modalX := (sw - modalW) / 2
 	modalY := (sh - modalH) / 2
 
@@ -179,25 +184,53 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 	// Option 6: Map Theme & City Selection
 	opt6Y := modalY + 256
 	textui.DrawText(screen, locale.T("6. 城市地图与风貌 (Map Theme):", "6. City Map & Theme:"), modalX+26, opt6Y+7, 13, sim.RGBA(226, 232, 240, 255))
-	s.themeToggleBounds = sim.Rect{X: modalX + 340, Y: opt6Y, W: 210, H: 28}
 
-	themeBtnColor := sim.RGBA(168, 85, 247, 255)
-	if s.MapTheme == sim.MapThemeCoastalBay {
-		themeBtnColor = sim.RGBA(6, 182, 212, 255)
-	} else if s.MapTheme == sim.MapThemeRiverValley {
-		themeBtnColor = sim.RGBA(16, 185, 129, 255)
-	} else if s.MapTheme == sim.MapThemeEmeraldLake {
-		themeBtnColor = sim.RGBA(34, 197, 94, 255)
-	} else if s.MapTheme == sim.MapThemeTwinCities {
-		themeBtnColor = sim.RGBA(217, 70, 239, 255)
-	} else if s.MapTheme == sim.MapThemeCustom {
-		themeBtnColor = sim.RGBA(245, 158, 11, 255)
+	if s.MapTheme == sim.MapThemeMetropolis {
+		s.themeToggleBounds = sim.Rect{X: modalX + 340, Y: opt6Y, W: 86, H: 28}
+		s.largeGridToggleBounds = sim.Rect{X: modalX + 432, Y: opt6Y, W: 118, H: 28}
+
+		themeBtnColor := sim.RGBA(59, 130, 246, 255)
+		vector.DrawFilledRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
+			float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
+		vector.StrokeRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
+			float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), 1.5, themeBtnColor, true)
+		textui.DrawText(screen, locale.T("🏠 换城市", "🏠 Maps"), s.themeToggleBounds.X+14, s.themeToggleBounds.Y+6, 12, themeBtnColor)
+
+		gridBtnColor := sim.RGBA(148, 163, 184, 255)
+		gridBtnBg := sim.RGBA(30, 41, 59, 255)
+		gridText := locale.T("都会: 标准 1x", "CBD: 1x Std")
+		if s.LargeRoadNetwork {
+			gridBtnColor = sim.RGBA(56, 189, 248, 255)
+			gridBtnBg = sim.RGBA(30, 58, 138, 255)
+			gridText = locale.T("都会: 大路网 4x", "CBD: 4x Grid")
+		}
+		vector.DrawFilledRect(screen, float32(s.largeGridToggleBounds.X), float32(s.largeGridToggleBounds.Y),
+			float32(s.largeGridToggleBounds.W), float32(s.largeGridToggleBounds.H), gridBtnBg, true)
+		vector.StrokeRect(screen, float32(s.largeGridToggleBounds.X), float32(s.largeGridToggleBounds.Y),
+			float32(s.largeGridToggleBounds.W), float32(s.largeGridToggleBounds.H), 1.5, gridBtnColor, true)
+		textui.DrawText(screen, gridText, s.largeGridToggleBounds.X+12, s.largeGridToggleBounds.Y+6, 11, gridBtnColor)
+	} else {
+		s.themeToggleBounds = sim.Rect{X: modalX + 340, Y: opt6Y, W: 210, H: 28}
+		s.largeGridToggleBounds = sim.Rect{}
+
+		themeBtnColor := sim.RGBA(168, 85, 247, 255)
+		if s.MapTheme == sim.MapThemeCoastalBay {
+			themeBtnColor = sim.RGBA(6, 182, 212, 255)
+		} else if s.MapTheme == sim.MapThemeRiverValley {
+			themeBtnColor = sim.RGBA(16, 185, 129, 255)
+		} else if s.MapTheme == sim.MapThemeEmeraldLake {
+			themeBtnColor = sim.RGBA(34, 197, 94, 255)
+		} else if s.MapTheme == sim.MapThemeTwinCities {
+			themeBtnColor = sim.RGBA(217, 70, 239, 255)
+		} else if s.MapTheme == sim.MapThemeCustom {
+			themeBtnColor = sim.RGBA(245, 158, 11, 255)
+		}
+		vector.DrawFilledRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
+			float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
+		vector.StrokeRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
+			float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), 1.5, themeBtnColor, true)
+		textui.DrawText(screen, locale.T("🏠 退入主菜单更换", "🏠 Return to Menu to Change"), s.themeToggleBounds.X+24, s.themeToggleBounds.Y+6, 12, themeBtnColor)
 	}
-	vector.DrawFilledRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
-		float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
-	vector.StrokeRect(screen, float32(s.themeToggleBounds.X), float32(s.themeToggleBounds.Y),
-		float32(s.themeToggleBounds.W), float32(s.themeToggleBounds.H), 1.5, themeBtnColor, true)
-	textui.DrawText(screen, locale.T("🏠 退入主菜单更换", "🏠 Return to Menu to Change"), s.themeToggleBounds.X+24, s.themeToggleBounds.Y+6, 12, themeBtnColor)
 
 	// Option 7: Interface Language (Chinese / English)
 	opt7Y := modalY + 290
@@ -215,18 +248,42 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		float32(s.langToggleBounds.W), float32(s.langToggleBounds.H), 1.5, langBtnColor, true)
 	textui.DrawText(screen, langBtnText, s.langToggleBounds.X+20, s.langToggleBounds.Y+6, 12, langBtnColor)
 
-	s.drawAISpeedRanges(screen, modalX, modalY+332)
-	textui.DrawText(screen, locale.T("每辆车按 10 km/h 一档随机分配，生成后固定。", "Limits are sampled in 10 km/h steps and fixed at spawn."), modalX+26, modalY+414, 12, sim.RGBA(148, 163, 184, 255))
-	textui.DrawText(screen, locale.T("最低档保持跟车；其余车辆可安全超车。", "The lowest tier follows; faster vehicles may pass safely."), modalX+26, modalY+436, 12, sim.RGBA(148, 163, 184, 255))
-	textui.DrawText(screen, locale.T("调整范围对新生成的车辆生效。", "Range changes apply to newly spawned vehicles."), modalX+26, modalY+458, 12, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, locale.T("8. 公交语音报站:", "8. Bus announcements:"), modalX+26, modalY+339, 13, sim.RGBA(226, 232, 240, 255))
+	s.announcementsBounds = sim.Rect{X: modalX + 340, Y: modalY + 332, W: 210, H: 28}
+	operationsButton(screen, s.announcementsBounds, s.Announcements.Label(), false)
+	textui.DrawText(screen, locale.T("9. 报站声音:", "9. Announcement voice:"), modalX+26, modalY+373, 13, sim.RGBA(226, 232, 240, 255))
+	s.announcementVoiceBounds = sim.Rect{X: modalX + 340, Y: modalY + 366, W: 210, H: 28}
+	operationsButton(screen, s.announcementVoiceBounds, s.AnnouncementVoiceLabel(), false)
+	s.drawAISpeedRanges(screen, modalX, modalY+400)
+	volumeLabels := []string{locale.T("引擎 / 路噪音量", "Engine / road volume"), locale.T("报站音量", "Announcement volume"), locale.T("喇叭音量", "Horn volume")}
+	volumes := s.Volumes()
+	values := []int{volumes.Engine, volumes.Announcements, volumes.Horn}
+	for i, label := range volumeLabels {
+		y := modalY + 448 + float64(i)*32
+		textui.DrawText(screen, label, modalX+26, y+5, 13, sim.RGBA(226, 232, 240, 255))
+		for d, caption := range []string{"-", "+"} {
+			x := modalX + 340 + float64(d)*174
+			s.volumeBounds[i][d] = sim.Rect{X: x, Y: y, W: 36, H: 26}
+			operationsButton(screen, s.volumeBounds[i][d], caption, false)
+		}
+		textui.DrawText(screen, fmt.Sprintf("%d%%", values[i]), modalX+418, y+5, 13, sim.RGBA(56, 189, 248, 255))
+	}
 
-	textui.DrawText(screen, locale.T("AI 公交数量与限速统一在 [T] 线路管理中设定。", "Set AI bus counts and limits in [T] Transit Lines."), modalX+26, modalY+392, 12, sim.RGBA(148, 163, 184, 255))
-	s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 478, W: 256, H: 30}
-	s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 478, W: 256, H: 30}
+	s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 550, W: 256, H: 30}
+	s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 550, W: 256, H: 30}
 	operationsButton(screen, s.saveBounds, locale.T("选择存档并保存 [F5]", "Save to slot [F5]"), false)
 	operationsButton(screen, s.loadBounds, locale.T("选择存档并读取 [F9]", "Load from slot [F9]"), false)
-	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 516, W: 528, H: 32}
+	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 588, W: 528, H: 32}
 	operationsButton(screen, s.operationsBounds, locale.T("票价设置与运营统计 [O]", "Fares & operating statistics [O]"), true)
+
+	s.passengerTimingBounds = sim.Rect{X: modalX + 26, Y: modalY + 626, W: 256, H: 26}
+	operationsButton(screen, s.passengerTimingBounds, locale.T("各车型上下客速度…", "Boarding / alighting times…"), false)
+	s.busSignalPriorityBounds = sim.Rect{X: modalX + 298, Y: modalY + 626, W: 256, H: 26}
+	priorityLabel := locale.T("公交信号优先：关闭", "Bus signal priority: OFF")
+	if s.BusSignalPriority {
+		priorityLabel = locale.T("公交信号优先：开启", "Bus signal priority: ON")
+	}
+	operationsButton(screen, s.busSignalPriorityBounds, priorityLabel, s.BusSignalPriority)
 
 	// Bottom Buttons: Return to Menu & Resume
 	s.menuButtonBounds = sim.Rect{X: modalX + 26, Y: modalY + modalH - 46, W: 250, H: 34}

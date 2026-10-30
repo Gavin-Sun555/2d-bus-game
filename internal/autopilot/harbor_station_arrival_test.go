@@ -79,16 +79,20 @@ func TestStationBerthReservationPreservesVehicleOrder(t *testing.T) {
 		if got := availableStationBerths(leader, &stop, []VehicleObstacle{ObserveBus(follower)}); len(got) != 1 {
 			t.Fatalf("heading %.2f: clear lead berth rejected", heading)
 		}
-		if got := availableStationBerths(follower, &stop, []VehicleObstacle{ObserveBus(leader)}); len(got) != 0 {
-			t.Fatalf("heading %.2f: follower reserved occupied platform", heading)
+		for _, target := range availableStationBerths(follower, &stop, []VehicleObstacle{ObserveBus(leader)}) {
+			if target.Distance(stop.FrontBerthPosition()) < 1 {
+				t.Fatalf("heading %.2f: follower reserved occupied front berth", heading)
+			}
 		}
-		// Move the follower alongside the lead: a genuine occupied platform must
-		// continue to prevent a second long bus from choosing this berth.
+		// An occupied front berth remains reserved even though the second
+		// vehicle may now choose a separate rear berth.
 		follower.Pos = leader.Pos
 		follower.Heading = leader.Heading
 		follower.TrailerHeading = leader.TrailerHeading
-		if got := availableStationBerths(leader, &stop, []VehicleObstacle{ObserveBus(follower)}); len(got) != 0 {
-			t.Fatalf("heading %.2f: overlapping bus ignored", heading)
+		for _, target := range availableStationBerths(leader, &stop, []VehicleObstacle{ObserveBus(follower)}) {
+			if target.Distance(stop.FrontBerthPosition()) < 1 {
+				t.Fatalf("heading %.2f: occupied front ignored", heading)
+			}
 		}
 	}
 }

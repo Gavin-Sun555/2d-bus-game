@@ -22,6 +22,8 @@ func TestBerserkStartupDepartureStaysOnOwnSide(t *testing.T) {
 					g.Settings.TrafficDensity = density
 					g.Settings.AIBusCount = 4
 					g.EnterCity(sim.MapThemeMetropolis)
+					// Isolate departure geometry from passenger dwell (up to 90s).
+					g.World.Stops[g.Route.StopIDs[0]].WaitingPassengers = 0
 					for tick := 0; tick < 240; tick++ {
 						g.Update()
 					}

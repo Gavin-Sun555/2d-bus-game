@@ -258,7 +258,7 @@ func committedCarPathClear(car, other *sim.TrafficCar) bool {
 // closed merge gap. Prove clearance along its actual committed path, including
 // both bus sections, rather than treating a side safety margin as a leader.
 func carClearsStoppedBusAhead(car *sim.TrafficCar, bus *sim.Bus) bool {
-	if math.Abs(bus.Speed) > .1 || bus.StationMergeRequest != nil || (bus.LaneMergeRequest != nil && (car.JunctionTurn == nil || car.JunctionTurn.LaneChange || !car.JunctionTurn.Straight)) || car.InRoundabout || math.Cos(bus.Heading-car.Heading) < .95 {
+	if math.Abs(bus.Speed) > .1 || car.YieldingToBus == bus || (bus.LaneMergeRequest != nil && (car.JunctionTurn == nil || car.JunctionTurn.LaneChange || !car.JunctionTurn.Straight)) || car.InRoundabout || math.Cos(bus.Heading-car.Heading) < .95 {
 		return false
 	}
 	u := sim.UnitFromAngle(car.Heading)
@@ -270,7 +270,7 @@ func carClearsStoppedBusAhead(car *sim.TrafficCar, bus *sim.Bus) bool {
 		if car.JunctionTurn != nil {
 			pos, heading = car.JunctionTurn.Predict(distance)
 		}
-		body := sim.OBB{Center: pos, Heading: heading, HalfLen: car.Length/2 + 2, HalfWid: car.Width/2 + 2}
+		body := sim.OBB{Center: pos, Heading: heading, HalfLen: car.Length/2 + 1, HalfWid: car.Width/2 + 1}
 		if hit, _, _ := sim.CheckBusAtBody(bus, bus.BodyParts()[0], body); hit {
 			return false
 		}

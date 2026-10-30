@@ -12,14 +12,27 @@ func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedA
 	if bus.TerminalReplacementHold {
 		return 0, 1, 0, false, !bus.DoorsOpen, true
 	}
+	if bus.PassengerService.Active {
+		ad.DwellTimer = bus.PassengerServiceRemaining()
+	} else {
+		ad.DwellTimer = math.Max(ad.DwellTimer, bus.PassengerServiceRemaining())
+	}
+	if ad.DwellTimer > 0 {
+		ad.DwellFinished = false
+	}
 	if !ad.DwellFinished {
 		switch {
 		case !bus.DoorsOpen && bus.DoorProgress <= 0.05:
 			// Open only below crawl speed; otherwise continue braking.
 			return 0, 1, 0, false, speedAbs < 15.0, true
 		case bus.DoorsOpen && ad.DwellTimer > 0:
-			// Finish this dwell tick before considering door closure next tick.
-			ad.DwellTimer -= dt
+			// Bus.Update advances front/rear service once per simulation tick.
+			if !bus.PassengerService.Active {
+				ad.DwellTimer = math.Max(0, ad.DwellTimer-dt)
+				if ad.DwellTimer < 1e-9 {
+					ad.DwellTimer = 0
+				}
+			}
 			return 0, 1, 0, false, false, true
 		case bus.DoorsOpen && ad.DwellTimer <= 0 && bus.DoorProgress >= 0.80:
 			ad.DwellFinished = true
@@ -34,7 +47,12 @@ func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedA
 		route.AdvanceToNextStop()
 	}
 	roadDeparture := false
-	if ad.stationDock != nil && ad.stationDock.rank > 0 && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
+	isRoadDock := (ad.stationDock != nil && ad.stationDock.rank > 0)
+	if !isRoadDock && ad.BerserkMode && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
+		stop, laneWidth := ad.pathWorld.Stops[ad.DockedStopID], ad.pathLane
+		isRoadDock = stop.ContainsBusInOuterLane(bus, laneWidth)
+	}
+	if isRoadDock && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
 		stop, laneWidth := ad.pathWorld.Stops[ad.DockedStopID], ad.pathLane
 		ad.beginRoadDeparture(bus, stop, laneWidth)
 		ad.skippedDeparture.served = true
@@ -65,7 +83,18 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 	if ad.BerserkMode {
 		stopDecel = 195.0 // Strong crisp deceleration in Berserk mode
 	}
-	stopSpd := math.Sqrt(2 * stopDecel * math.Max(0, f.remaining-2.0))
+	stopRemaining := f.remaining
+	if f.targetStop != nil && f.targetStop.HasTwoBerths() && len(ad.availableStationBerths(f.bus, f.targetStop, f.obstacles)) == 0 {
+		if queueTarget, occupied := ad.stationQueueTarget(f.bus, f.targetStop, f.obstacles); occupied {
+			forward := sim.UnitFromAngle(f.targetStop.Heading)
+			queueOffset := math.Max(0, f.targetStop.FrontBerthPosition().Sub(queueTarget).Dot(forward))
+			stopRemaining = math.Max(0, f.remaining-queueOffset)
+			queueDecel := math.Max(stopDecel, 165.0)
+			entrySpd := math.Sqrt(120*120 + 2*queueDecel*math.Max(0, stopRemaining-360.0))
+			targetSpd = math.Min(targetSpd, entrySpd)
+		}
+	}
+	stopSpd := math.Sqrt(2 * stopDecel * math.Max(0, stopRemaining-2.0))
 	isBerserkOuterDock := ad.BerserkMode && f.targetStop.ContainsBusInOuterLane(f.bus, f.laneWidth)
 	isStuckInOuterLane := !isBerserkOuterDock && f.remaining < 60.0 && f.distToStop < 250.0 && ((f.distToStop > 45.0 && !f.targetStop.ContainsBus(f.bus)) || math.Abs(ad.LaneOffset) > 15.0 || math.Abs(ad.TargetLaneOffset) > 15.0)
 	if f.remaining > 2.0 || isStuckInOuterLane {

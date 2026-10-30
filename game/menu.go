@@ -43,6 +43,11 @@ func (g *Game) updateMainMenu() {
 		g.Settings.Language = newLang
 	}
 
+	// Hotkey G: Toggle Metropolis Large Road Network (4x block distance)
+	if inpututil.IsKeyJustPressed(ebiten.KeyG) {
+		g.Settings.LargeRoadNetwork = !g.Settings.LargeRoadNetwork
+	}
+
 	// Hotkey R: reload custom map from custom_map.json
 	if inpututil.IsKeyJustPressed(ebiten.KeyR) {
 		_ = g.ReloadCustomMap()
@@ -68,6 +73,11 @@ func (g *Game) updateMainMenu() {
 
 		if g.menuContinueBounds.Contains(mPos) {
 			g.openSavePicker(true)
+			return
+		}
+		if g.menuLargeGridBounds.Contains(mPos) {
+			g.Settings.LargeRoadNetwork = !g.Settings.LargeRoadNetwork
+			g.SelectedMapTheme = sim.MapThemeMetropolis
 			return
 		}
 		if g.menuLangBounds.Contains(mPos) {
@@ -185,12 +195,17 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		stops    string
 	}
 
+	metropolisTopo := locale.T("• 公交专用八车道主干路网", "• Bus-priority boulevard grid")
+	if g.Settings.LargeRoadNetwork {
+		metropolisTopo = locale.T("• 4x 超长大路网 (路口4倍间距)", "• 4x Large grid (4x block length)")
+	}
+
 	cardData := []mapCardInfo{
 		{
 			tag:      locale.T("【01 都会 CBD】", "【01 Metropolis】"),
 			name:     locale.T("都会核心 (Metropolis)", "Metropolis CBD"),
 			sub:      locale.T("经典都会 · 商务高层群", "Classic Skyline & CBD"),
-			topo:     locale.T("• 公交专用八车道主干路网", "• Bus-priority boulevard grid"),
+			topo:     metropolisTopo,
 			landmark: locale.T("• 运河双子桥与喷泉环岛", "• Canal bridges & fountain"),
 			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
@@ -272,6 +287,26 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		textui.DrawText(screen, info.landmark, cx+12, cy+185, 10, sim.RGBA(226, 232, 240, 255))
 		textui.DrawText(screen, info.stops, cx+12, cy+215, 10, sim.RGBA(226, 232, 240, 255))
 
+		if i == 0 {
+			largeGridY := cy + cardH - 84
+			largeGridW := cardW - 24
+			largeGridH := 28.0
+			g.menuLargeGridBounds = sim.Rect{X: cx + 12, Y: largeGridY, W: largeGridW, H: largeGridH}
+			btnBg := sim.RGBA(15, 23, 42, 220)
+			borderCol := sim.RGBA(100, 116, 139, 200)
+			textColor := sim.RGBA(148, 163, 184, 255)
+			btnText := locale.T("🛣️ 标准路网 1x [G]", "🛣️ Standard 1x [G]")
+			if g.Settings.LargeRoadNetwork {
+				btnBg = sim.RGBA(30, 58, 138, 240)
+				borderCol = sim.RGBA(56, 189, 248, 255)
+				textColor = sim.RGBA(56, 189, 248, 255)
+				btnText = locale.T("🛣️ 大路网 4x [G]", "🛣️ Large Grid 4x [G]")
+			}
+			vector.DrawFilledRect(screen, float32(cx+12), float32(largeGridY), float32(largeGridW), float32(largeGridH), btnBg, true)
+			vector.StrokeRect(screen, float32(cx+12), float32(largeGridY), float32(largeGridW), float32(largeGridH), 1.5, borderCol, true)
+			textui.DrawText(screen, btnText, cx+22, largeGridY+6, 11, textColor)
+		}
+
 		// Button inside card
 		btnBoxY := cy + cardH - 48
 		btnBoxW := cardW - 24
@@ -308,7 +343,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		textui.DrawText(screen, g.saveMessage, 24, sh-24, 12, sim.RGBA(251, 191, 36, 255))
 	}
 	bottomY := continueY + 54.0
-	tips := locale.T("【操作提示】按数字键 [1-5/C] 或 [← / →] 切换城市 | 按 [L] 切换语言 | 按 [R] 重载自定义地图 | 驾驶途中点击右上角【主菜单】或按 ESC 退回更换", "【Controls】Keys [1-5/C] or [←/→] Select City | [L] Toggle Language | [R] Hot Reload Map | Click [Menu] or ESC to Change")
+	tips := locale.T("【操作提示】按数字键 [1-5/C] 或 [← / →] 切换城市 | 按 [G] 切换都会大路网 (4x) | 按 [L] 切换语言 | 按 [R] 重载自定义地图 | 驾驶途中点击右上角【主菜单】或按 ESC 退回更换", "【Controls】Keys [1-5/C] or [←/→] Select City | [G] Metropolis 4x Grid | [L] Toggle Language | [R] Hot Reload Map | Click [Menu] or ESC to Change")
 	tipW, _ := textui.MeasureText(tips, 12)
 	textui.DrawText(screen, tips, (sw-tipW)/2.0, bottomY, 12, sim.RGBA(148, 163, 184, 255))
 }

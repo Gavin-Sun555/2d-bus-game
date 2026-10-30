@@ -9,11 +9,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
-func (g *Game) updatePassengerExchange(toggleDoors bool) {
-	g.ensureOperations()
-	// Check if parked at any bus stop
-	var activeStop *sim.BusStop
-	var misalignedStop *sim.BusStop
+func (g *Game) activeDockedStop() (activeStop, misalignedStop *sim.BusStop) {
 	isPlayerBerserk := g.Settings.AutopilotBerserk || (g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
 	currentLaneW := g.Settings.GetLaneWidth()
 	for _, s := range g.World.Stops {
@@ -22,20 +18,68 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 			g.AutopilotDriver.State == autopilot.AutopilotStateDocked && g.AutopilotDriver.DockedStopID == s.ID &&
 			(s.ContainsBus(g.Bus) || isBerserkOuterLane || s.Pos.Distance(g.Bus.Pos) < s.Length/2+65.0)
 		if s.ContainsBus(g.Bus) || isBerserkOuterLane || isAutopilotDockedAtThisStop {
+			isOuterDock := isBerserkOuterLane || (isAutopilotDockedAtThisStop && !s.ContainsBus(g.Bus))
+			if !isOuterDock && (!g.Bus.PassengerService.Active || g.Bus.PassengerService.StopID != s.ID) {
+				others := 0
+				for _, b := range g.dockedBusesAtStop(s) {
+					if b != g.Bus {
+						others++
+					}
+				}
+				if others >= 2 {
+					continue
+				}
+			}
 			activeStop = s
 			break
 		} else if s.Pos.Distance(g.Bus.Pos) < s.Length/2+65 || s.RoadCenter.Distance(g.Bus.Pos) < 80 {
 			misalignedStop = s
 		}
 	}
+	return activeStop, misalignedStop
+}
+
+func (g *Game) dockedBusesAtStop(stop *sim.BusStop) []*sim.Bus {
+	if stop == nil {
+		return nil
+	}
+	var buses []*sim.Bus
+	if g.Bus != nil && g.Bus.DoorsOpen && math.Abs(g.Bus.Speed) <= 3 && !g.Bus.TerminalReplacementHold {
+		buses = append(buses, g.Bus)
+	}
+	if g.AIBusMgr != nil {
+		for _, ab := range g.AIBusMgr.Buses {
+			if ab.Bus == nil || !ab.Bus.DoorsOpen || math.Abs(ab.Bus.Speed) > 3 || ab.Retiring {
+				continue
+			}
+			if ab.Bus.PendingModel != nil && ab.Route != nil && ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) {
+				continue
+			}
+			atStop := (ab.Bus.PassengerService.Active && ab.Bus.PassengerService.StopID == stop.ID) ||
+				(ab.Driver != nil && ab.Driver.State == autopilot.AutopilotStateDocked &&
+					(ab.Driver.DockedStopID == stop.ID || (ab.Route != nil && ab.Route.GetCurrentTargetStopID() == stop.ID))) ||
+				stop.ContainsBus(ab.Bus)
+			if atStop {
+				buses = append(buses, ab.Bus)
+			}
+		}
+	}
+	return buses
+}
+
+func (g *Game) updatePassengerExchange(toggleDoors bool) {
+	g.syncPassengerRates()
+	g.ensureOperations()
+	activeStop, misalignedStop := g.activeDockedStop()
+	isPlayerBerserk := g.Settings.AutopilotBerserk || (g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
 
 	// Feedback if driver tries to open doors near a stop from wrong side or reverse orientation
 	if toggleDoors && activeStop == nil && misalignedStop != nil {
 		angleDiff := math.Abs(sim.NormalizeAngle(g.Bus.Heading - misalignedStop.Heading))
 		if angleDiff >= math.Pi/4 {
-			g.HUD.AddWarningToast(fmt.Sprintf("【靠站方向错误】[%s] 车门背离站台！公交车只能靠马路右侧顺行停靠", misalignedStop.Name))
+			g.HUD.AddWarningToast(fmt.Sprintf("【靠站方向错误】[%s] 车门背离站台！公交车只能靠马路右侧顺行停靠", misalignedStop.LocalizedName()))
 		} else {
-			g.HUD.AddWarningToast(fmt.Sprintf("【未准确进站】[%s] 请驶入马路右侧黄色停靠港湾方可上下客", misalignedStop.Name))
+			g.HUD.AddWarningToast(fmt.Sprintf("【未准确进站】[%s] 请驶入马路右侧黄色停靠港湾方可上下客", misalignedStop.LocalizedName()))
 		}
 	}
 
@@ -43,142 +87,141 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 	if activeStop != nil {
 		g.lastSkippedStopID = -1
 		if !g.Bus.DoorsOpen {
-			// Doors closed while parked: reset flag so opening doors at this same stop allows boarding again
+			// Doors closed while parked: summarize station exchange and reset flag
+			g.finishStationServiceSummary()
 			g.boardedThisStop = false
+			g.Bus.PassengerService = sim.PassengerService{}
 		} else {
+			isTerminus := g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID()
 			// Wait for a full stop before the terminal vehicle handover.
-			if g.Bus.PendingModel != nil && !g.boardedThisStop && g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() && math.Abs(g.Bus.Speed) > 3 {
+			if g.Bus.PendingModel != nil && !g.boardedThisStop && isTerminus && math.Abs(g.Bus.Speed) > 3 {
 				return
 			}
-			// Doors are open
-			boardSpace := g.Bus.Capacity - g.Bus.PassengerCount
+			candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
+			if len(candidates) == 0 && len(g.Route.StopIDs) > 0 {
+				for _, id := range g.Route.StopIDs {
+					if id != activeStop.ID {
+						candidates = append(candidates, id)
+					}
+				}
+			}
 
 			if !g.boardedThisStop {
 				g.boardedThisStop = true
+				g.announceArrival(activeStop)
 
-				// Passengers getting off:
-				// Remove passengers whose target destination is this stop
-				offCount := g.Bus.RemovePassengersAlightingAt(activeStop.ID)
-
-				// If this active stop is the terminus of the route, all remaining passengers must alight
-				if g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() {
-					offCount += g.Bus.ClearPassengers()
+				offCount := g.Bus.CountPassengersAlightingAt(activeStop.ID)
+				if isTerminus {
+					offCount = len(g.Bus.Passengers)
 				}
-				g.Operations.Alight(0, activeStop.ID, offCount)
-				if g.Bus.PendingModel != nil && g.Route.IsTerminusIndex(g.Route.CurrentIndex) && activeStop.ID == g.Route.GetCurrentTargetStopID() {
+				g.Bus.BeginStationService(activeStop.ID, g.Route.CurrentIndex, offCount, isTerminus, candidates, g.Settings.ModelPassengerRates(g.Bus.Model))
+
+				if g.Bus.PendingModel != nil && isTerminus {
 					g.Bus.TerminalReplacementHold = true
-					site := g.vehicleHandoverSite()
-					site.Stop = activeStop
-					if !g.Bus.ReplaceModelAtTerminus(g.Route, activeStop.ID, site) {
-						if g.Bus.PendingModel != nil && *g.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
-							// Keep the requested model for the next terminal visit;
-							// holding the front vehicle here would trap the rear berth.
-							g.Bus.TerminalReplacementHold = false
+					if offCount == 0 {
+						site := g.vehicleHandoverSite()
+						site.Stop = activeStop
+						if !g.Bus.ReplaceModelAtTerminus(g.Route, activeStop.ID, site) {
+							if g.Bus.PendingModel != nil && *g.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
+								g.Bus.TerminalReplacementHold = false
+							}
+							g.boardedThisStop = false
+							return
 						}
-						g.boardedThisStop = false
-						return
+						g.Bus.SetStationServiceRates(g.Settings.ModelPassengerRates(g.Bus.Model))
+						g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
 					}
-					g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
 				}
-				boardSpace = g.Bus.Capacity - g.Bus.PassengerCount
+
 				g.stopBellRung = false
 				g.passengersAlighting = 0
 
-				// Passengers getting on
-				boardCount := activeStop.WaitingPassengers
-				if boardCount > boardSpace {
-					boardCount = boardSpace
-				}
+				sim.RebalanceStationBoarding(activeStop, g.dockedBusesAtStop(activeStop), true)
 
-				if boardCount > 0 {
-					candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
-					if len(candidates) == 0 && len(g.Route.StopIDs) > 0 {
-						for _, id := range g.Route.StopIDs {
-							if id != activeStop.ID {
-								candidates = append(candidates, id)
-							}
-						}
-					}
-					actualBoarded, fareEarned := g.Operations.Board(0, g.Bus, g.Route, activeStop.ID, boardCount, candidates)
-					activeStop.WaitingPassengers -= actualBoarded
-					g.Cash += fareEarned
-					toastMsg := locale.Tf("[%s] 下客 %d 人，上客 %d 人，营收 +$%d！",
-						"[%s] %d alighted, %d boarded, revenue +$%d!",
-						activeStop.CleanName(), offCount, actualBoarded, fareEarned)
-					if isPlayerBerserk && !activeStop.ContainsBus(g.Bus) {
-						toCenter := g.Bus.Pos.Sub(activeStop.RoadCenter)
-						sinH := math.Sin(activeStop.Heading)
-						cosH := math.Cos(activeStop.Heading)
-						sideDist := toCenter.X*(-sinH) + toCenter.Y*cosH
-						if activeStop.RoadLanes <= 2 && sideDist < -5.0 {
-							toastMsg = locale.Tf("【⚡ 狂暴对向借道靠站】[%s] 下客 %d 人，上客 %d 人，营收 +$%d！",
-								"【⚡ Berserk Opposing-Lane Dock】[%s] %d alighted, %d boarded, revenue +$%d!",
-								activeStop.CleanName(), offCount, actualBoarded, fareEarned)
-						} else {
-							toastMsg = locale.Tf("【⚡ 狂暴外道靠站】[%s] 下客 %d 人，上客 %d 人，营收 +$%d！",
-								"【⚡ Berserk Outer-Lane Dock】[%s] %d alighted, %d boarded, revenue +$%d!",
-								activeStop.CleanName(), offCount, actualBoarded, fareEarned)
-						}
-					}
-					g.HUD.AddToast(toastMsg, true)
-				} else if boardSpace <= 0 && activeStop.WaitingPassengers > 0 {
-					var toastMsg string
-					if offCount > 0 {
-						toastMsg = locale.Tf("[%s] 下客 %d 人，当前车厢已满载，无法上客！",
-							"[%s] %d alighted, bus is at full capacity!",
+				toastMsg := locale.Tf("[%s] 下客 %d 人！",
+					"[%s] %d alighted!",
+					activeStop.CleanName(), offCount)
+				if isPlayerBerserk && !activeStop.ContainsBus(g.Bus) {
+					toCenter := g.Bus.Pos.Sub(activeStop.RoadCenter)
+					sinH := math.Sin(activeStop.Heading)
+					cosH := math.Cos(activeStop.Heading)
+					sideDist := toCenter.X*(-sinH) + toCenter.Y*cosH
+					if activeStop.RoadLanes <= 2 && sideDist < -5.0 {
+						toastMsg = locale.Tf("【⚡ 狂暴对向借道靠站】[%s] 下客 %d 人！",
+							"【⚡ Berserk Opposing-Lane Dock】[%s] %d alighted!",
 							activeStop.CleanName(), offCount)
 					} else {
-						toastMsg = locale.Tf("[%s] 当前车厢已满载，无法上客！",
-							"[%s] Bus is at full capacity!",
-							activeStop.CleanName())
+						toastMsg = locale.Tf("【⚡ 狂暴外道靠站】[%s] 下客 %d 人！",
+							"【⚡ Berserk Outer-Lane Dock】[%s] %d alighted!",
+							activeStop.CleanName(), offCount)
 					}
-					g.HUD.AddToast(toastMsg, false)
-				} else if offCount > 0 {
-					toastMsg := locale.Tf("[%s] 下客 %d 人，本站无乘客上车！",
-						"[%s] %d alighted, no passengers waiting!",
-						activeStop.CleanName(), offCount)
-					g.HUD.AddToast(toastMsg, false)
-				} else {
-					toastMsg := locale.Tf("[%s] 本站无乘客上下车！",
-						"[%s] No passengers boarding or alighting!",
-						activeStop.CleanName())
-					g.HUD.AddToast(toastMsg, false)
 				}
+				g.HUD.AddToast(toastMsg, offCount > 0)
 
 				// Advance to next stop if this was the planned target stop
 				if activeStop.ID == g.Route.GetCurrentTargetStopID() {
 					g.Route.AdvanceToNextStop()
 				}
 				g.rollAlightingForNextStop()
-			} else {
-				// Doors remain open: if new passengers arrived while parked, board them as long as there is space!
-				if activeStop.WaitingPassengers > 0 && boardSpace > 0 {
-					boardCount := activeStop.WaitingPassengers
-					if boardCount > boardSpace {
-						boardCount = boardSpace
+			}
+
+			alightedNow, boardedNow, fareNow := g.Bus.StepStationService(0, activeStop, g.Route, g.Operations)
+			g.Cash += fareNow
+
+			if g.Bus.PendingModel != nil && g.Bus.PassengerService.IsTerminus && g.Bus.PassengerService.AlightingTarget == 0 && len(g.Bus.Passengers) == 0 {
+				g.Bus.TerminalReplacementHold = true
+				site := g.vehicleHandoverSite()
+				site.Stop = activeStop
+				if g.Bus.ReplaceModelAtTerminus(g.Route, activeStop.ID, site) {
+					g.Bus.SetStationServiceRates(g.Settings.ModelPassengerRates(g.Bus.Model))
+					g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
+					sim.RebalanceStationBoarding(activeStop, g.dockedBusesAtStop(activeStop), true)
+				} else if g.Bus.PendingModel != nil {
+					if *g.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
+						g.Bus.TerminalReplacementHold = false
+					} else if g.Bus.PassengerServiceRemaining() <= 0 {
+						g.Bus.TerminalReplacementHold = false
 					}
-					candidates := g.Route.GetUpcomingCandidateStopIDsForStop(activeStop.ID)
-					if len(candidates) == 0 && len(g.Route.StopIDs) > 0 {
-						for _, id := range g.Route.StopIDs {
-							if id != activeStop.ID {
-								candidates = append(candidates, id)
-							}
-						}
-					}
-					actualBoarded, fareEarned := g.Operations.Board(0, g.Bus, g.Route, activeStop.ID, boardCount, candidates)
-					activeStop.WaitingPassengers -= actualBoarded
-					g.Cash += fareEarned
-					toastMsg := locale.Tf("[%s] 站台新增乘客，上客 %d 人，营收 +$%d！",
-						"[%s] Additional passengers: %d boarded, revenue +$%d!",
-						activeStop.CleanName(), actualBoarded, fareEarned)
-					g.HUD.AddToast(toastMsg, true)
 				}
+			}
+
+			dockedBuses := g.dockedBusesAtStop(activeStop)
+			assignedBefore := 0
+			for _, b := range dockedBuses {
+				assignedBefore += b.PassengerService.BoardingTarget
+			}
+			prevTarget := g.Bus.PassengerService.BoardingTarget
+			sim.RebalanceStationBoarding(activeStop, dockedBuses, false)
+			if g.Bus.PassengerService.BoardingTarget > prevTarget {
+				newArrivals := max(g.Bus.PassengerService.BoardingTarget-prevTarget, activeStop.WaitingPassengers-assignedBefore)
+				toastMsg := locale.Tf("[%s] 站台新增 %d 名乘客！",
+					"[%s] %d additional passengers at platform!",
+					activeStop.CleanName(), newArrivals)
+				g.HUD.AddToast(toastMsg, true)
+			}
+
+			if alightedNow > 0 || boardedNow > 0 {
+				g.rollAlightingForNextStop()
 			}
 		}
 	} else {
 		// Left the stop bay, reset boarding flag
+		g.finishStationServiceSummary()
 		g.boardedThisStop = false
+		g.Bus.PassengerService = sim.PassengerService{}
 	}
+}
+
+func (g *Game) finishStationServiceSummary() {
+	svc := g.Bus.PassengerService
+	if !g.boardedThisStop || !svc.Active || g.World == nil || svc.StopID < 0 || svc.StopID >= len(g.World.Stops) {
+		return
+	}
+	stop := g.World.Stops[svc.StopID]
+	toastMsg := locale.Tf("[%s] 本站共下客 %d 人，上客 %d 人，营收 +$%d！",
+		"[%s] Total: %d alighted, %d boarded, revenue +$%d!",
+		stop.CleanName(), svc.AlightedSoFar, svc.BoardedSoFar, svc.FareSoFar)
+	g.HUD.AddToast(toastMsg, svc.BoardedSoFar > 0 || svc.FareSoFar > 0)
 }
 
 func (g *Game) vehicleHandoverSite() sim.VehicleHandoverSite {
@@ -196,4 +239,13 @@ func (g *Game) vehicleHandoverSite() sim.VehicleHandoverSite {
 		}
 	}
 	return site
+}
+
+func (g *Game) syncPassengerRates() {
+	if g.AIBusMgr == nil {
+		return
+	}
+	for model := sim.BusStandard; model < sim.BusModelCount; model++ {
+		g.AIBusMgr.PassengerRates[model] = g.Settings.ModelPassengerRates(model)
+	}
 }

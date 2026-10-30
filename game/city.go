@@ -15,10 +15,14 @@ func (g *Game) EnterCity(theme sim.MapTheme) {
 }
 
 func (g *Game) SetMapTheme(theme sim.MapTheme) {
+	g.resetAnnouncements()
 	g.Settings.MapTheme = theme
 	g.SelectedMapTheme = theme
+	g.World.LargeGrid = (theme == sim.MapThemeMetropolis && g.Settings.LargeRoadNetwork)
 	currentLaneW := g.Settings.GetLaneWidth()
 	g.World.BuildMap(theme, currentLaneW)
+	g.closeStopNameEditor()
+	g.applyStopNames()
 
 	// Rebuild traffic lights and AI civilian vehicles for active map
 	g.syncAISpeedRanges()
@@ -60,7 +64,12 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.Bus.IsBraking = false
 	g.Bus.OnShoulder = false
 	g.Bus.ClearPassengers()
+	g.Bus.PassengerService = sim.PassengerService{}
 	g.Bus.SetModel(g.LineFleets[g.PlayerLine].PlayerModel)
+	if g.Bus.Model == sim.BusArticulated {
+		sim.EnsureLongBusBays(g.World, g.Route)
+		g.Bus.ResetArticulation()
+	}
 
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
@@ -76,7 +85,11 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
 	g.HUD.AddToast(fmt.Sprintf("已进入城市地图: 【%s】！", theme.DisplayName()), true)
-	g.HUD.AddToast(fmt.Sprintf("风貌特色: %s", theme.Subtitle()), false)
+	if theme == sim.MapThemeMetropolis && g.Settings.LargeRoadNetwork {
+		g.HUD.AddToast("【大路网模式 4x】街区长度延展 4 倍，尽情巡航驾驶！", true)
+	} else {
+		g.HUD.AddToast(fmt.Sprintf("风貌特色: %s", theme.Subtitle()), false)
+	}
 }
 
 // ReloadCustomMap reads custom_map.json and refreshes the world if playing on custom map

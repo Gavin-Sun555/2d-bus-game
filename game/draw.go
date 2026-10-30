@@ -1,7 +1,6 @@
 package game
 
 import (
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/view"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
@@ -56,13 +55,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 
 	// 7. Draw HUD Overlay
-	var currentStop *sim.BusStop
-	for _, s := range g.World.Stops {
-		if s.ContainsBus(g.Bus) {
-			currentStop = s
-			break
-		}
-	}
+	currentStop, _ := g.activeDockedStop()
 	if targetStopID >= 0 && targetStopID < len(g.World.Stops) {
 		g.HUD.TargetStopOccupied = g.IsStopOccupiedByOtherVehicle(g.World.Stops[targetStopID])
 	} else {
@@ -74,7 +67,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	// 8. Draw Settings Modal (on top of everything)
 	g.Settings.Draw(screen, g.Camera)
 	if g.OperationsPanel != nil {
-		g.OperationsPanel.Draw(screen, g.Settings.Fare, g.Operations, g.World)
+		g.OperationsPanel.Draw(screen, g.Settings.Fare, g.Operations, g.World, g.activeLines()...)
 	}
 	g.drawSavePicker(screen)
+	g.drawStopNameEditor(screen)
 }

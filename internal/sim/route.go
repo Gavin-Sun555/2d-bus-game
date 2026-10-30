@@ -4,6 +4,8 @@ import (
 	"image/color"
 	"math"
 	"sync"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 )
 
 type routePathCacheKey struct {
@@ -32,8 +34,9 @@ type Route struct {
 	CurrentIndex int   // Index within StopIDs that bus is currently navigating towards
 	TotalTrips   int   // Completed full loops
 
-	cachedDesc      string
-	cachedDescDirty bool
+	cachedDesc         string
+	cachedDescDirty    bool
+	cachedDescLanguage locale.Language
 }
 
 func NewRoute() *Route {

@@ -27,6 +27,7 @@ const maxCompatibleSavedCars = 1152
 type saveEnvelope struct {
 	Version  int             `json:"version"`
 	SavedAt  time.Time       `json:"saved_at"`
+	Name     string          `json:"name,omitempty"`
 	Checksum string          `json:"checksum"`
 	Data     json.RawMessage `json:"data"`
 }
@@ -138,19 +139,36 @@ func (g *Game) SaveGame() error {
 	if err != nil {
 		return err
 	}
+	path, err := g.savePath()
+	if err != nil {
+		return err
+	}
+	name := readSaveSlotName(path)
+	if g.pendingSaveName != nil {
+		name, err = validateSaveSlotName(*g.pendingSaveName)
+		if err != nil {
+			return err
+		}
+	}
 	digest := sha256.Sum256(payload)
-	data, err := json.Marshal(saveEnvelope{saveVersion, time.Now(), hex.EncodeToString(digest[:]), payload})
+	data, err := json.Marshal(saveEnvelope{
+		Version:  saveVersion,
+		SavedAt:  time.Now(),
+		Name:     name,
+		Checksum: hex.EncodeToString(digest[:]),
+		Data:     payload,
+	})
 	if err != nil {
 		return err
 	}
 	if len(data) > maxSaveBytes {
 		return fmt.Errorf("save exceeds size limit")
 	}
-	path, err := g.savePath()
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	return writeSaveFileAtomically(path, data)
+}
+
+func writeSaveFileAtomically(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".save-*.tmp")
@@ -169,35 +187,41 @@ func (g *Game) SaveGame() error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	if err = os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	return nil
+	return os.Rename(f.Name(), path)
 }
-func readSave(path string) (gameSave, error) {
-	var s gameSave
+
+func readSaveEnvelope(path string) (saveEnvelope, error) {
+	var envelope saveEnvelope
 	f, err := os.Open(path)
 	if err != nil {
-		return s, err
+		return envelope, err
 	}
 	defer f.Close()
 	raw, err := io.ReadAll(io.LimitReader(f, maxSaveBytes+1))
 	if err != nil {
-		return s, err
+		return envelope, err
 	}
 	if len(raw) > maxSaveBytes {
-		return s, fmt.Errorf("save exceeds size limit")
+		return envelope, fmt.Errorf("save exceeds size limit")
 	}
-	var envelope saveEnvelope
 	if err = json.Unmarshal(raw, &envelope); err != nil {
-		return s, fmt.Errorf("invalid save file: %w", err)
+		return envelope, fmt.Errorf("invalid save file: %w", err)
 	}
 	if envelope.Version != saveVersion {
-		return s, fmt.Errorf("unsupported save version %d", envelope.Version)
+		return envelope, fmt.Errorf("unsupported save version %d", envelope.Version)
 	}
 	digest := sha256.Sum256(envelope.Data)
 	if hex.EncodeToString(digest[:]) != envelope.Checksum {
-		return s, fmt.Errorf("save checksum mismatch")
+		return envelope, fmt.Errorf("save checksum mismatch")
+	}
+	return envelope, nil
+}
+
+func readSave(path string) (gameSave, error) {
+	var s gameSave
+	envelope, err := readSaveEnvelope(path)
+	if err != nil {
+		return s, err
 	}
 	if err = json.Unmarshal(envelope.Data, &s); err != nil {
 		return s, fmt.Errorf("invalid save data: %w", err)
@@ -223,7 +247,7 @@ func validSavedRoute(r *sim.Route, stops int, empty bool) bool {
 	return true
 }
 func validSavedBus(b *sim.Bus, stops int) bool {
-	if b == nil || !b.Model.Valid() || b.GeometryVersion < 0 || b.GeometryVersion > 1 || (b.PendingModel != nil && !b.PendingModel.Valid()) || b.Length <= 0 || b.Width <= 0 || b.WheelBase <= 0 || b.Capacity < 1 || b.Capacity > 1000 || b.PassengerCount != len(b.Passengers) || len(b.Passengers) > b.Capacity || b.Durability < 0 || b.Durability > 100 || b.MaxSpeedFwd <= 0 {
+	if b == nil || !b.PassengerService.Valid() || !b.Model.Valid() || b.GeometryVersion < 0 || b.GeometryVersion > 1 || (b.PendingModel != nil && !b.PendingModel.Valid()) || b.Length <= 0 || b.Width <= 0 || b.WheelBase <= 0 || b.Capacity < 1 || b.Capacity > 1000 || b.PassengerCount != len(b.Passengers) || len(b.Passengers) > b.Capacity || b.Durability < 0 || b.Durability > 100 || b.MaxSpeedFwd <= 0 {
 		return false
 	}
 	for _, p := range b.Passengers {
@@ -235,6 +259,13 @@ func validSavedBus(b *sim.Bus, stops int) bool {
 }
 func (s *gameSave) validate() error {
 	bad := func() error { return fmt.Errorf("invalid or incompatible save data") }
+	if s.Settings.PassengerRates != nil {
+		for _, rates := range s.Settings.PassengerRates {
+			if !rates.Valid() {
+				return bad()
+			}
+		}
+	}
 	if s.World == nil || s.Lights == nil || len(s.World.Roads) == 0 || len(s.World.Stops) == 0 || len(s.World.Stops) > 10000 || s.World.Theme < sim.MapThemeMetropolis || s.World.Theme > sim.MapThemeCustom || s.Settings.MapTheme != s.World.Theme {
 		return bad()
 	}
@@ -255,7 +286,7 @@ func (s *gameSave) validate() error {
 	if !validSavedBus(&s.Player.Bus, n) || len(s.Fleet) > 48 || len(s.Cars) > maxCompatibleSavedCars || len(s.Population.PendingExits)+len(s.Cars) > maxCompatibleSavedCars {
 		return bad()
 	}
-	if s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Camera.Zoom <= 0 || s.Camera.TargetZoom <= 0 || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN {
+	if !s.Settings.AnnouncementVoice.Valid() || !s.Settings.Announcements.Valid() || s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Camera.Zoom <= 0 || s.Camera.TargetZoom <= 0 || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN {
 		return bad()
 	}
 	if s.Settings.CameraViewMode < sim.CameraModeNorthUp || s.Settings.CameraViewMode > sim.CameraModeSouthUp {
@@ -329,6 +360,11 @@ func (g *Game) LoadGame() error {
 		return err
 	}
 	s.limitAmbientPopulation()
+	// This is a game-wide guardrail, not a saved passenger-growth setting.
+	// Upgrade old saves without resetting their waiting counts or spawn clock.
+	for _, stop := range s.World.Stops {
+		stop.MaxWaiting = sim.DefaultStopMaxWaiting
+	}
 	sim.StandardizeStopBays(s.World, s.Settings.GetLaneWidth())
 	next := &Game{Width: g.Width, Height: g.Height, State: StatePlaying, SelectedMapTheme: s.World.Theme, World: s.World, Settings: &s.Settings, Lines: s.Lines,
 		LineCount: s.LineCount, PlayerLine: s.PlayerLine, LineFleets: s.LineFleets, Bus: &s.Player.Bus, Camera: &s.Camera, HUD: ui.NewHUD(), TrafficLights: s.Lights,
@@ -407,7 +443,14 @@ func (g *Game) LoadGame() error {
 	next.Settings.LoadRequested = false
 	next.Settings.ReturnToMenuRequested = false
 	next.repairSharedTerminusQueues()
+	// Device/player ownership belongs to this running session, not the save.
+	g.resetAnnouncements()
+	next.announcements = g.announcements
+	next.vehicleAudio = g.vehicleAudio
+	next.stopNames = g.stopNames
+	g.closeStopNameEditor()
 	*g = *next
+	g.applyStopNames()
 	sim.ActiveWorldForRoute = g.World
 	sim.ClearRoutePathCache()
 	locale.CurrentLanguage = g.Settings.Language

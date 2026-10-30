@@ -54,9 +54,10 @@ type StationaryTracker struct {
 }
 
 func (s *StationaryTracker) Update(timer, dt float64, pos Vec2, speed float64, jammed bool) float64 {
-	if !s.initialized || !jammed || math.Abs(speed) >= 3 || pos.Distance(s.anchor) > 2 {
+	moved := s.initialized && pos.Distance(s.anchor) > 2
+	if !s.initialized || !jammed || math.Abs(speed) >= 3 || moved {
 		s.anchor, s.initialized = pos, true
-		if !jammed || math.Abs(speed) >= 3 || timer > 0 {
+		if !jammed || math.Abs(speed) >= 3 || moved {
 			return 0
 		}
 	}

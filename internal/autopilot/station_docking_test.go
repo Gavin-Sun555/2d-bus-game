@@ -165,9 +165,11 @@ func TestBerserkFullPlatformQueuesWithoutBorrowingOncomingLane(t *testing.T) {
 			{Pos: sim.Vec2{Y: lw / 2}, Heading: 0, Length: 96, Width: 36},
 			{Pos: sim.Vec2{X: 220 - float64(step)*100/60, Y: -lw / 2}, Heading: math.Pi, Speed: 100, Length: 48, Width: 24},
 		}
+		obstacles = append(obstacles, VehicleObstacle{Pos: w.Stops[1].FrontBerthPosition(), Heading: 0, Length: 96, Width: 36})
 		if step >= 600 {
 			obstacles[0].Pos.X += 600
 			obstacles[1].Pos.X += 600
+			obstacles[3].Pos.X += 600
 		}
 		th, br, st, hb, doors, dock := ad.ComputeControls(bus, route, w, nil, obstacles, lw, 1.0/60)
 		if step < 600 && dock {

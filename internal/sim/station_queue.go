@@ -9,6 +9,15 @@ func PlaceBusInStationQueue(bus *Bus, stop *BusStop, others []*Bus, laneWidth fl
 	forward := UnitFromAngle(stop.Heading)
 	right := Vec2{X: -forward.Y, Y: forward.X}
 	along := stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward)
+	occupants := 0
+	for _, other := range others {
+		if other != nil && other != bus && stop.ContainsBus(other) {
+			occupants++
+		}
+	}
+	if stop.HasTwoBerths() && occupants >= 2 {
+		along = -stop.Length/2 - StationBerthGap - bus.Length/2
+	}
 	for attempt := 0; attempt <= len(others); attempt++ {
 		moved := false
 		for _, other := range others {
@@ -23,11 +32,6 @@ func PlaceBusInStationQueue(bus *Bus, stop *BusStop, others []*Bus, laneWidth fl
 			lateralExtent := math.Abs(math.Sin(yaw))*envelope.HalfLen + math.Abs(math.Cos(yaw))*envelope.HalfWid
 			if math.Abs(delta.Dot(right)) >= laneWidth+bus.Width/2+lateralExtent {
 				continue
-			}
-			// A long bus owns both boarding positions. Other vehicles wait
-			// behind the platform until the long vehicle has departed.
-			if stop.HasTwoBerths() && (bus.IsArticulated() || other.IsArticulated()) && stop.OccupiesBerth(envelope) {
-				along = math.Min(along, -stop.Length/2-StationBerthGap-bus.Length/2)
 			}
 			ownFront := bus.Length / 2
 			if stop.HasTwoBerths() && math.Abs(other.Speed) < 3 && other.Pos.Sub(stop.Pos).Dot(forward) > -1200 && other.Pos.Sub(stop.Pos).Dot(forward) < stop.RearBerthPosition().Sub(stop.Pos).Dot(forward)-48 {

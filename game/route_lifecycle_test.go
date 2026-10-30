@@ -8,7 +8,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/ui"
 )
 
-func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
+func TestReplanRouteResetsPlayerAndDistributesAIBuses(t *testing.T) {
 	g := NewGame(1280, 720)
 	g.EnterCity(sim.MapThemeMetropolis)
 
@@ -56,7 +56,7 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 	g.Route.AddStop(3)
 	g.planModeRouteModified = true
 
-	// Exit Plan Mode: should trigger reset of player bus and AI fleet to first stop (Stop 3)
+	// Exit Plan Mode: player returns to Stop 3; AI buses spread along the new route.
 	g.TogglePlanMode()
 	if g.IsPlanMode {
 		t.Fatal("Expected IsPlanMode to be false after exiting plan mode")
@@ -82,30 +82,19 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 		t.Fatalf("Active target stop must be first stop 3, got %d", g.Route.GetCurrentTargetStopID())
 	}
 
-	// Verify AI buses reset and queued behind player bus at Stop 3
+	// Replanning keeps the player at Stop 3 and redistributes the new AI fleet.
 	if len(g.AIBusMgr.Buses) != 2 {
 		t.Fatalf("Expected 2 AI buses, got %d", len(g.AIBusMgr.Buses))
 	}
-	cosH := math.Cos(stop3.Heading)
-	sinH := math.Sin(stop3.Heading)
-	backVec := sim.Vec2{X: -cosH, Y: -sinH}
-
 	for i, ai := range g.AIBusMgr.Buses {
-		if math.Abs(sim.NormalizeAngle(ai.Bus.Heading-stop3.Heading)) > 1e-4 {
-			t.Fatalf("AI bus %d heading mismatch: expected %f, got %f", i, stop3.Heading, ai.Bus.Heading)
-		}
-		if ai.Bus.Speed != 0 {
-			t.Fatalf("AI bus %d speed must be 0, got %f", i, ai.Bus.Speed)
-		}
-		expectedPos := stop3.FrontBerthPosition().Add(backVec.Mul(float64(i+1) * 120.0))
-		if ai.Bus.Pos.Distance(expectedPos) > 1.0 {
-			t.Fatalf("AI bus %d position mismatch: expected %+v, got %+v", i, expectedPos, ai.Bus.Pos)
+		if ai.Bus.Speed != 0 || ai.Bus.Pos.Distance(g.Bus.Pos) < 120 {
+			t.Fatalf("AI bus %d was not safely distributed", i)
 		}
 		if len(ai.Route.StopIDs) != 4 || ai.Route.StopIDs[0] != 3 || ai.Route.StopIDs[1] != 7 {
-			t.Fatalf("AI bus %d route was not updated to replanned route: %v", i, ai.Route.StopIDs)
+			t.Fatalf("AI bus %d itinerary was not updated: %v", i, ai.Route.StopIDs)
 		}
-		if ai.Route.CurrentIndex != 0 {
-			t.Fatalf("AI bus %d CurrentIndex must be 0, got %d", i, ai.Route.CurrentIndex)
+		if ai.Route.CurrentIndex <= 0 || ai.Route.CurrentIndex >= len(ai.Route.StopIDs) {
+			t.Fatalf("AI bus %d has invalid distributed target %d", i, ai.Route.CurrentIndex)
 		}
 	}
 
@@ -124,10 +113,8 @@ func TestReplanRouteResetsPlayerAndAIBusesToFirstStop(t *testing.T) {
 		t.Fatalf("ReplanRoute failed to reset player bus to Stop 5: expected %+v, got %+v", stop5.FrontBerthPosition(), g.Bus.Pos)
 	}
 	if len(g.AIBusMgr.Buses) > 0 {
-		expectedAI0Pos := stop5.FrontBerthPosition().Add(sim.Vec2{X: -math.Cos(stop5.Heading), Y: -math.Sin(stop5.Heading)}.Mul(120.0))
-		if g.AIBusMgr.Buses[0].Bus.Pos.Distance(expectedAI0Pos) > 1.0 {
-			t.Fatalf("ReplanRoute failed to reset AI bus behind Stop 5: expected %+v, got %+v",
-				expectedAI0Pos, g.AIBusMgr.Buses[0].Bus.Pos)
+		if ai := g.AIBusMgr.Buses[0]; ai.Route.CurrentIndex <= 0 || ai.Bus.Pos.Distance(g.Bus.Pos) < 120 {
+			t.Fatal("ReplanRoute failed to distribute the AI fleet")
 		}
 	}
 

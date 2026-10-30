@@ -12,6 +12,7 @@ func TestTwoBerthsBoardTogetherAndSharePassengerPool(t *testing.T) {
 	m := NewAIBusManager()
 	m.ConfigureLineFleets([]LineFleetPlan{{r, LineFleetSettings{BusCount: 2, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 40}}}}, w, 52, nil, false)
 	st := w.Stops[0]
+	parkInitialFleetForTest(m, st, 52)
 	st.WaitingPassengers = 100
 	for i, ab := range m.Buses {
 		ab.Bus.SetModel(sim.BusModel(i))
@@ -21,6 +22,9 @@ func TestTwoBerthsBoardTogetherAndSharePassengerPool(t *testing.T) {
 	m.Update(1./60, nil, w, nil, nil, 52)
 	if !m.Buses[0].Bus.DoorsOpen || !m.Buses[1].Bus.DoorsOpen || m.Buses[0].Driver.State != autopilot.AutopilotStateDocked || m.Buses[1].Driver.State != autopilot.AutopilotStateDocked {
 		t.Fatal("two short vehicles did not dock together")
+	}
+	for m.Buses[0].Bus.PassengerServiceRemaining() > 0 || m.Buses[1].Bus.PassengerServiceRemaining() > 0 {
+		m.Update(1.0, nil, w, nil, nil, 52)
 	}
 	if m.Buses[0].Bus.PassengerCount != 45 || m.Buses[1].Bus.PassengerCount != 55 || st.WaitingPassengers != 0 {
 		t.Fatal("passengers duplicated/lost or rear did not board", m.Buses[0].Bus.PassengerCount, m.Buses[1].Bus.PassengerCount, st.WaitingPassengers)
@@ -32,6 +36,7 @@ func TestLongReplacementDoesNotTrapRearBerth(t *testing.T) {
 	m := NewAIBusManager()
 	m.ConfigureLineFleets([]LineFleetPlan{{r, LineFleetSettings{BusCount: 2, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 40}}}}, w, 52, nil, false)
 	st := w.Stops[0]
+	parkInitialFleetForTest(m, st, 52)
 	front, rear := m.Buses[0], m.Buses[1]
 	front.Route.CurrentIndex = 2
 	front.Bus.RequestModel(sim.BusArticulated)

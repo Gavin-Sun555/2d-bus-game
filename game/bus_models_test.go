@@ -11,10 +11,9 @@ func TestLineModelsPersistAcrossSettingsResetAndSave(t *testing.T) {
 	g.SetTransitLineCount(2)
 	c := traffic.LineFleetSettings{MixedModels: true, ModelCounts: [sim.BusModelCount]int{1, 2, 3}, PlayerModel: sim.BusArticulated, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 60}}.Normalize()
 	g.SetLineFleet(0, c)
-	if g.Bus.Model != sim.BusStandard || g.Bus.PendingModel == nil || *g.Bus.PendingModel != sim.BusArticulated {
-		t.Fatal("player did not receive line model")
+	if g.Bus.Model != sim.BusArticulated || g.Bus.PendingModel != nil {
+		t.Fatal("player at route start did not receive line model immediately")
 	}
-	g.Bus.SetModel(sim.BusArticulated) // Initial test vehicle, before simulating an in-service change.
 	g.Settings.AIBusMaxSpeed = 70
 	g.syncCurrentLineSettings()
 	c.SpeedRange.MaxKPH = 70
@@ -76,8 +75,8 @@ func TestNetworkModelButtonsRespectSharedLimit(t *testing.T) {
 		t.Fatal("uniform selection")
 	}
 	g.handleNetworkAction(24)
-	if g.Bus.Model != sim.BusStandard || g.Bus.PendingModel == nil || *g.Bus.PendingModel != sim.BusDoubleDecker {
-		t.Fatal("player selection")
+	if g.Bus.Model != sim.BusDoubleDecker || g.Bus.PendingModel != nil {
+		t.Fatal("player selection at route start did not apply immediately")
 	}
 }
 
@@ -134,6 +133,10 @@ func TestPlayerFinishesLapBeforeTerminalVehicleHandover(t *testing.T) {
 		g.Bus.DoorProgress = 1
 		g.boardedThisStop = false
 		g.updatePassengerExchange(false)
+		for g.Bus.PassengerServiceRemaining() > 0 {
+			g.Bus.Update(1.0, 0, 0, 0, false, false)
+			g.updatePassengerExchange(false)
+		}
 	}
 	serve(2, 0)
 	if g.Bus.PassengerCount != 0 || g.Bus.Model != sim.BusStandard || g.Bus.PendingModel == nil || g.Bus.Durability != 62 {

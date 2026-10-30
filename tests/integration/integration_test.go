@@ -91,10 +91,15 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 				g.Bus.DoorsOpen = true
 				prevIndex := g.Route.CurrentIndex
 
-				// Execute game simulation tick
+				// Execute game simulation ticks until passenger service completes
 				err := g.Update()
 				if err != nil {
 					t.Fatalf("[%s] g.Update() failed during passenger service: %v", theme.DisplayName(), err)
+				}
+				for g.Bus.PassengerServiceRemaining() > 0 {
+					if err := g.Update(); err != nil {
+						t.Fatalf("[%s] g.Update() failed during passenger service: %v", theme.DisplayName(), err)
+					}
 				}
 
 				// Verify passenger service occurred and route advanced

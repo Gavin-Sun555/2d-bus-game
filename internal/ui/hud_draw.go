@@ -47,7 +47,11 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	// Keep the stop name separate from its metrics, so long names never hide distance.
 	targetMsg := locale.T("未选择目标站点", "No target stop selected")
 	metrics := ""
-	if targetID := route.GetCurrentTargetStopID(); targetID >= 0 && targetID < len(world.Stops) {
+	isDockedAtStop := !isPlanMode && activeStop != nil && (bus.DoorsOpen || bus.PassengerServiceRemaining() > 0 || math.Abs(bus.Speed) < 3.0)
+	if isDockedAtStop {
+		targetMsg = locale.Tf("当前站：%s", "Stop: %s", activeStop.LocalizedName())
+		metrics = locale.Tf("距离 0m  ·  候车 %d人", "0m away  ·  Waiting %d", activeStop.WaitingPassengers)
+	} else if targetID := route.GetCurrentTargetStopID(); targetID >= 0 && targetID < len(world.Stops) {
 		stop := world.Stops[targetID]
 		targetMsg = locale.Tf("下一站：%s", "Next: %s", stop.LocalizedName())
 		distMeters := int(math.Round(bus.Pos.Distance(stop.Pos) * sim.MetersPerPixel))
@@ -58,7 +62,11 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	bellText := locale.T("下车铃：无人按铃", "Bell: None")
 	bellColor := sim.RGBA(148, 163, 184, 255)
 	bellBg := sim.RGBA(30, 41, 59, 220)
-	if stopBellRung {
+	if isDockedAtStop {
+		bellText = locale.T("下车铃：靠站中", "Bell: Docked")
+		bellColor = sim.RGBA(110, 231, 183, 255)
+		bellBg = sim.RGBA(6, 95, 70, 235)
+	} else if stopBellRung {
 		bellText = locale.T("下车铃：已按铃", "Bell: Requested")
 		bellColor = sim.RGBA(254, 240, 138, 255)
 		bellBg = sim.RGBA(180, 83, 9, 230)
@@ -95,7 +103,11 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 			menuBtnStr = locale.T("换图 · 自定义图", "Maps · Custom Map")
 			menuBtnColor = sim.RGBA(245, 158, 11, 255)
 		default:
-			menuBtnStr = locale.T("换图 · 现代都会", "Maps · Metropolis")
+			if settings != nil && settings.LargeRoadNetwork {
+				menuBtnStr = locale.T("换图 · 现代都会 (大路网)", "Maps · Metropolis (4x)")
+			} else {
+				menuBtnStr = locale.T("换图 · 现代都会", "Maps · Metropolis")
+			}
 			menuBtnColor = sim.RGBA(59, 130, 246, 255)
 		}
 	}

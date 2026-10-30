@@ -40,7 +40,7 @@ func (w *World) EligibleBlockStops(lw float64) []BlockStopPair {
 		sort.Float64s(cuts)
 		for i := 1; i < len(cuts); i++ {
 			a, b := cuts[i-1], cuts[i]
-			if b-a < 550*MapGridScale {
+			if b-a < 550*w.GridScale() {
 				continue
 			}
 			center := Vec2{X: coord, Y: (a + b) / 2}

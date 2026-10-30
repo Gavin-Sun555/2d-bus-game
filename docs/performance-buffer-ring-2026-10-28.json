@@ -1,0 +1,287 @@
+{
+  "branch": "main",
+  "head": "b3d933e16edb8614b4c765bf8c93d8f1c71b84c2",
+  "dirty": true,
+  "warmupTicks": 300,
+  "measuredTicks": 1800,
+  "repetitionsPerVariant": 3,
+  "drawMeasured": false,
+  "stages": {
+    "buffer": {
+      "slot1": {
+        "baselineMedianMS": 5.214961193888887,
+        "candidateMedianMS": 5.1290456222222165,
+        "reductionPercent": 1.6474824734525328,
+        "pairedReductionPercent": [
+          1.8545747082948094,
+          1.618075746946157,
+          1.6474824734525328
+        ],
+        "baselineBytesPerTick": 267844.7288888889,
+        "candidateBytesPerTick": 15803.546666666667,
+        "allocationReductionPercent": 94.09973579385894,
+        "baselineP99MS": [
+          6.26225,
+          6.305,
+          6.274125
+        ],
+        "candidateP99MS": [
+          5.755875,
+          6.035584,
+          5.974792
+        ]
+      },
+      "ordinary8": {
+        "baselineMedianMS": 4.889849946111107,
+        "candidateMedianMS": 4.811918139999991,
+        "reductionPercent": 1.5937463719739475,
+        "pairedReductionPercent": [
+          0.37500566533648083,
+          2.565509014317302,
+          1.0968763079980404
+        ],
+        "baselineBytesPerTick": 98066.74666666667,
+        "candidateBytesPerTick": 15341.004444444445,
+        "allocationReductionPercent": 84.35656839255694,
+        "baselineP99MS": [
+          6.1835,
+          6.385791,
+          6.293416
+        ],
+        "candidateP99MS": [
+          6.185,
+          6.2025,
+          6.269
+        ]
+      },
+      "maximum48": {
+        "baselineMedianMS": 10.416086242222214,
+        "candidateMedianMS": 10.371125956666662,
+        "reductionPercent": 0.43164279279200857,
+        "pairedReductionPercent": [
+          0.24918287665580685,
+          0.4806912101034455,
+          0.5525814042090293
+        ],
+        "baselineBytesPerTick": 113442.37777777777,
+        "candidateBytesPerTick": 29044.675555555557,
+        "allocationReductionPercent": 74.39697922018951,
+        "baselineP99MS": [
+          12.754792,
+          12.8035,
+          12.767625
+        ],
+        "candidateP99MS": [
+          12.839125,
+          12.6985,
+          12.668375
+        ]
+      },
+      "roundabout48": {
+        "baselineMedianMS": 6.723858376111102,
+        "candidateMedianMS": 6.66206705333334,
+        "reductionPercent": 0.9189860839023289,
+        "pairedReductionPercent": [
+          -0.0895109322630816,
+          0.9189860839023289,
+          0.8986132395917501
+        ],
+        "baselineBytesPerTick": 256279.61777777778,
+        "candidateBytesPerTick": 21343.226666666666,
+        "allocationReductionPercent": 91.6718985100198,
+        "baselineP99MS": [
+          7.737458,
+          7.648125,
+          7.5855
+        ],
+        "candidateP99MS": [
+          10.870291,
+          7.58125,
+          7.271833
+        ]
+      }
+    },
+    "ring": {
+      "slot1": {
+        "baselineMedianMS": 5.0661946861111025,
+        "candidateMedianMS": 5.0911193811111195,
+        "reductionPercent": -0.49198059972601627,
+        "pairedReductionPercent": [
+          -0.02536316659851323,
+          -0.31733331088545924,
+          -1.5012998024245272
+        ],
+        "baselineBytesPerTick": 15803.6,
+        "candidateBytesPerTick": 15768.217777777778,
+        "allocationReductionPercent": 0.22388710307919002,
+        "baselineP99MS": [
+          5.957375,
+          5.77175,
+          5.749084
+        ],
+        "candidateP99MS": [
+          5.826,
+          5.832958,
+          5.871042
+        ]
+      },
+      "ordinary8": {
+        "baselineMedianMS": 4.797155194444445,
+        "candidateMedianMS": 4.238785442777778,
+        "reductionPercent": 11.639601577061987,
+        "pairedReductionPercent": [
+          11.331680150684631,
+          12.248018462469801,
+          10.206070667708488
+        ],
+        "baselineBytesPerTick": 15344.084444444445,
+        "candidateBytesPerTick": 15344.093333333334,
+        "allocationReductionPercent": -5.793039605794803e-05,
+        "baselineP99MS": [
+          6.121375,
+          6.182791,
+          6.171583
+        ],
+        "candidateP99MS": [
+          5.276208,
+          5.266458,
+          5.48975
+        ]
+      },
+      "maximum48": {
+        "baselineMedianMS": 10.456730730555536,
+        "candidateMedianMS": 9.686965596111099,
+        "reductionPercent": 7.361432117546185,
+        "pairedReductionPercent": [
+          6.169514326075443,
+          7.361432117546185,
+          9.85777966197502
+        ],
+        "baselineBytesPerTick": 28961.32,
+        "candidateBytesPerTick": 28961.395555555555,
+        "allocationReductionPercent": -0.0002608843642226688,
+        "baselineP99MS": [
+          12.683,
+          14.002917,
+          15.324667
+        ],
+        "candidateP99MS": [
+          12.133959,
+          12.146541,
+          12.013042
+        ]
+      },
+      "roundabout48": {
+        "baselineMedianMS": 6.674071197222223,
+        "candidateMedianMS": 6.202714052222228,
+        "reductionPercent": 7.062512986019332,
+        "pairedReductionPercent": [
+          6.349238938274848,
+          6.249560333525251,
+          8.663236075849046
+        ],
+        "baselineBytesPerTick": 21343.404444444444,
+        "candidateBytesPerTick": 21343.226666666666,
+        "allocationReductionPercent": 0.000832940116191061,
+        "baselineP99MS": [
+          7.437833,
+          7.338875,
+          9.219334
+        ],
+        "candidateP99MS": [
+          7.126584,
+          6.754834,
+          6.683333
+        ]
+      }
+    }
+  },
+  "memory": {
+    "slot1": {
+      "baseline": {
+        "HeapAlloc": 27392312,
+        "HeapInuse": 33349632,
+        "Scratch": {
+          "aligned": 793,
+          "entries": 793,
+          "offsetSlots": 11357,
+          "privateBodySlots": 46766,
+          "privatePointSlots": 27542
+        },
+        "StackInuse": 720896
+      },
+      "final": {
+        "HeapAlloc": 30198352,
+        "HeapInuse": 37421056,
+        "Scratch": {
+          "aligned": 793,
+          "entries": 793,
+          "offsetSlots": 22281,
+          "privateBodySlots": 92125,
+          "privatePointSlots": 63254
+        },
+        "StackInuse": 688128
+      }
+    },
+    "maximum48": {
+      "baseline": {
+        "HeapAlloc": 27680576,
+        "HeapInuse": 33710080,
+        "Scratch": {
+          "aligned": 864,
+          "entries": 864,
+          "offsetSlots": 10766,
+          "privateBodySlots": 46230,
+          "privatePointSlots": 24631
+        },
+        "StackInuse": 688128
+      },
+      "final": {
+        "HeapAlloc": 31576992,
+        "HeapInuse": 39378944,
+        "Scratch": {
+          "aligned": 864,
+          "entries": 864,
+          "offsetSlots": 25060,
+          "privateBodySlots": 108138,
+          "privatePointSlots": 70356
+        },
+        "StackInuse": 720896
+      }
+    }
+  },
+  "validation": {
+    "regression": {
+      "passed": 10188,
+      "skipped": 24,
+      "failures": []
+    },
+    "race": {
+      "passed": 65,
+      "skipped": 0,
+      "failures": []
+    },
+    "soak": {
+      "passed": 7,
+      "skipped": 0,
+      "failures": [],
+      "scenarios": 6
+    }
+  },
+  "trajectoryHashes": {
+    "trace-8-baseline": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-8-buffer": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-8-both": "e37a8ad7384c715e6aa5d80c3f769d41dd8a03f0a8eea895fa69b7dcc7f4de89",
+    "trace-48-baseline": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656",
+    "trace-48-buffer": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656",
+    "trace-48-both": "207603ed60e60c1a35ad8aff9a95eb7c8fb7f96954bbae044772c10bed4b7656"
+  },
+  "applicationSHA256": "09480e9c6b2b84c6b169586abf72b15a365bb37b2c6c170f4d8e4885d8ec8455",
+  "saveSHA256": "e58c8bfdc76a1ee8da78181fba0b057e4857034a7b456d39bd27b5738c79bbc1",
+  "profiledSaveSHA256": "e58c8bfdc76a1ee8da78181fba0b057e4857034a7b456d39bd27b5738c79bbc1",
+  "binaries": {
+    "baseline": "a8a02d1cf5ba1a328e30cd240865b840fb98f171462738685b3fd02a208651c3",
+    "buffer": "7cfb2fed487098e79c21d19e91dccb43380f4df9f8ab271c6c6ff2ccc7d6a14d",
+    "both": "f2f7632b8fb4ca11dc6c43a77d68e52a09deb295e1df67e925e9ab66d81cabb8"
+  }
+}

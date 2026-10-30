@@ -60,6 +60,10 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 
 	// First boarding: takes 30 passengers (capacity 45, 15 seats left)
 	_ = g.Update()
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.Bus.Update(1.0, 0, 0, 0, false, false)
+		g.updatePassengerExchange(false)
+	}
 	if g.Bus.PassengerCount != 30 {
 		t.Fatalf("Expected 30 passengers boarded on first boarding, got %d", g.Bus.PassengerCount)
 	}
@@ -74,6 +78,10 @@ func TestRelease004ComprehensiveChecklist(t *testing.T) {
 	_ = g.Update()
 	g.Bus.DoorsOpen = true
 	_ = g.Update()
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.Bus.Update(1.0, 0, 0, 0, false, false)
+		g.updatePassengerExchange(false)
+	}
 
 	// Remaining capacity was 15, so 15 should board, leaving 10 at stop and bus at 45 (full capacity)
 	if g.Bus.PassengerCount != 45 {

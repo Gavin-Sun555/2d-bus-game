@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"math"
+	"math/bits"
 	"slices"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -45,7 +46,37 @@ func (tm *TrafficManager) junctionScanCandidates(f carFrame, inter *sim.TrafficI
 	radius += 1e-7 * (1 + radius)
 	ids := tm.spatial.queryUnsorted(inter.Center, radius, tm.junctionCandidates)
 	ids = append(ids, tm.junctionCommitted...)
-	slices.Sort(ids)
-	tm.junctionCandidates = slices.Compact(ids)
+	tm.junctionCandidates = orderedJunctionCandidates(ids, f.activeCount)
 	return tm.junctionCandidates, true
+}
+
+// Keep the exact ascending slot order used by Sort + Compact. Normal city
+// populations fit a bounded stack bitset; small queries and abnormal IDs keep
+// the original implementation. No traffic state or query result is cached.
+func orderedJunctionCandidates(ids []int, count int) []int {
+	const maxSlots = 1024
+	if len(ids) < 24 || count < 0 || count > maxSlots {
+		slices.Sort(ids)
+		return slices.Compact(ids)
+	}
+	var words [maxSlots / 64]uint64
+	lo, hi := len(words), 0
+	for _, id := range ids {
+		if uint(id) >= uint(count) {
+			slices.Sort(ids)
+			return slices.Compact(ids)
+		}
+		word := id / 64
+		words[word] |= uint64(1) << uint(id%64)
+		lo, hi = min(lo, word), max(hi, word)
+	}
+	result := ids[:0]
+	for word := lo; word <= hi; word++ {
+		value := words[word]
+		for value != 0 {
+			result = append(result, word*64+bits.TrailingZeros64(value))
+			value &= value - 1
+		}
+	}
+	return result
 }

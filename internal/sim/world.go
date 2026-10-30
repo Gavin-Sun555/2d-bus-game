@@ -320,6 +320,7 @@ type World struct {
 	geometryCache    *worldGeometryCache
 	geometryRevision uint64
 	Theme            MapTheme
+	LargeGrid        bool `json:",omitempty"`
 	Roads            []RoadSegment
 	Buildings        []Building
 	Trees            []Tree
@@ -357,6 +358,13 @@ func NewWorld(initialLaneWidth float64, theme ...MapTheme) *World {
 	return w
 }
 
+func (w *World) GridScale() float64 {
+	if w != nil && w.LargeGrid && (w.Theme == MapThemeMetropolis || w.Theme == 0) {
+		return MapGridScale * 4.0
+	}
+	return MapGridScale
+}
+
 func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 	w.Theme = theme
 	w.Roads = make([]RoadSegment, 0)
@@ -389,7 +397,7 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {
 		w.expandCity(laneWidth)
 	}
-	w.applyMapScale(MapGridScale, laneWidth)
+	w.applyMapScale(w.GridScale(), laneWidth)
 	w.MatchStopRoadLanes(laneWidth)
 	w.RebuildIntersections()
 	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {

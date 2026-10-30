@@ -105,7 +105,7 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	}
 
 	// Station info label
-	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.Name, s.WaitingPassengers)
+	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.LocalizedName(), s.WaitingPassengers)
 	if isTarget {
 		infoText = "★ [目标站] " + infoText
 		if s.WaitingPassengers == 0 {

@@ -31,7 +31,16 @@ func TestJunctionCandidatesRetainApproachesExitsAndCommittedTurns(t *testing.T) 
 		exitReach := 2400.0
 		assertCovered := func() {
 			t.Helper()
+			radius := math.Max(reach+tm.junctionMaxHorizon, exitReach)
+			radius += 1e-7 * (1 + radius)
+			want := tm.spatial.queryUnsorted(inter.Center, radius, nil)
+			want = append(want, tm.junctionCommitted...)
+			slices.Sort(want)
+			want = slices.Compact(want)
 			ids, indexed := tm.junctionScanCandidates(f, inter, reach, exitReach)
+			if !slices.Equal(ids, want) {
+				t.Fatalf("candidate set/order changed: got%v want%v", ids, want)
+			}
 			if !indexed {
 				t.Fatal("unexpected full scan")
 			}

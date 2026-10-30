@@ -121,9 +121,10 @@ type Bus struct {
 	DoorProgress  float64 // 0.0 (closed) to 1.0 (open)
 
 	// Passenger capacity
-	PassengerCount int
-	Capacity       int
-	Passengers     []Passenger
+	PassengerService PassengerService
+	PassengerCount   int
+	Capacity         int
+	Passengers       []Passenger
 
 	// Vehicle Health & Collision
 	Durability    float64 // 0.0 to 100.0%

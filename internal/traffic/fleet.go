@@ -3,6 +3,7 @@ package traffic
 import (
 	"image/color"
 	"math"
+	"slices"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -12,6 +13,7 @@ import (
 type AIBus struct {
 	Retiring            bool // Finish this lap, alight at the terminal, then leave service.
 	retireReady         bool
+	lateArrivalWait     float64
 	LineIndex           int
 	AssignedSpeedRange  sim.SpeedRange
 	ID                  int
@@ -46,6 +48,7 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 		ab.Bus.JunctionCorridor = nil
 		ab.Bus.YieldingToBus = nil
 		ab.Bus.ClearPassengers()
+		ab.Bus.PassengerService = sim.PassengerService{}
 		ab.Bus.ResetArticulation()
 		ab.LastExchangedStopID = -1
 		if ab.Driver != nil {
@@ -67,16 +70,18 @@ func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSy
 
 // AIBusManager oversees all AI buses operating on the active city route
 type AIBusManager struct {
-	Operations    *sim.TransitOperations
-	baseObstacles []autopilot.VehicleObstacle
-	obstacles     []autopilot.VehicleObstacle
-	Buses         []*AIBus
-	BusSpeedRange sim.SpeedRange
-	BusCount      int // Number of AI buses operating on the route (0 ~ 8)
-	CurrentMap    sim.MapTheme
-	CurrentLane   float64
-	ActiveRoute   *sim.Route
-	Routes        []*sim.Route
+	stationOnlyBuild bool // Per-line builder defers distribution until models are assigned.
+	PassengerRates   [sim.BusModelCount]sim.PassengerRates
+	Operations       *sim.TransitOperations
+	baseObstacles    []autopilot.VehicleObstacle
+	obstacles        []autopilot.VehicleObstacle
+	Buses            []*AIBus
+	BusSpeedRange    sim.SpeedRange
+	BusCount         int // Number of AI buses operating on the route (0 ~ 8)
+	CurrentMap       sim.MapTheme
+	CurrentLane      float64
+	ActiveRoute      *sim.Route
+	Routes           []*sim.Route
 }
 
 // NewAIBusManager creates the AI bus manager with default 0 AI buses
@@ -122,7 +127,7 @@ func (abm *AIBusManager) RebuildFleetForRoute(world *sim.World, route *sim.Route
 	abm.RebuildFleet(world, laneWidth, playerBus...)
 }
 
-// RebuildFleet reconstructs the autonomous bus fleet with front-and-back queuing at the starting station
+// RebuildFleet reconstructs and distributes a new fleet along its routes.
 func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playerBus ...*sim.Bus) {
 	if world == nil || len(world.Stops) == 0 || abm.BusCount <= 0 {
 		abm.Buses = make([]*AIBus, 0)
@@ -271,6 +276,29 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		})
 	}
 
+	if !abm.stationOnlyBuild {
+		var others []*sim.Bus
+		if len(playerBus) > 0 && playerBus[0] != nil {
+			others = append(others, playerBus[0])
+		}
+		used := map[int]bool{}
+		for _, b := range newBuses {
+			if used[b.ID] {
+				continue
+			}
+			var group []*AIBus
+			for _, other := range newBuses {
+				if !used[other.ID] && other.Route.Name == b.Route.Name && slices.Equal(other.Route.StopIDs, b.Route.StopIDs) {
+					group = append(group, other)
+					used[other.ID] = true
+				}
+			}
+			distributeInitialLine(group, world, laneWidth, others, nil)
+			for _, placed := range group {
+				others = append(others, placed.Bus)
+			}
+		}
+	}
 	abm.Buses = newBuses
 }
 

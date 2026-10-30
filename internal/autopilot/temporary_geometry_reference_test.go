@@ -98,7 +98,7 @@ func (ad *AutopilotDriver) originalTemporaryRoundabout(f autopilotFrame) float64
 			traffic = append(traffic, roundaboutObstacleAt(rb, obstacle, 0))
 			entryFrame.obstacles = append(entryFrame.obstacles, obstacle)
 		}
-		if yieldDistance >= -2 && entryHasMovingConflict(entryFrame, rb, points, forward, s) {
+		if yieldDistance >= -2 && originalEntryMovingConflict(entryFrame, rb, points, forward, s) {
 			limit = math.Min(limit, math.Sqrt(2*135*math.Max(0, yieldDistance-20)))
 		}
 

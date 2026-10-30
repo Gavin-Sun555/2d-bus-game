@@ -66,8 +66,8 @@ func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *sim.Route, w
 	}
 
 	// Second line: Stop Rules guidance
-	rulesText := locale.T("[T] 线路与 AI 限速 · [H] 显示/隐藏其他线路 · 当前编辑："+route.Name+" · 车站设在顺行右侧",
-		"[T] Lines / AI limits · [H] Toggle other lines · Editing: "+route.Name+" · Right-side stops")
+	rulesText := locale.T("[T] 线路与 AI 限速 · [H] 其他线路 · 右键/Shift+点站名编辑 · 当前："+route.Name,
+		"[T] Lines / AI limits · [H] Other lines · Right-click / Shift+click stop: rename · Editing: "+route.Name)
 	textui.DrawText(screen, rulesText, panelX+20, panelY+32, 11, sim.RGBA(250, 204, 21, 230))
 
 	// Third line(s): The wrapped route lines

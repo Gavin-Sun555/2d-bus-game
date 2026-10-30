@@ -202,6 +202,107 @@ func TestSavePickerDrawAndLayout(t *testing.T) {
 		g.drawSavePicker(ebiten.NewImage(g.Width, g.Height))
 		g.savePicker.confirm = true
 		g.drawSavePicker(ebiten.NewImage(g.Width, g.Height))
+		g.savePicker.confirm = false
+		g.savePicker.confirmDelete = true
+		g.drawSavePicker(ebiten.NewImage(g.Width, g.Height))
+		g.beginSaveSlotRename()
+		g.savePicker.nameInput = "早高峰铰接车测试"
+		g.savePicker.nameCaret = len(g.savePicker.nameInput)
+		g.drawSavePicker(ebiten.NewImage(g.Width, g.Height))
+	}
+}
+
+func TestSaveSlotRenameAndDelete(t *testing.T) {
+	g := saveTestGame(t)
+	g.Cash = 5678
+
+	// 1. Preset name on an empty slot in Save picker, then save.
+	g.openSavePicker(false)
+	g.selectSaveSlot(2)
+	g.beginSaveSlotRename()
+	g.savePicker.insertNameText("  早高峰1号线  ")
+	if !g.commitSaveSlotRename() {
+		t.Fatal("preset name rejected")
+	}
+	g.performSlotAction()
+	if g.savePicker.open {
+		t.Fatal("save with preset name did not finish")
+	}
+
+	slots, err := g.SaveSlots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slots[2].Exists || slots[2].Name != "早高峰1号线" {
+		t.Fatalf("expected saved name 早高峰1号线, got %+v", slots[2])
+	}
+	savedAt := slots[2].SavedAt
+
+	// 2. Rename existing slot from Load picker; timestamp and payload must remain intact.
+	g.openSavePicker(true)
+	g.selectSaveSlot(2)
+	g.beginSaveSlotRename()
+	g.savePicker.nameSelected = true
+	g.savePicker.insertNameText("晚高峰备份")
+	if !g.commitSaveSlotRename() {
+		t.Fatal("rename existing slot failed")
+	}
+	slots, err = g.SaveSlots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots[2].Name != "晚高峰备份" || !slots[2].SavedAt.Equal(savedAt) {
+		t.Fatalf("rename did not preserve timestamp or update name: %+v (was %v)", slots[2], savedAt)
+	}
+
+	// 3. Re-saving to the same slot without specifying a new name preserves its existing name.
+	g.Cash = 6789
+	if err := g.SaveGameSlot(2); err != nil {
+		t.Fatal(err)
+	}
+	slots, err = g.SaveSlots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots[2].Name != "晚高峰备份" {
+		t.Fatalf("overwriting slot lost existing name: %+v", slots[2])
+	}
+
+	// 4. Reject overly long or multiline names without mutating the saved name.
+	if err := g.RenameSaveSlot(2, "一二三四五六七八九十一二三四五六七八九十一二三四五"); err == nil {
+		t.Fatal("accepted name exceeding MaxSaveNameRunes")
+	}
+	if err := g.RenameSaveSlot(2, "bad\nname"); err == nil {
+		t.Fatal("accepted multiline name")
+	}
+	slots, _ = g.SaveSlots()
+	if slots[2].Name != "晚高峰备份" {
+		t.Fatalf("failed rename mutated slot name: %+v", slots[2])
+	}
+
+	// 5. Two-step delete confirmation in picker.
+	g.openSavePicker(true)
+	g.selectSaveSlot(2)
+	g.performDeleteSlot()
+	if !g.savePicker.confirmDelete {
+		t.Fatal("first delete click did not request confirmation")
+	}
+	if slots, _ = g.SaveSlots(); !slots[2].Exists {
+		t.Fatal("first delete click removed file before confirmation")
+	}
+	// Switching slots cancels delete confirmation.
+	g.selectSaveSlot(1)
+	if g.savePicker.confirmDelete {
+		t.Fatal("selecting another slot did not clear delete confirmation")
+	}
+	g.selectSaveSlot(2)
+	g.performDeleteSlot()
+	g.performDeleteSlot()
+	if g.savePicker.confirmDelete || g.savePicker.slots[2].Exists {
+		t.Fatal("confirmed delete did not remove slot")
+	}
+	if slots, _ = g.SaveSlots(); slots[2].Exists {
+		t.Fatal("deleted slot still exists on disk")
 	}
 }
 

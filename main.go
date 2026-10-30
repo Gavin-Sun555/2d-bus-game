@@ -50,6 +50,19 @@ func main() {
 	}
 
 	g := game.NewGame(screenWidth, screenHeight)
+	if err := g.EnableStationNames(); err != nil {
+		log.Printf("Station names unavailable: %v", err)
+		g.HUD.AddWarningToast("无法读取自定义站名文件 / Cannot read custom station names")
+	}
+	if err := g.EnableAudio(); err != nil {
+		log.Printf("Sound unavailable: %v", err)
+	}
+	defer g.CloseAudio()
+	if err := g.EnableAnnouncements(); err != nil {
+		log.Printf("Announcements unavailable: %v", err)
+		g.HUD.AddWarningToast("本地报站语音不可用 / Local announcement voices unavailable")
+	}
+	defer g.CloseAnnouncements()
 
 	if err := ebiten.RunGame(game.WithGraphicsWarmup(g)); err != nil {
 		log.Fatalf("Game crashed: %v", err)

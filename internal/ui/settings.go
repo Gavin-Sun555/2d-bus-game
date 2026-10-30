@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sound"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -18,11 +19,15 @@ type Settings struct {
 	OpenNetworkRequested         bool
 	operationsBounds             sim.Rect
 	TrafficFinesEnabled          bool
+	BusSignalPriority            bool
+	busSignalPriorityBounds      sim.Rect
 	FineAmount                   int
 	TrafficDensity               int            // 1: Low (144), 2: Medium (288), 3: High (576), 4: Congested (864)
 	LaneWidthLevel               int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
 	CameraViewMode               sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
 	MapTheme                     sim.MapTheme   // Active city map
+	LargeRoadNetwork             bool           `json:",omitempty"` // Metropolis CBD 4x block distance mode
+	LargeRoadNetworkChanged      bool           `json:"-"`
 	ThemeChanged                 bool
 	ReturnToMenuRequested        bool
 
@@ -37,9 +42,21 @@ type Settings struct {
 	speedRangeBounds         [2][2]sim.Rect // decrement/increment for car min/max
 	AIBusCount               int            // Number of AI buses on the route (0 ~ 8)
 	AIBusFleetChanged        bool
+	PlayerModel              sim.BusModel   `json:",omitempty"` // Configured player bus model (standard, double-decker, articulated)
 
 	// UI Localization Language
-	Language locale.Language
+	Language                locale.Language
+	Announcements           AnnouncementMode
+	AnnouncementVoice       sound.VoiceStyle
+	PassengerRates          *[sim.BusModelCount]sim.PassengerRates `json:",omitempty"`
+	PassengerTimingOpen     bool                                   `json:"-"`
+	passengerTimingBounds   sim.Rect
+	passengerTimingClose    sim.Rect
+	passengerRateBounds     [sim.BusModelCount][2]sim.Rect
+	AudioVolumes            *sound.Volumes `json:",omitempty"`
+	volumeBounds            [3][2]sim.Rect
+	announcementVoiceBounds sim.Rect
+	announcementsBounds     sim.Rect
 
 	// Button bounds for click detection
 	fineToggleBounds      sim.Rect
@@ -52,6 +69,7 @@ type Settings struct {
 	berserkSpeed120Bounds sim.Rect
 	aiBusToggleBounds     sim.Rect
 	themeToggleBounds     sim.Rect
+	largeGridToggleBounds sim.Rect
 	langToggleBounds      sim.Rect
 	menuButtonBounds      sim.Rect
 	closeButtonBounds     sim.Rect
@@ -71,8 +89,9 @@ func NewSettings() *Settings {
 		AutopilotBerserk:         false,                  // Standard mode by default
 		AutopilotBerserkMaxSpeed: 80,                     // Default: 80 km/h (445 px/s)
 		AICarMinSpeed:            30, AICarMaxSpeed: 60, AIBusMinSpeed: 30, AIBusMaxSpeed: 50,
-		AIBusCount: 0,                      // 0 AI buses by default
-		Language:   locale.CurrentLanguage, // Default to CurrentLanguage
+		AIBusCount:    0, // 0 AI buses by default
+		Announcements: AnnouncementsFollowLanguage,
+		Language:      locale.CurrentLanguage, // Default to CurrentLanguage
 	}
 }
 
@@ -106,6 +125,13 @@ func (s *Settings) GetBusMaxSpeed() float64 {
 	default:
 		return 445.0
 	}
+}
+
+func (s *Settings) GetPlayerModel() sim.BusModel {
+	if s == nil || !s.PlayerModel.Valid() {
+		return sim.BusStandard
+	}
+	return s.PlayerModel
 }
 
 func (s *Settings) SetBerserkMaxSpeed(speed int) {
@@ -148,6 +174,10 @@ func (s *Settings) Toggle() {
 
 func (s *Settings) Update(cam ...*sim.Camera) {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		if s.IsOpen && s.PassengerTimingOpen {
+			s.PassengerTimingOpen = false
+			return
+		}
 		s.Toggle()
 		return
 	}
@@ -171,6 +201,37 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		mx, my := ebiten.CursorPosition()
 		mPos := sim.Vec2{X: float64(mx), Y: float64(my)}
 
+		if s.PassengerTimingOpen {
+			if s.passengerTimingClose.Contains(mPos) {
+				s.PassengerTimingOpen = false
+				return
+			}
+			for model, row := range s.passengerRateBounds {
+				for door, b := range row {
+					if b.Contains(mPos) {
+						s.CyclePassengerRate(sim.BusModel(model), door)
+						return
+					}
+				}
+			}
+			return
+		}
+		if s.passengerTimingBounds.Contains(mPos) {
+			s.PassengerTimingOpen = true
+			return
+		}
+		for channel, buttons := range s.volumeBounds {
+			for direction, bounds := range buttons {
+				if bounds.Contains(mPos) {
+					delta := -10
+					if direction == 1 {
+						delta = 10
+					}
+					s.AdjustVolume(channel, delta)
+					return
+				}
+			}
+		}
 		for field, buttons := range s.speedRangeBounds {
 			for direction, bounds := range buttons {
 				if bounds.Contains(mPos) {
@@ -182,6 +243,18 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 					return
 				}
 			}
+		}
+		if s.announcementVoiceBounds.Contains(mPos) {
+			s.AnnouncementVoice = (s.AnnouncementVoice + 1) % 4
+			return
+		}
+		if s.announcementsBounds.Contains(mPos) {
+			s.CycleAnnouncements()
+			return
+		}
+		if s.busSignalPriorityBounds.Contains(mPos) {
+			s.BusSignalPriority = !s.BusSignalPriority
+			return
 		}
 		if s.saveBounds.Contains(mPos) {
 			s.SaveRequested = true
@@ -241,6 +314,9 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		} else if s.themeToggleBounds.Contains(mPos) {
 			s.ReturnToMenuRequested = true
 			s.IsOpen = false
+		} else if s.largeGridToggleBounds.Contains(mPos) {
+			s.LargeRoadNetwork = !s.LargeRoadNetwork
+			s.LargeRoadNetworkChanged = true
 		} else if s.langToggleBounds.Contains(mPos) {
 			s.Language = locale.ToggleLanguage()
 		} else if s.closeButtonBounds.Contains(mPos) {
@@ -261,4 +337,27 @@ func (s *Settings) AdjustAISpeed(field, delta int) {
 	case 3:
 		s.AIBusMaxSpeed = max(s.AIBusMinSpeed, min(80, s.AIBusMaxSpeed+delta))
 	}
+}
+
+// Missing volume fields in older saves retain the original full-volume mix.
+func (s *Settings) Volumes() sound.Volumes {
+	if s.AudioVolumes == nil {
+		return sound.DefaultVolumes()
+	}
+	return s.AudioVolumes.Normalize()
+}
+func (s *Settings) AdjustVolume(channel, delta int) {
+	v := s.Volumes()
+	switch channel {
+	case 0:
+		v.Engine += delta
+	case 1:
+		v.Announcements += delta
+	case 2:
+		v.Horn += delta
+	default:
+		return
+	}
+	v = v.Normalize()
+	s.AudioVolumes = &v
 }

@@ -14,6 +14,7 @@ type skippedStopDeparture struct {
 
 func stopRoadPoint(stop *sim.BusStop, lw float64, worlds ...*sim.World) sim.Vec2 {
 	forward := sim.UnitFromAngle(stop.Heading)
+
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	lane := float64(max(2, stop.RoadLanes))/2 - .5
 	if stop.RoadLanes == 8 {
@@ -54,6 +55,12 @@ func (ad *AutopilotDriver) beginRoadDeparture(bus *sim.Bus, stop *sim.BusStop, l
 	ad.LastPathS = 0
 	ad.skippedDeparture = &skippedStopDeparture{stop: stop, position: bus.Pos}
 	forward := sim.UnitFromAngle(stop.Heading)
+	// An exhausted, yawed bay arrival needs a proved crawl from its very
+	// first moving tick. Waiting for the nominal speed cap to reach zero
+	// allows acceleration while the wheels are still pointing at the curb.
+	if bus.IsArticulated() && math.Abs(bus.Speed) < .5 && bus.Pos.Sub(stop.FrontBerthPosition()).Dot(forward) > 32 && math.Abs(sim.NormalizeAngle(bus.Heading-stop.Heading)) > .15 {
+		ad.departureEscapeActive = true
+	}
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	ad.LaneOffset = bus.Pos.Sub(stopRoadPoint(stop, lw, world)).Dot(right)
 	ad.TargetLaneOffset = ad.LaneOffset

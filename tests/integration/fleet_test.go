@@ -113,7 +113,7 @@ func TestBackgroundBusesAndBerserkSettingsRemainIndependent(t *testing.T) {
 
 }
 
-// TestAIBusFleetFrontBackQueueing verifies that multiple AI vehicles spawn strictly queued
+// TestAIBusFleetFrontBackQueueing explicitly parks multiple AI vehicles queued
 // front-and-back behind the player bus at the starting terminal station (起点站), with zero
 // lateral/vertical stacking, safe bumper clearance, and orderly departure progression.
 func TestAIBusFleetFrontBackQueueing(t *testing.T) {
@@ -128,9 +128,20 @@ func TestAIBusFleetFrontBackQueueing(t *testing.T) {
 			sinH := math.Sin(startStop.Heading)
 
 			for fleetCount := 1; fleetCount <= 4; fleetCount++ {
+				startStop.WaitingPassengers = 4 // Bounded dwell: hold initially, finish within the departure window.
 				playerBus := sim.NewBus(startStop.Pos.X, startStop.Pos.Y, startStop.Heading)
 				abm := traffic.NewAIBusManager()
 				abm.BuildFleet(w, fleetCount, lw, playerBus)
+				// Initial dispatch is distributed. Arrange an explicit terminal
+				// queue to continue testing its clearance and waiting behavior.
+				parked := []*sim.Bus{playerBus}
+				for _, ai := range abm.Buses {
+					ai.Route.CurrentIndex = 0
+					ai.Driver.Reset()
+					sim.PlaceBusInStationQueue(ai.Bus, startStop, parked, lw)
+					ai.Driver.QueueAtStation(startStop.ID)
+					parked = append(parked, ai.Bus)
+				}
 
 				if len(abm.Buses) != fleetCount {
 					t.Fatalf("[%s] FleetCount %d: Expected %d buses, got %d", theme.DisplayName(), fleetCount, fleetCount, len(abm.Buses))
@@ -237,7 +248,7 @@ func TestAIBusFleetFrontBackQueueing(t *testing.T) {
 					playerBus.Pos = startStop.Pos.Add(sim.Vec2{X: cosH * 600.0, Y: sinH * 600.0}) // Player departs 600px ahead
 
 					nearestDist := oldDist
-					for f := 0; f < 80; f++ {
+					for f := 0; f < 400; f++ {
 						abm.Update(dt, playerBus, w, tls, nil, lw, 2)
 						nearestDist = math.Min(nearestDist, bus1.Bus.Pos.Distance(startStop.Pos))
 					}
@@ -413,6 +424,9 @@ func TestAIBusFleetCapacityAndBoardingLogic(t *testing.T) {
 
 	// Run AI bus update when docked at station
 	abm.Update(0.1, nil, world, nil, nil, 52.0)
+	for ab.Bus.PassengerServiceRemaining() > 0 {
+		abm.Update(1.0, nil, world, nil, nil, 52.0)
+	}
 
 	// Since capacity is 45 and bus was empty, all 25 waiting passengers must board
 	if ab.Bus.PassengerCount != 25 {
@@ -442,6 +456,9 @@ func TestAIBusFleetCapacityAndBoardingLogic(t *testing.T) {
 	ab.Driver.DwellFinished = false
 
 	abm.Update(0.1, nil, world, nil, nil, 52.0)
+	for ab.Bus.PassengerServiceRemaining() > 0 {
+		abm.Update(1.0, nil, world, nil, nil, 52.0)
+	}
 
 	// The bus alights passengers destined for nextStop, then boards up to full 45 capacity
 	if ab.Bus.PassengerCount != 45 {

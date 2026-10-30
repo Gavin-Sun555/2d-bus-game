@@ -36,8 +36,11 @@ func testFullStationQueue(t *testing.T, late bool) {
 					lead := sim.NewBus(p.X, p.Y, h)
 					lead.SetModel(sim.BusArticulated)
 					lead.DoorsOpen = true
+					rear := sim.NewBus(0, 0, h)
+					sim.PlaceBusInStationQueue(rear, stop, []*sim.Bus{lead}, lw)
+					rear.DoorsOpen = true
 					distance := 212.547
-					if model == sim.BusArticulated && !late {
+					if !late {
 						distance = 500
 					}
 					p = stop.Pos.Sub(u.Mul(distance)).Sub(r.Mul(47.12))
@@ -53,8 +56,11 @@ func testFullStationQueue(t *testing.T, late bool) {
 							lead.DoorsOpen = false
 							lead.Speed = 100
 							lead.Pos = lead.Pos.Add(u.Mul(100. / 60))
+							rear.Pos = rear.Pos.Add(u.Mul(100. / 60))
+							rear.Speed = 100
+							rear.DoorsOpen = false
 						}
-						obs := []VehicleObstacle{ObserveBus(lead)}
+						obs := []VehicleObstacle{ObserveBus(lead), ObserveBus(rear)}
 						th, br, st, hb, d, dk := ad.ComputeControls(bus, route, w, nil, obs, lw, 1./60)
 						before := bus.Pos
 						bus.Update(1./60, th, br, st, hb, d)

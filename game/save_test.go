@@ -235,6 +235,10 @@ func TestSaveLoadDoesNotRepeatPassengerExchange(t *testing.T) {
 	g := saveTestGame(t)
 	g.Bus.DoorsOpen = true
 	g.updatePassengerExchange(false)
+	for g.Bus.PassengerServiceRemaining() > 0 {
+		g.Bus.Update(1.0, 0, 0, 0, false, false)
+		g.updatePassengerExchange(false)
+	}
 	cash, revenue, passengers := g.Cash, g.Operations.Revenue, g.Bus.PassengerCount
 	if passengers == 0 {
 		t.Fatal("fixture did not board passengers")
@@ -299,5 +303,62 @@ func TestLoadLegacyTrafficPopulationKeepsTransitState(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestInspectSaveSlot1(t *testing.T) {
+	g := NewGame(1280, 720)
+	if err := g.LoadGameSlot(0); err != nil {
+		t.Skip(err)
+	}
+	ab0 := g.AIBusMgr.Buses[0]
+	st74 := g.World.Stops[74]
+	for step := 0; step <= 600; step++ {
+		if step%60 == 0 {
+			t.Logf("step=%d wait=%d player=(pos=%.1f,%.1f spd=%.1f pax=%d rem=%.1f bTgt=%d aTgt=%d) ai0=(pos=%.1f,%.1f spd=%.1f pax=%d rem=%.1f bTgt=%d aTgt=%d)",
+				step, st74.WaitingPassengers,
+				g.Bus.Pos.X, g.Bus.Pos.Y, g.Bus.Speed, g.Bus.PassengerCount, g.Bus.PassengerServiceRemaining(), g.Bus.PassengerService.BoardingTarget, g.Bus.PassengerService.AlightingTarget,
+				ab0.Bus.Pos.X, ab0.Bus.Pos.Y, ab0.Bus.Speed, ab0.Bus.PassengerCount, ab0.Bus.PassengerServiceRemaining(), ab0.Bus.PassengerService.BoardingTarget, ab0.Bus.PassengerService.AlightingTarget)
+		}
+		_ = g.Update()
+	}
+}
+
+func TestSaveLoadRaisesStationWaitingLimitWithoutChangingGrowth(t *testing.T) {
+	g := saveTestGame(t)
+	for _, stop := range g.World.Stops {
+		stop.MaxWaiting = 45 // Legacy save limit.
+		stop.WaitingPassengers = 45
+		stop.SpawnInterval = 27.5
+		stop.SpawnTimer = 8.25
+	}
+	if err := g.SaveGame(); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.LoadGame(); err != nil {
+		t.Fatal(err)
+	}
+	for _, stop := range g.World.Stops {
+		if stop.MaxWaiting != sim.DefaultStopMaxWaiting || stop.WaitingPassengers != 45 || stop.SpawnInterval != 27.5 || stop.SpawnTimer != 8.25 {
+			t.Fatalf("station%d migration changed growth state: %+v", stop.ID, stop)
+		}
+	}
+	stop := g.World.Stops[0]
+	stop.Update(19)
+	if stop.WaitingPassengers != 45 {
+		t.Fatal("passengers arrived before the saved interval")
+	}
+	stop.Update(.25)
+	if stop.WaitingPassengers < 46 || stop.WaitingPassengers > 48 {
+		t.Fatalf("old 45 limit still blocks growth or arrival batch changed: %d", stop.WaitingPassengers)
+	}
+	stop.WaitingPassengers = 2047
+	stop.Update(stop.SpawnInterval)
+	if stop.WaitingPassengers != 2048 {
+		t.Fatalf("guardrail not enforced: %d", stop.WaitingPassengers)
+	}
+	stop.Update(stop.SpawnInterval)
+	if stop.WaitingPassengers != 2048 {
+		t.Fatal("guardrail exceeded")
 	}
 }

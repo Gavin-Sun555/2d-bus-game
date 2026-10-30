@@ -26,6 +26,9 @@ func TestSharedTerminusQueuesPlayerBehindExistingFleet(t *testing.T) {
 		g.PlanTransitLine(0)
 		g.planModeRouteModified = true
 		g.TogglePlanMode()
+		g.Bus.Pos = st.Pos.Add(sim.Vec2{X: 10000, Y: 10000})
+		parkSharedTerminusForTest(g, st)
+		g.resetBusesToRouteStart(false)
 		checkStationQueue(t, g, st)
 		u := sim.Vec2{X: math.Cos(st.Heading), Y: math.Sin(st.Heading)}
 		if g.Bus.Pos.Sub(st.Pos).Dot(u) >= -120 {
@@ -37,6 +40,7 @@ func TestSharedTerminusQueuesPlayerBehindExistingFleet(t *testing.T) {
 		g.PlanTransitLine(1)
 		g.planModeRouteModified = true
 		g.TogglePlanMode()
+		parkSharedTerminusForTest(g, st)
 		checkStationQueue(t, g, st)
 		g.ResetToStartingStation()
 		checkStationQueue(t, g, st)
@@ -79,6 +83,7 @@ func TestSharedTerminusWaitsThenDepartsInOrder(t *testing.T) {
 	g.ResetBusesToRouteStart()
 	g.TrafficMgr.Cars = nil
 	st := g.World.Stops[234]
+	parkSharedTerminusForTest(g, st)
 	u := sim.Vec2{X: math.Cos(st.Heading), Y: math.Sin(st.Heading)}
 	r := sim.Vec2{X: -u.Y, Y: u.X}
 	for step := 0; step < 300; step++ {
@@ -128,6 +133,7 @@ func TestLoadRepairsOldSideBySideTerminus(t *testing.T) {
 	}
 	g.ResetBusesToRouteStart()
 	st := g.World.Stops[234]
+	parkSharedTerminusForTest(g, st)
 	r := sim.Vec2{X: -math.Sin(st.Heading), Y: math.Cos(st.Heading)}
 	blocked := g.AIBusMgr.Buses[2]
 	blocked.Bus.Pos = st.Pos.Sub(r.Mul(40))
@@ -143,5 +149,17 @@ func TestLoadRepairsOldSideBySideTerminus(t *testing.T) {
 	checkStationQueue(t, g, st)
 	if g.Cash != 241 || g.Operations.Revenue != 77 || g.AIBusMgr.Buses[2].Bus.PassengerCount != 3 {
 		t.Fatal("repair lost passengers or revenue")
+	}
+}
+
+// Explicit legacy queue fixture: new fleets now begin spread along the route.
+func parkSharedTerminusForTest(g *Game, st *sim.BusStop) {
+	others := []*sim.Bus{g.Bus}
+	for _, ab := range g.AIBusMgr.Buses {
+		ab.Route.CurrentIndex = 0
+		ab.Driver.Reset()
+		sim.PlaceBusInStationQueue(ab.Bus, st, others, g.Settings.GetLaneWidth())
+		ab.Driver.QueueAtStation(st.ID)
+		others = append(others, ab.Bus)
 	}
 }

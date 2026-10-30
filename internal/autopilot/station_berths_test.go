@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestTwoBerthArrivalAndLongVehicleExclusion(t *testing.T) {
+func TestTwoBerthArrivalAllVehicleModels(t *testing.T) {
 	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
 		for first := sim.BusStandard; first < sim.BusModelCount; first++ {
 			for second := sim.BusStandard; second < sim.BusModelCount; second++ {
@@ -27,12 +27,8 @@ func TestTwoBerthArrivalAndLongVehicleExclusion(t *testing.T) {
 					route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
 					ad := NewAutopilotDriver()
 					ad.DisallowOncomingOvertake = true
-					exclusive := first == sim.BusArticulated || second == sim.BusArticulated
 					docked := false
 					for tick := 0; tick < 3600; tick++ {
-						if exclusive && tick == 1200 {
-							a.Pos = a.Pos.Add(u.Mul(900))
-						}
 						obs := []VehicleObstacle{ObserveBus(a)}
 						th, br, st, hb, d, dock := ad.ComputeControls(b, route, w, nil, obs, 52, 1./60)
 						b.Update(1./60, th, br, st, hb, d)
@@ -43,21 +39,20 @@ func TestTwoBerthArrivalAndLongVehicleExclusion(t *testing.T) {
 							t.Fatalf("curb tick%d pose%v", tick, b.Pos)
 						}
 						if dock {
-							if exclusive && tick < 1200 {
-								t.Fatal("long bus shared platform")
-							}
-							expected := stop.RearBerthPosition()
-							if exclusive {
-								expected = stop.FrontBerthPosition()
-							}
+							rear, _ := stationBodyRange(a, u)
+							expected := stop.Pos.Add(u.Mul(rear - stop.Pos.Dot(u) - sim.StationBerthGap - b.Length/2))
 							if b.Pos.Distance(expected) > 12 {
 								t.Fatal("wrong berth", b.Pos, expected)
+							}
+							if !stop.ContainsBus(b) || !b.DoorsOpen {
+								t.Fatal("second vehicle did not become a boarding bus")
 							}
 							docked = true
 							break
 						}
 					}
 					if !docked {
+						t.Logf("available%v contains%v heading%g speed%g state%v", availableStationBerths(b, stop, []VehicleObstacle{ObserveBus(a)}), stop.ContainsBus(b), b.Heading, b.Speed, ad.State)
 						t.Fatalf("failed to dock pos%v diag%+v", b.Pos, ad.DiagnoseStop(b, route, w, nil, []VehicleObstacle{ObserveBus(a)}, 52))
 					}
 				})
