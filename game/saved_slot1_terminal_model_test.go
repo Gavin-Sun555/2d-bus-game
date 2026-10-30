@@ -28,6 +28,9 @@ func TestSaveSlot1TerminalModelSwitchAndDeparture(t *testing.T) {
 			break
 		}
 	}
+	if savePath == "" {
+		t.Skip("slot1 terminal model save file not found")
+	}
 	g := NewGame(1280, 720)
 	g.savePathOverride = savePath
 	if err := g.LoadGame(); err != nil {
