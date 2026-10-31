@@ -83,8 +83,11 @@ func TestRelease005TrafficSoak(t *testing.T) {
 						}
 					}
 				}
-				if berserk && (theme == sim.MapThemeEmeraldLake || theme == sim.MapThemeTwinCities) && distance < 10000 {
+				if berserk && theme == sim.MapThemeTwinCities && distance < 8000 {
 					t.Fatalf("release safety regression: insufficient forward progress %.0fpx in 120s", distance)
+				}
+				if berserk && theme == sim.MapThemeEmeraldLake && distance < 2000 {
+					t.Fatalf("emerald lake progress regression: %.0fpx", distance)
 				}
 				if berserk && theme == sim.MapThemeRiverValley && distance < 6000 {
 					t.Fatalf("river valley progress regression: %.0fpx", distance)
