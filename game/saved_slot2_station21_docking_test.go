@@ -3,14 +3,16 @@ package game
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func findSlot2Station21File() string {
+	_, source, _, _ := runtime.Caller(0)
 	candidates := []string{
+		filepath.Join(filepath.Dir(source), "..", "dist", "slot2-station21-jam-2026-11-03-0654", "slot2.json"),
 		filepath.Join("..", "dist", "slot2-station21-jam-2026-11-03-0654", "slot2.json"),
 		filepath.Join("dist", "slot2-station21-jam-2026-11-03-0654", "slot2.json"),
-		"/Users/yansun/personal/2d-bus-game/dist/slot2-station21-jam-2026-11-03-0654/slot2.json",
 	}
 	for _, c := range candidates {
 		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {

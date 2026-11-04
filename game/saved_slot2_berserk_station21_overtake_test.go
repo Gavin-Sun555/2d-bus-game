@@ -12,7 +12,10 @@ import (
 // approaches Stop 32 (Coastal District 21) on multi-lane road in the passing lane while the bay is occupied,
 // it does not freeze at 0 km/h diagonally slanted across the travel lanes.
 func TestSavedSlot2PlayerBerserkDoesNotStallSlanted(t *testing.T) {
-	savePath := "/Users/yansun/personal/2d-bus-game/dist/slot2-station21-jam-2026-11-03-0654/slot2.json"
+	savePath := findSlot2Station21File()
+	if savePath == "" {
+		t.Skip("slot2 station21 snapshot not found")
+	}
 	g := NewGame(1280, 720)
 	g.savePathOverride = savePath
 	if err := g.LoadGame(); err != nil {

@@ -182,6 +182,18 @@
       "internal/sim/passenger_spawn_test.go",
       "internal/ui/passenger_spawn_setting_test.go",
       "internal/view/tree_cache.go"
-    ]
+    ],
+    "ciPortabilityFix": {
+      "initialRunURL": "https://github.com/Gavin-Sun555/2d-bus-game/actions/runs/41902046634",
+      "initialCommit": "8d9a46dd1a5dca3f642961b732ef91a8c6a343c4",
+      "failedTest": "TestSavedSlot2PlayerBerserkDoesNotStallSlanted",
+      "reason": "optional local historical save path was used unconditionally on Linux",
+      "fix": "Reuse the shared station21 fixture locator; locate relative to test source, and skip explicitly when the optional snapshot is absent. Assertions for available snapshots remain unchanged.",
+      "verification": [
+        "both station21 replays passed under race with local snapshot",
+        "both station21 replays explicitly skipped in a clean exported checkout without snapshot"
+      ],
+      "gameBehaviorChanges": false
+    }
   }
 }
