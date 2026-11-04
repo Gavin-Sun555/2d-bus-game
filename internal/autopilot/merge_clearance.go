@@ -6,6 +6,32 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+func obstacleInParkedOtherStationBay(f autopilotFrame, ob VehicleObstacle) bool {
+	if f.world == nil {
+		return false
+	}
+	for _, stop := range f.world.Stops {
+		if stop.Pos.Distance(ob.Pos) > stop.Length+100 {
+			continue
+		}
+		if (f.targetStop != nil && f.targetStop.ID == stop.ID) ||
+			(f.fromStop != nil && f.fromStop.ID == stop.ID && f.bus != nil && f.bus.Pos.Distance(stop.Pos) < stop.Length+100) ||
+			(f.bus != nil && stop.ContainsBus(f.bus)) {
+			continue
+		}
+		u := sim.UnitFromAngle(stop.Heading)
+		r := sim.Vec2{X: -u.Y, Y: u.X}
+		d := ob.Pos.Sub(stop.Pos)
+		along := math.Abs(d.Dot(u))
+		across := math.Abs(d.Dot(r))
+		nearBay := ob.Speed < 3.0 && along < stop.Length/2+ob.Length/2+25.0 && across < stop.Width/2+ob.Width/2+15.0
+		if obstacleInsideStationBay(stop, ob) || (ob.Bus != nil && stop.ContainsBus(ob.Bus)) || nearBay {
+			return true
+		}
+	}
+	return false
+}
+
 // Required lane returns use a controlled speed, rather than the extra 200px passing
 // runway reserved in isLaneClearToChange. Front gaps remain subject to physical
 // headway/braking caps; rear and alongside traffic keep the normal clearance.
@@ -31,7 +57,13 @@ func requiredMergeLaneClear(f autopilotFrame, heading, current, target float64) 
 		return true
 	}
 	for _, ob := range f.obstacles {
+		if obstacleInParkedOtherStationBay(f, ob) {
+			continue
+		}
 		if stoppedOriginFollowerClearsMerge(f, ob, heading, current, target) {
+			continue
+		}
+		if laneChangeLeaderClearance(f, ob, f.bus.SteeringAngle, 20, 0.31) {
 			continue
 		}
 		if gap, ok := requiredMergeForwardGap(f, ob, heading, current, target); ok && gap >= 35 && f.speedAbs <= 85 {
@@ -104,11 +136,17 @@ func (ad *AutopilotDriver) requiredMergeTrafficSpeed(f autopilotFrame) float64 {
 }
 
 func mergeTrafficSpeed(f autopilotFrame, request *sim.BusLaneMergeRequest) float64 {
+	if request == nil {
+		return math.Inf(1)
+	}
 	right := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
 	current := 0.0
 	target := request.Target.Sub(f.bus.Pos).Dot(right)
 	limit := math.Inf(1)
 	for _, ob := range f.obstacles {
+		if obstacleInParkedOtherStationBay(f, ob) {
+			continue
+		}
 		gap, ok := requiredMergeForwardGap(f, ob, request.Heading, current, target)
 		if !ok {
 			continue

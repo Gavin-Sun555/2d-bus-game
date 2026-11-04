@@ -13,6 +13,21 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+var speedStrings = func() [200]string {
+	var arr [200]string
+	for i := 0; i < 200; i++ {
+		arr[i] = fmt.Sprintf("%3d", i)
+	}
+	return arr
+}()
+
+func speedToString(kmh int) string {
+	if kmh >= 0 && kmh < len(speedStrings) {
+		return speedStrings[kmh]
+	}
+	return fmt.Sprintf("%3d", kmh)
+}
+
 func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop *sim.BusStop, targetStop *sim.BusStop, stopBellRung bool, passengersAlighting int, tls *sim.TrafficLightSystem, settings *Settings) {
 	screenH := screen.Bounds().Dy()
 
@@ -50,10 +65,21 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 			if dist < 25.0 {
 				distCol = sim.RGBA(250, 204, 21, 255) // Caution highlight when close to stop line
 			}
-			distText := locale.Tf("距线 %.0fm", "%.0fm to line", math.Max(0, dist))
+			distInt := int(math.Max(0, dist))
+			remInt := 0
 			if remainingSec > 0 && remainingSec < 99 {
-				distText = locale.Tf("距线 %.0fm (%ds)", "%.0fm (%ds)", math.Max(0, dist), int(remainingSec+0.5))
+				remInt = int(remainingSec + 0.5)
 			}
+			if distInt != h.cachedDistSecDist || remInt != h.cachedDistSecRem {
+				h.cachedDistSecDist = distInt
+				h.cachedDistSecRem = remInt
+				if remInt > 0 {
+					h.cachedSigDistText = locale.Tf("距线 %dm (%ds)", "%dm (%ds)", distInt, remInt)
+				} else {
+					h.cachedSigDistText = locale.Tf("距线 %dm", "%dm to line", distInt)
+				}
+			}
+			distText := h.cachedSigDistText
 
 			// Draw mini stop-line icon
 			vector.DrawFilledRect(screen, float32(dashX+242), sigYF32+12, 2.5, 14, sim.RGBA(248, 250, 252, 240), true)
@@ -160,7 +186,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 
 	// Speed calculation (convert px/s to intuitive km/h)
 	speedKmh := int(math.Abs(bus.Speed) * 0.18)
-	speedStr := fmt.Sprintf("%3d", speedKmh)
+	speedStr := speedToString(speedKmh)
 	textui.DrawText(screen, speedStr, dashX+14, dashY+16, 16, color.White)
 	textui.DrawText(screen, "KM/H", dashX+52, dashY+20, 11, sim.RGBA(148, 163, 184, 255))
 
@@ -246,8 +272,12 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		if settings.AutopilotBerserk {
 			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), sim.RGBA(234, 88, 12, 240), true)
 			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, sim.RGBA(253, 186, 116, 255), true)
-			bskText := fmt.Sprintf(locale.T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), settings.AutopilotBerserkMaxSpeed)
-			textui.DrawText(screen, bskText, h.AutopilotBounds.X+6, h.AutopilotBounds.Y+4, 11, color.White)
+			if h.cachedBerserkSpeed != settings.AutopilotBerserkMaxSpeed {
+				h.cachedBerserkSpeed = settings.AutopilotBerserkMaxSpeed
+				h.cachedBskText = fmt.Sprintf(locale.T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), h.cachedBerserkSpeed)
+				h.cachedManText = fmt.Sprintf(locale.T("👤 手动%d(P)", "👤 Man%d(P)"), h.cachedBerserkSpeed)
+			}
+			textui.DrawText(screen, h.cachedBskText, h.AutopilotBounds.X+6, h.AutopilotBounds.Y+4, 11, color.White)
 		} else {
 			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), sim.RGBA(6, 182, 212, 235), true)
 			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, sim.RGBA(165, 243, 252, 255), true)
@@ -258,7 +288,12 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.0, sim.RGBA(100, 116, 139, 180), true)
 		manText := locale.T("👤 手动(P)", "👤 Manual(P)")
 		if settings != nil {
-			manText = fmt.Sprintf(locale.T("👤 手动%d(P)", "👤 Man%d(P)"), settings.AutopilotBerserkMaxSpeed)
+			if h.cachedBerserkSpeed != settings.AutopilotBerserkMaxSpeed {
+				h.cachedBerserkSpeed = settings.AutopilotBerserkMaxSpeed
+				h.cachedBskText = fmt.Sprintf(locale.T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), h.cachedBerserkSpeed)
+				h.cachedManText = fmt.Sprintf(locale.T("👤 手动%d(P)", "👤 Man%d(P)"), h.cachedBerserkSpeed)
+			}
+			manText = h.cachedManText
 		}
 		textui.DrawText(screen, manText, h.AutopilotBounds.X+8, h.AutopilotBounds.Y+4, 11, sim.RGBA(148, 163, 184, 255))
 	}
@@ -274,15 +309,23 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	} else if bus.Durability < 70 {
 		durCol = sim.RGBA(234, 179, 8, 255)
 	}
-	durStr := locale.Tf("车况:%.0f%%", "Health:%.0f%%", bus.Durability)
-	textui.DrawText(screen, durStr, dashX+114, dashY+58, 10, durCol)
+	durInt := int(bus.Durability + 0.5)
+	if durInt != h.cachedDurability {
+		h.cachedDurability = durInt
+		h.cachedDurStr = locale.Tf("车况:%d%%", "Health:%d%%", durInt)
+	}
+	textui.DrawText(screen, h.cachedDurStr, dashX+114, dashY+58, 10, durCol)
 
 	if bus.OnShoulder {
 		vector.DrawFilledRect(screen, float32(dashX+182), float32(dashY+54), 126, 18, sim.RGBA(234, 179, 8, 220), true)
 		textui.DrawText(screen, locale.T("[ 路肩缓冲减速 ]", "[ Shoulder Slow ]"), dashX+190, dashY+57, 10, sim.RGBA(15, 23, 42, 255))
 	} else {
-		steerStr := locale.Tf("转向: %.0f°", "Steer: %.0f°", bus.SteeringAngle*180/math.Pi)
-		textui.DrawText(screen, steerStr, dashX+182, dashY+58, 10, sim.RGBA(203, 213, 225, 255))
+		steerDeg := int(bus.SteeringAngle * 180 / math.Pi)
+		if steerDeg != h.cachedSteerDeg {
+			h.cachedSteerDeg = steerDeg
+			h.cachedSteerStr = locale.Tf("转向: %d°", "Steer: %d°", steerDeg)
+		}
+		textui.DrawText(screen, h.cachedSteerStr, dashX+182, dashY+58, 10, sim.RGBA(203, 213, 225, 255))
 		steerRatio := bus.SteeringAngle / bus.MaxSteerAngle
 		vector.StrokeLine(screen, float32(dashX+240), float32(dashY+63), float32(dashX+240+steerRatio*20), float32(dashY+63), 2.0, sim.RGBA(56, 189, 248, 255), true)
 	}

@@ -40,10 +40,21 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	if approach.approachingInter != nil && f.world.IsAtRoundabout(approach.approachingInter.Center) {
 		return false
 	}
+	if road.HasMedianBusLane() && approach.isUpcomingRight && !ad.usesCurbRightAt(approach.approachingInter.Center) {
+		actual := f.bus.Pos.Sub(ad.pointAt(f.s)).Dot(right)
+		if math.Abs(actual) > f.laneWidth*.45 && !requiredMergeLaneClear(f, heading, actual, 0) {
+			ad.holdLaneOffset(actual)
+			ad.busTurnHoldDistance = math.Max(.01, approach.distToStopLine-f.bus.Length/2-25)
+		} else {
+			ad.TargetLaneOffset = 0
+			ad.progressLaneOffset(dt, f.speedAbs)
+		}
+		return true
+	}
 	turning := approach.isUpcomingLeft || approach.isUpcomingRight
 	if approach.isApproachingIntersection && turning {
 		inter := approach.approachingInter
-		if ad.busLaneJunction == nil && approach.isUpcomingLeft && approach.distToStopLine > 350 {
+		if !road.HasMedianBusLane() && ad.busLaneJunction == nil && approach.isUpcomingLeft && approach.distToStopLine > 350 {
 			curbQueue := ad.busLaneTrafficScore(f, forward, right, 3, true)
 			innerQueue := ad.busLaneTrafficScore(f, forward, right, 0, true)
 			if innerQueue+1 < curbQueue && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, -3*f.laneWidth, f.laneWidth) {
@@ -116,7 +127,7 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 		return true
 	}
 	if !ad.CanSkipTargetStop && f.remaining < math.Max(420, f.speedAbs*2.2+150) {
-		if ad.BerserkMode {
+		if ad.BerserkMode && !road.HasMedianBusLane() {
 			ad.updateStationApproachLane(f.bus, f.targetStop, f.obstacles, f.laneWidth, f.speedAbs, f.remaining, dt, true, true)
 		} else {
 			ad.TargetLaneOffset = 0
@@ -126,11 +137,14 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	}
 	// Protected bus priority by default; use a general through lane only when
 	// its queue or moving traffic is materially better, and return once clear.
-	desiredLane := 3
-	best := ad.busLaneTrafficScore(f, forward, right, 3, approach.isApproachingIntersection)
+	desiredLane := road.BusLaneIndex()
+	best := ad.busLaneTrafficScore(f, forward, right, desiredLane, approach.isApproachingIntersection)
 	candidates := []int{2, 1}
 	if !approach.isApproachingIntersection {
 		candidates = append(candidates, 0)
+	}
+	if road.HasMedianBusLane() {
+		candidates = []int{1, 2, 3}
 	}
 	if ad.BerserkMode {
 		for _, lane := range candidates {
@@ -148,7 +162,7 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	base := ad.pointAt(f.s).Sub(origin).Dot(right)
 	desired := (float64(desiredLane)+.5)*f.laneWidth - base
 	// A path taper is part of a turn/stop, not another cruising lane to score.
-	if math.Abs(base-3.5*f.laneWidth) > f.laneWidth*.2 {
+	if math.Abs(base-(float64(road.BusLaneIndex())+.5)*f.laneWidth) > f.laneWidth*.2 {
 		desired = 0
 	}
 	// A frozen fractional offset is not a completed lane return.

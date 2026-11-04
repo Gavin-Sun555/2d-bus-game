@@ -53,15 +53,28 @@ func appendWideLeftLaneReturn(points []Vec2, center, out Vec2, from, to, availab
 
 // Buses cruise in the outer through lane and enter the right-turn lane before
 // the stop line. A path taper avoids treating a turn-lane change as overtaking.
-func appendEightLaneRightTurn(points []Vec2, w *World, center, in, out Vec2, inCoord, outCoord float64, inEW, outEW bool, inProbe, outProbe Vec2, lw float64) []Vec2 {
+func appendEightLaneRightTurn(points []Vec2, w *World, center, in, out Vec2, inCoord, outCoord float64, inEW, outEW bool, inProbe, outProbe Vec2, lw float64, curbRight ...bool) []Vec2 {
 	right := Vec2{X: -in.Y, Y: in.X}
 	geometry := w.JunctionAt(center, lw)
+	if road, ok := w.RoadAt(inCoord, inEW, inProbe); ok && road.HasMedianBusLane() && !(len(curbRight) > 0 && curbRight[0]) {
+		outOffset := RoadLaneOffset(outCoord, outEW, lw, w, outProbe)
+		entryHalf, exitHalf := geometry.HalfX, geometry.HalfY
+		if !inEW {
+			entryHalf, exitHalf = exitHalf, entryHalf
+		}
+		radius := math.Max(100, math.Min(entryHalf-outOffset, exitHalf-lw*.5)-20)
+		return append(points, QuarterTurnPath(center, in, out, lw*.5, outOffset, radius)...)
+	}
 	stop := geometry.HalfX + JunctionStopInset
 	if !inEW {
 		stop = geometry.HalfY + JunctionStopInset
 	}
 	end := stop + 120
-	start := end + 360
+	taper := 360.0
+	if road, ok := w.RoadAt(inCoord, inEW, inProbe); ok && road.HasMedianBusLane() {
+		taper = math.Max(taper, 3*lw*4.5)
+	}
+	start := end + taper
 	if len(points) > 0 {
 		start = math.Min(start, center.Sub(points[len(points)-1]).Dot(in))
 	}

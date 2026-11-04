@@ -7,6 +7,7 @@ import (
 // RoadPathOptions selects the legal approach corridor for bus-lane left turns.
 type RoadPathOptions struct {
 	OrdinaryBusLaneLeft bool
+	CurbBusLaneRightAt  *Vec2
 	LongVehicle         bool
 }
 
@@ -218,7 +219,8 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64, options 
 				}
 
 				if turn == 1 && w.GetRoadLanes(prevCoord, isPrevEW, pPrev) == 8 {
-					pts = appendEightLaneRightTurn(pts, w, interPt, uPrev, uCurr, prevCoord, currCoord, isPrevEW, isCurrEW, pPrev, pCurr, lw)
+					curb := len(options) > 0 && options[0].CurbBusLaneRightAt != nil && options[0].CurbBusLaneRightAt.Distance(interPt) < 1
+					pts = appendEightLaneRightTurn(pts, w, interPt, uPrev, uCurr, prevCoord, currCoord, isPrevEW, isCurrEW, pPrev, pCurr, lw, curb)
 				} else if turn == 1 {
 					// 90-degree right turn from outer lane into outer lane
 					var corner Vec2
@@ -327,8 +329,8 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64, options 
 					dFinish = math.Max(geometry.TurnRadius-lw/2, math.Min(dFinish, dMerge-60))
 
 					approachRoad, roadFound := w.RoadAt(prevCoord, isPrevEW, pPrev)
-					longBusUTurn := turn == 2 && len(options) > 0 && options[0].LongVehicle && !options[0].OrdinaryBusLaneLeft && roadFound && approachRoad.HasBusLane()
-					busLaneLeft := (turn == 3 || longBusUTurn) && roadFound && approachRoad.HasBusLane() && (len(options) == 0 || !options[0].OrdinaryBusLaneLeft)
+					longBusUTurn := turn == 2 && len(options) > 0 && options[0].LongVehicle && !options[0].OrdinaryBusLaneLeft && roadFound && approachRoad.HasBusLane() && !approachRoad.HasMedianBusLane()
+					busLaneLeft := (turn == 3 || longBusUTurn) && roadFound && approachRoad.HasBusLane() && !approachRoad.HasMedianBusLane() && (len(options) == 0 || !options[0].OrdinaryBusLaneLeft)
 					if inOff > lw*0.6 && !busLaneLeft {
 						// Multi-lane avenue (4-lane or 6-lane): merge smoothly via cubic Hermite S-curve
 						// from travel lane (inOff) into dedicated left-turn lane (targetOff = 0.5*lw)
@@ -381,7 +383,7 @@ func ComputeRoadPathBetweenStops(w *World, s1, s2 *BusStop, lw float64, options 
 								entryOffset = 3.5 * lw
 							}
 							outOffset := RoadLaneOffset(currCoord, isCurrEW, lw, w, pCurr)
-							parallelLeft := roadFound && approachRoad.HasBusLane() && len(options) > 0 && options[0].OrdinaryBusLaneLeft
+							parallelLeft := roadFound && approachRoad.HasBusLane() && !approachRoad.HasMedianBusLane() && len(options) > 0 && options[0].OrdinaryBusLaneLeft
 							travelOffset := outOffset
 							if parallelLeft {
 								// The median left-turn lane must not converge with the

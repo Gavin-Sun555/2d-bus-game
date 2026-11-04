@@ -135,4 +135,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version="$(cat VERSION)"
-          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "$version" --notes-file "docs/releases/$version.md" --latest
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # Reuse a maintainer-created draft so its author stays the maintainer.
+            gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --clobber
+            gh release edit "$GITHUB_REF_NAME" --draft=false --title "$version" --notes-file "docs/releases/$version.md" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.sha256 --verify-tag --title "$version" --notes-file "docs/releases/$version.md" --latest
+          fi

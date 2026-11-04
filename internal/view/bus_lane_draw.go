@@ -10,7 +10,7 @@ func drawBusLaneSurface(screen *ebiten.Image, cam *sim.Camera, road sim.RoadSegm
 	forward := sim.Vec2{X: cosH, Y: sinH}
 	right := sim.Vec2{X: -sinH, Y: cosH}
 	for _, sign := range []float64{-1, 1} {
-		laneCenter := center.Add(right.Mul(sign * 3.5 * lw))
+		laneCenter := center.Add(right.Mul(sign * (float64(road.BusLaneIndex()) + .5) * lw))
 		drawRotatedBox(screen, cam, laneCenter, cosH, sinH, length, lw-3, sim.RGBA(112, 53, 49, 255))
 		if cam.Zoom < .35 {
 			continue
@@ -22,7 +22,11 @@ func drawBusLaneSurface(screen *ebiten.Image, cam *sim.Camera, road sim.RoadSegm
 			}
 			// A compact readable label also identifies the lane in rotated views.
 			point := cam.WorldToScreen(pos)
-			textui.DrawText(screen, "BUS", point.X-13*cam.Zoom, point.Y-8*cam.Zoom, 14*cam.Zoom, sim.RGBA(255, 233, 196, 255))
+			label := "BUS"
+			if road.HasMedianBusLane() {
+				label = "BRT"
+			}
+			textui.DrawText(screen, label, point.X-13*cam.Zoom, point.Y-8*cam.Zoom, 14*cam.Zoom, sim.RGBA(255, 233, 196, 255))
 		}
 	}
 }

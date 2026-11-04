@@ -221,7 +221,7 @@ func RoadLaneOffset(roadCoord float64, isEW bool, lw float64, w *World, posOptio
 			}
 		}
 		if road, ok := w.RoadAt(roadCoord, isEW, pos); ok && road.HasBusLane() {
-			return lw * 3.5
+			return lw * (float64(road.BusLaneIndex()) + .5)
 		}
 	}
 	if lanes >= 6 {

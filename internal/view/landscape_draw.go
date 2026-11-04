@@ -51,7 +51,8 @@ func drawLotGarden(screen *ebiten.Image, cam *sim.Camera, b sim.Building, theme 
 	if plan || cam.Zoom < .23 {
 		return
 	}
-	for _, side := range []float64{-1, 1} {
+	sides := [2]float64{-1, 1}
+	for _, side := range sides {
 		position := b.Pos.Add(sim.Vec2{X: side * (b.W/2 + 11)})
 		drawRotatedBox(screen, cam, position, 1, 0, 6, b.H*.65, p.foliage)
 	}

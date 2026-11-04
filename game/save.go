@@ -269,15 +269,20 @@ func (s *gameSave) validate() error {
 	if s.World == nil || s.Lights == nil || len(s.World.Roads) == 0 || len(s.World.Stops) == 0 || len(s.World.Stops) > 10000 || s.World.Theme < sim.MapThemeMetropolis || s.World.Theme > sim.MapThemeCustom || s.Settings.MapTheme != s.World.Theme {
 		return bad()
 	}
+	n := len(s.World.Stops)
 	for i, stop := range s.World.Stops {
 		if stop == nil || stop.ID != i || stop.WaitingPassengers < 0 {
 			return bad()
+		}
+		for _, dest := range stop.WaitingDestinations {
+			if dest != -1 && (dest < 0 || dest >= n) {
+				return bad()
+			}
 		}
 	}
 	if len(s.Lines) != 6 || s.LineCount < 1 || s.LineCount > 6 || s.PlayerLine < 0 || s.PlayerLine >= s.LineCount || s.PlanningLine < 0 || s.PlanningLine >= s.LineCount {
 		return bad()
 	}
-	n := len(s.World.Stops)
 	for i, r := range s.Lines {
 		if !validSavedRoute(r, n, i >= s.LineCount || (s.Planning && i == s.PlanningLine)) {
 			return bad()
@@ -286,7 +291,7 @@ func (s *gameSave) validate() error {
 	if !validSavedBus(&s.Player.Bus, n) || len(s.Fleet) > 48 || len(s.Cars) > maxCompatibleSavedCars || len(s.Population.PendingExits)+len(s.Cars) > maxCompatibleSavedCars {
 		return bad()
 	}
-	if !s.Settings.AnnouncementVoice.Valid() || !s.Settings.Announcements.Valid() || s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Camera.Zoom <= 0 || s.Camera.TargetZoom <= 0 || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN {
+	if !s.Settings.AnnouncementVoice.Valid() || !s.Settings.Announcements.Valid() || s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Camera.Zoom <= 0 || s.Camera.TargetZoom <= 0 || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN || !s.Settings.PassengerSpawnRate.Valid() {
 		return bad()
 	}
 	if s.Settings.CameraViewMode < sim.CameraModeNorthUp || s.Settings.CameraViewMode > sim.CameraModeSouthUp {
@@ -364,12 +369,25 @@ func (g *Game) LoadGame() error {
 	// Upgrade old saves without resetting their waiting counts or spawn clock.
 	for _, stop := range s.World.Stops {
 		stop.MaxWaiting = sim.DefaultStopMaxWaiting
+		stop.SyncWaitingQueue(nil)
 	}
 	sim.StandardizeStopBays(s.World, s.Settings.GetLaneWidth())
 	next := &Game{Width: g.Width, Height: g.Height, State: StatePlaying, SelectedMapTheme: s.World.Theme, World: s.World, Settings: &s.Settings, Lines: s.Lines,
 		LineCount: s.LineCount, PlayerLine: s.PlayerLine, LineFleets: s.LineFleets, Bus: &s.Player.Bus, Camera: &s.Camera, HUD: ui.NewHUD(), TrafficLights: s.Lights,
 		TrafficMgr: &traffic.TrafficManager{}, AIBusMgr: traffic.NewAIBusManager(), OperationsPanel: ui.NewOperationsPanel(), Cash: s.Cash,
 		IsPlanMode: s.Planning, HideOtherRoutes: s.HideOtherRoutes, planModeInitialStops: s.InitialStops, planModeRouteModified: s.RouteModified, savePathOverride: g.savePathOverride, activeSaveSlot: g.activeSaveSlot}
+	if next.World != nil {
+		next.World.PassengerSpawnRate = s.Settings.PassengerSpawnRate
+		next.Settings.MapTheme = next.World.Theme
+		next.Settings.SetCenterBRT(next.World.Theme, next.World.CenterBRT)
+		next.SelectedMapTheme = next.World.Theme
+		if next.Settings.LargeRoadNetworks != nil {
+			next.Settings.LargeRoadNetworks[next.World.Theme] = next.World.LargeGrid
+		} else if next.World.LargeGrid {
+			next.Settings.SetLargeRoadNetwork(next.World.Theme, true)
+		}
+		next.Settings.LargeRoadNetwork = next.World.LargeGrid
+	}
 	next.Route = next.Lines[next.PlayerLine]
 	next.NetworkSelected = next.PlayerLine
 	if next.IsPlanMode {

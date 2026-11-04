@@ -17,6 +17,9 @@ func configureRoundaboutExit(car *sim.TrafficCar, w *sim.World, rb *sim.Roundabo
 	}
 	lanes := w.GetRoadLanes(car.RoundaboutExitRC, car.RoundaboutExitEW, rb.Center.Add(forward.Mul(rb.Radius+160)))
 	lane := math.Min(float64(car.LaneIndex), math.Max(0, float64(min(2, lanes/2-1))))
+	if road, ok := w.RoadAt(car.RoundaboutExitRC, car.RoundaboutExitEW, rb.Center.Add(forward.Mul(rb.Radius+160))); ok && road.HasMedianBusLane() {
+		lane = float64(road.ClampGeneralTrafficLane(int(lane)))
+	}
 	car.RoundaboutExitOffset = (lane + .5) * lw
 	car.RoundaboutExitLane = int(lane)
 	car.RoundaboutExitAngle = sim.NormalizeAngle(heading + math.Asin(math.Min(.8, car.RoundaboutExitOffset/car.RoundaboutTargetR)))

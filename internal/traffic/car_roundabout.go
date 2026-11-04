@@ -83,7 +83,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 				continue
 			}
 			body := bus.BodyEnvelope()
-			if (f.car.RoundaboutCurve == nil && math.Abs(bus.Speed) < 1 && roundaboutBusPathClear(f.car, bus)) || separateCirculatingBodies(f.car, body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, false) || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) {
+			if (math.Abs(bus.Speed) < 1 && roundaboutBusPathClear(f.car, bus)) || separateCirculatingBodies(f.car, body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, false) || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) {
 				continue
 			}
 			limit := roundaboutBusHeadway(f.car, bus)

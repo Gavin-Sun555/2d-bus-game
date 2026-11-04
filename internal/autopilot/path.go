@@ -148,6 +148,8 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		ad.uTurn = nil
 		ad.ordinaryBusLeft = false
 		ad.busLaneJunction = nil
+		ad.medianRightChoice = nil
+		ad.curbBusRight = false
 		ad.rightTurnJunction = nil
 		ad.rightTurnWaiting = false
 		ad.busJunctionEntered = false
@@ -161,7 +163,7 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 	}
 	skipFrom := ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID == from.ID
 	ad.directRoundaboutExit = nil
-	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath})
+	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath, CurbBusLaneRightAt: ad.curbRightPathChoice()})
 	ad.pathRevision = currentDrivePathRevision
 	if skipFrom {
 		ad.prependSkippedDeparture(lw, w)

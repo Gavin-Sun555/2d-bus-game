@@ -77,6 +77,14 @@ func drawSegmentPath(screen *ebiten.Image, cam *sim.Camera, path []sim.Vec2, lin
 		w1 := path[sIdx]
 		w2 := path[sIdx+1]
 
+		minX := min(w1.X, w2.X)
+		maxX := max(w1.X, w2.X)
+		minY := min(w1.Y, w2.Y)
+		maxY := max(w1.Y, w2.Y)
+		if !cam.IsBoxVisible(minX, minY, maxX, maxY) {
+			continue
+		}
+
 		p1 := cam.WorldToScreen(w1)
 		p2 := cam.WorldToScreen(w2)
 

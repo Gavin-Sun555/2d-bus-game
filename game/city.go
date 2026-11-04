@@ -8,6 +8,7 @@ import (
 )
 
 func (g *Game) EnterCity(theme sim.MapTheme) {
+	g.Settings.LargeRoadNetwork = g.Settings.IsLargeRoadNetwork(theme)
 	g.SetMapTheme(theme)
 	g.State = StatePlaying
 	g.IsPlanMode = false
@@ -16,11 +17,21 @@ func (g *Game) EnterCity(theme sim.MapTheme) {
 
 func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.resetAnnouncements()
+	centerBRT := g.Settings.IsCenterBRT(theme)
+	g.Settings.SetCenterBRT(theme, centerBRT)
 	g.Settings.MapTheme = theme
 	g.SelectedMapTheme = theme
-	g.World.LargeGrid = (theme == sim.MapThemeMetropolis && g.Settings.LargeRoadNetwork)
+	if g.Settings.LargeRoadNetworkChanged {
+		g.Settings.LargeRoadNetworkChanged = false
+		g.Settings.SetLargeRoadNetwork(theme, g.Settings.LargeRoadNetwork)
+	}
+	isLarge := g.Settings.IsLargeRoadNetwork(theme)
+	g.Settings.LargeRoadNetwork = isLarge
+	g.World.LargeGrid = (theme != sim.MapThemeCustom && isLarge)
+	g.World.CenterBRT = centerBRT
 	currentLaneW := g.Settings.GetLaneWidth()
 	g.World.BuildMap(theme, currentLaneW)
+	g.Settings.CenterBRT = g.World.CenterBRT
 	g.closeStopNameEditor()
 	g.applyStopNames()
 
@@ -84,8 +95,11 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.resetOperations()
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
+	if g.World.CenterBRT {
+		g.HUD.AddToast("【中央 BRT】八车道公交专用道已移至道路中央，沿中央站位靠站。", true)
+	}
 	g.HUD.AddToast(fmt.Sprintf("已进入城市地图: 【%s】！", theme.DisplayName()), true)
-	if theme == sim.MapThemeMetropolis && g.Settings.LargeRoadNetwork {
+	if theme != sim.MapThemeCustom && g.Settings.LargeRoadNetwork {
 		g.HUD.AddToast("【大路网模式 4x】街区长度延展 4 倍，尽情巡航驾驶！", true)
 	} else {
 		g.HUD.AddToast(fmt.Sprintf("风貌特色: %s", theme.Subtitle()), false)

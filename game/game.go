@@ -28,18 +28,23 @@ type Game struct {
 	Width          int
 	Height         int
 
-	State              GameState
-	SelectedMapTheme   sim.MapTheme
-	menuCardBounds      [6]sim.Rect
-	menuLargeGridBounds sim.Rect
-	menuStartBounds     sim.Rect
-	menuLangBounds     sim.Rect
-	menuContinueBounds sim.Rect
-	activeSaveSlot     int
-	savePicker         saveSlotPicker
-	savePathOverride   string
-	pendingSaveName    *string
-	saveMessage        string
+	State                   GameState
+	SelectedMapTheme        sim.MapTheme
+	menuCardBounds          [6]sim.Rect
+	menuBRTBounds           sim.Rect
+	menuCardBRTBounds       [6]sim.Rect
+	menuCustomMapPreview    *sim.CustomMapData
+	menuCustomMapChecked    bool
+	menuLargeGridBounds     sim.Rect
+	menuCardLargeGridBounds [5]sim.Rect
+	menuStartBounds         sim.Rect
+	menuLangBounds          sim.Rect
+	menuContinueBounds      sim.Rect
+	activeSaveSlot          int
+	savePicker              saveSlotPicker
+	savePathOverride        string
+	pendingSaveName         *string
+	saveMessage             string
 
 	Bus             *sim.Bus
 	World           *sim.World
@@ -103,6 +108,7 @@ func NewGame(width, height int) *Game {
 	initLaneWidth := settings.GetLaneWidth()
 
 	world := sim.NewWorld(initLaneWidth)
+	world.PassengerSpawnRate = settings.PassengerSpawnRate
 	route := sim.GetStandardRouteForMap(settings.MapTheme, world)
 
 	g := &Game{
@@ -351,6 +357,9 @@ func (g *Game) Update() error {
 		g.checkBusCarCollisions()
 
 		// World update (passenger arrivals ONLY at bus stops on the active route)
+		if g.Settings != nil {
+			g.World.PassengerSpawnRate = g.Settings.PassengerSpawnRate
+		}
 		g.World.Update(dt, g.activeLines()...)
 	}
 

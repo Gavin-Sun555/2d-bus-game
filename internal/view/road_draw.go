@@ -133,7 +133,7 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 			for lane := 1; lane < r.LaneCount()/2; lane++ {
 				for _, sign := range []float64{-1, 1} {
 					offset := sign * float64(lane) * laneWidth
-					if r.HasBusLane() && lane == 3 {
+					if r.HasBusLane() && ((!r.HasMedianBusLane() && lane == 3) || (r.HasMedianBusLane() && lane == 1)) {
 						drawParallelLine(screen, cam, center, cosH, sinH, len, offset, sim.RGBA(250, 204, 21, 230), 2.5)
 					} else {
 						drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, offset, planMode)
@@ -367,34 +367,46 @@ func drawCrosswalks(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWid
 		}
 
 		// All approaches share the same per-lane arrow policy.
-		for approach, lanes := range []int{westLanes, eastLanes, northLanes, southLanes} {
+		approaches := [4]int{westLanes, eastLanes, northLanes, southLanes}
+		headings := [4]float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}
+		offsets := [2]float64{45, 110}
+		for approach, lanes := range approaches {
 			if lanes < 4 {
 				continue
 			}
-			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
+			heading := headings[approach]
 			fwd := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
 			stop := ewStopLineDist
 			if approach >= 2 {
 				stop = nsStopLineDist
 			}
+			roadCoord := pt.Y
+			if approach >= 2 {
+				roadCoord = pt.X
+			}
+			road, roadOK := w.RoadAt(roadCoord, approach < 2, pt.Sub(fwd.Mul(stop+50)))
+			medianBRT := roadOK && road.HasMedianBusLane()
 			for lane := 0; lane < lanes/2; lane++ {
-				for _, back := range []float64{45, 110} {
+				for _, back := range offsets {
 					pos := pt.Sub(fwd.Mul(stop + back)).Add(right.Mul((float64(lane) + .5) * laneWidth))
 					if lanes == 8 && lane == 3 {
 						drawGroundTurnArrow(screen, cam, pos, heading, true)
-						road, ok := w.RoadAt(func() float64 {
-							if approach < 2 {
-								return pt.Y
-							}
-							return pt.X
-						}(), approach < 2, pt.Sub(fwd.Mul(stop+50)))
-						if ok && road.HasBusLane() {
+						roadCoord := pt.Y
+						if approach >= 2 {
+							roadCoord = pt.X
+						}
+						road, ok := w.RoadAt(roadCoord, approach < 2, pt.Sub(fwd.Mul(stop+50)))
+						if ok && road.HasBusLane() && !road.HasMedianBusLane() {
 							drawGroundArrow(screen, cam, pos, heading, true)
 							drawGroundArrow(screen, cam, pos, heading, false)
 						}
+					} else if medianBRT && lane == 0 {
+						drawGroundTurnArrow(screen, cam, pos, heading, true)
+						drawGroundArrow(screen, cam, pos, heading, true)
+						drawGroundArrow(screen, cam, pos, heading, false)
 					} else {
-						drawGroundArrow(screen, cam, pos, heading, lane == 0)
+						drawGroundArrow(screen, cam, pos, heading, lane == 0 || (medianBRT && lane == 1))
 					}
 				}
 				if lane > 0 {

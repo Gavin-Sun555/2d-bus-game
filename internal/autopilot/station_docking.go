@@ -2,6 +2,7 @@ package autopilot
 
 import (
 	"math"
+	"sort"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
@@ -77,7 +78,11 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 			u := sim.UnitFromAngle(stop.Heading)
 			partialRear := stop.FrontBerthPosition().Sub(berth).Dot(u) > 60 && math.Abs(berth.Sub(f.bus.Pos).Dot(u)) < 10 && stop.ContainsBus(f.bus) && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < .2
 			if (atSelectedStationBerth(f.bus, berth, stop.Heading) || partialRear) && stationBoardingPoseClear(f) {
-				ad.stationDock = &stationDockPlan{stopID: stop.ID, target: f.bus.Pos}
+				recovery := false
+				if ad.stationDock != nil && ad.stationDock.alignmentRecovery {
+					recovery = true
+				}
+				ad.stationDock = &stationDockPlan{stopID: stop.ID, target: f.bus.Pos, alignmentRecovery: recovery}
 				ad.beginDocking(stop)
 				return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
 			}
@@ -170,19 +175,34 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 			count = 1
 		}
 		outerReady := !waiting || (f.world != nil && distance <= 360 && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < .15)
-		for lane := 0; ad.BerserkMode && outerReady && lane < count; lane++ {
+		if ad.BerserkMode && outerReady && !stop.CenterBRT {
 			front := stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward)
-			laneCenter := stop.RoadCenter.Add(right.Mul((float64(count-lane) - 0.5) * f.laneWidth))
-			candidates = append(candidates, laneCenter.Add(forward.Mul(front)))
-			if f.bus.IsArticulated() {
-				// If the front of this lane is occupied, an earlier position
-				// alongside the long platform can still serve both sections.
-				for _, along := range []float64{front - 48, front - 96} {
-					pose := f.bus.AtPose(laneCenter.Add(forward.Mul(along)), stop.Heading)
-					if stop.ContainsBusInOuterLane(&pose, f.laneWidth) {
-						candidates = append(candidates, pose.Pos)
+			currentDistToCenter := f.bus.Pos.Sub(stop.RoadCenter).Dot(right)
+			type laneCandidate struct {
+				pos  sim.Vec2
+				dist float64
+			}
+			var laneList []laneCandidate
+			for lane := 0; lane < count; lane++ {
+				laneOffset := (float64(count-lane) - 0.5) * f.laneWidth
+				laneCenter := stop.RoadCenter.Add(right.Mul(laneOffset))
+				target := laneCenter.Add(forward.Mul(front))
+				diff := math.Abs(currentDistToCenter - laneOffset)
+				laneList = append(laneList, laneCandidate{pos: target, dist: diff})
+				if f.bus.IsArticulated() {
+					for _, along := range []float64{front - 48, front - 96} {
+						pose := f.bus.AtPose(laneCenter.Add(forward.Mul(along)), stop.Heading)
+						if stop.ContainsBusInOuterLane(&pose, f.laneWidth) {
+							laneList = append(laneList, laneCandidate{pos: pose.Pos, dist: diff})
+						}
 					}
 				}
+			}
+			sort.SliceStable(laneList, func(i, j int) bool {
+				return laneList[i].dist < laneList[j].dist
+			})
+			for _, lc := range laneList {
+				candidates = append(candidates, lc.pos)
 			}
 		}
 		if ad.BerserkMode && !waiting && stop.RoadLanes <= 2 {
@@ -293,10 +313,17 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 		return stationDockInputs{brake: 1}, true
 	}
 	ad.stationDock = plan
-	ad.LaneOffset, ad.TargetLaneOffset = 0, 0
+	if plan.rank > 0 {
+		curbCenter := stop.RoadCenter.Add(right.Mul((float64(stop.RoadLanes/2) - 0.5) * f.laneWidth))
+		targetOffset := plan.target.Sub(curbCenter).Dot(right)
+		ad.LaneOffset, ad.TargetLaneOffset = targetOffset, targetOffset
+		ad.lastTargetLaneOffset = targetOffset
+	} else {
+		ad.LaneOffset, ad.TargetLaneOffset = 0, 0
+		ad.lastTargetLaneOffset = 0
+	}
 	ad.OvertakeState = OvertakeNone
 	ad.LaneOffsetProgress = 1
-	ad.lastTargetLaneOffset = 0
 	remaining := math.Max(0, plan.target.Sub(f.bus.Pos).Dot(forward))
 	lateral := math.Abs(plan.target.Sub(f.bus.Pos).Dot(right))
 	aligned := math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < 0.2
@@ -304,7 +331,8 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 		aligned = aligned && stop.ContainsBus(f.bus)
 	}
 	capacityOk := capacityAvailable || plan.rank > 0 || (ad.BerserkMode && stop.ContainsBusInOuterLane(f.bus, f.laneWidth))
-	if capacityOk && !plan.waiting && remaining < 10 && lateral < 10 && aligned && f.speedAbs < 12 && stationBoardingPoseClear(f) {
+	atBerth := (remaining < 10 && lateral < 10) || (stop.ContainsBus(f.bus) && remaining < 25 && lateral < 20)
+	if capacityOk && !plan.waiting && atBerth && aligned && f.speedAbs < 12 && stationBoardingPoseClear(f) {
 		ad.beginDocking(stop)
 		return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= 0.05, isDocked: true}, true
 	}

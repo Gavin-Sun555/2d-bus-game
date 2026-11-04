@@ -118,13 +118,13 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 	}
 	// Prefer passing on the left; the bus lane and dedicated right-turn lane
 	// are excluded from ordinary cruising by the lane count below.
-	highest := road.GeneralTrafficLanes() - 1
+	highest := road.FirstGeneralTrafficLane() + road.GeneralTrafficLanes() - 1
 	if road.LaneCount() == 8 && !road.HasBusLane() {
 		highest = 2
 	}
 	for _, direction := range []int{-1, 1} {
 		target := car.LaneIndex + direction
-		if target < 0 || target > highest || !tm.passingLaneClear(f, u, float64(direction)) {
+		if target < road.FirstGeneralTrafficLane() || target > highest || !tm.passingLaneClear(f, u, float64(direction)) {
 			continue
 		}
 		car.Passing = true

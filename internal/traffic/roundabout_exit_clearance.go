@@ -49,7 +49,11 @@ func roundaboutExitBusSpeed(f carFrame, rb sim.Roundabout) float64 {
 			if predicted.RoundaboutCurve == nil || !predicted.RoundaboutCurve.Exiting {
 				continue
 			}
-			body := sim.OBB{Center: predicted.Pos, Heading: predicted.Heading, HalfLen: car.Length/2 + 3, HalfWid: car.Width/2 + 3}
+			margin := 3.0
+			if math.Abs(bus.Speed) < 0.5 {
+				margin = 0.5
+			}
+			body := sim.OBB{Center: predicted.Pos, Heading: predicted.Heading, HalfLen: car.Length/2 + margin, HalfWid: car.Width/2 + margin}
 			blocked := false
 			for _, part := range bus.BodyParts() {
 				if part.HalfLen <= 0 {

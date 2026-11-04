@@ -38,24 +38,58 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	drawHUDText(screen, modeText, layout.mode, 13, color.White)
 
 	// Economy & Capacity Badges
-	cashText := locale.Tf("营收: $%d", "Revenue: $%d", cash)
-	drawHUDText(screen, cashText, layout.cash, 13, sim.RGBA(250, 204, 21, 255))
+	if cash != h.cachedCash {
+		h.cachedCash = cash
+		h.cachedCashText = locale.Tf("营收: $%d", "Revenue: $%d", cash)
+	}
+	drawHUDText(screen, h.cachedCashText, layout.cash, 13, sim.RGBA(250, 204, 21, 255))
 
-	paxText := locale.Tf("乘客: %d/%d", "Pax: %d/%d", bus.PassengerCount, bus.Capacity)
-	drawHUDText(screen, paxText, layout.pax, 13, sim.RGBA(56, 189, 248, 255))
+	paxCount := bus.PassengerCount
+	paxCap := bus.Capacity
+	if paxCount != h.cachedPaxCount || paxCap != h.cachedPaxCap {
+		h.cachedPaxCount = paxCount
+		h.cachedPaxCap = paxCap
+		h.cachedPaxText = locale.Tf("乘客: %d/%d", "Pax: %d/%d", paxCount, paxCap)
+	}
+	drawHUDText(screen, h.cachedPaxText, layout.pax, 13, sim.RGBA(56, 189, 248, 255))
 
 	// Keep the stop name separate from its metrics, so long names never hide distance.
 	targetMsg := locale.T("未选择目标站点", "No target stop selected")
 	metrics := ""
 	isDockedAtStop := !isPlanMode && activeStop != nil && (bus.DoorsOpen || bus.PassengerServiceRemaining() > 0 || math.Abs(bus.Speed) < 3.0)
 	if isDockedAtStop {
-		targetMsg = locale.Tf("当前站：%s", "Stop: %s", activeStop.LocalizedName())
-		metrics = locale.Tf("距离 0m  ·  候车 %d人", "0m away  ·  Waiting %d", activeStop.WaitingPassengers)
+		name := activeStop.LocalizedName()
+		if !h.cachedDocked || h.cachedTargetStopName != name {
+			h.cachedDocked = true
+			h.cachedTargetStopName = name
+			h.cachedTargetMsg = locale.Tf("当前站：%s", "Stop: %s", name)
+		}
+		targetMsg = h.cachedTargetMsg
+		waiting := activeStop.WaitingPassengers
+		if h.cachedDistMeters != 0 || h.cachedWaitingPax != waiting {
+			h.cachedDistMeters = 0
+			h.cachedWaitingPax = waiting
+			h.cachedMetricsText = locale.Tf("距离 0m  ·  候车 %d人", "0m away  ·  Waiting %d", waiting)
+		}
+		metrics = h.cachedMetricsText
 	} else if targetID := route.GetCurrentTargetStopID(); targetID >= 0 && targetID < len(world.Stops) {
 		stop := world.Stops[targetID]
-		targetMsg = locale.Tf("下一站：%s", "Next: %s", stop.LocalizedName())
+		name := stop.LocalizedName()
+		if h.cachedDocked || h.cachedTargetStopID != targetID || h.cachedTargetStopName != name {
+			h.cachedDocked = false
+			h.cachedTargetStopID = targetID
+			h.cachedTargetStopName = name
+			h.cachedTargetMsg = locale.Tf("下一站：%s", "Next: %s", name)
+		}
+		targetMsg = h.cachedTargetMsg
 		distMeters := int(math.Round(bus.Pos.Distance(stop.Pos) * sim.MetersPerPixel))
-		metrics = locale.Tf("距离 %dm  ·  候车 %d人", "%dm away  ·  Waiting %d", distMeters, stop.WaitingPassengers)
+		waiting := stop.WaitingPassengers
+		if h.cachedDistMeters != distMeters || h.cachedWaitingPax != waiting {
+			h.cachedDistMeters = distMeters
+			h.cachedWaitingPax = waiting
+			h.cachedMetricsText = locale.Tf("距离 %dm  ·  候车 %d人", "%dm away  ·  Waiting %d", distMeters, waiting)
+		}
+		metrics = h.cachedMetricsText
 	}
 	drawHUDText(screen, targetMsg, layout.stop, 13, sim.RGBA(226, 232, 240, 255))
 	drawHUDText(screen, metrics, layout.metrics, 12, sim.RGBA(56, 189, 248, 255))
@@ -85,32 +119,62 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	h.SettingsBtnBounds = layout.settings
 	menuBtnStr := locale.T("主菜单/换图", "Menu / Maps")
 	menuBtnColor := sim.RGBA(168, 85, 247, 255)
-	if settings != nil {
-		switch settings.MapTheme {
+	theme := sim.MapThemeMetropolis
+	isLarge := false
+	hasTheme := false
+	if world != nil {
+		theme = world.Theme
+		isLarge = world.LargeGrid
+		hasTheme = true
+	} else if settings != nil {
+		theme = settings.MapTheme
+		isLarge = settings.IsLargeRoadNetwork(settings.MapTheme)
+		hasTheme = true
+	}
+
+	if hasTheme {
+		switch theme {
 		case sim.MapThemeCoastalBay:
-			menuBtnStr = locale.T("换图 · 海滨港湾", "Maps · Coastal Bay")
+			if isLarge {
+				menuBtnStr = locale.T("换图 · 海滨港湾 (大路网)", "Maps · Coastal Bay (4x)")
+			} else {
+				menuBtnStr = locale.T("换图 · 海滨港湾 (小路网)", "Maps · Coastal Bay (1x)")
+			}
 			menuBtnColor = sim.RGBA(6, 182, 212, 255)
 		case sim.MapThemeRiverValley:
-			menuBtnStr = locale.T("换图 · 溪谷江城", "Maps · River Valley")
+			if isLarge {
+				menuBtnStr = locale.T("换图 · 溪谷江城 (大路网)", "Maps · River Valley (4x)")
+			} else {
+				menuBtnStr = locale.T("换图 · 溪谷江城 (小路网)", "Maps · River Valley (1x)")
+			}
 			menuBtnColor = sim.RGBA(16, 185, 129, 255)
 		case sim.MapThemeEmeraldLake:
-			menuBtnStr = locale.T("换图 · 湖畔水乡", "Maps · Emerald Lake")
+			if isLarge {
+				menuBtnStr = locale.T("换图 · 湖畔水乡 (大路网)", "Maps · Emerald Lake (4x)")
+			} else {
+				menuBtnStr = locale.T("换图 · 湖畔水乡 (小路网)", "Maps · Emerald Lake (1x)")
+			}
 			menuBtnColor = sim.RGBA(34, 197, 94, 255)
 		case sim.MapThemeTwinCities:
-			menuBtnStr = locale.T("换图 · 高新双城", "Maps · Twin Districts")
+			if isLarge {
+				menuBtnStr = locale.T("换图 · 高新双城 (大路网)", "Maps · Twin Districts (4x)")
+			} else {
+				menuBtnStr = locale.T("换图 · 高新双城 (小路网)", "Maps · Twin Districts (1x)")
+			}
 			menuBtnColor = sim.RGBA(217, 70, 239, 255)
 		case sim.MapThemeCustom:
 			menuBtnStr = locale.T("换图 · 自定义图", "Maps · Custom Map")
 			menuBtnColor = sim.RGBA(245, 158, 11, 255)
 		default:
-			if settings != nil && settings.LargeRoadNetwork {
+			if isLarge {
 				menuBtnStr = locale.T("换图 · 现代都会 (大路网)", "Maps · Metropolis (4x)")
 			} else {
-				menuBtnStr = locale.T("换图 · 现代都会", "Maps · Metropolis")
+				menuBtnStr = locale.T("换图 · 现代都会 (小路网)", "Maps · Metropolis (1x)")
 			}
 			menuBtnColor = sim.RGBA(59, 130, 246, 255)
 		}
 	}
+	h.MenuBtnText = menuBtnStr
 	vector.DrawFilledRect(screen, mapBtnX, 12, mapBtnW, 32, sim.RGBA(30, 41, 59, 240), true)
 	vector.StrokeRect(screen, mapBtnX, 12, mapBtnW, 32, 1.5, menuBtnColor, true)
 	drawHUDText(screen, menuBtnStr, layout.maps, 12, menuBtnColor)

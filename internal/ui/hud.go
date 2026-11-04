@@ -31,11 +31,47 @@ type HUD struct {
 	PlanPanelBounds       sim.Rect
 	ReturnToMenuRequested bool
 	TargetStopOccupied    bool
+	MenuBtnText           string
+
+	// Cached HUD strings to eliminate per-frame allocations
+	cachedCash           int
+	cachedCashText       string
+	cachedPaxCount       int
+	cachedPaxCap         int
+	cachedPaxText        string
+	cachedTargetStopID   int
+	cachedTargetStopName string
+	cachedTargetMsg      string
+	cachedDocked         bool
+	cachedDistMeters     int
+	cachedWaitingPax     int
+	cachedMetricsText    string
+	cachedDurability     int
+	cachedDurStr         string
+	cachedSteerDeg       int
+	cachedSteerStr       string
+	cachedBerserkSpeed   int
+	cachedBskText        string
+	cachedManText        string
+	cachedDistSecDist    int
+	cachedDistSecRem     int
+	cachedSigDistText    string
 }
 
 func NewHUD() *HUD {
 	return &HUD{
-		Toasts: make([]ToastMessage, 0),
+		Toasts:             make([]ToastMessage, 0),
+		cachedCash:         -1,
+		cachedPaxCount:     -1,
+		cachedPaxCap:       -1,
+		cachedTargetStopID: -999,
+		cachedDistMeters:   -1,
+		cachedWaitingPax:   -1,
+		cachedDurability:   -1,
+		cachedSteerDeg:     -999,
+		cachedBerserkSpeed: -1,
+		cachedDistSecDist:  -1,
+		cachedDistSecRem:   -1,
 	}
 }
 
@@ -157,6 +193,10 @@ func (h *HUD) AddWarningToast(text string) {
 	if len(h.Toasts) > 4 {
 		h.Toasts = h.Toasts[len(h.Toasts)-4:]
 	}
+}
+
+func (h *HUD) MenuBtnString() string {
+	return h.MenuBtnText
 }
 
 func (h *HUD) Update(dt float64) {

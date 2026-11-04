@@ -92,3 +92,78 @@ func TestControlPaddingRetainsCollisionAndOtherTrafficChecks(t *testing.T) {
 		})
 	}
 }
+
+func TestLaneChangeLeaderClearance(t *testing.T) {
+	// Setup lead bus changing lanes at yaw -0.36 rad (~20.8 deg) on a 6-lane road
+	// Rear bus is straight in adjacent lane at Y=130
+	leadBus := sim.NewBus(4743.7, 77.0, -0.3638)
+	leadBus.SteeringAngle = -0.05
+	rearBus := sim.NewBus(4692.6, 130.0, 0.0)
+	obRear := ObserveBus(rearBus)
+
+	world := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: 0, Y: 0}, P2: sim.Vec2{X: 15600, Y: 0}, Lanes: 6, Type: 2},
+		},
+	}
+	fLead := autopilotFrame{
+		bus:       leadBus,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{obRear},
+		speedAbs:  0,
+	}
+
+	ad := NewAutopilotDriver()
+
+	// 1. Lead bus safely clearing rear bus must be granted clearance
+	if !ad.laneChangeLeaderClearance(fLead, obRear, -0.05, 20, 0.31) {
+		t.Fatal("lane-change lead bus clearance denied")
+	}
+	if got := ad.controlSweptSpeed(fLead, -0.05); got != 35 {
+		t.Fatalf("expected controlSweptSpeed 35 for clearing lead bus, got %g", got)
+	}
+
+	// 2. Rear bus looking at lead bus must NOT be granted clearance
+	fRear := autopilotFrame{
+		bus:       rearBus,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{ObserveBus(leadBus)},
+		speedAbs:  0,
+	}
+	if ad.laneChangeLeaderClearance(fRear, ObserveBus(leadBus), 0, 20, 0.31) {
+		t.Fatal("trailing bus was incorrectly granted laneChangeLeaderClearance")
+	}
+
+	// 3. Physical contact: lead bus shifted into actual collision with rear bus
+	leadContact := sim.NewBus(4692.6, 130.0, -0.3638)
+	fContact := autopilotFrame{
+		bus:       leadContact,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{obRear},
+		speedAbs:  0,
+	}
+	if ad.laneChangeLeaderClearance(fContact, obRear, -0.05, 20, 0.31) {
+		t.Fatal("actual physical collision was granted clearance")
+	}
+
+	// 4. Opposing traffic
+	rearOpposing := sim.NewBus(4692.6, 130.0, math.Pi)
+	if ad.laneChangeLeaderClearance(fLead, ObserveBus(rearOpposing), -0.05, 20, 0.31) {
+		t.Fatal("opposing traffic was granted clearance")
+	}
+
+	// 5. 2-lane road (not multi-lane or 6-lane)
+	twoLaneWorld := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: 0, Y: 0}, P2: sim.Vec2{X: 15600, Y: 0}, Lanes: 2, Type: 0},
+		},
+	}
+	fTwoLane := fLead
+	fTwoLane.world = twoLaneWorld
+	if ad.laneChangeLeaderClearance(fTwoLane, obRear, -0.05, 20, 0.31) {
+		t.Fatal("2-lane road was incorrectly granted multi-lane clearance")
+	}
+}

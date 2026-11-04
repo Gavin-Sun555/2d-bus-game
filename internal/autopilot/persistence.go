@@ -6,7 +6,7 @@ import (
 	"math"
 )
 
-const currentDrivePathRevision = 4
+const currentDrivePathRevision = 5
 
 // DriverSnapshot stores controller progress without serializing world pointers.
 type DriverSnapshot struct {
@@ -43,6 +43,8 @@ type DriverSnapshot struct {
 	BypassStopID           int
 	DirectRoundaboutExit   *sim.Vec2
 	BusLaneJunction        *sim.Vec2
+	MedianRightChoice      *sim.Vec2
+	CurbBusRight           bool
 	RightTurnJunction      *sim.Vec2
 	RightTurnHeading       float64
 	RightTurnWaiting       bool
@@ -93,6 +95,8 @@ func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	s.BypassStopID = ad.bypassStopID
 	s.DirectRoundaboutExit = ad.directRoundaboutExit
 	s.BusLaneJunction = ad.busLaneJunction
+	s.MedianRightChoice = ad.medianRightChoice
+	s.CurbBusRight = ad.curbBusRight
 	s.RightTurnJunction = ad.rightTurnJunction
 	s.RightTurnHeading = ad.rightTurnHeading
 	s.RightTurnWaiting = ad.rightTurnWaiting
@@ -164,6 +168,8 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 	ad.bypassStopID = s.BypassStopID
 	ad.directRoundaboutExit = s.DirectRoundaboutExit
 	ad.busLaneJunction = s.BusLaneJunction
+	ad.medianRightChoice = s.MedianRightChoice
+	ad.curbBusRight = s.CurbBusRight
 	ad.rightTurnJunction = s.RightTurnJunction
 	ad.rightTurnHeading = s.RightTurnHeading
 	ad.rightTurnWaiting = s.RightTurnWaiting
@@ -215,7 +221,7 @@ func (ad *AutopilotDriver) refreshUnenteredSavedPath(w *sim.World) {
 	if ad.pathRevision == currentDrivePathRevision {
 		return
 	}
-	path := buildAutopilotDrivePath(w, w.Stops[ad.pathFromID], w.Stops[ad.pathToID], ad.pathLane, false, ad.pathSkipTarget, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath})
+	path := buildAutopilotDrivePath(w, w.Stops[ad.pathFromID], w.Stops[ad.pathToID], ad.pathLane, false, ad.pathSkipTarget, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath, CurbBusLaneRightAt: ad.curbRightPathChoice()})
 	common, i := 0., 0
 	for i < len(path) && i < len(ad.drivePath) && path[i].Distance(ad.drivePath[i]) < .01 {
 		if i > 0 {

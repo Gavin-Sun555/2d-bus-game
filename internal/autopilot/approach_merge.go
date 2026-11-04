@@ -36,6 +36,9 @@ func (ad *AutopilotDriver) updateRequiredApproachMerge(f autopilotFrame, dt floa
 	lanes := f.world.GetRoadLanes(center, ew, f.bus.Pos)
 	is2Lane := !multi && !six || lanes <= 2
 	rightTurn := approach.isUpcomingRight
+	if road, ok := f.world.RoadAt(center, ew, f.bus.Pos); ok && road.HasMedianBusLane() && rightTurn && !ad.usesCurbRightAt(approach.approachingInter.Center) {
+		return false
+	}
 
 	heading := approachRoadHeading(f.bus.Heading)
 	forward := sim.UnitFromAngle(heading)
@@ -50,6 +53,9 @@ func (ad *AutopilotDriver) updateRequiredApproachMerge(f autopilotFrame, dt floa
 	twoLaneMerge := is2Lane && approach.distToStopLine < twoLaneApproachDist && (ad.LaneOffset < -2.0 || lateral < 0.1*f.laneWidth || ad.OvertakeState != OvertakeNone)
 	nearMouth := rightTurn && approach.distToStopLine > -f.bus.Length/2 && approach.isApproachingIntersection
 	straightMerge := multi && approach.isApproachingIntersection && !approach.isUpcomingLeft && !rightTurn && approach.approachingInter.ApproachHasDedicatedLanesForHeading(f.bus.Heading) && !f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0)
+	if road, ok := f.world.RoadAt(center, ew, f.bus.Pos); ok && road.HasMedianBusLane() {
+		straightMerge = false
+	}
 	if straightMerge {
 		straightMerge = ad.hasStraightMergeExit(f, approach.approachingInter)
 	}
@@ -145,7 +151,18 @@ func (ad *AutopilotDriver) advanceApproachMerge(f autopilotFrame, dt float64) bo
 			return false
 		}
 	}
-	if approachMergeComplete(f.bus, request, f.laneWidth) {
+	// Joining the physical curb lane is not enough when an early merge has
+	// advanced ahead of the route taper. Keep its fixed road corridor until
+	// the base path reaches it; clearing to offset zero would steer back left.
+	earlyMedianMerge := false
+	if request.RightTurn && f.world != nil && f.world.CenterBRT && !f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
+		coord, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+		if road, ok := f.world.RoadAt(coord, ew, f.bus.Pos); ok {
+			earlyMedianMerge = road.HasMedianBusLane()
+		}
+	}
+	pathJoined := !earlyMedianMerge || math.Abs(target.Sub(ad.pointAt(f.s)).Dot(right)) < 4
+	if approachMergeComplete(f.bus, request, f.laneWidth) && pathJoined {
 		if request.RightTurn {
 			center := request.Junction
 			ad.rightTurnJunction = &center

@@ -18,7 +18,7 @@ func (abm *AIBusManager) Update(
 	laneWidth float64,
 	densityLevel ...int,
 ) {
-	if world == nil || len(abm.Buses) == 0 {
+	if world == nil {
 		return
 	}
 	world.BeginBoundaryQueries(laneWidth)
@@ -34,15 +34,13 @@ func (abm *AIBusManager) Update(
 	}
 
 	// Reuse observations between ticks; controllers consume them synchronously.
-	baseObstacles := abm.baseObstacles[:0]
-	if cap(baseObstacles) < 1+len(activeCars) {
-		baseObstacles = make([]autopilot.VehicleObstacle, 0, 1+len(activeCars))
+	if cap(abm.carObstacles) < len(activeCars) {
+		abm.carObstacles = make([]autopilot.VehicleObstacle, len(activeCars))
+	} else {
+		abm.carObstacles = abm.carObstacles[:len(activeCars)]
 	}
-	if playerBus != nil {
-		baseObstacles = append(baseObstacles, autopilot.ObserveBus(playerBus))
-	}
-	for _, c := range activeCars {
-		baseObstacles = append(baseObstacles, autopilot.VehicleObstacle{
+	for i, c := range activeCars {
+		abm.carObstacles[i] = autopilot.VehicleObstacle{
 			Pos:              c.Pos,
 			YieldingTo:       c.YieldingToBus,
 			JunctionTurn:     c.JunctionTurn,
@@ -51,19 +49,55 @@ func (abm *AIBusManager) Update(
 			Speed:            c.Speed,
 			Length:           c.Length,
 			Width:            c.Width,
-		})
+		}
 	}
 
-	abm.baseObstacles = baseObstacles
+	useSpatial := len(activeCars) > 32
+	if useSpatial {
+		abm.carSpatial.build(activeCars)
+	}
+
+	// Player autopilot also reads this snapshot through GetLocalObstacles.
+	// Refresh it even when no route AI buses are configured, including after
+	// the last AI bus is removed or after loading a player-only save.
+	if len(abm.Buses) == 0 {
+		return
+	}
+
 	hasRetired := false
 	for _, ab := range abm.Buses {
 		abm.updateMergeYield(ab.Bus, playerBus, laneWidth)
-		obstacles := append(abm.obstacles[:0], baseObstacles...)
+
+		obstacles := abm.obstacles[:0]
+		queryRadius := math.Max(2000.0, math.Abs(ab.Bus.Speed)*3.5+600.0)
+		queryRadiusSq := queryRadius * queryRadius
+
+		if useSpatial {
+			abm.nearbyCarIndices = abm.carSpatial.queryUnsorted(ab.Bus.Pos, queryRadius, abm.nearbyCarIndices)
+			for _, idx := range abm.nearbyCarIndices {
+				if idx >= 0 && idx < len(abm.carObstacles) {
+					obstacles = append(obstacles, abm.carObstacles[idx])
+				}
+			}
+		} else {
+			obstacles = append(obstacles, abm.carObstacles...)
+		}
+
+		if playerBus != nil {
+			d := playerBus.Pos.Sub(ab.Bus.Pos)
+			if d.Dot(d) <= queryRadiusSq {
+				obstacles = append(obstacles, autopilot.ObserveBus(playerBus))
+			}
+		}
+
 		for _, other := range abm.Buses {
 			if other.ID == ab.ID {
 				continue
 			}
-			obstacles = append(obstacles, autopilot.ObserveBus(other.Bus))
+			d := other.Bus.Pos.Sub(ab.Bus.Pos)
+			if d.Dot(d) <= queryRadiusSq {
+				obstacles = append(obstacles, autopilot.ObserveBus(other.Bus))
+			}
 		}
 
 		abm.obstacles = obstacles

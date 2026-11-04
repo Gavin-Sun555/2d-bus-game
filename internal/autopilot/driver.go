@@ -76,6 +76,8 @@ type AutopilotDriver struct {
 	disableRoundaboutEntryGeometry bool
 	roundaboutEdgeRetry            float64
 	roundaboutEdgeRecovery         *RoundaboutEdgeRecovery
+	headonDeadlockTimer            float64
+	headonRecovery                 *HeadonDeadlockRecovery
 	dockDepartureRun               float64
 	smoothDockDeparture            bool
 	articulatedPath                bool
@@ -135,6 +137,8 @@ type AutopilotDriver struct {
 	directRoundaboutExit *sim.Vec2
 
 	busLaneJunction     *sim.Vec2
+	medianRightChoice   *sim.Vec2
+	curbBusRight        bool
 	rightTurnJunction   *sim.Vec2
 	rightTurnHeading    float64
 	rightTurnWaiting    bool
@@ -186,6 +190,8 @@ func (ad *AutopilotDriver) Reset() {
 	ad.temporaryGeometry = nil
 	ad.roundaboutEdgeRecovery = nil
 	ad.roundaboutEdgeRetry = 0
+	ad.headonRecovery = nil
+	ad.headonDeadlockTimer = 0
 	ad.pathReturnHold = nil
 	ad.queueStopID = -1
 	ad.parallelEntryCenter = nil
@@ -193,6 +199,8 @@ func (ad *AutopilotDriver) Reset() {
 	ad.State = AutopilotStateCruising
 	ad.busLaneJunction = nil
 	ad.rightTurnJunction = nil
+	ad.medianRightChoice = nil
+	ad.curbBusRight = false
 	ad.rightTurnWaiting = false
 	ad.busJunctionEntered = false
 	ad.ordinaryBusLeft = false
@@ -316,6 +324,13 @@ func (ad *AutopilotDriver) ComputeControls(
 	distToStop := bus.Pos.Distance(targetStop.Pos)
 	speedAbs := math.Abs(bus.Speed)
 
+	if ad.headonRecovery != nil {
+		f := autopilotFrame{bus: bus, world: world, obstacles: obstacles, laneWidth: laneWidth}
+		th, br, st, done := ad.headonRecoveryControls(f, dt)
+		if !done {
+			return th, br, st, false, false, false
+		}
+	}
 	if ad.roundaboutEdgeRecovery != nil {
 		f := autopilotFrame{bus: bus, world: world, obstacles: obstacles, laneWidth: laneWidth}
 		th, br, st := ad.roundaboutEdgeControls(f)
@@ -366,7 +381,7 @@ func (ad *AutopilotDriver) ComputeControls(
 		ad.connectDockDeparture(bus, prevStop)
 		ad.departureFromDock = false
 	}
-	frameForDock := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, targetStop: targetStop, laneWidth: laneWidth, s: ad.LastPathS, speedAbs: speedAbs, remaining: remDist, distToStop: distToStop}
+	frameForDock := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, targetStop: targetStop, fromStop: ad.fromStop(world), laneWidth: laneWidth, s: ad.LastPathS, speedAbs: speedAbs, remaining: remDist, distToStop: distToStop}
 	ad.clearPassedBusLaneJunction(frameForDock)
 	ad.requestStationMerge(frameForDock)
 	if inputs, active := ad.stationDockControls(frameForDock); active {
@@ -470,7 +485,7 @@ func (ad *AutopilotDriver) ComputeControls(
 	// =========================================================================
 	frame := autopilotFrame{
 		bus: bus, world: world, tls: tls, obstacles: obstacles,
-		targetStop: targetStop, laneWidth: laneWidth,
+		targetStop: targetStop, fromStop: ad.fromStop(world), laneWidth: laneWidth,
 		s: s, speedAbs: speedAbs, remaining: remaining,
 		distToStop: distToStop, lateralErr: lateralErr,
 	}
@@ -517,6 +532,18 @@ func (ad *AutopilotDriver) ComputeControls(
 		th, br, st := ad.roundaboutEdgeControls(frame)
 		return th, br, st, false, false, false
 	}
+	if ad.headonRecovery != nil {
+		th, br, st, done := ad.headonRecoveryControls(frame, dt)
+		if !done {
+			return th, br, st, false, false, false
+		}
+	}
+	if targetSpd <= .5 && ad.tryHeadonDeadlockRecovery(frame, dt) {
+		th, br, st, _ := ad.headonRecoveryControls(frame, dt)
+		return th, br, st, false, false, false
+	} else if targetSpd > .5 && ad.headonRecovery == nil {
+		ad.headonDeadlockTimer = math.Max(0, ad.headonDeadlockTimer-dt*2)
+	}
 	throttle, brake = ad.longitudinalControls(bus.Speed, targetSpd)
 
 	ad.LastPathS = s
@@ -530,6 +557,13 @@ func (ad *AutopilotDriver) ComputeControls(
 
 // autopilotFrame contains observations shared by steering and speed planning for
 // one control tick. It is passed by value; persistent state stays on the driver.
+func (ad *AutopilotDriver) fromStop(world *sim.World) *sim.BusStop {
+	if ad == nil || world == nil || ad.pathFromID < 0 || ad.pathFromID >= len(world.Stops) {
+		return nil
+	}
+	return world.Stops[ad.pathFromID]
+}
+
 type autopilotFrame struct {
 	forwardEscape  *forwardEscapeScan
 	departureCache *departureSweepCache
@@ -538,6 +572,7 @@ type autopilotFrame struct {
 	tls            *sim.TrafficLightSystem
 	obstacles      []VehicleObstacle
 	targetStop     *sim.BusStop
+	fromStop       *sim.BusStop
 
 	laneWidth      float64
 	s              float64

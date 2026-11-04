@@ -156,7 +156,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 				continue
 			}
 
-			for lane := 0; lane < numLanesPerDir; lane++ {
+			for lane := r.FirstGeneralTrafficLane(); lane < r.FirstGeneralTrafficLane()+numLanesPerDir; lane++ {
 				offset := (float64(lane) + 0.5) * laneWidth
 				if isEW {
 					defs = append(defs,

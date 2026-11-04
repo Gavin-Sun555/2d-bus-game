@@ -37,12 +37,13 @@ type BoundaryCheckResult struct {
 
 // RoadSegment represents an interconnected road segment
 type RoadSegment struct {
-	P1       Vec2
-	P2       Vec2
-	Lanes    int
-	Type     RoadType
-	HasLines bool
-	Name     string
+	P1            Vec2
+	P2            Vec2
+	Lanes         int
+	Type          RoadType
+	MedianBusLane bool `json:",omitempty"`
+	HasLines      bool
+	Name          string
 }
 
 func (r RoadSegment) GetWidth(laneWidth float64) float64 {
@@ -315,22 +316,24 @@ type River struct {
 
 // World holds the city roads, buildings, trees, water, and stops
 type World struct {
-	boundaryCache    *boundaryGeometryCache
-	boundaryDepth    int
-	geometryCache    *worldGeometryCache
-	geometryRevision uint64
-	Theme            MapTheme
-	LargeGrid        bool `json:",omitempty"`
-	Roads            []RoadSegment
-	Buildings        []Building
-	Trees            []Tree
-	Stops            []*BusStop
-	Rivers           []River
-	Waters           []WaterBody
-	Bridges          []Bridge
-	Roundabouts      []Roundabout
-	Intersections    []Vec2
-	CustomMap        *CustomMapData
+	boundaryCache      *boundaryGeometryCache
+	boundaryDepth      int
+	geometryCache      *worldGeometryCache
+	geometryRevision   uint64
+	Theme              MapTheme
+	LargeGrid          bool `json:",omitempty"`
+	CenterBRT          bool `json:",omitempty"`
+	Roads              []RoadSegment
+	Buildings          []Building
+	Trees              []Tree
+	Stops              []*BusStop
+	Rivers             []River
+	Waters             []WaterBody
+	Bridges            []Bridge
+	Roundabouts        []Roundabout
+	Intersections      []Vec2
+	CustomMap          *CustomMapData
+	PassengerSpawnRate PassengerSpawnRate
 }
 
 // ActiveWorldForRoute stores a global reference to the currently active world for route pathfinding
@@ -359,7 +362,7 @@ func NewWorld(initialLaneWidth float64, theme ...MapTheme) *World {
 }
 
 func (w *World) GridScale() float64 {
-	if w != nil && w.LargeGrid && (w.Theme == MapThemeMetropolis || w.Theme == 0) {
+	if w != nil && w.LargeGrid && w.Theme != MapThemeCustom {
 		return MapGridScale * 4.0
 	}
 	return MapGridScale
@@ -403,6 +406,7 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {
 		w.addBlockStops(laneWidth)
 	}
+	w.configureCenterBRT(laneWidth)
 	StandardizeStopBays(w, laneWidth)
 	ActiveWorldForRoute = w
 	ClearRoutePathCache()
@@ -610,21 +614,47 @@ func (w *World) Update(dt float64, route ...*Route) {
 	if len(route) > 0 {
 		r = route[0]
 	}
+	rateMult := w.PassengerSpawnRate.Multiplier()
 	for _, s := range w.Stops {
 		// Only bus stops on the planned route generate passengers.
 		// Stops not on the route must not spawn passengers and remain at 0 waiting.
-		served := len(route) == 0
+		var servingRoutes []*Route
 		for _, line := range route {
 			if line != nil && line.ContainsStop(s.ID) {
-				served = true
-				break
+				servingRoutes = append(servingRoutes, line)
 			}
 		}
-		if r != nil && !served {
+		if r != nil && len(servingRoutes) == 0 {
 			s.WaitingPassengers = 0
+			s.WaitingDestinations = nil
 			s.SpawnTimer = 0
 			continue
 		}
-		s.Update(dt)
+
+		// Collect union of all reachable upcoming destination stop IDs across all passing lines
+		var dests []int
+		seen := make(map[int]bool)
+		for _, line := range servingRoutes {
+			cands := line.GetUpcomingCandidateStopIDsForStop(s.ID)
+			for _, cid := range cands {
+				if cid != s.ID && !seen[cid] {
+					seen[cid] = true
+					dests = append(dests, cid)
+				}
+			}
+		}
+		// Fallback safety if cands is empty (e.g. 1-stop line or terminus)
+		if len(dests) == 0 {
+			for _, line := range servingRoutes {
+				for _, sid := range line.StopIDs {
+					if sid != s.ID && !seen[sid] {
+						seen[sid] = true
+						dests = append(dests, sid)
+					}
+				}
+			}
+		}
+
+		s.UpdateWithDestinations(dt, rateMult, dests)
 	}
 }

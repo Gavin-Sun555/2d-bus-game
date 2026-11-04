@@ -13,6 +13,13 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 	if f.world == nil || f.tls == nil || car.InRoundabout || car.JunctionTurn != nil || car.LaneIndex == 0 {
 		return math.Inf(1)
 	}
+	leftLane := 0
+	if road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok {
+		leftLane = road.FirstGeneralTrafficLane()
+	}
+	if car.LaneIndex <= leftLane {
+		return math.Inf(1)
+	}
 	forward := roundaboutApproachDirection(car)
 	heading := math.Atan2(forward.Y, forward.X)
 	var next *sim.TrafficIntersection
@@ -46,7 +53,7 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 	// A late merge may use a shorter smooth taper, but cannot consume the
 	// road needed to finish the next merge and leave the car stranded.
 	standardLength := math.Max(160, 3*f.laneWidth)
-	length := math.Min(standardLength, (room-20)/float64(car.LaneIndex))
+	length := math.Min(standardLength, (room-20)/float64(car.LaneIndex-leftLane))
 	if length >= math.Max(70, 1.3*f.laneWidth) && tm.laneMergeClear(f, forward, -1) {
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		points := make([]sim.Vec2, 33)
@@ -60,5 +67,5 @@ func (tm *TrafficManager) prepareForcedLeftApproach(f carFrame) float64 {
 	}
 	// Keep enough road ahead to complete the merge after the gap opens;
 	// stopping right at the line would leave no room to try again.
-	return math.Sqrt(2 * 220 * math.Max(0, room-standardLength*float64(car.LaneIndex)-20))
+	return math.Sqrt(2 * 220 * math.Max(0, room-standardLength*float64(car.LaneIndex-leftLane)-20))
 }

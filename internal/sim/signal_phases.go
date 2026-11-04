@@ -47,7 +47,7 @@ func (inter *TrafficIntersection) phaseTransition() (float64, LightPhase, bool) 
 		return inter.GreenDuration, PhaseEWYellow, true
 	case PhaseEWYellow:
 		next := PhaseNSGreen
-		if inter.IsMajor && inter.HasEW4Lane() {
+		if inter.IsMajor && inter.needsEWLeftPhase() {
 			next = PhaseEWLeftGreen
 		}
 		return inter.YellowDuration, next, true
@@ -55,7 +55,7 @@ func (inter *TrafficIntersection) phaseTransition() (float64, LightPhase, bool) 
 		return inter.GreenDuration, PhaseNSYellow, true
 	case PhaseNSYellow:
 		next := PhaseEWGreen
-		if inter.IsMajor && inter.HasNS4Lane() {
+		if inter.IsMajor && inter.needsNSLeftPhase() {
 			next = PhaseNSLeftGreen
 		}
 		return inter.YellowDuration, next, true

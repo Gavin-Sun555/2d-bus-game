@@ -25,7 +25,8 @@ func drawBridges(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth 
 			}
 		}
 		half := br.Width / 2
-		for _, side := range []float64{-1, 1} {
+		sides := [2]float64{-1, 1}
+		for _, side := range sides {
 			edge := br.Pos.Add(right.Mul(side * (half + 4)))
 			drawParallelLine(screen, cam, edge.Add(sim.Vec2{X: 7, Y: 10}), forward.X, forward.Y, br.Length, 0, sim.RGBA(8, 20, 30, 100), 12)
 			drawParallelLine(screen, cam, edge, forward.X, forward.Y, br.Length, 0, p.paving, 12)
@@ -43,7 +44,8 @@ func drawBridges(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth 
 					worldCircle(screen, cam, post.Add(sim.Vec2{X: -1, Y: -1}), 3, rgb(244, 240, 214))
 				}
 			case br.IsOverpass:
-				for _, d := range []float64{-br.Length * .35, br.Length * .35} {
+				piers := [2]float64{-br.Length * .35, br.Length * .35}
+				for _, d := range piers {
 					pier := edge.Add(forward.Mul(d)).Add(right.Mul(side * 16))
 					drawRotatedBox(screen, cam, pier, forward.X, forward.Y, 44, 22, rgb(112, 132, 144))
 				}
@@ -57,7 +59,8 @@ func drawBridges(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth 
 // anchors drew a fan across vertical bridge lanes instead of along their edges.
 func drawBridgeCables(screen *ebiten.Image, cam *sim.Camera, br sim.Bridge, forward, right sim.Vec2, side float64) {
 	base := br.Pos.Add(right.Mul(side * (br.Width/2 + 10)))
-	for _, d := range []float64{-br.Length * .25, br.Length * .25} {
+	towers := [2]float64{-br.Length * .25, br.Length * .25}
+	for _, d := range towers {
 		tower := base.Add(forward.Mul(d))
 		crown := tower.Add(right.Mul(side * 52))
 		drawRotatedBox(screen, cam, tower, forward.X, forward.Y, 26, 22, rgb(162, 176, 180))

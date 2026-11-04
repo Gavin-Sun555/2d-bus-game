@@ -71,6 +71,11 @@ func TestCapturedBusPairsReleaseWithoutCars(t *testing.T) {
 							th, br, st, hb, doors, _ := drivers[i].ComputeControls(b, routes[i], s.World, s.Lights, []VehicleObstacle{ObserveBus(buses[1-i])}, 52, 1./60)
 							b.Update(1./60, th, br, st, hb, doors)
 							distance[i] += before.Distance(b.Pos)
+							if tick == 1200 {
+								diag := drivers[i].DiagnoseStop(b, routes[i], s.World, s.Lights, []VehicleObstacle{ObserveBus(buses[1-i])}, 52)
+								t.Logf("Bus %d tick 1200: pos=%v, spd=%.1f, state=%v, tgtSpd=%.1f, limits=%+v, blockers=%+v",
+									pair[i], b.Pos, b.Speed, drivers[i].State, diag.TargetSpeed, diag.Limits, diag.Blockers)
+							}
 							if hit, _, depth := sim.CheckBusesCollision(buses[0], buses[1]); hit {
 								t.Fatalf("contact tick%d depth%.3f", tick, depth)
 							}

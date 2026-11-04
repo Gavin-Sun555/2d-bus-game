@@ -57,5 +57,8 @@ func (ad *AutopilotDriver) SignalPriorityRequest(bus *sim.Bus, tls *sim.TrafficL
 			phase = sim.PhaseNSLeftGreen
 		}
 	}
+	if found && turn == routeTurnRight && nearest.ApproachMedianBusLane[idx] && !ad.usesCurbRightAt(nearest.Center) {
+		phase = sim.MedianBusRightPhase(heading)
+	}
 	return &sim.BusSignalRequest{IntersectionID: nearest.ID, Heading: heading, Phase: phase}
 }

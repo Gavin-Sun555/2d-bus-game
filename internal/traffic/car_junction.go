@@ -67,14 +67,20 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 // T junctions and the shared right-turn/bus lane on eight-lane roads.
 func carIntersectionTurns(f carFrame, inter *sim.TrafficIntersection) (left, right bool) {
 	car := f.car
+	leftLane := 0
+	if f.world != nil {
+		if road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok {
+			leftLane = road.FirstGeneralTrafficLane()
+		}
+	}
 	straight := hasRoadInDirection(f.world, inter.Center, car.Heading) || isMapExitAhead(f.world, inter.Center, car.Heading)
 	// Boundary exits are legal movements too. Use the same destinations for
 	// signal selection, swept-corridor admission and the committed path.
 	dedicated := inter.ApproachHasDedicatedLanesForHeading(car.Heading)
-	hasLeft := hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) || (dedicated && car.LaneIndex == 0 && isMapExitAhead(f.world, inter.Center, car.Heading-math.Pi/2))
+	hasLeft := hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) || (dedicated && car.LaneIndex == leftLane && isMapExitAhead(f.world, inter.Center, car.Heading-math.Pi/2))
 	hasRight := hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2)
-	left = hasLeft && ((!straight && (!hasRight || car.LaneIndex == 0)) || (car.LaneIndex == 0 && dedicated))
-	if dedicated && car.LaneIndex != 0 {
+	left = hasLeft && ((!straight && (!hasRight || car.LaneIndex == leftLane)) || (car.LaneIndex == leftLane && dedicated))
+	if dedicated && car.LaneIndex != leftLane {
 		left = false
 	}
 	lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(car.Heading)]
@@ -140,6 +146,11 @@ func buildCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJu
 	}
 	exitLane := min(1, lanes/2-1)
 	inOffset, outOffset, radius := f.laneWidth/2, (float64(exitLane)+.5)*f.laneWidth, geometry.TurnRadius
+	if turnLeft && f.world != nil {
+		if road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok && road.HasMedianBusLane() {
+			inOffset = 1.5 * f.laneWidth
+		}
+	}
 	if turnRight {
 		inOffset = math.Abs(car.Pos.Y - car.RoadCenter)
 		if !car.IsEW {
@@ -187,7 +198,7 @@ func planCarStraight(f carFrame, inter *sim.TrafficIntersection) *sim.CarJunctio
 	}
 	lane := car.LaneIndex
 	if !exiting {
-		lane = min(lane, road.GeneralTrafficLanes()-1)
+		lane = road.ClampGeneralTrafficLane(lane)
 	}
 	start := -inter.GetStopLineDistForHeading(car.Heading, f.laneWidth) - car.Length/2 + 4
 	finish := half + car.Length + 60

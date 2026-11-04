@@ -32,6 +32,9 @@ func newHUDTopLayout(w float64) hudTopLayout {
 }
 
 func fitHUDText(s string, size, width float64) string {
+	if w, _ := textui.MeasureText(s, size); w <= width {
+		return s
+	}
 	s = strings.Join(strings.Fields(s), " ")
 	if w, _ := textui.MeasureText(s, size); w <= width {
 		return s

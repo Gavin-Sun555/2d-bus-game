@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/pprof"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/game"
@@ -22,6 +23,7 @@ import (
 )
 
 type measurement struct {
+	CenterBRT, LargeGrid                               bool
 	PosePredictionHits, PosePredictionMisses           uint64
 	poseHitsStart, poseMissesStart                     uint64
 	Vsync                                              bool
@@ -40,6 +42,8 @@ type measurement struct {
 	UpdateMS, DrawSubmitMS                             float64
 }
 type check struct {
+	centerBRT, largeGrid bool
+	focusBRTStop         bool
 	vsync                bool
 	singleThread         bool
 	busModel             sim.BusModel
@@ -60,6 +64,10 @@ type check struct {
 
 func (c *check) configure() {
 	c.frame, c.drawn, c.captured = 0, 0, false
+	for _, theme := range sim.SelectableMapThemes() {
+		c.g.Settings.SetCenterBRT(theme, c.centerBRT)
+		c.g.Settings.SetLargeRoadNetwork(theme, c.largeGrid)
+	}
 	if c.onlyScene && c.scene >= 25 {
 		c.g.Settings.TrafficDensity = 4
 		c.g.Settings.AIBusCount = 8
@@ -128,6 +136,18 @@ func (c *check) configure() {
 		c.g.Settings.Language = locale.LanguageEN
 		c.current.Scene = "settings-en"
 	}
+	if c.focusBRTStop && c.g.State == game.StatePlaying {
+		for _, stop := range c.g.World.Stops {
+			if stop.CenterBRT {
+				c.g.Camera.Pos = stop.Pos
+				c.g.Camera.TargetPos = stop.Pos
+				c.g.Camera.Zoom = .8
+				break
+			}
+		}
+	}
+	c.current.CenterBRT = c.g.World.CenterBRT
+	c.current.LargeGrid = c.g.World.LargeGrid
 }
 func (c *check) Update() error {
 	if c.err != nil {
@@ -251,7 +271,15 @@ func (c *check) Draw(screen *ebiten.Image) {
 }
 func (c *check) Layout(_, _ int) (int, int) { return 1280, 720 }
 func main() {
-	output := flag.String("output", "dist/release-0.0.7/visual", "Screenshot and frame measurement directory")
+	versionBytes, _ := os.ReadFile("VERSION")
+	version := strings.TrimSpace(string(versionBytes))
+	if version == "" {
+		version = "candidate"
+	}
+	focusBRTStop := flag.Bool("focus-brt-stop", false, "Focus the first median station for frozen visual review")
+	centerBRT := flag.Bool("center-brt", false, "Enable median BRT on eligible maps")
+	largeGrid := flag.Bool("large-grid", false, "Use 4x road spacing on built-in maps")
+	output := flag.String("output", filepath.Join("dist", "release-"+version, "visual"), "Screenshot and frame measurement directory")
 	frames := flag.Int("frames", 60, "Frames per scene (at least 11; first ten warm up)")
 	rotation := flag.Float64("rotation", 0, "Camera rotation in radians for frozen visual checks")
 	freeze := flag.Bool("freeze", false, "Keep simulation static for pixel-identical renderer comparisons")
@@ -262,6 +290,7 @@ func main() {
 	profile := flag.String("cpuprofile", "", "Optional CPU profile file")
 	singleThread := flag.Bool("single-thread", false, "Use Ebitengine main-thread event/render loop for controlled platform comparison")
 	vsync := flag.Bool("vsync", true, "Enable display synchronization for controlled frame-pacing comparison")
+	customMapPath := flag.String("custom-map", "", "Optional validated custom map fixture for qualification")
 	flag.Parse()
 	if *profile != "" {
 		f, err := os.Create(*profile)
@@ -287,7 +316,14 @@ func main() {
 		panic(err)
 	}
 	sim.SeedSimulation(5)
-	c := &check{vsync: *vsync, singleThread: *singleThread, g: game.NewGame(1280, 720), output: *output, frames: *frames, fleetBuses: *buses, busModel: sim.BusModel(*model), warmupFrames: *warmup}
+	c := &check{focusBRTStop: *focusBRTStop, centerBRT: *centerBRT, largeGrid: *largeGrid, vsync: *vsync, singleThread: *singleThread, g: game.NewGame(1280, 720), output: *output, frames: *frames, fleetBuses: *buses, busModel: sim.BusModel(*model), warmupFrames: *warmup}
+	if *customMapPath != "" {
+		data, err := sim.LoadCustomMapFromFile(*customMapPath)
+		if err != nil {
+			panic(err)
+		}
+		c.g.World.CustomMap = data
+	}
 	if *only >= 0 {
 		if *only > 31 {
 			panic("invalid scene")
@@ -301,7 +337,7 @@ func main() {
 	ebiten.SetRunnableOnUnfocused(true)
 	ebiten.SetVsyncEnabled(*vsync)
 	ebiten.SetWindowSize(1280, 720)
-	ebiten.SetWindowTitle("0.0.7 release graphics check")
+	ebiten.SetWindowTitle(version + " release graphics check")
 	if err := ebiten.RunGameWithOptions(c, &ebiten.RunGameOptions{SingleThread: *singleThread}); err != nil {
 		panic(err)
 	}

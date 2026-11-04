@@ -142,6 +142,15 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				signedEntryLat := leadingPos.Sub(inter.Center).Dot(vRight)
 				inter.PlayerEntryRightTurnLane = approachLanes >= 8 && signedEntryLat >= 3*lw && signedEntryLat <= 4*lw+12
 				inter.PlayerEntryBusLane = inter.ApproachBusLane[inter.GetApproachIndexForHeading(refHeading)] && entryLat >= 3*lw && entryLat <= 4*lw+12
+				if inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(refHeading)] {
+					inter.PlayerEntryBusLane = signedEntryLat >= 0 && signedEntryLat < lw
+					inter.PlayerEntryLane = 1
+					if signedEntryLat >= lw && signedEntryLat < 2*lw {
+						inter.PlayerEntryLane = 0
+					}
+				}
+				inter.PlayerEntryMedianBusLane = inter.PlayerEntryBusLane && inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(refHeading)]
+				inter.PlayerEntryMedianRightSignal = inter.GetMedianBusRightSignal(refHeading)
 				inter.PlayerEntryBusLeftOnly = false
 				// Preserve right-on-red behavior, but a small countersteer must
 				// never select the left arrow instead of the through signal.
@@ -211,8 +220,17 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 		// If steering right, heading turned clockwise, or drifted right:
 		if bus.SteeringAngle > 0.02 || dHead > 0.05 || (latRight > 5.0 && dHead > -0.05) {
 			inter.PlayerTurnedRight = true
-			inter.PlayerCrossedOnRed = false
-			inter.PlayerCrossedBeforeYellow = true
+			if !inter.PlayerEntryMedianBusLane || inter.PlayerEntryMedianRightSignal != SignalRed {
+				inter.PlayerCrossedOnRed = false
+				inter.PlayerCrossedBeforeYellow = true
+			}
+		}
+		// Central-lane right turns cross general lanes and require their own
+		// protected arrow, recorded when the nose first crossed the stop line.
+		if inter.PlayerEntryMedianBusLane && dHead > .35 && inter.PlayerEntryMedianRightSignal == SignalRed && !inter.FinedThisPassage && inter.Cooldown <= 0 {
+			inter.FinedThisPassage = true
+			inter.Cooldown = 6
+			return true, fmt.Sprintf("[交通违章抓拍] 车辆在交叉口 #%d 中央公交道右转闯红灯！", inter.ID+1)
 		}
 
 		// A turn needs an actual change from the approach road direction.
@@ -257,7 +275,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				// pixels beyond the line. Wait for the actual movement instead
 				// of fining a legal right turn during its straight approach.
 				// This is a deferral, not immunity for straight/left movements.
-				rightTurnUnresolved := inter.PlayerEntryRightTurnLane && !inter.PlayerTurnedLeft && sLead < stopLineDist && !isPastExit
+				rightTurnUnresolved := (inter.PlayerEntryRightTurnLane || inter.PlayerEntryMedianBusLane) && !inter.PlayerTurnedLeft && sLead < stopLineDist && !isPastExit
 				if sTrail >= -stopLineDist && !rightTurnUnresolved {
 					inter.FinedThisPassage = true
 					inter.Cooldown = 6.0
@@ -454,17 +472,26 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 			}
 		}
 
+		if inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(heading)] {
+			lateral := math.Abs(pos.Sub(inter.Center).Dot(Vec2{X: -sinH, Y: cosH}))
+			inLeftTurnLane = lateral > laneWidth && lateral < 1.95*laneWidth
+		}
 		// Unplanned vehicles infer their signal from the lane. A known route
 		// retains its movement while temporarily straddling lanes.
 		effectiveWantLeft := (nearest && wantLeft) || (!routeKnown && hasDedicatedLanes && inLeftTurnLane)
 		effectiveWantRight := nearest && wantRight && !effectiveWantLeft && !inLeftTurnLane
 
 		// Vehicles making a lawful right turn (from outer lane) may legally turn on red (红灯允许右转)
-		if effectiveWantRight {
+		lateral := math.Abs(pos.Sub(inter.Center).Dot(Vec2{X: -sinH, Y: cosH}))
+		medianRight := effectiveWantRight && inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(heading)] && lateral < laneWidth
+		if effectiveWantRight && !medianRight {
 			return false, 999.0
 		}
 
 		sig := inter.GetSignalForHeading(heading, effectiveWantLeft)
+		if medianRight {
+			sig = inter.GetMedianBusRightSignal(heading)
+		}
 
 		// If approaching before the stop line within lookAhead
 		if distToLine < lookAhead {
@@ -473,7 +500,7 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 			}
 		}
 		// A turn at this junction leaves the corridor; farther junctions do not apply.
-		if nearest && wantLeft {
+		if nearest && (wantLeft || wantRight) {
 			break
 		}
 	}

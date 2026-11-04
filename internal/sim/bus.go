@@ -219,6 +219,29 @@ func (b *Bus) ClearPassengers() int {
 	return removed
 }
 
+// BoardPassengersWithDestinations adds passengers with specific target destinations.
+// Returns the actual number of passengers boarded.
+func (b *Bus) BoardPassengersWithDestinations(destinations []int) int {
+	if len(destinations) == 0 {
+		return 0
+	}
+	availableSpace := b.Capacity - len(b.Passengers)
+	count := len(destinations)
+	if count > availableSpace {
+		count = availableSpace
+	}
+	if count <= 0 {
+		return 0
+	}
+	for i := 0; i < count; i++ {
+		b.Passengers = append(b.Passengers, Passenger{
+			TargetStopID: destinations[i],
+		})
+	}
+	b.PassengerCount = len(b.Passengers)
+	return count
+}
+
 // BoardPassengers adds up to count passengers destined for randomly chosen stops from candidateDestStopIDs.
 // Returns the actual number of passengers boarded.
 func (b *Bus) BoardPassengers(count int, candidateDestStopIDs []int) int {

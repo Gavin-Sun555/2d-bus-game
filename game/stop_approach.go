@@ -124,19 +124,26 @@ func (g *Game) updateStopApproach() {
 
 			// Manual skip with F key
 			if inpututil.IsKeyJustPressed(ebiten.KeyF) {
-				if canSkip {
+				if canSkip || isOccupied {
 					g.lastSkippedStopID = targetStop.ID
 					g.skipCooldown = 0.5
 					oldName := targetStop.LocalizedName()
 					g.Route.AdvanceToNextStop()
 					newTarget := g.World.Stops[g.Route.GetCurrentTargetStopID()]
+					for i := range g.Bus.Passengers {
+						if g.Bus.Passengers[i].TargetStopID == targetStop.ID {
+							g.Bus.Passengers[i].TargetStopID = newTarget.ID
+						}
+					}
 					g.rollAlightingForNextStop()
 					if g.AutopilotDriver != nil {
 						g.AutopilotDriver.ContinuePastSkippedStop(g.Bus, targetStop, currentLaneW)
 					}
 					g.Bus.IsBraking = false
 					g.Bus.IsHandbraking = false
-					if isOccupied {
+					if isOccupied && g.stopBellRung {
+						g.HUD.AddToast(fmt.Sprintf(locale.T("【⚡ 站台受阻·飞站】[%s] 前方站台已有车占用，已强制飞站！下一站: [%s]", "【⚡ Bay Blocked·Skip】[%s] Bay occupied, forced skip! Next: [%s]"), oldName, newTarget.LocalizedName()), true)
+					} else if isOccupied {
 						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 前方站台已有车靠站且本车无人下车，已飞站！下一站: [%s]", oldName, newTarget.LocalizedName()), true)
 					} else {
 						g.HUD.AddToast(fmt.Sprintf("【⚡ 飞站成功】[%s] 站内无人且无人按铃，已飞站！下一站: [%s]", oldName, newTarget.LocalizedName()), true)
@@ -166,7 +173,7 @@ func (g *Game) updateStopApproach() {
 			// 1. Bus is stalled/crawling past the berth (Speed <8, latDist >65).
 			//    — this immediately resolves the exact deadlock where front has passed and bus stops at 0 km/h!
 			// 2. Bus is actively cruising/passing through in outer lane without docking (TargetLaneOffset in outer lane, forwardProj > 20.0)
-			isStalledInOuterLane := !isOccupied && latDist > 65.0 && forwardProj > 20.0 && distToTarget < 350.0 && math.Abs(g.Bus.Speed) < 8.0
+			isStalledInOuterLane := latDist > 65.0 && forwardProj > 20.0 && distToTarget < 350.0 && math.Abs(g.Bus.Speed) < 8.0
 			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 &&
 				(g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25))
 

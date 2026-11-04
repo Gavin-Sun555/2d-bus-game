@@ -129,7 +129,7 @@ func (m *Mixer) sample() float32 {
 		m.rollingSmooth += (m.rollingMid - m.rollingSmooth) * .022
 		value = m.engineSmooth*(.18+.13*m.load) + m.rollingSmooth*.055*min(1, speed/70)
 	}
-	value *= 1.15 * float64(m.volumes.Engine) / 100
+	value *= 3.0 * float64(m.volumes.Engine) / 100
 	if m.hornGapLeft > 0 {
 		m.hornGapLeft--
 	} else if len(m.hornBank) == 0 && m.hornPresses > 0 {

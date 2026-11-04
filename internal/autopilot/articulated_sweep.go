@@ -63,6 +63,9 @@ func (ad *AutopilotDriver) articulatedSweptSpeed(f autopilotFrame, steer float64
 						continue
 					}
 					if touching, _, depth := sim.CheckOBBCollision(own, body); touching && depth > 0 {
+						if isRearFollowerContact(f, own, ob, body) {
+							continue
+						}
 						hit = true
 						break
 					}
@@ -81,4 +84,30 @@ func (ad *AutopilotDriver) articulatedSweptSpeed(f autopilotFrame, steer float64
 		}
 	}
 	return math.Inf(1)
+}
+
+func isRearFollowerContact(f autopilotFrame, own sim.OBB, ob VehicleObstacle, paddedBody sim.OBB) bool {
+	if f.bus == nil || f.bus.Speed < -0.5 {
+		return false
+	}
+	forward := sim.UnitFromAngle(f.bus.Heading)
+	delta := ob.Pos.Sub(f.bus.Pos)
+	if delta.Dot(forward) >= 0 || math.Cos(ob.Heading-f.bus.Heading) < 0.5 {
+		return false
+	}
+	for _, part := range f.bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		if touching, _, depth := sim.CheckOBBCollision(part, sim.OBB{
+			Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length / 2, HalfWid: ob.Width / 2,
+		}); touching && depth > 0 {
+			return false
+		}
+	}
+	unpadded := sim.OBB{Center: paddedBody.Center, Heading: paddedBody.Heading, HalfLen: paddedBody.HalfLen - 1, HalfWid: paddedBody.HalfWid - 1}
+	if touching, _, depth := sim.CheckOBBCollision(own, unpadded); touching && depth > 0.25 {
+		return false
+	}
+	return true
 }

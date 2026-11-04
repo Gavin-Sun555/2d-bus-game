@@ -100,7 +100,9 @@ func carClearsBusInJunction(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersec
 	actual := bus.BodyEnvelope()
 	actual.HalfLen += 4
 	actual.HalfWid += 3
-	actualCorridor := sim.JunctionCorridor{Bodies: []sim.OBB{actual}}
+	var actualBodies [1]sim.OBB
+	actualBodies[0] = actual
+	actualCorridor := sim.JunctionCorridor{Bodies: actualBodies[:]}
 	actualCorridor.RebuildBounds()
 	if !sim.SeparatedJunctionCorridors(f.car.JunctionCorridor, &actualCorridor) {
 		return false
@@ -133,15 +135,6 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 		}
 		g := f.world.JunctionAt(inter.Center, f.laneWidth)
 		var bodies []sim.OBB
-		blocked := func(pos sim.Vec2, heading, length, width, speed float64) bool {
-			if math.Abs(speed) > 5 || pos.Distance(inter.Center) > 2*(g.HalfX+g.HalfY)+200 {
-				return false
-			}
-			if bodies == nil {
-				bodies = carJunctionBodies(f, inter)
-			}
-			return sim.ExitQueueBlocksEntry(bodies, inter.Center, g, f.car.Length, f.car.Width, sim.OBB{Center: pos, Heading: heading, HalfLen: length / 2, HalfWid: width / 2}, speed)
-		}
 		occupied := false
 		approachReach := junctionApproachReach(inter, f.laneWidth)
 		ids, indexed := tm.junctionScanCandidates(f, inter, approachReach, 2*(g.HalfX+g.HalfY)+200)
@@ -193,7 +186,7 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			if i == f.index || i >= f.activeCount {
 				continue
 			}
-			if blocked(other.Pos, other.Heading, other.Length, other.Width, other.Speed) {
+			if isExitQueueBlocking(&bodies, f, inter, g, other.Pos, other.Heading, other.Length, other.Width, other.Speed) {
 				occupied = true
 				break
 			}
@@ -203,7 +196,7 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 				continue
 			}
 			body := bus.BodyEnvelope()
-			if blocked(body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, bus.Speed) {
+			if isExitQueueBlocking(&bodies, f, inter, g, body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, bus.Speed) {
 				occupied = true
 				break
 			}
@@ -317,4 +310,14 @@ func carCanReachJunction(car *sim.TrafficCar, center sim.Vec2, approachReach flo
 	radius := approachReach + car.Length/2 + math.Max(180, car.Speed*car.Speed/(2*220)+60)
 	d := car.Pos.Sub(center)
 	return d.Dot(d) <= radius*radius
+}
+
+func isExitQueueBlocking(bodies *[]sim.OBB, f carFrame, inter *sim.TrafficIntersection, g sim.JunctionGeometry, pos sim.Vec2, heading, length, width, speed float64) bool {
+	if math.Abs(speed) > 5 || pos.Distance(inter.Center) > 2*(g.HalfX+g.HalfY)+200 {
+		return false
+	}
+	if *bodies == nil {
+		*bodies = carJunctionBodies(f, inter)
+	}
+	return sim.ExitQueueBlocksEntry(*bodies, inter.Center, g, f.car.Length, f.car.Width, sim.OBB{Center: pos, Heading: heading, HalfLen: length / 2, HalfWid: width / 2}, speed)
 }

@@ -184,6 +184,13 @@ func (ad *AutopilotDriver) longitudinalControls(speed, targetSpd float64) (throt
 // change is intentional and only a severe heading error should slow it down.
 func (ad *AutopilotDriver) recoverySpeed(f autopilotFrame, targetSpd float64, sharpTurn bool) float64 {
 	if ad.OvertakeState != OvertakeNone {
+		// In the median layout a passing target can be several lanes away from
+		// the physical bus after a skipped-stop path change. The projected error
+		// already removes LaneOffset: this is lost tracking, not the intended
+		// lane shift. Recover before resuming high-speed cruising across traffic.
+		if f.world != nil && f.world.CenterBRT && !f.nearRoundabout && !f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) && f.lateralErr > math.Max(55, 1.1*f.laneWidth) {
+			return math.Min(targetSpd, 100)
+		}
 		if math.Abs(f.alpha) > 1.1 {
 			return math.Min(targetSpd, 70)
 		}

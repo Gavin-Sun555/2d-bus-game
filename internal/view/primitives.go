@@ -6,6 +6,18 @@ import (
 	"math"
 )
 
+var strokeLineIndices = [54]uint16{
+	0, 1, 4, 1, 5, 4,
+	1, 2, 5, 2, 6, 5,
+	2, 3, 6, 3, 7, 6,
+	4, 5, 8, 5, 9, 8,
+	5, 6, 9, 6, 10, 9,
+	6, 7, 10, 7, 11, 10,
+	8, 9, 12, 9, 13, 12,
+	9, 10, 13, 10, 14, 13,
+	10, 11, 14, 11, 15, 14,
+}
+
 // Smooth straight lines need only a feathered quad, not a stencil atlas for
 // arbitrary overlapping paths. Coverage fades over one screen pixel at edges.
 func strokeLine(dst *ebiten.Image, x0, y0, x1, y1, width float32, clr color.Color, antialias bool) {
@@ -43,18 +55,7 @@ func strokeLine(dst *ebiten.Image, x0, y0, x1, y1, width float32, clr color.Colo
 			vertices[y*4+x] = ebiten.Vertex{DstX: x0 + ux*xs[x] - uy*ys[y], DstY: y0 + uy*xs[x] + ux*ys[y], SrcX: 1, SrcY: 1, ColorR: cr, ColorG: cg, ColorB: cb, ColorA: alpha}
 		}
 	}
-	var indices [54]uint16
-	n := 0
-	for y := 0; y < 3; y++ {
-		for x := 0; x < 3; x++ {
-			i := uint16(y*4 + x)
-			for _, v := range [6]uint16{i, i + 1, i + 4, i + 1, i + 5, i + 4} {
-				indices[n] = v
-				n++
-			}
-		}
-	}
-	dst.DrawTriangles(vertices[:], indices[:], getWhiteSubImage(), nil)
+	dst.DrawTriangles(vertices[:], strokeLineIndices[:], getWhiteSubImage(), nil)
 }
 
 // A tessellated circle with a one-pixel coverage ring batches with straight

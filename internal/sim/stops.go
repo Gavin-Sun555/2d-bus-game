@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"strings"
@@ -19,21 +20,62 @@ type BusStop struct {
 	CustomNameEN string  `json:"-"`
 	RoadCenter   Vec2    // Center of the adjacent road
 	Heading      float64 // Direction of the road beside it
+	CenterBRT    bool    `json:",omitempty"`
 	RoadLanes    int     // Number of lanes on the adjacent road (2 or 4)
 	Pos          Vec2    // Center of stop bay (computed from RoadCenter and laneWidth)
 	Length       float64 // Length of stop bay along heading
 	Width        float64 // Width of stop bay
 
-	WaitingPassengers int
-	MaxWaiting        int
-	SpawnTimer        float64
-	SpawnInterval     float64
+	WaitingPassengers   int
+	WaitingDestinations []int `json:",omitempty"`
+	MaxWaiting          int
+	SpawnTimer          float64
+	SpawnInterval       float64
 
 	// Shelter pos
 	ShelterPos Vec2
 
 	// Station Color accent
 	AccentColor color.RGBA
+
+	cachedInfoText   string          `json:"-"`
+	cachedInfoPax    int             `json:"-"`
+	cachedInfoTarget bool            `json:"-"`
+	cachedInfoPlan   bool            `json:"-"`
+	cachedInfoZoom   bool            `json:"-"`
+	cachedInfoLang   locale.Language `json:"-"`
+}
+
+// FormatInfoText returns a cached station label string, avoiding re-allocations on every frame.
+func (s *BusStop) FormatInfoText(isTarget, isHovered, planMode bool, zoom float64) string {
+	zoomSmall := planMode && zoom < 0.2 && !isTarget && !isHovered
+	if s.cachedInfoText != "" &&
+		s.cachedInfoPax == s.WaitingPassengers &&
+		s.cachedInfoTarget == isTarget &&
+		s.cachedInfoPlan == planMode &&
+		s.cachedInfoZoom == zoomSmall &&
+		s.cachedInfoLang == locale.CurrentLanguage {
+		return s.cachedInfoText
+	}
+
+	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.LocalizedName(), s.WaitingPassengers)
+	if isTarget {
+		infoText = "★ [目标站] " + infoText
+		if s.WaitingPassengers == 0 {
+			infoText += " [空站无候车]"
+		}
+	}
+	if zoomSmall {
+		infoText = fmt.Sprintf("#%d %s", s.ID+1, s.CleanName())
+	}
+
+	s.cachedInfoText = infoText
+	s.cachedInfoPax = s.WaitingPassengers
+	s.cachedInfoTarget = isTarget
+	s.cachedInfoPlan = planMode
+	s.cachedInfoZoom = zoomSmall
+	s.cachedInfoLang = locale.CurrentLanguage
+	return infoText
 }
 
 // LocalizedName returns the station name localized according to CurrentLanguage
@@ -108,17 +150,135 @@ func (s *BusStop) UpdateGeometry(laneWidth float64) {
 	curbDist := (float64(s.RoadLanes)/2.0)*laneWidth + s.Width*0.48
 	s.Pos = s.RoadCenter.Add(Vec2{X: perpX * curbDist, Y: perpY * curbDist})
 	s.ShelterPos = s.Pos.Add(Vec2{X: perpX * 36, Y: perpY * 36})
+	if s.CenterBRT {
+		s.Pos = s.RoadCenter.Add(Vec2{X: perpX * laneWidth * .5, Y: perpY * laneWidth * .5})
+		s.ShelterPos = s.RoadCenter.Add(Vec2{X: cosH * 80, Y: sinH * 80})
+	}
 }
 
+// SyncWaitingQueue ensures WaitingDestinations has length equal to WaitingPassengers.
+// Missing destinations are chosen from fallbackCandidates (or -1 if empty).
+func (s *BusStop) SyncWaitingQueue(fallbackCandidates []int) {
+	if s.WaitingPassengers <= 0 {
+		s.WaitingPassengers = 0
+		s.WaitingDestinations = s.WaitingDestinations[:0]
+		return
+	}
+	if len(s.WaitingDestinations) > s.WaitingPassengers {
+		s.WaitingDestinations = s.WaitingDestinations[:s.WaitingPassengers]
+		return
+	}
+	for len(s.WaitingDestinations) < s.WaitingPassengers {
+		dest := -1
+		if len(fallbackCandidates) > 0 {
+			dest = fallbackCandidates[RandomIntn(len(fallbackCandidates))]
+		}
+		s.WaitingDestinations = append(s.WaitingDestinations, dest)
+	}
+	s.WaitingPassengers = len(s.WaitingDestinations)
+}
+
+// CountMatchingWaiting returns how many waiting passengers have their target destination in candidates.
+// If candidates is empty (e.g. single-stop fallback or legacy tests), all waiting passengers match.
+func (s *BusStop) CountMatchingWaiting(candidates []int) int {
+	s.SyncWaitingQueue(candidates)
+	if len(candidates) == 0 {
+		return len(s.WaitingDestinations)
+	}
+	candMap := make(map[int]bool, len(candidates))
+	for _, c := range candidates {
+		candMap[c] = true
+	}
+	count := 0
+	for _, dest := range s.WaitingDestinations {
+		if dest == -1 || candMap[dest] {
+			count++
+		}
+	}
+	return count
+}
+
+// BoardMatchingPassengers extracts up to maxCount passengers whose destination is in candidates.
+// Returns a slice of the boarded passengers' target destination IDs.
+func (s *BusStop) BoardMatchingPassengers(maxCount int, candidates []int) []int {
+	s.SyncWaitingQueue(candidates)
+	if maxCount <= 0 || len(s.WaitingDestinations) == 0 {
+		return nil
+	}
+	if len(candidates) == 0 {
+		take := min(maxCount, len(s.WaitingDestinations))
+		boarded := make([]int, take)
+		copy(boarded, s.WaitingDestinations[:take])
+		s.WaitingDestinations = s.WaitingDestinations[take:]
+		s.WaitingPassengers = len(s.WaitingDestinations)
+		return boarded
+	}
+
+	candMap := make(map[int]bool, len(candidates))
+	for _, c := range candidates {
+		candMap[c] = true
+	}
+
+	boarded := make([]int, 0, maxCount)
+	remaining := make([]int, 0, len(s.WaitingDestinations))
+	for _, dest := range s.WaitingDestinations {
+		if len(boarded) < maxCount && (dest == -1 || candMap[dest]) {
+			targetDest := dest
+			if targetDest == -1 && len(candidates) > 0 {
+				targetDest = candidates[RandomIntn(len(candidates))]
+			}
+			boarded = append(boarded, targetDest)
+		} else {
+			remaining = append(remaining, dest)
+		}
+	}
+	s.WaitingDestinations = remaining
+	s.WaitingPassengers = len(s.WaitingDestinations)
+	return boarded
+}
+
+// Update advances the spawn timer with default 1.0x rate and nil destinations.
 func (s *BusStop) Update(dt float64) {
-	s.SpawnTimer += dt
+	s.UpdateWithDestinations(dt, 1.0, nil)
+}
+
+// UpdateWithDestinations advances passenger arrivals according to rateMultiplier,
+// assigning new passengers randomly to candidateDestinations.
+func (s *BusStop) UpdateWithDestinations(dt float64, rateMultiplier float64, candidateDestinations []int) {
+	if rateMultiplier <= 0 {
+		rateMultiplier = 1.0
+	}
+	s.SyncWaitingQueue(candidateDestinations)
+
+	// Reconcile any existing destinations that are no longer reachable by any passing line
+	if len(candidateDestinations) > 0 {
+		candSet := make(map[int]bool, len(candidateDestinations))
+		for _, c := range candidateDestinations {
+			candSet[c] = true
+		}
+		for i, dest := range s.WaitingDestinations {
+			if dest != -1 && !candSet[dest] {
+				s.WaitingDestinations[i] = candidateDestinations[RandomIntn(len(candidateDestinations))]
+			}
+		}
+	}
+
+	s.SpawnTimer += dt * rateMultiplier
 	if s.SpawnTimer >= s.SpawnInterval {
 		s.SpawnTimer = 0
-		if s.WaitingPassengers < s.MaxWaiting {
-			s.WaitingPassengers += 1 + RandomIntn(3)
-			if s.WaitingPassengers > s.MaxWaiting {
-				s.WaitingPassengers = s.MaxWaiting
+		if len(s.WaitingDestinations) < s.MaxWaiting {
+			toSpawn := 1 + RandomIntn(3)
+			if len(s.WaitingDestinations)+toSpawn > s.MaxWaiting {
+				toSpawn = s.MaxWaiting - len(s.WaitingDestinations)
 			}
+			for i := 0; i < toSpawn; i++ {
+				dest := -1
+				if len(candidateDestinations) > 0 {
+					dest = candidateDestinations[RandomIntn(len(candidateDestinations))]
+				}
+				s.WaitingDestinations = append(s.WaitingDestinations, dest)
+			}
+			s.WaitingPassengers = len(s.WaitingDestinations)
 		}
 	}
 }
@@ -162,6 +322,9 @@ func (s *BusStop) ContainsBus(bus *Bus) bool {
 func (s *BusStop) ContainsBusInOuterLane(bus *Bus, laneWidth float64) bool {
 	if bus == nil {
 		return false
+	}
+	if s.CenterBRT {
+		return s.ContainsBus(bus)
 	}
 	sinH, cosH := math.Sincos(s.Heading)
 

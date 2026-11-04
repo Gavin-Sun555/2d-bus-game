@@ -38,7 +38,7 @@ func loadRearDeparture(t *testing.T, slot int) (*AutopilotDriver, autopilotFrame
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := autopilotFrame{bus: s.Bus, world: s.World, tls: s.Lights, laneWidth: 52, s: ad.LastPathS, speedAbs: math.Abs(s.Bus.Speed), remaining: ad.LastRemaining, targetStop: s.World.Stops[s.Route.GetCurrentTargetStopID()]}
+	f := autopilotFrame{bus: s.Bus, world: s.World, tls: s.Lights, laneWidth: 52, s: ad.LastPathS, speedAbs: math.Abs(s.Bus.Speed), remaining: ad.LastRemaining, targetStop: s.World.Stops[s.Route.GetCurrentTargetStopID()], fromStop: ad.fromStop(s.World)}
 	for _, b := range s.OtherBuses {
 		f.obstacles = append(f.obstacles, ObserveBus(b))
 	}

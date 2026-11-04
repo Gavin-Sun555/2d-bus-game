@@ -14,7 +14,22 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	ad.departurePresteerValid = false
 	active := ad.departureEscapeActive
 	ad.departureEscapeActive = false
-	if (!f.bus.IsArticulated() && ad.State != AutopilotStateDeparting) || f.world == nil || f.speedAbs > 25 || f.bus.DoorsOpen || f.bus.PassengerServiceRemaining() > 0 || ad.roadSafetyHold || ad.pathFromID < 0 || ad.pathFromID >= len(f.world.Stops) || f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
+	inBay := false
+	if f.world != nil && ad.pathFromID >= 0 && ad.pathFromID < len(f.world.Stops) {
+		stop := f.world.Stops[ad.pathFromID]
+		if stop.ContainsBus(f.bus) || stop.ContainsBusInOuterLane(f.bus, f.laneWidth) {
+			inBay = true
+		} else {
+			forward := sim.UnitFromAngle(stop.Heading)
+			right := sim.Vec2{X: -forward.Y, Y: forward.X}
+			relative := f.bus.Pos.Sub(stop.RoadCenter)
+			curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth
+			if relative.Dot(forward) >= -50 && relative.Dot(forward) <= 350 && relative.Dot(right) >= curb+2 {
+				inBay = true
+			}
+		}
+	}
+	if (!f.bus.IsArticulated() && ad.State != AutopilotStateDeparting && !inBay) || f.world == nil || f.speedAbs > 25 || f.bus.DoorsOpen || f.bus.PassengerServiceRemaining() > 0 || ad.roadSafetyHold || ad.pathFromID < 0 || ad.pathFromID >= len(f.world.Stops) || f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
 		return 0, false
 	}
 	if f.bus.RoundaboutAdmissionHold != nil {

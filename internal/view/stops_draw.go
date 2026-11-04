@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"image/color"
 	"math"
 
@@ -26,6 +25,9 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	bayBorderColor := sim.RGBA(234, 179, 8, 220) // Vibrant yellow
 	if isTarget {
 		bayBorderColor = sim.RGBA(59, 130, 246, 255) // Neon blue for next stop target
+	}
+	if s.CenterBRT {
+		drawRotatedBox(screen, cam, s.RoadCenter, cosH, sinH, s.Length, 12, sim.RGBA(148, 163, 184, 255))
 	}
 	drawRotatedBox(screen, cam, s.Pos, cosH, sinH, s.Length, s.Width, sim.RGBA(24, 24, 27, 240))
 	drawRotatedBoxOutline(screen, cam, s.Pos, cosH, sinH, s.Length, s.Width, 3, bayBorderColor)
@@ -58,6 +60,9 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	// 2. Glass Bus Shelter on Sidewalk
 	shelterLen := 68.0
 	shelterWid := 18.0
+	if s.CenterBRT {
+		shelterWid = 10
+	}
 	drawRotatedBox(screen, cam, s.ShelterPos, cosH, sinH, shelterLen, shelterWid, sim.RGBA(30, 41, 59, 240))
 	// Shelter roof accent bar
 	drawRotatedBox(screen, cam, s.ShelterPos, cosH, sinH, shelterLen-4, 4, s.AccentColor)
@@ -70,6 +75,9 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 		for i := 0; i < s.WaitingPassengers && i < 24; i++ {
 			row := float64(i / 12)
 			col := float64(i % 12)
+			if s.CenterBRT {
+				row = -2 + row*.5
+			}
 			pWorld := s.ShelterPos.Add(sim.Vec2{
 				X: cosH*(col*6-32) + perpX*(row*6+12),
 				Y: sinH*(col*6-32) + perpY*(row*6+12),
@@ -105,15 +113,9 @@ func DrawStop(s *sim.BusStop, screen *ebiten.Image, cam *sim.Camera, isTarget bo
 	}
 
 	// Station info label
-	infoText := fmt.Sprintf("#%d %s (%d人)", s.ID+1, s.LocalizedName(), s.WaitingPassengers)
-	if isTarget {
-		infoText = "★ [目标站] " + infoText
-		if s.WaitingPassengers == 0 {
-			infoText += " [空站无候车]"
-		}
-	}
-	if planMode && cam.Zoom < 0.2 && !isTarget && !isHovered {
-		infoText = fmt.Sprintf("#%d %s", s.ID+1, s.CleanName())
+	infoText := s.FormatInfoText(isTarget, isHovered, planMode, cam.Zoom)
+	if s.CenterBRT {
+		infoText = "BRT · " + infoText
 	}
 	labelX, labelY := shelterScreen.X-60, shelterScreen.Y-float64(badgeRadius*4)
 	labelW, labelH := textui.MeasureText(infoText, 12)

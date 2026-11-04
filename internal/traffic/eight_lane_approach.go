@@ -13,7 +13,7 @@ func (tm *TrafficManager) prepareEightLaneApproach(f carFrame) {
 		return
 	}
 	road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos)
-	if !ok || road.LaneCount() != 8 {
+	if !ok || road.LaneCount() != 8 || road.HasMedianBusLane() {
 		return
 	}
 	forward := sim.UnitFromAngle(car.Heading)

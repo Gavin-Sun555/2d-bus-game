@@ -56,6 +56,36 @@ func stationActivity(m map[int]*StationActivity, id int) *StationActivity {
 	}
 	return s
 }
+func (o *TransitOperations) BoardWithDestinations(id int, b *Bus, r *Route, stop int, destinations []int) (int, int) {
+	before := len(b.Passengers)
+	boarded := b.BoardPassengersWithDestinations(destinations)
+	policy := DefaultFarePolicy()
+	if o != nil {
+		policy = o.Policy
+	}
+	revenue := 0
+	for i := before; i < len(b.Passengers); i++ {
+		stops, km := 0, 0.
+		if o != nil && r != nil {
+			stops, km = o.DistancesFor(r).Journey(stop, b.Passengers[i].TargetStopID, r.CurrentIndex)
+		}
+		fare := policy.Quote(stops, km)
+		b.Passengers[i].PaidFare = fare
+		revenue += fare
+	}
+	if o != nil && boarded > 0 {
+		v := o.Vehicle(id)
+		v.Boarded += boarded
+		v.Revenue += revenue
+		o.Revenue += revenue
+		for _, s := range []*StationActivity{stationActivity(o.Stations, stop), stationActivity(v.Stations, stop)} {
+			s.Boarded += boarded
+			s.Revenue += revenue
+		}
+	}
+	return boarded, revenue
+}
+
 func (o *TransitOperations) Board(id int, b *Bus, r *Route, stop, count int, candidates []int) (int, int) {
 	before := len(b.Passengers)
 	boarded := b.BoardPassengers(count, candidates)

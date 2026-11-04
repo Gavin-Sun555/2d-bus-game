@@ -122,6 +122,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 	}
 	center := inter.Center
 	inter.ApproachBusLane = [4]bool{}
+	inter.ApproachMedianBusLane = [4]bool{}
 	inter.ApproachHasRoad = [4]bool{false, false, false, false}
 	inter.ApproachLanes = [4]int{0, 0, 0, 0}
 	inter.ApproachIs4Lane = [4]bool{false, false, false, false}
@@ -135,6 +136,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			if minX < center.X-15.0 && maxX >= center.X-15.0 {
 				inter.ApproachHasRoad[0] = true
 				inter.ApproachBusLane[0] = r.HasBusLane()
+				inter.ApproachMedianBusLane[0] = r.HasMedianBusLane()
 				if r.Lanes > inter.ApproachLanes[0] {
 					inter.ApproachLanes[0] = r.Lanes
 				}
@@ -144,6 +146,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			if minX <= center.X+15.0 && maxX > center.X+15.0 {
 				inter.ApproachHasRoad[1] = true
 				inter.ApproachBusLane[1] = r.HasBusLane()
+				inter.ApproachMedianBusLane[1] = r.HasMedianBusLane()
 				if r.Lanes > inter.ApproachLanes[1] {
 					inter.ApproachLanes[1] = r.Lanes
 				}
@@ -159,6 +162,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			if minY < center.Y-15.0 && maxY >= center.Y-15.0 {
 				inter.ApproachHasRoad[2] = true
 				inter.ApproachBusLane[2] = r.HasBusLane()
+				inter.ApproachMedianBusLane[2] = r.HasMedianBusLane()
 				if r.Lanes > inter.ApproachLanes[2] {
 					inter.ApproachLanes[2] = r.Lanes
 				}
@@ -168,6 +172,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 			if minY <= center.Y+15.0 && maxY > center.Y+15.0 {
 				inter.ApproachHasRoad[3] = true
 				inter.ApproachBusLane[3] = r.HasBusLane()
+				inter.ApproachMedianBusLane[3] = r.HasMedianBusLane()
 				if r.Lanes > inter.ApproachLanes[3] {
 					inter.ApproachLanes[3] = r.Lanes
 				}

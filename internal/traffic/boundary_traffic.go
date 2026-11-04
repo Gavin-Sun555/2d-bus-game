@@ -123,7 +123,7 @@ func (tm *TrafficManager) spawnAtOtherIntersection(exit sim.Vec2, bus *sim.Bus, 
 			if !ok {
 				continue
 			}
-			lane := sim.RandomIntn(road.GeneralTrafficLanes())
+			lane := road.FirstGeneralTrafficLane() + sim.RandomIntn(road.GeneralTrafficLanes())
 			pos := approach.Add(right.Mul((float64(lane) + .5) * lw))
 			clear := bus == nil || pos.Distance(bus.Pos) > bus.Length/2+160
 			for _, c := range tm.Cars {

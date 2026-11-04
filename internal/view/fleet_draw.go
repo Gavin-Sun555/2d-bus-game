@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"image/color"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -43,7 +42,7 @@ func DrawFleet(abm *traffic.AIBusManager, screen *ebiten.Image, cam *sim.Camera)
 			strokeRect(screen, float32(badgeX), float32(badgeY), float32(badgeW), float32(badgeH),
 				1.2, ab.Color, true)
 
-			badgeText := fmt.Sprintf("[%s] AI#%d 👥%d/%d", ab.LineName, ab.ID, ab.Bus.PassengerCount, ab.Bus.Capacity)
+			badgeText := ab.BadgeText()
 			textui.DrawText(screen, badgeText, badgeX+6, badgeY+4, 10, color.White)
 		}
 	}

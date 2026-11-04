@@ -21,6 +21,9 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 		worldCircle(screen, cam, t.Pos, radius, p.foliage)
 		return
 	}
+	if drawCachedTree(screen, cam, t, theme) {
+		return
+	}
 	worldCircle(screen, cam, t.Pos.Add(sim.Vec2{X: 9, Y: 11}), radius, sim.RGBA(8, 25, 25, 65))
 	switch theme {
 	case sim.MapThemeCoastalBay:
@@ -31,7 +34,7 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 			side := sim.Vec2{X: -f.Y, Y: f.X}
 			tip := t.Pos.Add(f.Mul(radius * 1.65))
 			middle := t.Pos.Add(f.Mul(radius * .62))
-			worldPolygon(screen, cam, []sim.Vec2{t.Pos, middle.Add(side.Mul(radius * .26)), tip, middle.Sub(side.Mul(radius * .18))}, p.foliage)
+			worldQuad(screen, cam, t.Pos, middle.Add(side.Mul(radius*.26)), tip, middle.Sub(side.Mul(radius*.18)), p.foliage)
 			worldLine(screen, cam, t.Pos, tip, 0.8, p.leafLight)
 		}
 	case sim.MapThemeRiverValley:
@@ -39,7 +42,7 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 			y := float64(i)*radius*.36 - radius*.65
 			size := radius * (.66 + float64(i)*.18)
 			center := t.Pos.Add(sim.Vec2{Y: y})
-			worldPolygon(screen, cam, []sim.Vec2{center.Add(sim.Vec2{Y: -size}), center.Add(sim.Vec2{X: size * .8, Y: size * .5}), center.Add(sim.Vec2{X: -size * .8, Y: size * .5})}, tint(p.foliage, p.leafLight, float64(2-i)*.12))
+			worldTriangle(screen, cam, center.Add(sim.Vec2{Y: -size}), center.Add(sim.Vec2{X: size * .8, Y: size * .5}), center.Add(sim.Vec2{X: -size * .8, Y: size * .5}), tint(p.foliage, p.leafLight, float64(2-i)*.12))
 		}
 	case sim.MapThemeEmeraldLake:
 		worldCircle(screen, cam, t.Pos, radius, p.foliage)

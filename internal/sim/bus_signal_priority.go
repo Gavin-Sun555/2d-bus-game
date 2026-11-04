@@ -40,7 +40,7 @@ func (tls *TrafficLightSystem) ObserveBusPriority(enabled bool, observations []B
 						old.Phase, old.Served = r.Phase, false
 					}
 					queue = append(queue, old)
-				} else if inter.GetSignalForHeading(old.Heading, old.Phase == PhaseEWLeftGreen || old.Phase == PhaseNSLeftGreen) == SignalGreen && busOccupiesSignalBox(ob.Bus, inter, laneWidth) {
+				} else if inter.Phase == old.Phase && busOccupiesSignalBox(ob.Bus, inter, laneWidth) {
 					queue = append(queue, old)
 				}
 				break
@@ -84,9 +84,9 @@ func (inter *TrafficIntersection) validPriorityPhase(p LightPhase) bool {
 	case PhaseEWGreen, PhaseNSGreen:
 		return true
 	case PhaseEWLeftGreen:
-		return inter.IsMajor && inter.HasEW4Lane()
+		return inter.IsMajor && inter.needsEWLeftPhase()
 	case PhaseNSLeftGreen:
-		return inter.IsMajor && inter.HasNS4Lane()
+		return inter.IsMajor && inter.needsNSLeftPhase()
 	}
 	return false
 }

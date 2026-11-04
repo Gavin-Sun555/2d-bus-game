@@ -20,11 +20,23 @@ func (ad *AutopilotDriver) updateOvertaking(
 	dt float64,
 	targetStop *sim.BusStop,
 ) {
+	baseFrame := autopilotFrame{
+		bus:        bus,
+		world:      world,
+		tls:        tls,
+		obstacles:  obstacles,
+		laneWidth:  laneWidth,
+		s:          s,
+		speedAbs:   speedAbs,
+		remaining:  remaining,
+		targetStop: targetStop,
+		fromStop:   ad.fromStop(world),
+	}
 	ad.pathReturnHold = nil
-	ad.prepareStationYieldRecovery(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
-	ad.prepareServedStationMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
-	ad.retryStoppedMidLaneReturn(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs})
-	if ad.advanceMidLaneRecovery(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
+	ad.prepareStationYieldRecovery(baseFrame)
+	ad.prepareServedStationMerge(baseFrame)
+	ad.retryStoppedMidLaneReturn(baseFrame)
+	if ad.advanceMidLaneRecovery(baseFrame, dt) {
 		return
 	}
 	// This prefix already joins the actual boarding position to the road.
@@ -61,9 +73,11 @@ func (ad *AutopilotDriver) updateOvertaking(
 		return
 	}
 
+	ad.selectMedianRightTurn(baseFrame)
+	baseFrame.s = ad.LastPathS
 	if !ad.BerserkMode {
-		if ad.approachMerge != nil && ad.approachMerge.LeftTurn && ad.busLaneJunction != nil {
-			if ad.advanceApproachMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
+		if ad.approachMerge != nil && (ad.approachMerge.RightTurn || (ad.approachMerge.LeftTurn && ad.busLaneJunction != nil)) {
+			if ad.advanceApproachMerge(baseFrame, dt) {
 				return
 			}
 		}
@@ -71,17 +85,17 @@ func (ad *AutopilotDriver) updateOvertaking(
 		ad.approachMergeJoined = false
 	}
 	if ad.BerserkMode && world != nil && len(ad.drivePath) >= 2 && (ad.State == AutopilotStateCruising || ad.State == AutopilotStateApproaching) {
-		if ad.updateRequiredApproachMerge(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
+		if ad.updateRequiredApproachMerge(baseFrame, dt) {
 			return
 		}
 	}
-	if ad.updateRightTurnOffset(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}) {
+	if ad.updateRightTurnOffset(baseFrame) {
 		return
 	}
-	if ad.trackJunctionTurnLane(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs}, dt) {
+	if ad.trackJunctionTurnLane(baseFrame, dt) {
 		return
 	}
-	if ad.updateBusLane(autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth, s: s, speedAbs: speedAbs, remaining: remaining, targetStop: targetStop}, dt) {
+	if ad.updateBusLane(baseFrame, dt) {
 		return
 	}
 	// If Berserk mode is disabled, not in driving state, or path invalid: smoothly return to base lane

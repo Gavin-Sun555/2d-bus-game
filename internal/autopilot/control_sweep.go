@@ -56,7 +56,7 @@ func (ad *AutopilotDriver) controlSweptSpeed(f autopilotFrame, steer float64) fl
 				ready[index] = true
 			}
 			if sweepBodiesCollision(samples[index].bodies, ob, math.Max(0, ob.Speed)*elapsed, 1, 1) {
-				if controlPaddingRelease(f, ob, steer, speed, horizon) {
+				if controlPaddingRelease(f, ob, steer, speed, horizon) || ad.laneChangeLeaderClearance(f, ob, steer, speed, horizon) {
 					limit = math.Min(limit, 35)
 					break
 				}

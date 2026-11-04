@@ -43,9 +43,14 @@ func (g *Game) updateMainMenu() {
 		g.Settings.Language = newLang
 	}
 
-	// Hotkey G: Toggle Metropolis Large Road Network (4x block distance)
+	// Hotkey G: Toggle Large Road Network for the currently selected city
 	if inpututil.IsKeyJustPressed(ebiten.KeyG) {
-		g.Settings.LargeRoadNetwork = !g.Settings.LargeRoadNetwork
+		g.Settings.ToggleLargeRoadNetwork(g.SelectedMapTheme)
+	}
+
+	// Hotkey B: toggle the selected map variant; entering the city rebuilds it.
+	if inpututil.IsKeyJustPressed(ebiten.KeyB) && g.centerBRTAvailable(g.SelectedMapTheme) {
+		g.Settings.ToggleCenterBRT(g.SelectedMapTheme)
 	}
 
 	// Hotkey R: reload custom map from custom_map.json
@@ -75,8 +80,26 @@ func (g *Game) updateMainMenu() {
 			g.openSavePicker(true)
 			return
 		}
+		for i, theme := range sim.SelectableMapThemes() {
+			if g.menuCardBRTBounds[i].Contains(mPos) && g.centerBRTAvailable(theme) {
+				g.Settings.ToggleCenterBRT(theme)
+				g.SelectedMapTheme = theme
+				return
+			}
+		}
+		for idx := 0; idx < 4; idx++ {
+			if g.menuCardLargeGridBounds[idx].Contains(mPos) {
+				selectable := sim.SelectableMapThemes()
+				if idx < len(selectable) {
+					th := selectable[idx]
+					g.Settings.ToggleLargeRoadNetwork(th)
+					g.SelectedMapTheme = th
+				}
+				return
+			}
+		}
 		if g.menuLargeGridBounds.Contains(mPos) {
-			g.Settings.LargeRoadNetwork = !g.Settings.LargeRoadNetwork
+			g.Settings.ToggleLargeRoadNetwork(sim.MapThemeMetropolis)
 			g.SelectedMapTheme = sim.MapThemeMetropolis
 			return
 		}
@@ -196,8 +219,20 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 	}
 
 	metropolisTopo := locale.T("• 公交专用八车道主干路网", "• Bus-priority boulevard grid")
-	if g.Settings.LargeRoadNetwork {
+	if g.Settings.IsLargeRoadNetwork(sim.MapThemeMetropolis) {
 		metropolisTopo = locale.T("• 4x 超长大路网 (路口4倍间距)", "• 4x Large grid (4x block length)")
+	}
+	coastalTopo := locale.T("• 黄金海岸与高密港口路网", "• Ocean drive & freight grid")
+	if g.Settings.IsLargeRoadNetwork(sim.MapThemeCoastalBay) {
+		coastalTopo = locale.T("• 4x 超长大路网 (海滨4倍间距)", "• 4x Large grid (4x coastal grid)")
+	}
+	riverTopo := locale.T("• 跨江斜拉双桥与沿江干道", "• Dual cable-stayed bridges")
+	if g.Settings.IsLargeRoadNetwork(sim.MapThemeRiverValley) {
+		riverTopo = locale.T("• 4x 超长大路网 (两岸4倍间距)", "• 4x Large grid (4x riverfront grid)")
+	}
+	twinTopo := locale.T("• 东西双城干道与中央快速路", "• Inter-district corridors")
+	if g.Settings.IsLargeRoadNetwork(sim.MapThemeTwinCities) {
+		twinTopo = locale.T("• 4x 超长大路网 (双城4倍间距)", "• 4x Large grid (4x inter-district grid)")
 	}
 
 	cardData := []mapCardInfo{
@@ -213,7 +248,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			tag:      locale.T("【02 海滨港湾】", "【02 Coastal Bay】"),
 			name:     locale.T("海滨港湾 (Coastal Bay)", "Coastal Bay Port"),
 			sub:      locale.T("海景风情 · 国际深水港", "Scenic coast & seaport"),
-			topo:     locale.T("• 黄金海岸与高密港口路网", "• Ocean drive & freight grid"),
+			topo:     coastalTopo,
 			landmark: locale.T("• 1200m 跨海悬索特大桥", "• 1200m Suspension bridge"),
 			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
@@ -221,7 +256,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			tag:      locale.T("【03 溪谷江城】", "【03 River Valley】"),
 			name:     locale.T("溪谷江城 (River Valley)", "River Valley City"),
 			sub:      locale.T("天然大江 · 山城两岸立体拓扑", "River canyon & mountain city"),
-			topo:     locale.T("• 跨江斜拉双桥与沿江干道", "• Dual cable-stayed bridges"),
+			topo:     riverTopo,
 			landmark: locale.T("• 滨江大道与观景高地", "• Riverside expressway"),
 			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
@@ -229,7 +264,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			tag:      locale.T("【04 高新双城】", "【04 Twin Districts】"),
 			name:     locale.T("高新双城 (Twin Districts)", "Twin Tech Districts"),
 			sub:      locale.T("临空制造 · 硅谷软件双城融合", "Aerospace & software hub"),
-			topo:     locale.T("• 东西双城干道与中央快速路", "• Inter-district corridors"),
+			topo:     twinTopo,
 			landmark: locale.T("• 跨区中央高架特大桥", "• Grade-separated overpass"),
 			stops:    locale.T("• 大街区道路双侧密集设站", "• Dense two-sided bus stops"),
 		},
@@ -243,6 +278,8 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		},
 	}
 
+	g.menuBRTBounds = sim.Rect{}
+	g.menuCardBRTBounds = [6]sim.Rect{}
 	for i, th := range themes {
 		cx := startX + float64(i)*(cardW+cardGap)
 		cy := startY
@@ -287,24 +324,52 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		textui.DrawText(screen, info.landmark, cx+12, cy+185, 10, sim.RGBA(226, 232, 240, 255))
 		textui.DrawText(screen, info.stops, cx+12, cy+215, 10, sim.RGBA(226, 232, 240, 255))
 
-		if i == 0 {
+		if i < 4 {
 			largeGridY := cy + cardH - 84
 			largeGridW := cardW - 24
 			largeGridH := 28.0
-			g.menuLargeGridBounds = sim.Rect{X: cx + 12, Y: largeGridY, W: largeGridW, H: largeGridH}
+			gridRect := sim.Rect{X: cx + 12, Y: largeGridY, W: largeGridW, H: largeGridH}
+			g.menuCardLargeGridBounds[i] = gridRect
+			if i == 0 {
+				g.menuLargeGridBounds = gridRect
+			}
+			isCardLarge := g.Settings.IsLargeRoadNetwork(th)
 			btnBg := sim.RGBA(15, 23, 42, 220)
 			borderCol := sim.RGBA(100, 116, 139, 200)
 			textColor := sim.RGBA(148, 163, 184, 255)
-			btnText := locale.T("🛣️ 标准路网 1x [G]", "🛣️ Standard 1x [G]")
-			if g.Settings.LargeRoadNetwork {
+			btnText := locale.T("🛣️ 小路网 1x", "🛣️ Small Grid 1x")
+			if isSelected {
+				btnText = locale.T("🛣️ 小路网 1x [G]", "🛣️ Small Grid 1x [G]")
+			}
+			if isCardLarge {
 				btnBg = sim.RGBA(30, 58, 138, 240)
 				borderCol = sim.RGBA(56, 189, 248, 255)
 				textColor = sim.RGBA(56, 189, 248, 255)
-				btnText = locale.T("🛣️ 大路网 4x [G]", "🛣️ Large Grid 4x [G]")
+				btnText = locale.T("🛣️ 大路网 4x", "🛣️ Large Grid 4x")
+				if isSelected {
+					btnText = locale.T("🛣️ 大路网 4x [G]", "🛣️ Large Grid 4x [G]")
+				}
 			}
 			vector.DrawFilledRect(screen, float32(cx+12), float32(largeGridY), float32(largeGridW), float32(largeGridH), btnBg, true)
 			vector.StrokeRect(screen, float32(cx+12), float32(largeGridY), float32(largeGridW), float32(largeGridH), 1.5, borderCol, true)
 			textui.DrawText(screen, btnText, cx+22, largeGridY+6, 11, textColor)
+		}
+
+		if g.centerBRTAvailable(th) {
+			rect := sim.Rect{X: cx + 12, Y: cy + cardH - 118, W: cardW - 24, H: 28}
+			g.menuCardBRTBounds[i] = rect
+			if i == 0 {
+				g.menuBRTBounds = rect
+			}
+			bg, fg := sim.RGBA(15, 23, 42, 220), sim.RGBA(148, 163, 184, 255)
+			label := locale.T("中央 BRT：关 [B]", "Center BRT: OFF [B]")
+			if g.Settings.IsCenterBRT(th) {
+				bg, fg = sim.RGBA(19, 78, 74, 240), sim.RGBA(94, 234, 212, 255)
+				label = locale.T("中央 BRT：开 [B]", "Center BRT: ON [B]")
+			}
+			vector.DrawFilledRect(screen, float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H), bg, true)
+			vector.StrokeRect(screen, float32(rect.X), float32(rect.Y), float32(rect.W), float32(rect.H), 1.5, fg, true)
+			textui.DrawText(screen, label, rect.X+10, rect.Y+6, 11, fg)
 		}
 
 		// Button inside card
@@ -343,7 +408,7 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 		textui.DrawText(screen, g.saveMessage, 24, sh-24, 12, sim.RGBA(251, 191, 36, 255))
 	}
 	bottomY := continueY + 54.0
-	tips := locale.T("【操作提示】按数字键 [1-5/C] 或 [← / →] 切换城市 | 按 [G] 切换都会大路网 (4x) | 按 [L] 切换语言 | 按 [R] 重载自定义地图 | 驾驶途中点击右上角【主菜单】或按 ESC 退回更换", "【Controls】Keys [1-5/C] or [←/→] Select City | [G] Metropolis 4x Grid | [L] Toggle Language | [R] Hot Reload Map | Click [Menu] or ESC to Change")
+	tips := locale.T("【操作提示】1-5 / ←→ 选图 · G 大小路网 · B 中央BRT（有专用道地图） · L 语言 · R 重载 · 驾驶中按 ESC 返回换图；重新进入将重置营运", "1-5 / Arrows: City · G: Grid · B: Center BRT (bus-lane maps) · L: Language · R: Reload · ESC: Maps; entering a city resets the game")
 	tipW, _ := textui.MeasureText(tips, 12)
 	textui.DrawText(screen, tips, (sw-tipW)/2.0, bottomY, 12, sim.RGBA(148, 163, 184, 255))
 }

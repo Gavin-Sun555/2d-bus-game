@@ -103,10 +103,15 @@ func drawRoundabouts(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWi
 }
 
 func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, w *sim.World, rb sim.Roundabout, laneWidth float64) {
-	entries := []struct {
+	if !cam.IsPointVisible(rb.Center, rb.Radius+180) {
+		return
+	}
+	type yieldEntry struct {
 		pos, dir sim.Vec2
 		width    float64
-	}{}
+	}
+	var entries [4]yieldEntry
+	nEntries := 0
 	for _, dir := range []sim.Vec2{{X: 1}, {X: -1}, {Y: 1}, {Y: -1}} {
 		probe := rb.Center.Sub(dir.Mul(rb.YieldLineDistance() + 60))
 		ew := math.Abs(dir.X) > .5
@@ -120,13 +125,16 @@ func drawRoundaboutYieldEntrances(screen *ebiten.Image, cam *sim.Camera, w *sim.
 		}
 		width := float64(road.LaneCount()/2) * laneWidth
 		right := sim.Vec2{X: -dir.Y, Y: dir.X}
-		entries = append(entries, struct {
-			pos, dir sim.Vec2
-			width    float64
-		}{rb.Center.Sub(dir.Mul(rb.YieldLineDistance())).Add(right.Mul(width / 2)), dir, width - 12})
+		entries[nEntries] = yieldEntry{
+			pos:   rb.Center.Sub(dir.Mul(rb.YieldLineDistance())).Add(right.Mul(width / 2)),
+			dir:   dir,
+			width: width - 12,
+		}
+		nEntries++
 	}
 
-	for _, e := range entries {
+	for idx := 0; idx < nEntries; idx++ {
+		e := entries[idx]
 		perp := sim.Vec2{X: -e.dir.Y, Y: e.dir.X}
 		halfW := e.width * 0.5
 		pA := e.pos.Add(perp.Mul(halfW))

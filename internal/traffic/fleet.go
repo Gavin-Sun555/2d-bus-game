@@ -1,6 +1,7 @@
 package traffic
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"slices"
@@ -28,6 +29,26 @@ type AIBus struct {
 	DeadlockTimer       float64 // Time accumulated while motionless and jammed against another non-player vehicle
 	DeadlockTracker     sim.StationaryTracker
 	LastExchangedStopID int // Prevents re-exchanging passengers on every frame of the same station dwell
+
+	cachedBadgeText string
+	cachedPax       int
+	cachedCap       int
+}
+
+// BadgeText returns the formatted route and passenger badge text, caching it across frames.
+func (ab *AIBus) BadgeText() string {
+	if ab == nil || ab.Bus == nil {
+		return ""
+	}
+	pax := ab.Bus.PassengerCount
+	cap := ab.Bus.Capacity
+	if ab.cachedBadgeText != "" && ab.cachedPax == pax && ab.cachedCap == cap {
+		return ab.cachedBadgeText
+	}
+	ab.cachedPax = pax
+	ab.cachedCap = cap
+	ab.cachedBadgeText = fmt.Sprintf("[%s] AI#%d 👥%d/%d", ab.LineName, ab.ID, pax, cap)
+	return ab.cachedBadgeText
 }
 
 // ResetToStartingStation resets an AI bus back to its route's starting station (StopIDs[0])
@@ -75,6 +96,9 @@ type AIBusManager struct {
 	Operations       *sim.TransitOperations
 	baseObstacles    []autopilot.VehicleObstacle
 	obstacles        []autopilot.VehicleObstacle
+	carSpatial       carSpatialIndex
+	carObstacles     []autopilot.VehicleObstacle
+	nearbyCarIndices []int
 	Buses            []*AIBus
 	BusSpeedRange    sim.SpeedRange
 	BusCount         int // Number of AI buses operating on the route (0 ~ 8)
@@ -317,4 +341,31 @@ func (abm *AIBusManager) GetObstacles(excludeID int) []autopilot.VehicleObstacle
 // TotalActiveBuses returns total number of active AI buses
 func (abm *AIBusManager) TotalActiveBuses() int {
 	return len(abm.Buses)
+}
+
+// GetLocalObstacles populates dst with dynamic obstacles (nearby civilian cars and other buses)
+// within the safe interaction radius of the given pose, avoiding whole-map linear scans.
+func (abm *AIBusManager) GetLocalObstacles(pos sim.Vec2, speed float64, dst []autopilot.VehicleObstacle) []autopilot.VehicleObstacle {
+	dst = dst[:0]
+	queryRadius := math.Max(2000.0, math.Abs(speed)*3.5+600.0)
+	queryRadiusSq := queryRadius * queryRadius
+
+	if len(abm.carObstacles) > 32 {
+		abm.nearbyCarIndices = abm.carSpatial.queryUnsorted(pos, queryRadius, abm.nearbyCarIndices)
+		for _, idx := range abm.nearbyCarIndices {
+			if idx >= 0 && idx < len(abm.carObstacles) {
+				dst = append(dst, abm.carObstacles[idx])
+			}
+		}
+	} else {
+		dst = append(dst, abm.carObstacles...)
+	}
+
+	for _, ab := range abm.Buses {
+		d := ab.Bus.Pos.Sub(pos)
+		if d.Dot(d) <= queryRadiusSq {
+			dst = append(dst, autopilot.ObserveBus(ab.Bus))
+		}
+	}
+	return dst
 }

@@ -25,9 +25,15 @@ func TestGameMetropolisLargeRoadNetworkIntegration(t *testing.T) {
 	if g.menuLargeGridBounds.W <= 0 || g.menuLargeGridBounds.H <= 0 {
 		t.Fatalf("menuLargeGridBounds should be populated on Draw: %+v", g.menuLargeGridBounds)
 	}
+	for i := 0; i < 4; i++ {
+		b := g.menuCardLargeGridBounds[i]
+		if b.W <= 0 || b.H <= 0 {
+			t.Fatalf("menuCardLargeGridBounds[%d] should be populated on Draw: %+v", i, b)
+		}
+	}
 
 	// Simulate clicking the Large Grid button on Card 0
-	g.Settings.LargeRoadNetwork = true
+	g.Settings.SetLargeRoadNetwork(sim.MapThemeMetropolis, true)
 	g.EnterCity(sim.MapThemeMetropolis)
 
 	if !g.World.LargeGrid {
@@ -82,13 +88,43 @@ func TestGameMetropolisLargeRoadNetworkIntegration(t *testing.T) {
 	}
 	g.TogglePlanMode()
 
-	// 6. Non-Metropolis maps (e.g. Coastal Bay) do not scale up
-	g.Settings.LargeRoadNetwork = true
-	g.EnterCity(sim.MapThemeCoastalBay)
+	// 6. Verify that Map 2 (Coastal Bay), Map 3 (River Valley), and Map 4 (Twin Districts / Emerald Lake)
+	// also scale up to 4x (12.0) when LargeRoadNetwork is true, while Custom Map does not.
+	otherBuiltinMaps := []sim.MapTheme{
+		sim.MapThemeCoastalBay,
+		sim.MapThemeRiverValley,
+		sim.MapThemeEmeraldLake,
+		sim.MapThemeTwinCities,
+	}
+
+	for _, theme := range otherBuiltinMaps {
+		g.Settings.SetLargeRoadNetwork(theme, true)
+		g.EnterCity(theme)
+		if !g.World.LargeGrid {
+			t.Fatalf("Expected LargeGrid=true on theme %v when LargeRoadNetwork is true", theme)
+		}
+		if g.World.GridScale() != sim.MapGridScale*4.0 {
+			t.Fatalf("Expected GridScale=%.1f on theme %v, got %.1f", sim.MapGridScale*4.0, theme, g.World.GridScale())
+		}
+
+		// Switch back to standard
+		g.Settings.SetLargeRoadNetwork(theme, false)
+		g.SetMapTheme(theme)
+		if g.World.LargeGrid {
+			t.Fatalf("Expected LargeGrid=false on theme %v when LargeRoadNetwork is false", theme)
+		}
+		if g.World.GridScale() != sim.MapGridScale {
+			t.Fatalf("Expected GridScale=%.1f on theme %v, got %.1f", sim.MapGridScale, theme, g.World.GridScale())
+		}
+	}
+
+	// 7. Custom map does NOT scale up
+	g.Settings.SetLargeRoadNetwork(sim.MapThemeCustom, true)
+	g.EnterCity(sim.MapThemeCustom)
 	if g.World.LargeGrid {
-		t.Fatalf("Expected LargeGrid=false on Coastal Bay even if LargeRoadNetwork setting is true")
+		t.Fatalf("Expected LargeGrid=false on Custom Map even if LargeRoadNetwork setting is true")
 	}
 	if g.World.GridScale() != sim.MapGridScale {
-		t.Fatalf("Expected GridScale=%.1f on Coastal Bay, got %.1f", sim.MapGridScale, g.World.GridScale())
+		t.Fatalf("Expected GridScale=%.1f on Custom Map, got %.1f", sim.MapGridScale, g.World.GridScale())
 	}
 }

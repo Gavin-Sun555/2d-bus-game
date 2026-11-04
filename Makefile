@@ -49,9 +49,9 @@ test-all:
 	@echo "🧪 正在运行全部测试用例..."
 	go test -v ./...
 
-## test-soak: 六地图普通/狂暴、最高 AI 限速及 0.0.7 混合车型存读档长测，每场两分钟
+## test-soak: 六地图普通/狂暴、最高 AI 限速、混合车型存读档与中央 BRT 长测，每场两分钟
 test-soak:
-	BUSGAME_SOAK=1 BUSGAME_TRAFFIC_SOAK=1 BUSGAME_RELEASE007_SOAK=1 go test ./game -run 'TestRelease005TrafficSoak|TestMixedTrafficSpeedSoak|TestRelease007MixedFleetSoak' -count=1 -v -timeout=60m
+	BUSGAME_SOAK=1 BUSGAME_TRAFFIC_SOAK=1 BUSGAME_RELEASE007_SOAK=1 BUSGAME_RELEASE009_SOAK=1 go test ./game -run 'TestRelease005TrafficSoak|TestMixedTrafficSpeedSoak|TestRelease007MixedFleetSoak|TestRelease009BRTSoak' -count=1 -v -timeout=60m
 
 ## bench: 固定车流场景性能基准，报告每帧耗时与内存分配
 bench:

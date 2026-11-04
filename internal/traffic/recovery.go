@@ -57,7 +57,7 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 
 		numLanesPerDir := r.GeneralTrafficLanes()
 
-		lane := sim.RandomIntn(numLanesPerDir)
+		lane := r.FirstGeneralTrafficLane() + sim.RandomIntn(numLanesPerDir)
 		offset := (float64(lane) + 0.5) * laneWidth
 		dist := 260.0 + sim.RandomFloat64()*(lenR-520.0)
 		pt := r.P1.Add(unitDir.Mul(dist))

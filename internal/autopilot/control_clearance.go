@@ -43,3 +43,63 @@ func controlPaddingRelease(f autopilotFrame, ob VehicleObstacle, steer, speed, h
 	}
 	return true
 }
+
+// laneChangeLeaderClearance allows an ego bus that is safely ahead of an obstacle bus
+// while changing lanes on a multi-lane road to clear the overlap padding.
+// Because the obstacle bus is behind and the ego bus is physically separated
+// (0 physical collision margin at rest and >0.25px margin along the steering sweep),
+// holding the ego bus would cause a mutual deadlock where neither bus can move.
+func (ad *AutopilotDriver) laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, speed, horizon float64) bool {
+	return laneChangeLeaderClearance(f, ob, steer, speed, horizon)
+}
+
+func laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, speed, horizon float64) bool {
+	if f.bus == nil || math.Abs(ob.Speed) > 3.0 || f.speedAbs > 45 {
+		return false
+	}
+	if f.world == nil {
+		return false
+	}
+	_, _, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+	if !multi && !six {
+		return false
+	}
+	// Same general road direction (allow typical lane change angles up to ~36 degrees):
+	if math.Cos(f.bus.Heading-ob.Heading) < 0.80 {
+		return false
+	}
+	forward := sim.UnitFromAngle(f.bus.Heading)
+	delta := ob.Pos.Sub(f.bus.Pos)
+	// Obstacle must be BEHIND ego bus:
+	if delta.Dot(forward) >= 0.0 {
+		return false
+	}
+	// Must have lateral separation:
+	latSep := math.Abs(delta.X*forward.Y - delta.Y*forward.X)
+	if latSep < (f.bus.Width+ob.Width)*0.35 {
+		return false
+	}
+	// No physical collision at rest:
+	currentBody := sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length / 2, HalfWid: f.bus.Width / 2}
+	if sweepBodiesCollision(sweepBodies(f.bus, currentBody), ob, 0, 0, 0) {
+		return false
+	}
+	// Forward actuator sweep simulation with 0.25px margin:
+	pos, heading, wheel := f.bus.Pos, f.bus.Heading, f.bus.SteeringAngle
+	for elapsed := 0.; elapsed <= horizon; elapsed += .04 {
+		if elapsed > 0 {
+			rate := f.bus.SteerTurnSpeed
+			if steer == 0 {
+				rate = f.bus.SteerReturnSpd
+			}
+			wheel += sim.Clamp(steer*f.bus.MaxSteerAngle-wheel, -rate*.04, rate*.04)
+			heading += speed / f.bus.WheelBase * math.Tan(wheel) * .04
+			pos = pos.Add(sim.UnitFromAngle(heading).Mul(speed * .04))
+		}
+		front := sim.OBB{Center: pos, Heading: heading, HalfLen: f.bus.Length/2 + .25, HalfWid: f.bus.Width/2 + .25}
+		if sweepBodiesCollision(sweepBodies(f.bus, front), ob, math.Max(0, ob.Speed)*elapsed, .25, .25) {
+			return false
+		}
+	}
+	return true
+}

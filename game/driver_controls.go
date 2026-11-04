@@ -18,21 +18,25 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	// Collect dynamic obstacles (civilian traffic cars + route AI buses)
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
 	obs := g.obstacles[:0]
-	for _, c := range activeCars {
-		obs = append(obs, autopilot.VehicleObstacle{
-			Pos:              c.Pos,
-			YieldingTo:       c.YieldingToBus,
-			JunctionTurn:     c.JunctionTurn,
-			JunctionCorridor: c.JunctionCorridor,
-			Heading:          c.Heading,
-			Speed:            c.Speed,
-			Length:           c.Length,
-			Width:            c.Width,
-		})
-	}
-	if g.AIBusMgr != nil {
-		for _, ab := range g.AIBusMgr.Buses {
-			obs = append(obs, autopilot.ObserveBus(ab.Bus))
+	if g.AIBusMgr != nil && len(activeCars) > 0 {
+		obs = g.AIBusMgr.GetLocalObstacles(g.Bus.Pos, g.Bus.Speed, obs)
+	} else {
+		for _, c := range activeCars {
+			obs = append(obs, autopilot.VehicleObstacle{
+				Pos:              c.Pos,
+				YieldingTo:       c.YieldingToBus,
+				JunctionTurn:     c.JunctionTurn,
+				JunctionCorridor: c.JunctionCorridor,
+				Heading:          c.Heading,
+				Speed:            c.Speed,
+				Length:           c.Length,
+				Width:            c.Width,
+			})
+		}
+		if g.AIBusMgr != nil {
+			for _, ab := range g.AIBusMgr.Buses {
+				obs = append(obs, autopilot.ObserveBus(ab.Bus))
+			}
 		}
 	}
 
@@ -53,7 +57,9 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	canSkipCurrent := false
 	if currentTargetStop != nil {
 		isOccupied := g.IsStopOccupiedByOtherVehicle(currentTargetStop)
-		canSkipCurrent = !g.stopBellRung && (currentTargetStop.WaitingPassengers == 0 || isOccupied)
+		candidates := g.Route.GetUpcomingCandidateStopIDsForStop(currentTargetStop.ID)
+		hasMatchingWaiting := currentTargetStop.CountMatchingWaiting(candidates) > 0
+		canSkipCurrent = !g.stopBellRung && (!hasMatchingWaiting || isOccupied)
 	}
 	g.AutopilotDriver.CanSkipTargetStop = canSkipCurrent
 

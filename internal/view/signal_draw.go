@@ -4,6 +4,7 @@ import (
 	"image/color"
 	"math"
 
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 
@@ -87,7 +88,7 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 			if !reserved {
 				continue
 			}
-			heading := []float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
+			heading := [4]float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
 			fwd := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
 			cross := ewCross
@@ -96,8 +97,20 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 			}
 			thru, left := inter.GetSignalForApproach(heading)
 			base := inter.Center.Sub(fwd.Mul(cross))
-			drawSignalHead(screen, cam, base.Add(right.Mul(3.25*laneWidth)), left, true, approach < 2)
-			drawSignalHead(screen, cam, base.Add(right.Mul(3.75*laneWidth)), thru, false, approach < 2)
+			lane := 3.0
+			if inter.ApproachMedianBusLane[approach] {
+				lane = 0
+			}
+			drawSignalHead(screen, cam, base.Add(right.Mul((lane+.25)*laneWidth)), left, true, approach < 2)
+			drawSignalHead(screen, cam, base.Add(right.Mul((lane+.75)*laneWidth)), thru, false, approach < 2)
+			if inter.ApproachMedianBusLane[approach] {
+				pos := base.Sub(fwd.Mul(28)).Add(right.Mul(.5 * laneWidth))
+				drawSignalHead(screen, cam, pos, inter.GetMedianBusRightSignal(heading), false, approach < 2)
+				if cam.Zoom >= .35 && cam.IsPointVisible(pos, 80) {
+					sp := cam.WorldToScreen(pos)
+					textui.DrawText(screen, locale.T("BRT 右转", "BRT RIGHT"), sp.X+12, sp.Y-5, 10, sim.RGBA(94, 234, 212, 255))
+				}
+			}
 		}
 	}
 
@@ -109,11 +122,18 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim.Camera, laneWidth float64) {
 	for _, rc := range tls.RoadCameras {
 		roadHalfWidth := laneWidth*2.0 + 12.0
-		camOffsets := []float64{-laneWidth * 1.0, laneWidth * 1.0}
+		var camOffsets [4]float64
+		numOffsets := 2
+		camOffsets[0] = -laneWidth
+		camOffsets[1] = laneWidth
 		is6 := (rc.Lanes >= 6) || (rc.IsEW && math.Abs(rc.RoadCoord-(-1200*sim.MapGridScale)) < 15.0)
 		if is6 {
 			roadHalfWidth = laneWidth*float64(max(6, rc.Lanes))/2 + 12.0
-			camOffsets = []float64{-laneWidth * 2.0, -laneWidth * 1.0, laneWidth * 1.0, laneWidth * 2.0}
+			camOffsets[0] = -laneWidth * 2.0
+			camOffsets[1] = -laneWidth * 1.0
+			camOffsets[2] = laneWidth * 1.0
+			camOffsets[3] = laneWidth * 2.0
+			numOffsets = 4
 		}
 
 		sc := cam.WorldToScreen(rc.Pos)
@@ -152,7 +172,7 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 			filledRect(screen, float32(pSouth.X)-footW/2, float32(pSouth.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
 
 			// Camera boxes mounted across the beam (South lane cam, North lane cam)
-			for _, off := range camOffsets {
+			for _, off := range camOffsets[:numOffsets] {
 				cp := cam.WorldToScreen(sim.Vec2{X: rc.Pos.X, Y: rc.RoadCoord + off})
 				boxW := float32(math.Max(5, 9*cam.Zoom))
 				boxH := float32(math.Max(4, 7*cam.Zoom))
@@ -187,8 +207,8 @@ func DrawRoadCameras(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim
 			filledRect(screen, float32(pWest.X)-footW/2, float32(pWest.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
 			filledRect(screen, float32(pEast.X)-footW/2, float32(pEast.Y)-footH/2, footW, footH, sim.RGBA(234, 179, 8, 255), true)
 
-			camOffsets := []float64{-laneWidth * 1.0, laneWidth * 1.0}
-			for _, off := range camOffsets {
+			offsetsNS := [2]float64{-laneWidth * 1.0, laneWidth * 1.0}
+			for _, off := range offsetsNS {
 				cp := cam.WorldToScreen(sim.Vec2{X: rc.RoadCoord + off, Y: rc.Pos.Y})
 				boxW := float32(math.Max(4, 7*cam.Zoom))
 				boxH := float32(math.Max(5, 9*cam.Zoom))

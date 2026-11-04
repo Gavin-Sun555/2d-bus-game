@@ -21,7 +21,32 @@ func (r RoadSegment) LaneCount() int {
 
 func (r RoadSegment) HasBusLane() bool { return r.Type == RoadBusBoulevard8Lane }
 
-// GeneralTrafficLanes excludes the reserved curb lane from spawning and cruising.
+// HasMedianBusLane is restricted to eight-lane roads with reserved bus lanes.
+func (r RoadSegment) HasMedianBusLane() bool {
+	return r.HasBusLane() && r.LaneCount() == 8 && r.MedianBusLane
+}
+
+func (r RoadSegment) BusLaneIndex() int {
+	if r.HasMedianBusLane() {
+		return 0
+	}
+	return r.LaneCount()/2 - 1
+}
+
+// FirstGeneralTrafficLane skips the central reserved lane when present.
+func (r RoadSegment) FirstGeneralTrafficLane() int {
+	if r.HasMedianBusLane() {
+		return 1
+	}
+	return 0
+}
+
+func (r RoadSegment) ClampGeneralTrafficLane(lane int) int {
+	first := r.FirstGeneralTrafficLane()
+	return max(first, min(lane, first+r.GeneralTrafficLanes()-1))
+}
+
+// GeneralTrafficLanes excludes the reserved lane from spawning and cruising.
 func (r RoadSegment) GeneralTrafficLanes() int {
 	n := max(1, r.LaneCount()/2)
 	if r.HasBusLane() {

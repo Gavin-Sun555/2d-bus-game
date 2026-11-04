@@ -157,8 +157,9 @@ func (b *Bus) StepStationService(busID int, stop *BusStop, route *Route, ops *Tr
 	stillBoarding := PendingSteps(b.PassengerService.BoardingRemaining, b.PassengerService.rates().Boarding)
 	if b.PassengerService.BoardingTarget > stillBoarding {
 		due := b.PassengerService.BoardingTarget - stillBoarding
-		if stop.WaitingPassengers > 0 {
-			take := min(due, stop.WaitingPassengers)
+		matchingWaiting := stop.CountMatchingWaiting(b.PassengerService.Candidates)
+		if matchingWaiting > 0 {
+			take := min(due, matchingWaiting)
 			if space := b.Capacity - len(b.Passengers); take > space {
 				take = max(0, space)
 			}
@@ -168,21 +169,25 @@ func (b *Bus) StepStationService(busID int, stop *BusStop, route *Route, ops *Tr
 					savedIdx = route.CurrentIndex
 					route.CurrentIndex = b.PassengerService.RouteIndex
 				}
-				boardedNow, fareNow = ops.Board(busID, b, route, stop.ID, take, b.PassengerService.Candidates)
+				dests := stop.BoardMatchingPassengers(take, b.PassengerService.Candidates)
+				if ops != nil {
+					boardedNow, fareNow = ops.BoardWithDestinations(busID, b, route, stop.ID, dests)
+				} else {
+					boardedNow = b.BoardPassengersWithDestinations(dests)
+				}
 				if route != nil {
 					route.CurrentIndex = savedIdx
 				}
-				stop.WaitingPassengers -= boardedNow
 				b.PassengerService.BoardedSoFar += boardedNow
 				b.PassengerService.FareSoFar += fareNow
 			}
 		}
 		b.PassengerService.BoardingTarget = stillBoarding
-		if stop.WaitingPassengers <= 0 || len(b.Passengers) >= b.Capacity {
+		if stop.CountMatchingWaiting(b.PassengerService.Candidates) <= 0 || len(b.Passengers) >= b.Capacity {
 			b.PassengerService.BoardingTarget = 0
 			b.PassengerService.BoardingRemaining = 0
 		}
-	} else if stop.WaitingPassengers <= 0 && b.PassengerService.BoardingTarget > 0 {
+	} else if stop.CountMatchingWaiting(b.PassengerService.Candidates) <= 0 && b.PassengerService.BoardingTarget > 0 {
 		b.PassengerService.BoardingTarget = 0
 		b.PassengerService.BoardingRemaining = 0
 	}
@@ -199,7 +204,8 @@ func RebalanceStationBoarding(stop *BusStop, buses []*Bus, _ bool) {
 	}
 	for _, b := range buses {
 		staying := max(0, len(b.Passengers)-b.PassengerService.AlightingTarget)
-		b.setBoardingTarget(min(max(0, stop.WaitingPassengers), max(0, b.Capacity-staying)))
+		matchingWaiting := stop.CountMatchingWaiting(b.PassengerService.Candidates)
+		b.setBoardingTarget(min(max(0, matchingWaiting), max(0, b.Capacity-staying)))
 	}
 }
 

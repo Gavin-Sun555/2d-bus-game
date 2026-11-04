@@ -22,12 +22,15 @@ type Settings struct {
 	BusSignalPriority            bool
 	busSignalPriorityBounds      sim.Rect
 	FineAmount                   int
-	TrafficDensity               int            // 1: Low (144), 2: Medium (288), 3: High (576), 4: Congested (864)
-	LaneWidthLevel               int            // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
-	CameraViewMode               sim.CameraMode // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
-	MapTheme                     sim.MapTheme   // Active city map
-	LargeRoadNetwork             bool           `json:",omitempty"` // Metropolis CBD 4x block distance mode
-	LargeRoadNetworkChanged      bool           `json:"-"`
+	TrafficDensity               int                   // 1: Low (144), 2: Medium (288), 3: High (576), 4: Congested (864)
+	LaneWidthLevel               int                   // 0: 42px (标准紧凑), 1: 52px (宽敞舒适), 2: 64px (开阔大道), 3: 78px (超宽城际)
+	CameraViewMode               sim.CameraMode        // 0: CameraModeNorthUp, 1: CameraModeHeadingUp
+	MapTheme                     sim.MapTheme          // Active city map
+	LargeRoadNetworks            map[sim.MapTheme]bool `json:",omitempty"` // Per-map road network mode (true = 4x large, false = 1x small)
+	LargeRoadNetwork             bool                  `json:",omitempty"` // Active map's 4x mode (legacy & active sync)
+	CenterBRTMaps                map[sim.MapTheme]bool `json:",omitempty"`
+	CenterBRT                    bool                  `json:",omitempty"` // Active-map value; legacy saves used it only for Metropolis
+	LargeRoadNetworkChanged      bool                  `json:"-"`
 	ThemeChanged                 bool
 	ReturnToMenuRequested        bool
 
@@ -42,21 +45,23 @@ type Settings struct {
 	speedRangeBounds         [2][2]sim.Rect // decrement/increment for car min/max
 	AIBusCount               int            // Number of AI buses on the route (0 ~ 8)
 	AIBusFleetChanged        bool
-	PlayerModel              sim.BusModel   `json:",omitempty"` // Configured player bus model (standard, double-decker, articulated)
+	PlayerModel              sim.BusModel `json:",omitempty"` // Configured player bus model (standard, double-decker, articulated)
 
 	// UI Localization Language
-	Language                locale.Language
-	Announcements           AnnouncementMode
-	AnnouncementVoice       sound.VoiceStyle
-	PassengerRates          *[sim.BusModelCount]sim.PassengerRates `json:",omitempty"`
-	PassengerTimingOpen     bool                                   `json:"-"`
-	passengerTimingBounds   sim.Rect
-	passengerTimingClose    sim.Rect
-	passengerRateBounds     [sim.BusModelCount][2]sim.Rect
-	AudioVolumes            *sound.Volumes `json:",omitempty"`
-	volumeBounds            [3][2]sim.Rect
-	announcementVoiceBounds sim.Rect
-	announcementsBounds     sim.Rect
+	Language                 locale.Language
+	Announcements            AnnouncementMode
+	AnnouncementVoice        sound.VoiceStyle
+	PassengerRates           *[sim.BusModelCount]sim.PassengerRates `json:",omitempty"`
+	PassengerTimingOpen      bool                                   `json:"-"`
+	passengerTimingBounds    sim.Rect
+	passengerTimingClose     sim.Rect
+	passengerRateBounds      [sim.BusModelCount][2]sim.Rect
+	AudioVolumes             *sound.Volumes `json:",omitempty"`
+	volumeBounds             [3][2]sim.Rect
+	announcementVoiceBounds  sim.Rect
+	announcementsBounds      sim.Rect
+	PassengerSpawnRate       sim.PassengerSpawnRate
+	passengerSpawnRateBounds sim.Rect
 
 	// Button bounds for click detection
 	fineToggleBounds      sim.Rect
@@ -68,8 +73,6 @@ type Settings struct {
 	berserkSpeed100Bounds sim.Rect
 	berserkSpeed120Bounds sim.Rect
 	aiBusToggleBounds     sim.Rect
-	themeToggleBounds     sim.Rect
-	largeGridToggleBounds sim.Rect
 	langToggleBounds      sim.Rect
 	menuButtonBounds      sim.Rect
 	closeButtonBounds     sim.Rect
@@ -89,10 +92,23 @@ func NewSettings() *Settings {
 		AutopilotBerserk:         false,                  // Standard mode by default
 		AutopilotBerserkMaxSpeed: 80,                     // Default: 80 km/h (445 px/s)
 		AICarMinSpeed:            30, AICarMaxSpeed: 60, AIBusMinSpeed: 30, AIBusMaxSpeed: 50,
-		AIBusCount:    0, // 0 AI buses by default
-		Announcements: AnnouncementsFollowLanguage,
-		Language:      locale.CurrentLanguage, // Default to CurrentLanguage
+		AIBusCount:         0, // 0 AI buses by default
+		Announcements:      AnnouncementsFollowLanguage,
+		Language:           locale.CurrentLanguage,     // Default to CurrentLanguage
+		PassengerSpawnRate: sim.PassengerSpawnModerate, // Default to Moderate
 	}
+}
+
+func (s *Settings) CyclePassengerSpawnRate() sim.PassengerSpawnRate {
+	switch s.PassengerSpawnRate {
+	case sim.PassengerSpawnModerate:
+		s.PassengerSpawnRate = sim.PassengerSpawnFew
+	case sim.PassengerSpawnFew:
+		s.PassengerSpawnRate = sim.PassengerSpawnMany
+	default:
+		s.PassengerSpawnRate = sim.PassengerSpawnModerate
+	}
+	return s.PassengerSpawnRate
 }
 
 func (s *Settings) GetBerserkCruiseSpeed() float64 {
@@ -252,6 +268,10 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 			s.CycleAnnouncements()
 			return
 		}
+		if s.passengerSpawnRateBounds.Contains(mPos) {
+			s.CyclePassengerSpawnRate()
+			return
+		}
 		if s.busSignalPriorityBounds.Contains(mPos) {
 			s.BusSignalPriority = !s.BusSignalPriority
 			return
@@ -311,18 +331,47 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 		} else if s.aiBusToggleBounds.Contains(mPos) {
 			s.OpenNetworkRequested = true
 			s.IsOpen = false
-		} else if s.themeToggleBounds.Contains(mPos) {
-			s.ReturnToMenuRequested = true
-			s.IsOpen = false
-		} else if s.largeGridToggleBounds.Contains(mPos) {
-			s.LargeRoadNetwork = !s.LargeRoadNetwork
-			s.LargeRoadNetworkChanged = true
 		} else if s.langToggleBounds.Contains(mPos) {
 			s.Language = locale.ToggleLanguage()
 		} else if s.closeButtonBounds.Contains(mPos) {
 			s.IsOpen = false
 		}
 	}
+}
+
+// IsLargeRoadNetwork returns whether the specified map theme is in 4x large road network mode.
+func (s *Settings) IsLargeRoadNetwork(theme sim.MapTheme) bool {
+	if s == nil || theme == sim.MapThemeCustom {
+		return false
+	}
+	if s.LargeRoadNetworks != nil {
+		return s.LargeRoadNetworks[theme]
+	}
+	if theme == s.MapTheme {
+		return s.LargeRoadNetwork
+	}
+	return false
+}
+
+// SetLargeRoadNetwork updates the road network mode for a given map theme.
+func (s *Settings) SetLargeRoadNetwork(theme sim.MapTheme, large bool) {
+	if s == nil || theme == sim.MapThemeCustom {
+		return
+	}
+	if s.LargeRoadNetworks == nil {
+		s.LargeRoadNetworks = make(map[sim.MapTheme]bool)
+	}
+	s.LargeRoadNetworks[theme] = large
+	if theme == s.MapTheme {
+		s.LargeRoadNetwork = large
+	}
+}
+
+// ToggleLargeRoadNetwork flips the road network mode for a given map theme.
+func (s *Settings) ToggleLargeRoadNetwork(theme sim.MapTheme) bool {
+	current := s.IsLargeRoadNetwork(theme)
+	s.SetLargeRoadNetwork(theme, !current)
+	return !current
 }
 
 // Existing vehicles retain their sampled limit; edits apply to future spawns.
@@ -360,4 +409,32 @@ func (s *Settings) AdjustVolume(channel, delta int) {
 	}
 	v = v.Normalize()
 	s.AudioVolumes = &v
+}
+
+// IsCenterBRT keeps the original first-map-only setting compatible with old saves.
+func (s *Settings) IsCenterBRT(theme sim.MapTheme) bool {
+	if s == nil {
+		return false
+	}
+	if s.CenterBRTMaps != nil {
+		return s.CenterBRTMaps[theme]
+	}
+	return theme == sim.MapThemeMetropolis && s.CenterBRT
+}
+func (s *Settings) SetCenterBRT(theme sim.MapTheme, enabled bool) {
+	if s == nil || theme < sim.MapThemeMetropolis || theme > sim.MapThemeCustom {
+		return
+	}
+	if s.CenterBRTMaps == nil {
+		s.CenterBRTMaps = map[sim.MapTheme]bool{sim.MapThemeMetropolis: s.CenterBRT}
+	}
+	s.CenterBRTMaps[theme] = enabled
+	if theme == s.MapTheme {
+		s.CenterBRT = enabled
+	}
+}
+func (s *Settings) ToggleCenterBRT(theme sim.MapTheme) bool {
+	enabled := !s.IsCenterBRT(theme)
+	s.SetCenterBRT(theme, enabled)
+	return enabled
 }

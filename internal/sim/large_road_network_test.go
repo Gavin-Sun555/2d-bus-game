@@ -106,6 +106,88 @@ func TestMetropolisLargeRoadNetworkScaling(t *testing.T) {
 	}
 }
 
+func TestAllMapsLargeRoadNetworkScaling(t *testing.T) {
+	lw := 52.0
+	themes := []MapTheme{
+		MapThemeMetropolis,
+		MapThemeCoastalBay,
+		MapThemeRiverValley,
+		MapThemeEmeraldLake,
+		MapThemeTwinCities,
+	}
+
+	for _, theme := range themes {
+		t.Run(theme.DisplayName(), func(t *testing.T) {
+			// 1. Standard (1x)
+			wStd := NewWorld(lw, theme)
+			if wStd.LargeGrid {
+				t.Fatalf("Expected standard LargeGrid=false")
+			}
+			if wStd.GridScale() != MapGridScale {
+				t.Fatalf("Expected GridScale=%.1f, got %.1f", MapGridScale, wStd.GridScale())
+			}
+
+			// 2. Large Grid (4x)
+			wLarge := &World{
+				Theme:     theme,
+				LargeGrid: true,
+			}
+			wLarge.BuildMap(theme, lw)
+
+			if !wLarge.LargeGrid {
+				t.Fatalf("Expected LargeGrid=true")
+			}
+			expectedScale := MapGridScale * 4.0
+			if wLarge.GridScale() != expectedScale {
+				t.Fatalf("Expected GridScale=%.1f, got %.1f", expectedScale, wLarge.GridScale())
+			}
+
+			// 3. Footprint exactly 4x
+			stdMinX, stdMaxX, stdMinY, stdMaxY := getBounds(wStd.Roads)
+			largeMinX, largeMaxX, largeMinY, largeMaxY := getBounds(wLarge.Roads)
+			stdW := stdMaxX - stdMinX
+			stdH := stdMaxY - stdMinY
+			largeW := largeMaxX - largeMinX
+			largeH := largeMaxY - largeMinY
+
+			if math.Abs(largeW-stdW*4.0) > 1.0 {
+				t.Fatalf("[%s] Width mismatch: std=%.1f, large=%.1f, want 4x=%.1f", theme.DisplayName(), stdW, largeW, stdW*4.0)
+			}
+			if math.Abs(largeH-stdH*4.0) > 1.0 {
+				t.Fatalf("[%s] Height mismatch: std=%.1f, large=%.1f, want 4x=%.1f", theme.DisplayName(), stdH, largeH, stdH*4.0)
+			}
+
+			// 4. Same number of stops
+			if len(wLarge.Stops) != len(wStd.Stops) {
+				t.Fatalf("[%s] Stop count mismatch: std=%d, large=%d", theme.DisplayName(), len(wStd.Stops), len(wLarge.Stops))
+			}
+
+			// 5. Each stop's position scaled by 4x
+			for i := range wStd.Stops {
+				sStd := wStd.Stops[i]
+				sLarge := wLarge.Stops[i]
+				if math.Abs(sLarge.RoadCenter.X-sStd.RoadCenter.X*4.0) > 2.0 ||
+					math.Abs(sLarge.RoadCenter.Y-sStd.RoadCenter.Y*4.0) > 2.0 {
+					t.Fatalf("[%s] Stop %d pos mismatch: std=%v, large=%v", theme.DisplayName(), i, sStd.RoadCenter, sLarge.RoadCenter)
+				}
+			}
+
+			// 6. Traffic lights built for world
+			tlsLarge := NewTrafficLightSystem()
+			tlsLarge.BuildForWorld(wLarge)
+			if len(tlsLarge.Intersections) == 0 {
+				t.Fatalf("[%s] No intersections created in large road network", theme.DisplayName())
+			}
+
+			// 7. Route pathfinding
+			route := GetStandardRouteForMap(theme, wLarge)
+			if len(route.StopIDs) < 2 {
+				t.Fatalf("[%s] Standard route has too few stops: %d", theme.DisplayName(), len(route.StopIDs))
+			}
+		})
+	}
+}
+
 func getBounds(roads []RoadSegment) (minX, maxX, minY, maxY float64) {
 	minX, minY = math.Inf(1), math.Inf(1)
 	maxX, maxY = math.Inf(-1), math.Inf(-1)
