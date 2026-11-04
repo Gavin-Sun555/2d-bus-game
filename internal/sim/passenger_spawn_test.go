@@ -82,4 +82,3 @@ func TestStopPassengerSpawnRateAffectsArrivalSpeed(t *testing.T) {
 		t.Errorf("many at 5s should have spawned passengers, got %d", stopMany.WaitingPassengers)
 	}
 }
-

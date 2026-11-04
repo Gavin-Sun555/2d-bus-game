@@ -111,4 +111,3 @@ func renderTreeGeometry(target *ebiten.Image, cam *sim.Camera, center sim.Vec2, 
 		worldCircle(target, cam, center.Add(sim.Vec2{X: -radius * .16, Y: -radius * .16}), radius*.38, p.leafLight)
 	}
 }
-

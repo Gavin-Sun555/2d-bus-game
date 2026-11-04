@@ -86,4 +86,3 @@ func TestSavedSlot2HeadonDeadlockDissolves(t *testing.T) {
 		t.Fatalf("player bus remained queued: initial X=%.1f, current X=%.1f", initPlayerX, g.Bus.Pos.X)
 	}
 }
-

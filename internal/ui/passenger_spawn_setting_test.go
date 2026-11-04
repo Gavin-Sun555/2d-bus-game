@@ -32,4 +32,3 @@ func TestPassengerSpawnRateSettingCycling(t *testing.T) {
 		t.Fatalf("expected Moderate after third cycle, got %v", s.PassengerSpawnRate)
 	}
 }
-

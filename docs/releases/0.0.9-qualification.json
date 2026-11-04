@@ -173,7 +173,15 @@
   ],
   "publicationPreparation": {
     "requestedActor": "Gavin-Sun555",
-    "changeAfterLocalQualification": ".github/workflows/release.yml can reuse a maintainer-created draft, preserving the release author. Game source and tests still match the qualified fingerprint.",
-    "validation": "bash -n passed; release workflow will run full tests/race/build on the tagged commit before publication."
+    "changeAfterLocalQualification": "Release workflow reuses maintainer-created drafts. Six files have only extra trailing blank lines removed; game behavior and tests are unchanged. Original qualification fingerprint remains the exact earlier test snapshot.",
+    "validation": "bash -n passed; release workflow will run full tests/race/build on the tagged commit before publication.",
+    "trailingBlankLineCleanup": [
+      "game/save_slot2_profile_test.go",
+      "game/saved_slot2_headon_deadlock_test.go",
+      "internal/sim/passenger_spawn.go",
+      "internal/sim/passenger_spawn_test.go",
+      "internal/ui/passenger_spawn_setting_test.go",
+      "internal/view/tree_cache.go"
+    ]
   }
 }

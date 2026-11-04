@@ -39,4 +39,3 @@ func (r PassengerSpawnRate) Label() string {
 func (r PassengerSpawnRate) Valid() bool {
 	return r >= PassengerSpawnModerate && r <= PassengerSpawnMany
 }
-

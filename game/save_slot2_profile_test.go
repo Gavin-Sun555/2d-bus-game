@@ -90,4 +90,3 @@ func BenchmarkSaveSlot2FullFrame(b *testing.B) {
 	b.ReportMetric(float64(len(g.AIBusMgr.Buses)), "buses")
 	b.ReportMetric(float64(len(g.TrafficMgr.GetActiveCars(4))), "cars")
 }
-
