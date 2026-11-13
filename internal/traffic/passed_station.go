@@ -91,15 +91,23 @@ func (ab *AIBus) skipTargetStation(w *sim.World) bool {
 // Advance only after reaching the end of the road approach, so a nearby
 // parallel road or a turn earlier in the leg cannot skip a stop or count a lap.
 func (ab *AIBus) advancePastEmptyStation(w *sim.World, laneWidth, dt float64) {
-	bus, route, driver := ab.Bus, ab.Route, ab.Driver
+	if stop := AdvancePastEmptyStation(w, ab.Bus, ab.Route, ab.Driver, laneWidth, dt); stop != nil {
+		ab.continuePastStation(stop, laneWidth)
+	}
+}
+
+// AdvancePastEmptyStation advances a bus skipping its target stop once it
+// reaches the end of the road approach, returning the stop it passed. The
+// caller finishes the passage (see AIBus.continuePastStation).
+func AdvancePastEmptyStation(w *sim.World, bus *sim.Bus, route *sim.Route, driver *autopilot.AutopilotDriver, laneWidth, dt float64) *sim.BusStop {
 	if !driver.CanSkipTargetStop || driver.State == autopilot.AutopilotStateDocked || bus.Speed < 0 || bus.DoorsOpen ||
 		driver.LastRemaining > bus.Speed*dt+8 {
-		return
+		return nil
 	}
 	id := route.GetCurrentTargetStopID()
 	path := driver.DrivePath()
 	if id < 0 || id >= len(w.Stops) || driver.PathTargetStopID() != id || len(path) < 2 {
-		return
+		return nil
 	}
 	stop := w.Stops[id]
 	forward := sim.UnitFromAngle(stop.Heading)
@@ -112,45 +120,57 @@ func (ab *AIBus) advancePastEmptyStation(w *sim.World, laneWidth, dt float64) {
 	}
 	if math.Cos(bus.Heading-stop.Heading) < .9 || delta.Dot(forward) < -2 ||
 		delta.Dot(forward) > bus.Length || lateral < 0 || lateral > roadEdge {
-		return
+		return nil
 	}
 	route.AdvanceToNextStop()
-	ab.continuePastStation(stop, laneWidth)
+	return stop
 }
 
 // An exhausted path or stalled late arrival cannot reverse into a missed bay.
 // Recover from the actual pose, preserving collision/merge checks on departure.
-// Fleet buses need this just as the player's existing missed-stop handler does.
 func (ab *AIBus) recoverPassedStation(w *sim.World, laneWidth, dt float64, heldByController bool) bool {
-	if ab == nil || w == nil || ab.Driver == nil || ab.Route == nil || ab.Bus == nil || len(ab.Route.StopIDs) < 2 || ab.Driver.State == autopilot.AutopilotStateDocked || ab.Driver.State == autopilot.AutopilotStateDeparting || ab.Bus.DoorsOpen || ab.Bus.DoorProgress > .05 || ab.Bus.PassengerServiceRemaining() > 0 || ab.Bus.TerminalReplacementHold {
-		if ab != nil {
-			ab.lateArrivalWait = 0
-		}
+	if ab == nil {
 		return false
 	}
-	id := ab.Route.GetCurrentTargetStopID()
-	if id < 0 || id >= len(w.Stops) {
-		ab.lateArrivalWait = 0
+	stop := RecoverPassedStation(w, ab.Bus, ab.Route, ab.Driver, ab.Retiring, &ab.lateArrivalWait, laneWidth, dt, heldByController)
+	if stop == nil {
 		return false
+	}
+	ab.continuePastStation(stop, laneWidth)
+	return true
+}
+
+// RecoverPassedStation moves a bus that can no longer reach its target stop
+// on to the next one, retargeting passengers bound for it, and returns the
+// stop passed. lateWait carries the late-arrival retry timer between ticks.
+func RecoverPassedStation(w *sim.World, bus *sim.Bus, route *sim.Route, driver *autopilot.AutopilotDriver, retiring bool, lateWait *float64, laneWidth, dt float64, heldByController bool) *sim.BusStop {
+	if w == nil || driver == nil || route == nil || bus == nil || len(route.StopIDs) < 2 || driver.State == autopilot.AutopilotStateDocked || driver.State == autopilot.AutopilotStateDeparting || bus.DoorsOpen || bus.DoorProgress > .05 || bus.PassengerServiceRemaining() > 0 || bus.TerminalReplacementHold {
+		*lateWait = 0
+		return nil
+	}
+	id := route.GetCurrentTargetStopID()
+	if id < 0 || id >= len(w.Stops) {
+		*lateWait = 0
+		return nil
 	}
 	stop := w.Stops[id]
-	path := ab.Driver.DrivePath()
-	if len(path) < 2 || ab.Driver.LastTargetID != id || stop.ContainsBus(ab.Bus) {
-		ab.lateArrivalWait = 0
-		return false
+	path := driver.DrivePath()
+	if len(path) < 2 || driver.LastTargetID != id || stop.ContainsBus(bus) {
+		*lateWait = 0
+		return nil
 	}
 	u := sim.UnitFromAngle(stop.Heading)
-	delta := ab.Bus.Pos.Sub(stop.FrontBerthPosition())
+	delta := bus.Pos.Sub(stop.FrontBerthPosition())
 	// Require a genuinely passed endpoint on the same road, not an approach,
 	// rear berth, adjacent street, or a route that still has turns ahead.
 	along := delta.Dot(u)
 	lateral := math.Abs(delta.X*u.Y - delta.Y*u.X)
-	endpointPassed := ab.Bus.Pos.Sub(path[len(path)-1]).Dot(u)
-	roadsideArrival := !stop.CenterBRT && ab.Driver.State == autopilot.AutopilotStateApproaching &&
-		heldByController && math.Abs(ab.Bus.Speed) < .5 &&
-		math.Cos(ab.Bus.Heading-stop.Heading) > .95 && math.Cos(ab.Bus.TailHeading()-stop.Heading) > .95 &&
-		!(ab.Route.IsTerminusIndex(ab.Route.CurrentIndex) && (ab.Retiring || ab.Bus.PendingModel != nil)) &&
-		!w.InsideJunction(ab.Bus.Pos, laneWidth, ab.Bus.OverallLength()/2)
+	endpointPassed := bus.Pos.Sub(path[len(path)-1]).Dot(u)
+	roadsideArrival := !stop.CenterBRT && driver.State == autopilot.AutopilotStateApproaching &&
+		heldByController && math.Abs(bus.Speed) < .5 &&
+		math.Cos(bus.Heading-stop.Heading) > .95 && math.Cos(bus.TailHeading()-stop.Heading) > .95 &&
+		!(route.IsTerminusIndex(route.CurrentIndex) && (retiring || bus.PendingModel != nil)) &&
+		!w.InsideJunction(bus.Pos, laneWidth, bus.OverallLength()/2)
 	onBoardingRoad := false
 	if roadsideArrival {
 		ew := math.Abs(u.X) > .5
@@ -158,10 +178,10 @@ func (ab *AIBus) recoverPassedStation(w *sim.World, laneWidth, dt float64, heldB
 		if ew {
 			coord = stop.RoadCenter.Y
 		}
-		if road, ok := w.RoadAt(coord, ew, ab.Bus.Pos); ok {
+		if road, ok := w.RoadAt(coord, ew, bus.Pos); ok {
 			direction := road.P2.Sub(road.P1).Normalize()
-			side := ab.Bus.Pos.Sub(stop.RoadCenter).Dot(sim.Vec2{X: -u.Y, Y: u.X})
-			halfWidth := ab.Bus.Width / 2
+			side := bus.Pos.Sub(stop.RoadCenter).Dot(sim.Vec2{X: -u.Y, Y: u.X})
+			halfWidth := bus.Width / 2
 			onBoardingRoad = math.Abs(direction.Dot(u)) > .99 && side >= halfWidth+2 && side <= road.GetWidth(laneWidth)/2-halfWidth
 		}
 	}
@@ -170,24 +190,24 @@ func (ab *AIBus) recoverPassedStation(w *sim.World, laneWidth, dt float64, heldB
 	// the marker and the remaining platform cannot accommodate that merge.
 	// Give the dock planner its usual recovery window, then use the existing
 	// missed-stop departure while keeping every passenger aboard.
-	wideMissedArrival := onBoardingRoad && !ab.Driver.BerserkMode && ab.Driver.LastRemaining <= ab.Bus.OverallLength() &&
-		along >= -ab.Bus.Length/2-12 && along <= ab.Bus.Length/2+12 && endpointPassed >= -ab.Bus.Length/2-12 &&
+	wideMissedArrival := onBoardingRoad && !driver.BerserkMode && driver.LastRemaining <= bus.OverallLength() &&
+		along >= -bus.Length/2-12 && along <= bus.Length/2+12 && endpointPassed >= -bus.Length/2-12 &&
 		lateral > stop.Width/2+laneWidth
 	// A long bus may exhaust its taper past the last valid front marker
 	// while its powered section is still yawed toward the curb. Its straight
 	// tail and passed endpoint distinguish this from a turn still in progress.
 	// Beyond the powered section, require a sharply yawed nose; an ordinary
 	// mild turn still keeps its normal arrival and boarding opportunity.
-	withinTaper := along <= ab.Bus.Length || (along <= ab.Bus.OverallLength() && math.Abs(sim.NormalizeAngle(ab.Bus.Heading-stop.Heading)) > .5)
-	yawedPastTaper := ab.Bus.IsArticulated() && ab.Driver.State == autopilot.AutopilotStateApproaching &&
-		heldByController && math.Abs(ab.Bus.Speed) < .5 && ab.Driver.LastRemaining <= 2 &&
+	withinTaper := along <= bus.Length || (along <= bus.OverallLength() && math.Abs(sim.NormalizeAngle(bus.Heading-stop.Heading)) > .5)
+	yawedPastTaper := bus.IsArticulated() && driver.State == autopilot.AutopilotStateApproaching &&
+		heldByController && math.Abs(bus.Speed) < .5 && driver.LastRemaining <= 2 &&
 		along > 12 && withinTaper && endpointPassed > 12 &&
 		lateral < stop.Width+laneWidth &&
-		math.Cos(ab.Bus.Heading-stop.Heading) > .5 && math.Cos(ab.Bus.TailHeading()-stop.Heading) > .95 &&
-		ab.Bus.Pos.Distance(stop.Pos) < stop.Length && !w.InsideJunction(ab.Bus.Pos, laneWidth, ab.Bus.OverallLength()/2)
+		math.Cos(bus.Heading-stop.Heading) > .5 && math.Cos(bus.TailHeading()-stop.Heading) > .95 &&
+		bus.Pos.Distance(stop.Pos) < stop.Length && !w.InsideJunction(bus.Pos, laneWidth, bus.OverallLength()/2)
 	if yawedPastTaper {
 		for _, rb := range w.Roundabouts {
-			if ab.Bus.Pos.Distance(rb.Center) < rb.Radius+260 {
+			if bus.Pos.Distance(rb.Center) < rb.Radius+260 {
 				yawedPastTaper = false
 				break
 			}
@@ -196,56 +216,55 @@ func (ab *AIBus) recoverPassedStation(w *sim.World, laneWidth, dt float64, heldB
 	// A compact bus can likewise exhaust its arrival curve past the end of
 	// the bay with its nose turned into the curb. Nothing in the dock planner
 	// backs it out, so its "remaining 0" hold would last forever.
-	compactPastBay := !ab.Bus.IsArticulated() && !stop.CenterBRT && ab.Driver.State == autopilot.AutopilotStateApproaching &&
-		heldByController && math.Abs(ab.Bus.Speed) < .5 && ab.Driver.LastRemaining <= 2 &&
-		along > ab.Bus.Length/2+12 && lateral < stop.Width+laneWidth &&
-		math.Cos(ab.Bus.Heading-stop.Heading) > .5 && math.Cos(ab.Bus.Heading-stop.Heading) < .98 &&
-		ab.Bus.Pos.Distance(stop.Pos) < stop.Length && !w.InsideJunction(ab.Bus.Pos, laneWidth, ab.Bus.Length/2)
+	compactPastBay := !bus.IsArticulated() && !stop.CenterBRT && driver.State == autopilot.AutopilotStateApproaching &&
+		heldByController && math.Abs(bus.Speed) < .5 && driver.LastRemaining <= 2 &&
+		along > bus.Length/2+12 && lateral < stop.Width+laneWidth &&
+		math.Cos(bus.Heading-stop.Heading) > .5 && math.Cos(bus.Heading-stop.Heading) < .98 &&
+		bus.Pos.Distance(stop.Pos) < stop.Length && !w.InsideJunction(bus.Pos, laneWidth, bus.Length/2)
 	yawedPastTaper = yawedPastTaper || compactPastBay
 	// A saved arrival can be well past the berth in a parallel travel lane.
 	// The bay-width check below is too narrow for those lanes on wide roads.
-	pastRoadsideBerth := onBoardingRoad && ab.Driver.LastRemaining <= 2 &&
-		along > ab.Bus.Length/2+12 && endpointPassed > ab.Bus.Length/2+12
+	pastRoadsideBerth := onBoardingRoad && driver.LastRemaining <= 2 &&
+		along > bus.Length/2+12 && endpointPassed > bus.Length/2+12
 	// A slightly yawed arrival can be past the final berth while its path
 	// projection still reports distance remaining. On the verified boarding
 	// road, use the same three-second retry as an aligned late arrival;
 	// the stricter .98 nose gate would otherwise discard its timer forever.
-	lateOutside := ab.Driver.State == autopilot.AutopilotStateApproaching && math.Abs(ab.Bus.Speed) < .5 && heldByController && ab.Driver.LastRemaining <= ab.Bus.OverallLength() && along > 8 && endpointPassed > 8 && lateral > stop.Width/2+4
+	lateOutside := driver.State == autopilot.AutopilotStateApproaching && math.Abs(bus.Speed) < .5 && heldByController && driver.LastRemaining <= bus.OverallLength() && along > 8 && endpointPassed > 8 && lateral > stop.Width/2+4
 	lateOnBoardingRoad := lateOutside && onBoardingRoad
 	// An arrival that stopped level with the front berth in the adjacent
 	// lane, behind an empty bay, has no runway left for any berth curve and
 	// cannot reverse into the queue behind it. After the usual retry window,
 	// continue with every passenger aboard rather than block the lane.
-	unreachableBeside := onBoardingRoad && heldByController && ab.Driver.StationDockUnreachable() &&
-		along > -ab.Bus.Length/2 && lateral > stop.Width/2+4 && lateral <= stop.Width/2+laneWidth
+	unreachableBeside := onBoardingRoad && heldByController && driver.StationDockUnreachable() &&
+		along > -bus.Length/2 && lateral > stop.Width/2+4 && lateral <= stop.Width/2+laneWidth
 	lateOnBoardingRoad = lateOnBoardingRoad || unreachableBeside
-	if !wideMissedArrival && !pastRoadsideBerth && ((!yawedPastTaper && !lateOnBoardingRoad && math.Cos(ab.Bus.Heading-stop.Heading) < .98) || lateral > stop.Width/2+laneWidth) {
-		ab.lateArrivalWait = 0
-		return false
+	if !wideMissedArrival && !pastRoadsideBerth && ((!yawedPastTaper && !lateOnBoardingRoad && math.Cos(bus.Heading-stop.Heading) < .98) || lateral > stop.Width/2+laneWidth) {
+		*lateWait = 0
+		return nil
 	}
-	exhausted := pastRoadsideBerth || yawedPastTaper || (ab.Driver.LastRemaining <= 2 && along > ab.Bus.Length/2+12 && endpointPassed > ab.Bus.Length/2+12)
+	exhausted := pastRoadsideBerth || yawedPastTaper || (driver.LastRemaining <= 2 && along > bus.Length/2+12 && endpointPassed > bus.Length/2+12)
 	// A late outer-lane arrival may project onto the final taper with a
 	// positive remaining distance although its actual berth is behind it.
 	// Give the normal dock planner time to finish first; never skip a moving
 	// entry, a waiting rear berth inside the bay, or a stop still ahead.
 	if lateOutside || wideMissedArrival || unreachableBeside {
-		ab.lateArrivalWait += math.Max(0, dt)
+		*lateWait += math.Max(0, dt)
 	} else {
-		ab.lateArrivalWait = 0
+		*lateWait = 0
 	}
-	if !exhausted && ab.lateArrivalWait < 3 {
-		return false
+	if !exhausted && *lateWait < 3 {
+		return nil
 	}
-	ab.lateArrivalWait = 0
-	ab.Route.AdvanceToNextStop()
-	next := ab.Route.GetCurrentTargetStopID()
-	for i := range ab.Bus.Passengers {
-		if ab.Bus.Passengers[i].TargetStopID == id {
-			ab.Bus.Passengers[i].TargetStopID = next
+	*lateWait = 0
+	route.AdvanceToNextStop()
+	next := route.GetCurrentTargetStopID()
+	for i := range bus.Passengers {
+		if bus.Passengers[i].TargetStopID == id {
+			bus.Passengers[i].TargetStopID = next
 		}
 	}
-	ab.continuePastStation(stop, laneWidth)
-	return true
+	return stop
 }
 
 func (ab *AIBus) continuePastStation(stop *sim.BusStop, laneWidth float64) {

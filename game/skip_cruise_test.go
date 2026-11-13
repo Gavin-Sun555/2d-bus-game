@@ -54,6 +54,7 @@ func TestEligibleSkipKeepsCruiseAcrossGameRouteAdvance(t *testing.T) {
 							t.Fatalf("braked to skip frame%d brake%.2f target%.1f", frame, br, g.AutopilotDriver.LastTargetSpeed)
 						}
 						g.Bus.Update(1.0/60, th, br, st, hb, doors)
+						g.advanceStandardAutopilotPastStop(1.0/60, lw)
 						g.updateStopApproach()
 						if math.Abs(g.Bus.Pos.Y-lateral) > 2 || g.Bus.Speed < cruise-5 {
 							t.Fatalf("skip disturbed cruise frame%d pos%v speed%.1f", frame, g.Bus.Pos, g.Bus.Speed)
@@ -143,6 +144,7 @@ func TestStandardAutopilotKeepsSkipForLateRider(t *testing.T) {
 			t.Fatalf("late rider cancelled the skip: frame%d decided%v brake%.2f", frame, decided, br)
 		}
 		g.Bus.Update(1.0/60, th, br, st, hb, doors)
+		g.advanceStandardAutopilotPastStop(1.0/60, lw)
 		g.updateStopApproach()
 		if g.Bus.Pos.X > 80 {
 			if !seeded || g.Route.CurrentIndex != 2 {

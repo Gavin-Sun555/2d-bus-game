@@ -435,3 +435,37 @@ func TestSavedSlot1BusOffRoadNetworkReturnsToLine(t *testing.T) {
 	}
 	t.Fatalf("bus 55 did not resume service: pos%v state %v stop index %d", bus.Bus.Pos, bus.Driver.State, bus.Route.CurrentIndex)
 }
+
+// Slot 1 runs its fleet at a single speed (120–120 km/h), so no route bus
+// may overtake and each queues behind the buses already at a stop. The
+// player's 120 km/h standard autopilot must do the same instead of boarding
+// from the adjacent lane beside them as Berserk does.
+func TestSavedSlot1StandardAutopilotQueuesLikeFleetAtStops(t *testing.T) {
+	path := slot2Fixture(t, "../dist/save1-auto-2026-11-13-1040.json")
+	sim.SeedSimulation(3)
+	g := loadSaveForTest(t, path, 1280, 720)
+	g.State = StatePlaying
+	g.Settings.AutopilotEnabled, g.Settings.AutopilotBerserk = true, false
+	lw := g.Settings.GetLaneWidth()
+	served := map[int]bool{}
+	for f := 0; f < 60*120 && len(served) < 3; f++ {
+		_ = g.Update()
+		if g.AutopilotDriver.BerserkMode {
+			t.Fatal("standard autopilot overtakes although no fleet bus on a single-speed line may")
+		}
+		if !g.Bus.DoorsOpen {
+			continue
+		}
+		for _, id := range []int{188, 186, 184} {
+			st := g.World.Stops[id]
+			if st.ContainsBus(g.Bus) {
+				served[id] = true
+			} else if st.ContainsBusInOuterLane(g.Bus, lw) {
+				t.Fatalf("t=%.1f boarded at stop %d from the adjacent lane at %v", float64(f)/60, id, g.Bus.Pos)
+			}
+		}
+	}
+	if !served[188] || !served[186] || !served[184] {
+		t.Fatalf("served %v, want stops 188, 186 and 184 from their bays", served)
+	}
+}

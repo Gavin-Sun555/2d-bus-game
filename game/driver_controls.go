@@ -6,6 +6,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
@@ -71,6 +72,11 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	// Standard autopilot shares the fleet's last-resort stall recoveries.
 	if !g.Settings.AutopilotBerserk {
 		held := throttle == 0 && brake > 0 && !docked
+		if !ad.CanSkipTargetStop {
+			if stop := traffic.RecoverPassedStation(g.World, g.Bus, g.Route, ad, false, &g.autopilotLateArrival, currentLaneW, dt, held); stop != nil {
+				g.finishAutopilotStationPass(stop, currentLaneW, true)
+			}
+		}
 		if ad.RecoverStrandedStationDeparture(g.Bus, g.World, g.TrafficLights, obs, currentLaneW, dt, held) ||
 			ad.RecoverStrandedMedianApproach(g.Bus, g.World, obs, currentLaneW, dt, g.TrafficLights) {
 			g.AutopilotDeadlockTimer = 0
@@ -98,10 +104,59 @@ func (g *Game) configurePlayerAutopilot() {
 		ad.FleetBus = false
 		return
 	}
+	// A fleet bus overtakes only when it runs above its line's slowest speed.
+	r := sim.SpeedRange{MinKPH: g.Settings.AIBusMinSpeed, MaxKPH: g.Settings.AIBusMaxSpeed}.Normalize(50, sim.TrafficMaxSpeedKPH)
+	ad.BerserkMode = g.Settings.BerserkSpeedKPH() > r.MinKPH
 	ad.BerserkMaxSpeed = g.Bus.MaxSpeedFwd
 	ad.CruiseSpeedLimit = g.Bus.MaxSpeedFwd
 	ad.DisallowOncomingOvertake = true
 	ad.FleetBus = true
+}
+
+// standardAutopilot reports whether the fleet controller drives the bus.
+func (g *Game) standardAutopilot() bool {
+	return g.Settings.AutopilotEnabled && !g.Settings.AutopilotBerserk && g.AutopilotDriver != nil
+}
+
+// advanceStandardAutopilotPastStop is the fleet's post-move step: a bus
+// skipping its stop moves on to the next one only at the end of the road
+// approach, never while still short of the platform.
+func (g *Game) advanceStandardAutopilotPastStop(dt, laneWidth float64) {
+	if !g.standardAutopilot() {
+		return
+	}
+	if stop := traffic.AdvancePastEmptyStation(g.World, g.Bus, g.Route, g.AutopilotDriver, laneWidth, dt); stop != nil {
+		g.finishAutopilotStationPass(stop, laneWidth, false)
+	}
+}
+
+// finishAutopilotStationPass mirrors AIBus.continuePastStation and keeps the
+// player's next-stop bell and HUD in step. missed charges the usual missed
+// stop fine.
+func (g *Game) finishAutopilotStationPass(stop *sim.BusStop, laneWidth float64, missed bool) {
+	ad := g.AutopilotDriver
+	ad.ContinuePastSkippedStop(g.Bus, stop, laneWidth)
+	ad.CanSkipTargetStop = false
+	g.autopilotSkip.Reset()
+	g.autopilotLateArrival = 0
+	g.Bus.StationMergeRequest = nil
+	g.Bus.LaneMergeRequest = nil
+	g.lastSkippedStopID = stop.ID
+	g.rollAlightingForNextStop()
+	next := g.World.Stops[g.Route.GetCurrentTargetStopID()]
+	if !missed {
+		g.HUD.AddToast(fmt.Sprintf(locale.T("【🤖 AI自主飞站】[%s] 站台无人且车内无下车乘客，自动飞站！下一站: [%s]",
+			"[🤖 AI Skip] [%s] No one to board or alight, skipping stop! Next: [%s]"), stop.LocalizedName(), next.LocalizedName()), true)
+		return
+	}
+	if g.Settings.TrafficFinesEnabled {
+		g.Cash -= 50
+		g.HUD.AddWarningToast(fmt.Sprintf(locale.T("【⚠️ 站台过头·漏站罚款 -$50】AI未能及时靠站，已越过 [%s] 站！扣除罚款 -$50，下一站: [%s]",
+			"[⚠️ Missed Stop Fine -$50] AI failed to dock in time and overshot [%s]! Fined -$50, next stop: [%s]"), stop.LocalizedName(), next.LocalizedName()))
+	} else {
+		g.HUD.AddWarningToast(fmt.Sprintf(locale.T("【⚠️ 站台过头·漏站免罚】AI未能及时靠站，已越过 [%s] 站 (已豁免罚款)！下一站: [%s]",
+			"[⚠️ Missed Stop Waived] AI failed to dock in time and overshot [%s] (fines waived)! Next stop: [%s]"), stop.LocalizedName(), next.LocalizedName()))
+	}
 }
 
 // canAutopilotSkipStop is the skip rule for the current tick. Standard
@@ -122,6 +177,7 @@ func (g *Game) manualControls() (throttle, brake, steer float64, handbrake, togg
 	// Manual inputs cannot guarantee the automatic rear-slot braking policy.
 	g.Bus.YieldingToBus = nil
 	g.autopilotSkip.Reset()
+	g.autopilotLateArrival = 0
 	g.AutopilotDeadlockTimer = 0
 	g.DeadlockTracker = sim.StationaryTracker{}
 	g.syncPlayerSpeedLimit()

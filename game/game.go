@@ -121,12 +121,13 @@ type Game struct {
 	boardedThisStop bool
 
 	// Stop Request Bell & Skip Stop (飞站) tracking
-	stopBellRung        bool
-	passengersAlighting int
-	bellToastShown      bool
-	skipCooldown        float64
-	lastSkippedStopID   int
-	autopilotSkip       traffic.StationSkip // Standard autopilot keeps a skip decided for its target stop.
+	stopBellRung         bool
+	passengersAlighting  int
+	bellToastShown       bool
+	skipCooldown         float64
+	lastSkippedStopID    int
+	autopilotSkip        traffic.StationSkip // Standard autopilot keeps a skip decided for its target stop.
+	autopilotLateArrival float64             // Standard autopilot late-arrival retry timer (fleet RecoverPassedStation).
 }
 
 func NewGame(width, height int) *Game {

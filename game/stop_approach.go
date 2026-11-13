@@ -99,7 +99,11 @@ func (g *Game) updateStopApproach() {
 		if distToTarget <= 380.0 && (isValidStopApproach || isCirclingNearStop) {
 			isOccupied := g.IsStopOccupiedByOtherVehicle(targetStop)
 			canSkip := !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
-			autoCanSkip := g.Settings.AutopilotEnabled && g.canAutopilotSkipStop(targetStop, isOccupied)
+			// Standard autopilot advances past a stop exactly as a fleet bus
+			// does (see advanceStandardAutopilotPastStop and the fleet
+			// RecoverPassedStation call in autopilotControls).
+			fleetPassage := g.standardAutopilot()
+			autoCanSkip := g.Settings.AutopilotEnabled && !fleetPassage && g.canAutopilotSkipStop(targetStop, isOccupied)
 
 			// Proactive autopilot skip only while the bus is still approaching.
 			if autoCanSkip && !isDocked && forwardProj < 55.0 && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
@@ -178,7 +182,7 @@ func (g *Game) updateStopApproach() {
 			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 &&
 				(g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25))
 
-			isAIMissed := !autoCanSkip && g.Settings.AutopilotEnabled && !isDocked &&
+			isAIMissed := !autoCanSkip && g.Settings.AutopilotEnabled && !fleetPassage && !isDocked &&
 				(isCenterOvershot || isStalledInOuterLane || isPassingInOuterLane || isCirclingNearStop)
 
 			if (forwardProj > 35.0 || (latDist > 65.0 && forwardProj > 15.0) || isCirclingNearStop) && distToTarget < 350.0 && !isDocked && autoCanSkip && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {

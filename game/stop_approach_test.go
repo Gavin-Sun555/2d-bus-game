@@ -277,6 +277,8 @@ func TestAIMissedStopCirclingNearStopBreaksOutAndAdvances(t *testing.T) {
 	g.Cash = 100
 	g.Settings.TrafficFinesEnabled = true
 	g.Settings.AutopilotEnabled = true
+	// Standard autopilot passes stops by the fleet rules only.
+	g.Settings.AutopilotBerserk = true
 	g.skipCooldown = 0.0
 
 	// Set up the autopilot as having reached the destination stop
@@ -352,6 +354,19 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 
 			prevRouteIdx := g.Route.CurrentIndex
 			_ = g.Update()
+			if !berserk {
+				// Like a fleet bus, standard autopilot keeps its target
+				// until the end of the road approach.
+				if g.Route.CurrentIndex != prevRouteIdx {
+					t.Fatalf("[%s] advanced 300px before the stop", modeName)
+				}
+				for frame := 0; frame < 600 && g.Route.CurrentIndex == prevRouteIdx; frame++ {
+					_ = g.Update()
+				}
+				if along := g.Bus.Pos.Sub(targetStop.FrontBerthPosition()).Dot(sim.UnitFromAngle(targetStop.Heading)); along < -g.Bus.Length {
+					t.Fatalf("[%s] advanced %.0fpx before the berth", modeName, -along)
+				}
+			}
 
 			if g.Route.CurrentIndex == prevRouteIdx {
 				t.Fatalf("[%s] AI mode failed to proactively skip empty station! Index remained at %d", modeName, g.Route.CurrentIndex)
@@ -597,4 +612,38 @@ func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
 		}
 	}
 	t.Fatalf("Expected bus to depart after outer-lane service, state %v speed %.2f doors %v", g.AutopilotDriver.State, g.Bus.Speed, g.Bus.DoorsOpen)
+}
+
+// A fleet bus waiting in the passing lane beside an occupied bay still
+// serves the stop; so does standard autopilot. Only Berserk keeps the
+// game's immediate missed-stop rule for that pose.
+func TestStandardAutopilotWaitsBesideOccupiedBay(t *testing.T) {
+	for _, berserk := range []bool{false, true} {
+		g := NewGame(1280, 720)
+		g.State = StatePlaying
+		g.Settings.AutopilotEnabled = true
+		g.Settings.AutopilotBerserk = berserk
+		g.Settings.TrafficFinesEnabled = true
+		g.Cash = 100
+		g.skipCooldown = 0
+		lw := g.Settings.GetLaneWidth()
+		stop := g.World.Stops[g.Route.GetCurrentTargetStopID()]
+		stop.SeedWaitingPassengers(4)
+		g.stopBellRung = false
+		forward := sim.UnitFromAngle(stop.Heading)
+		toRoad := stop.RoadCenter.Sub(stop.Pos).Normalize()
+		docked := sim.NewBus(stop.Pos.X, stop.Pos.Y, stop.Heading)
+		g.AIBusMgr.Buses = []*traffic.AIBus{{ID: 1, Bus: docked, Route: &sim.Route{StopIDs: []int{stop.ID}}, Driver: autopilot.NewAutopilotDriver()}}
+		previous := g.World.Stops[g.Route.StopIDs[(g.Route.CurrentIndex-1+len(g.Route.StopIDs))%len(g.Route.StopIDs)]]
+		g.AutopilotDriver.PrepareLeg(g.World, previous, stop, lw)
+		g.Bus.Pos = stop.FrontBerthPosition().Add(forward.Mul(25)).Add(toRoad.Mul(stop.Width/2 + lw/2))
+		g.Bus.Heading = stop.Heading
+		g.Bus.Speed = 0
+		g.AutopilotDriver.LaneOffset, g.AutopilotDriver.TargetLaneOffset = -lw, -lw
+		index := g.Route.CurrentIndex
+		g.updateStopApproach()
+		if missed := g.Route.CurrentIndex != index; missed != berserk {
+			t.Fatalf("berserk %v: missed %v (cash %d)", berserk, missed, g.Cash)
+		}
+	}
 }

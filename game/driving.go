@@ -75,6 +75,8 @@ func (g *Game) updateDriverMode(dt float64) {
 		g.skipCooldown -= dt
 	}
 
+	g.advanceStandardAutopilotPastStop(dt, currentLaneW)
+
 	g.applyRoadBoundaries(currentLaneW)
 
 	// Collision check between player bus and AI cars (resolves penetration immediately after bus moved)
