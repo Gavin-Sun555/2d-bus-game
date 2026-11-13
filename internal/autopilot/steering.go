@@ -18,7 +18,10 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			// A car stopped at the yield line can keep a long bus outside
 			// the steering zone. Publish the approach so the reservation
 			// can let that car and then its follower take their turn.
-			if f.bus.IsArticulated() && distance > rb.Radius+160 && distance <= rb.Radius+300 {
+			// Without a parallel join no entry curve republishes it nearer
+			// the ring, so keep it until the bus reaches its entry: a long
+			// bus held without one can never be given the reservation.
+			if f.bus.IsArticulated() && (distance > rb.Radius+160 || !parallelApproach) && distance <= rb.Radius+300 {
 				if entry, forward, ok := ad.roundaboutEntry(rb); ok && f.s < ad.cumLen[entry] {
 					delta := rb.Center.Sub(f.bus.Pos)
 					right := sim.Vec2{X: -forward.Y, Y: forward.X}

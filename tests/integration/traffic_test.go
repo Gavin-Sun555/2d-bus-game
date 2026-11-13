@@ -40,6 +40,13 @@ func TestRoadCameraAutonomousClearance(t *testing.T) {
 	g.Bus.Heading = 0 // Eastbound
 	g.Bus.Speed = 100.0
 	g.AutopilotDriver.Reset()
+	// The bus is placed by hand: a random car spawned under or just ahead of
+	// that spot would overlap it and stop both before the camera is reached.
+	for i := len(g.TrafficMgr.Cars) - 1; i >= 0; i-- {
+		if g.TrafficMgr.Cars[i].Pos.Distance(g.Bus.Pos) < 150 {
+			g.TrafficMgr.DespawnCar(i)
+		}
+	}
 
 	// Advance simulation past the camera gantry
 	passedCamera := false

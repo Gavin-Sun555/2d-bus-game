@@ -6,19 +6,21 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
-// A stuck articulated bus with its powered section turned toward the curb
-// can only recover by backing its tail a few pixels. A follower stopped
+// A stuck articulated bus with its powered section turned toward the curb,
+// on a road or just out of a junction turn, can only recover by backing its
+// tail a few pixels. A follower stopped
 // against that tail leaves it no room and both wait forever. After a short
 // wait, give the leader that room with a proved straight retreat.
 func (ad *AutopilotDriver) tryPinnedLeaderRetreat(f autopilotFrame, dt float64) bool {
-	if f.world == nil || f.speedAbs > .1 || f.bus.DoorsOpen || ad.headonRecovery != nil || ad.State == AutopilotStateDocked ||
-		f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
+	if f.world == nil || f.speedAbs > .1 || f.bus.DoorsOpen || ad.headonRecovery != nil || ad.State == AutopilotStateDocked {
 		ad.pinnedLeaderWait = 0
 		return false
 	}
 	road := approachRoadHeading(f.bus.Heading)
 	pinned := false
-	if math.Cos(f.bus.Heading-road) > .98 && math.Cos(f.bus.TailHeading()-road) > .98 {
+	if f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
+		pinned = junctionPinnedLeader(f)
+	} else if math.Cos(f.bus.Heading-road) > .98 && math.Cos(f.bus.TailHeading()-road) > .98 {
 		for _, ob := range f.obstacles {
 			if gap, ok := sim.PinnedArticulatedRearGap(ob.Bus, f.bus.Pos, road, f.bus.Length/2, f.bus.Width/2, f.laneWidth*.5); ok && gap < 10 {
 				pinned = true
@@ -39,6 +41,33 @@ func (ad *AutopilotDriver) tryPinnedLeaderRetreat(f autopilotFrame, dt float64) 
 			ad.pinnedLeaderWait = 0
 			ad.headonRecovery = &HeadonDeadlockRecovery{StartPos: f.bus.Pos, TargetDistance: distance, ParallelRetreat: true}
 			return true
+		}
+	}
+	return false
+}
+
+// Two buses turning out of a junction: the leader can overshoot its exit
+// toward the curb with the follower's nose tucked against its trailer. Mid-turn
+// the road axis cannot tell "behind" from "alongside", so test contact with
+// the follower's own straight front section directly.
+func junctionPinnedLeader(f autopilotFrame) bool {
+	if math.Cos(f.bus.Heading-f.bus.TailHeading()) < .98 {
+		return false
+	}
+	u := sim.UnitFromAngle(f.bus.Heading)
+	front := sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length/2 + 8, HalfWid: f.bus.Width/2 + 6}
+	for _, ob := range f.obstacles {
+		leader := ob.Bus
+		if leader == nil || !leader.IsArticulated() || math.Abs(leader.Speed) >= 1 || leader.Pos.Sub(f.bus.Pos).Dot(u) <= 0 {
+			continue
+		}
+		for _, part := range leader.BodyParts() {
+			if part.HalfLen <= 0 {
+				continue
+			}
+			if hit, _, _ := sim.CheckOBBCollision(front, part); hit {
+				return true
+			}
 		}
 	}
 	return false

@@ -184,6 +184,19 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
 
+		// 0. Ring motion re-derives its radius from the actual position after
+		// collision separation. A car pushed well off the carriageway by an
+		// approach queue then "circulates" through that queue on a large
+		// circle, never reaching its exit, while still counting as inside
+		// the roundabout. That state has no valid road position: replace it.
+		if roundaboutCarDisplaced(car) {
+			if tm.BeforeRecovery != nil {
+				tm.BeforeRecovery(sim.TrafficRecoveryEvent{Kind: "car", ID: car.ID, Pos: car.Pos, Reason: "roundabout-displaced"})
+			}
+			tm.queueCarReplacement(i)
+			break
+		}
+
 		// 1. Moving vehicles and cars whose controls just released the brake
 		// are not deadlocked. Clear a saved timeout on the first acceleration tick.
 		if math.Abs(car.Speed) >= 3.0 || (!car.IsBraking && car.Speed > .5) {
@@ -273,10 +286,18 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				if ab.Bus == nil || math.Abs(ab.Bus.Speed) >= 3.0 {
 					continue
 				}
-				dist := car.Pos.Distance(ab.Bus.Pos)
+				// A trailer blocks a lane as solidly as the powered section:
+				// measure from the nearest body section.
+				section := ab.Bus.Pos
+				for _, part := range ab.Bus.BodyParts() {
+					if part.HalfLen > 0 && part.Center.Distance(car.Pos) < section.Distance(car.Pos) {
+						section = part.Center
+					}
+				}
+				dist := car.Pos.Distance(section)
 				maxJamDist := (car.Length+ab.Bus.Length)*0.5 + 40.0
 				if dist < maxJamDist {
-					toOther := ab.Bus.Pos.Sub(car.Pos)
+					toOther := section.Sub(car.Pos)
 					sinH, cosH := math.Sincos(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
 					lat := math.Abs(-toOther.X*sinH + toOther.Y*cosH)
@@ -328,4 +349,9 @@ func carDeadlockCorridor(car, other *sim.TrafficCar) bool {
 	}
 	otherHalfWidth := other.Length/2*math.Abs(math.Sin(yaw)) + other.Width/2*math.Abs(math.Cos(yaw))
 	return math.Abs(d.X*u.Y-d.Y*u.X) <= car.Width/2+otherHalfWidth+8
+}
+
+func roundaboutCarDisplaced(car *sim.TrafficCar) bool {
+	return car.InRoundabout && car.RoundaboutCurve == nil && car.RoundaboutOuterRadius > 0 &&
+		car.Pos.Distance(car.RoundaboutCenter) > car.RoundaboutOuterRadius+car.Length+24
 }

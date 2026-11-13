@@ -60,7 +60,7 @@ func requiredMergeLaneClear(f autopilotFrame, heading, current, target float64) 
 		if obstacleInParkedOtherStationBay(f, ob) {
 			continue
 		}
-		if stoppedOriginFollowerClearsMerge(f, ob, heading, current, target) {
+		if stoppedOriginFollowerClearsMerge(f, ob, heading, current, target) || stoppedMergingFollowerClears(f, ob, heading) {
 			continue
 		}
 		if laneChangeLeaderClearance(f, ob, f.bus.SteeringAngle, 20, 0.31) {
@@ -108,6 +108,26 @@ func stoppedOriginFollowerClearsMerge(f autopilotFrame, ob VehicleObstacle, head
 	// The leader moves away longitudinally while leaving this lane. Measure
 	// the actual rear and nose, including yaw, instead of reserving a passing
 	// gap behind a stationary follower.
+	return stoppedFollowerClear(f, ob, heading)
+}
+
+// Two buses merging toward the same lane can each reserve the other's path
+// and both wait forever. The one ahead goes first: a stopped bus that is
+// itself still merging, wholly behind our tail, does not reserve a gap. It
+// cannot close on us, and it is waiting for this merge anyway. Moving traffic
+// and stopped vehicles that are not merging keep the ordinary gap.
+func stoppedMergingFollowerClears(f autopilotFrame, ob VehicleObstacle, heading float64) bool {
+	b := ob.Bus
+	if b == nil || math.Abs(ob.Speed) > 1 || b.LaneMergeRequest == nil || b.LaneMergeRequest.Joined || b.LaneMergeRequest.Remaining <= 0 {
+		return false
+	}
+	return stoppedFollowerClear(f, ob, heading)
+}
+
+// stoppedFollowerClear reports whether every section of ob, including yaw,
+// lies behind every section of this bus with a skin and braking margin.
+func stoppedFollowerClear(f autopilotFrame, ob VehicleObstacle, heading float64) bool {
+	u := sim.UnitFromAngle(heading)
 	rear := math.Inf(1)
 	for _, part := range f.bus.BodyParts() {
 		if part.HalfLen > 0 {

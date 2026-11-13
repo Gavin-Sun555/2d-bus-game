@@ -2,6 +2,7 @@ package game
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,8 +30,26 @@ func debugTestGame(t *testing.T) *Game {
 	g.TrafficMgr.Cars = g.TrafficMgr.Cars[:2]
 	a, b := g.TrafficMgr.Cars[0], g.TrafficMgr.Cars[1]
 	id := b.ID
+	// Queue both cars on car a's own road just before one junction. Snapshots
+	// are de-duplicated by nearest junction, so a random spawn between two
+	// junctions could otherwise split the pair into separate regions.
+	forward := sim.UnitFromAngle(a.Heading)
+	best, along := math.Inf(1), 0.
+	for _, inter := range g.TrafficLights.Intersections {
+		offRoad := math.Abs(inter.Center.Y - a.Pos.Y)
+		if !a.IsEW {
+			offRoad = math.Abs(inter.Center.X - a.Pos.X)
+		}
+		if d := inter.Center.Distance(a.Pos); offRoad <= 200 && d < best {
+			best, along = d, inter.Center.Sub(a.Pos).Dot(forward)
+		}
+	}
+	if math.IsInf(best, 1) {
+		t.Fatal("no junction on the test car's road")
+	}
+	a.Pos = a.Pos.Add(forward.Mul(along - 200))
 	*b = *a
-	b.ID, b.Pos.X = id, a.Pos.X-70
+	b.ID, b.Pos = id, a.Pos.Sub(forward.Mul(70))
 	a.Speed, b.Speed = 0, 0
 	return g
 }

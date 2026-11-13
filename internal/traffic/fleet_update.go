@@ -135,6 +135,17 @@ func (abm *AIBusManager) Update(
 				trace.Logf(context.Background(), "autopilot.slowControls", "AI %d: %s", ab.ID, elapsed)
 			}
 		}
+		if ab.Driver != nil && ab.Driver.OffRoadNetwork() {
+			// Stranded off every road (an older save can hold such a pose):
+			// no leg can be planned from here, so restart it at its line.
+			if abm.BeforeRecovery != nil {
+				abm.BeforeRecovery(sim.TrafficRecoveryEvent{Kind: "bus", ID: ab.ID, Pos: ab.Bus.Pos, Reason: "off-road-network"})
+			}
+			ab.ResetToStartingStation(world)
+			abm.queueAtStartingStation(ab, playerBus, world, laneWidth)
+			abm.Operations.InterruptJourney(ab.ID)
+			continue
+		}
 
 		held := throttle == 0 && brake > 0 && !isDocked
 		if ab.Driver == nil || !ab.Driver.CanSkipTargetStop {
@@ -285,16 +296,7 @@ func (abm *AIBusManager) Update(
 			}
 
 			if ab.updateDeadlock(dt, isBusDeadlocked, tls, world, abm.BeforeRecovery) {
-				others := make([]*sim.Bus, 0, len(abm.Buses)+1)
-				if playerBus != nil {
-					others = append(others, playerBus)
-				}
-				for _, other := range abm.Buses {
-					if other != ab {
-						others = append(others, other.Bus)
-					}
-				}
-				sim.PlaceBusInStationQueue(ab.Bus, world.Stops[ab.Route.StopIDs[0]], others, laneWidth)
+				abm.queueAtStartingStation(ab, playerBus, world, laneWidth)
 			}
 		} else {
 			ab.DeadlockTimer = 0
@@ -456,4 +458,26 @@ func (abm *AIBusManager) serviceDockedStation(
 	}
 	sim.RebalanceStationBoarding(st, abm.dockedBusesAtStop(st, playerBus), newlyJoined)
 	return false, false
+}
+
+// queueAtStartingStation places a bus just reset to its line's first stop in
+// that station's queue, clear of the other buses already there.
+func (abm *AIBusManager) queueAtStartingStation(ab *AIBus, playerBus *sim.Bus, world *sim.World, laneWidth float64) {
+	if ab.Route == nil || len(ab.Route.StopIDs) == 0 || world == nil {
+		return
+	}
+	id := ab.Route.StopIDs[0]
+	if id < 0 || id >= len(world.Stops) {
+		return
+	}
+	others := make([]*sim.Bus, 0, len(abm.Buses)+1)
+	if playerBus != nil {
+		others = append(others, playerBus)
+	}
+	for _, other := range abm.Buses {
+		if other != ab {
+			others = append(others, other.Bus)
+		}
+	}
+	sim.PlaceBusInStationQueue(ab.Bus, world.Stops[id], others, laneWidth)
 }

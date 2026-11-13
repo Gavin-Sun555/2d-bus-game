@@ -146,6 +146,8 @@ type AutopilotDriver struct {
 	skippedDeparture       *skippedStopDeparture
 	stationDockUnreachable bool
 	pinnedLeaderWait       float64
+	offRouteWait           float64 // Seconds a fleet bus has been far from its leg path.
+	offRoadNetwork         bool    // Off route with no road under the bus; set by replanOffRoute.
 	directRoundaboutExit   *sim.Vec2
 
 	exitCruise          *sim.BusLaneMergeRequest
@@ -386,6 +388,9 @@ func (ad *AutopilotDriver) ComputeControls(
 	ad.PrepareLeg(world, prevStop, targetStop, laneWidth)
 	ad.reconnectServedBayDeparture(bus, prevStop, laneWidth)
 	if !ad.pathSynced {
+		ad.trackPath(bus.Pos)
+	}
+	if ad.replanOffRoute(bus, world, targetStop, laneWidth, dt) {
 		ad.trackPath(bus.Pos)
 	}
 

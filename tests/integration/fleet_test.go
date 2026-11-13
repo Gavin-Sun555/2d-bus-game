@@ -408,6 +408,10 @@ func TestAIBusFleetCapacityAndBoardingLogic(t *testing.T) {
 
 	// 2. Test AI Bus boarding all waiting passengers when space is available (no 6-passenger cap)
 	ab := abm.Buses[0]
+	// The coarse 1 s steps below can throw the other buses off the road,
+	// and a stranded bus is returned to its line's first stop: possibly this
+	// stop, where it would share the boarding. Exercise this bus alone.
+	abm.Buses = abm.Buses[:1]
 	targetStopID := ab.Route.GetCurrentTargetStopID()
 	st := world.Stops[targetStopID]
 	st.WaitingPassengers = 25

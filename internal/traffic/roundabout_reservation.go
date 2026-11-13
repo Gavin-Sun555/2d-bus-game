@@ -10,7 +10,10 @@ type roundaboutReservation struct {
 	owner        *sim.Bus
 	entered      bool
 	lastApproach sim.Vec2
-	holds        [1 + MaxFleetBuses]sim.RoundaboutAdmissionHold
+	// staging: the owner is still approaching. Cars and short buses keep
+	// using the ring until it nears the line; long buses stay held.
+	staging bool
+	holds   [1 + MaxFleetBuses]sim.RoundaboutAdmissionHold
 }
 
 // Long vehicles need the complete ring width while their trailer turns.
@@ -157,8 +160,10 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 			}
 		}
 		if r.owner == nil {
+			r.staging = false
 			continue
 		}
+		r.staging = !r.entered && !inside(r.owner) && reservationOwnerStaging(r.owner, rb)
 		drain := false
 		for j, c := range tm.Cars {
 			if j < count && c.InRoundabout && c.RoundaboutCenter == rb.Center {
@@ -185,10 +190,39 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 			if b != r.owner && r.entered && reservedOwnerLeaving(r.owner, rb) && shortBusClearsReservedEntry(b, r.owner, rb, forward, laneWidth) {
 				continue
 			}
-			r.holds[j] = sim.RoundaboutAdmissionHold{Center: rb.Center, Forward: forward, StopDistance: rb.YieldLineDistance() + b.Length/2 + 8}
+			if r.staging && !b.IsArticulated() {
+				continue
+			}
+			stop := rb.YieldLineDistance() + b.Length/2 + 8
+			if b != r.owner && b.IsArticulated() && !r.entered {
+				// Wait behind the owner's tail, not beside it: an owner
+				// still angling into this lane sweeps its body across it.
+				stop = math.Max(stop, ownerTailDistance(r.owner, rb, forward)+b.Length/2+20)
+			}
+			r.holds[j] = sim.RoundaboutAdmissionHold{Center: rb.Center, Forward: forward, StopDistance: stop}
 			b.RoundaboutAdmissionHold = &r.holds[j]
 		}
 	}
+}
+
+// ownerTailDistance is how far the owner's rearmost body point lies from the
+// roundabout center along an approach, or 0 when it is on another approach.
+func ownerTailDistance(owner *sim.Bus, rb sim.Roundabout, forward sim.Vec2) float64 {
+	entry := owner.RoundaboutEntry
+	if entry == nil || entry.Center != rb.Center || entry.Forward.Dot(forward) < .99 {
+		return 0
+	}
+	heading := math.Atan2(forward.Y, forward.X)
+	tail := 0.
+	for _, part := range owner.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		yaw := part.Heading - heading
+		extent := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
+		tail = math.Max(tail, rb.Center.Sub(part.Center).Dot(forward)+extent)
+	}
+	return tail
 }
 
 func roundaboutApproachOrder(previous, next sim.Vec2) float64 {
@@ -222,12 +256,18 @@ func (tm *TrafficManager) roundaboutReservedForCar(rb sim.Roundabout, car *sim.T
 		if r.center != rb.Center || r.owner == nil {
 			continue
 		}
+		if r.staging {
+			return false
+		}
 		intent := r.owner.RoundaboutEntry
 		if r.entered || intent == nil || intent.Center != rb.Center || intent.Forward.Dot(forward) < .99 {
 			return true
 		}
 		delta := car.Pos.Sub(r.owner.Pos)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		if ownerTurnedIntoCarLane(r.owner, car, forward, laneWidth) {
+			return false
+		}
 		return math.Abs(delta.Dot(right)) >= laneWidth/2 || !roundaboutBusFollowing(car, r.owner)
 	}
 	return false
@@ -246,4 +286,36 @@ func roundaboutEntryPrecedes(candidate, owner *sim.Bus, center sim.Vec2, along, 
 		}
 	}
 	return along < best
+}
+
+// A stopped reservation owner angled into the neighbouring lane cannot pass a
+// car queued ahead of it there, and that car would wait for the owner's
+// reservation forever. Let it take its turn like a car ahead in the owner's
+// own lane. An owner lying straight in its lane, simply waiting for the ring
+// to drain, keeps holding the next lane so it cannot be starved.
+func ownerTurnedIntoCarLane(owner *sim.Bus, car *sim.TrafficCar, forward sim.Vec2, laneWidth float64) bool {
+	if math.Abs(owner.Speed) >= 1 {
+		return false
+	}
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	delta := car.Pos.Sub(owner.Pos)
+	lateral := delta.Dot(right)
+	yaw := sim.NormalizeAngle(owner.Heading - math.Atan2(forward.Y, forward.X))
+	return delta.Dot(forward) > 0 && math.Abs(lateral) >= laneWidth/2 && math.Abs(lateral) < 1.5*laneWidth && math.Abs(yaw) > .1 && yaw*lateral > 0
+}
+
+// reservationOwnerStaging reports whether the reserving bus is still far
+// enough from its yield line to brake there comfortably. Holding every
+// entrance from the moment a long bus is chosen, often 500 px out and queued,
+// kept the ring closed several times longer than the bus spent in it.
+// Close the entrances only when it arrives; the admission hold's braking
+// curve still stops it at the line until the ring has drained.
+func reservationOwnerStaging(owner *sim.Bus, rb sim.Roundabout) bool {
+	forward := sim.UnitFromAngle(owner.Heading)
+	if owner.RoundaboutEntry != nil && owner.RoundaboutEntry.Center == rb.Center {
+		forward = owner.RoundaboutEntry.Forward
+	}
+	gap := rb.Center.Sub(owner.Pos).Dot(forward) - rb.YieldLineDistance() - owner.Length/2 - 8
+	speed := math.Abs(owner.Speed)
+	return gap > math.Max(90, speed*speed/(2*180)+60)
 }

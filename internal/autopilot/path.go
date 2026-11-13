@@ -116,6 +116,27 @@ func dedupePath(pts []sim.Vec2) []sim.Vec2 {
 }
 
 // PrepareLeg (re)builds the cached drive path whenever the leg, world or lane width changes
+// resetLegManeuvers clears lane, merge and turn commitments that belong to
+// the previous leg's path.
+func (ad *AutopilotDriver) resetLegManeuvers() {
+	ad.dockDepartureRun = 0
+	ad.smoothDockDeparture = false
+	ad.midLaneRecovery = nil
+	ad.approachMerge = nil
+	ad.approachMergeJoined = false
+	ad.parallelEntryCenter = nil
+	ad.uTurn = nil
+	ad.ordinaryBusLeft = false
+	ad.exitCruise = nil
+	ad.busLaneJunction = nil
+	ad.busLaneTurnChosen = false
+	ad.medianRightChoice = nil
+	ad.curbBusRight = false
+	ad.rightTurnJunction = nil
+	ad.rightTurnWaiting = false
+	ad.busJunctionEntered = false
+}
+
 func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw float64) {
 	if ad.drivePath != nil {
 		if ad.pathWorld == nil {
@@ -150,22 +171,7 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		laneAnchor = base.Add(sim.Vec2{X: -laneForward.Y, Y: laneForward.X}.Mul(ad.LaneOffset))
 	}
 	if ad.pathFromID != from.ID || ad.pathToID != to.ID {
-		ad.dockDepartureRun = 0
-		ad.smoothDockDeparture = false
-		ad.midLaneRecovery = nil
-		ad.approachMerge = nil
-		ad.approachMergeJoined = false
-		ad.parallelEntryCenter = nil
-		ad.uTurn = nil
-		ad.ordinaryBusLeft = false
-		ad.exitCruise = nil
-		ad.busLaneJunction = nil
-		ad.busLaneTurnChosen = false
-		ad.medianRightChoice = nil
-		ad.curbBusRight = false
-		ad.rightTurnJunction = nil
-		ad.rightTurnWaiting = false
-		ad.busJunctionEntered = false
+		ad.resetLegManeuvers()
 	}
 	if ad.stationDock != nil && ad.stationDock.stopID != to.ID {
 		ad.departureFromDock = from != nil && from.ID == ad.stationDock.stopID

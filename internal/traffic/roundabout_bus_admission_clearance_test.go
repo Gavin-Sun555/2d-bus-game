@@ -89,13 +89,22 @@ func TestReservedEntryRetainsTailAndUnknownGeometry(t *testing.T) {
 		t.Fatal("cross-lane entrant received exception")
 	}
 }
+// While the reserving long bus is still approaching, a short bus at another
+// entrance uses the ring like a car. Once the owner reaches its yield line the
+// ring drains for it, and the short bus waits until the owner is admitted.
 func TestShortBusWaitsWhileReservationDrains(t *testing.T) {
 	rb := sim.Roundabout{Radius: 240, InnerRadius: 120}
 	owner := reservationBus(-500, sim.BusArticulated)
 	waiting := sim.NewBus(335, -78, math.Pi)
 	waiting.RoundaboutEntry = &sim.BusRoundaboutEntry{Forward: sim.Vec2{X: -1}, Remaining: .3}
 	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: waiting}}}, roundaboutReservations: []roundaboutReservation{{owner: owner}}}
-	tm.updateRoundaboutReservations(owner, &sim.World{Roundabouts: []sim.Roundabout{rb}}, 0, 52)
+	w := &sim.World{Roundabouts: []sim.Roundabout{rb}}
+	tm.updateRoundaboutReservations(owner, w, 0, 52)
+	if waiting.RoundaboutAdmissionHold != nil {
+		t.Fatal("entrances closed while the owner is still far from its yield line")
+	}
+	owner.Pos.X = -(rb.YieldLineDistance() + owner.Length/2 + 8 + 30)
+	tm.updateRoundaboutReservations(owner, w, 0, 52)
 	if waiting.RoundaboutAdmissionHold == nil {
 		t.Fatal("reservation released before owner admission")
 	}
