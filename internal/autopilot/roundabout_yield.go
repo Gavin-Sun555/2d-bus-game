@@ -65,7 +65,7 @@ func (ad *AutopilotDriver) roundaboutEntryObstacleSpeed(f autopilotFrame) float6
 		for obstacleIndex, obstacle := range f.obstacles {
 			// Keep local body clearance while an adjacent car clears the mouth,
 			// including the first frames after it starts moving.
-			if parallel && separation.Clears(sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}, false) {
+			if parallel && roundaboutEntrySeparated(&separation, obstacle) {
 				continue
 			}
 			body := roundaboutObstacleAt(rb, obstacle, 0)
@@ -168,6 +168,27 @@ func entryHasMovingConflict(f autopilotFrame, rb *sim.Roundabout, points []sim.V
 }
 
 // Predict circulating traffic along its arc; approach traffic follows its heading.
+// An articulated bus bends at its joint, so each rigid section follows its
+// own entrance lane. Sweeping the straight whole-body envelope along the curve
+// would swing it across the neighbouring lane and lock two buses waiting
+// side by side out of the ring. Every section must stay separated.
+func roundaboutEntrySeparated(separation *sim.RoundaboutEntrySeparation, obstacle VehicleObstacle) bool {
+	if bus := obstacle.Bus; bus != nil && bus.IsArticulated() {
+		parts := 0
+		for _, part := range bus.BodyParts() {
+			if part.HalfLen <= 0 {
+				continue
+			}
+			if !separation.Clears(part, true) {
+				return false
+			}
+			parts++
+		}
+		return parts > 0
+	}
+	return separation.Clears(sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length / 2, HalfWid: obstacle.Width / 2}, false)
+}
+
 func roundaboutObstacleAt(rb *sim.Roundabout, obstacle VehicleObstacle, elapsed float64) sim.OBB {
 	body := sim.OBB{Center: obstacle.Pos, Heading: obstacle.Heading, HalfLen: obstacle.Length/2 + 4, HalfWid: obstacle.Width/2 + 2}
 	return sim.PredictRoundaboutBody(*rb, body, obstacle.Speed, elapsed)

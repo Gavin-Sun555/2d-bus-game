@@ -73,7 +73,7 @@ func TestEightLaneRoadJunctionGeometry(t *testing.T) {
 				t.Fatalf("right lane not reached before stop line for heading %v", heading)
 			}
 			outRight := Vec2{X: -out.Y, Y: out.X}
-			if math.Abs(path[len(path)-1].Dot(outRight)-width*2.5) > .01 {
+			if math.Abs(path[len(path)-1].Dot(outRight)-width*3.5) > .01 {
 				t.Fatal("wrong exit lane")
 			}
 		}

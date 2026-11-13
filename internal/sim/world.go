@@ -316,10 +316,15 @@ type River struct {
 
 // World holds the city roads, buildings, trees, water, and stops
 type World struct {
+	Clock              GameClock
 	boundaryCache      *boundaryGeometryCache
 	boundaryDepth      int
 	geometryCache      *worldGeometryCache
+	brtFlares          *brtFlareIndex
+	stationCrossings   stationCrossingIndex
+	railways           []*Railway
 	geometryRevision   uint64
+	passengerRoutes    passengerRouteCache
 	Theme              MapTheme
 	LargeGrid          bool `json:",omitempty"`
 	CenterBRT          bool `json:",omitempty"`
@@ -369,6 +374,8 @@ func (w *World) GridScale() float64 {
 }
 
 func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
+	w.Clock = GameClock{}
+	w.passengerRoutes = passengerRouteCache{}
 	w.Theme = theme
 	w.Roads = make([]RoadSegment, 0)
 	w.Buildings = make([]Building, 0)
@@ -400,6 +407,7 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 	if theme != MapThemeCustom && theme != MapThemeEmeraldLake {
 		w.expandCity(laneWidth)
 	}
+	w.prepareBuiltinBRTRoads()
 	w.applyMapScale(w.GridScale(), laneWidth)
 	w.MatchStopRoadLanes(laneWidth)
 	w.RebuildIntersections()
@@ -407,6 +415,7 @@ func (w *World) BuildMap(theme MapTheme, laneWidth float64) {
 		w.addBlockStops(laneWidth)
 	}
 	w.configureCenterBRT(laneWidth)
+	w.refreshMetropolisRailStopNames()
 	StandardizeStopBays(w, laneWidth)
 	ActiveWorldForRoute = w
 	ClearRoutePathCache()
@@ -602,6 +611,7 @@ func (w *World) WaterBodies() []WaterBody {
 // UpdateLaneWidth updates all bus stop positions dynamically when lane width changes
 func (w *World) UpdateLaneWidth(laneWidth float64) {
 	w.boundaryCache = nil
+	w.fitBuiltinBRTBridges(laneWidth)
 	w.MatchStopRoadLanes(laneWidth)
 	for _, s := range w.Stops {
 		s.UpdateGeometry(laneWidth)
@@ -609,52 +619,17 @@ func (w *World) UpdateLaneWidth(laneWidth float64) {
 	StandardizeStopBays(w, laneWidth)
 }
 
-func (w *World) Update(dt float64, route ...*Route) {
-	var r *Route
-	if len(route) > 0 {
-		r = route[0]
-	}
-	rateMult := w.PassengerSpawnRate.Multiplier()
-	for _, s := range w.Stops {
-		// Only bus stops on the planned route generate passengers.
-		// Stops not on the route must not spawn passengers and remain at 0 waiting.
-		var servingRoutes []*Route
-		for _, line := range route {
-			if line != nil && line.ContainsStop(s.ID) {
-				servingRoutes = append(servingRoutes, line)
-			}
-		}
-		if r != nil && len(servingRoutes) == 0 {
-			s.WaitingPassengers = 0
-			s.WaitingDestinations = nil
-			s.SpawnTimer = 0
+func (w *World) Update(dt float64, routes ...*Route) {
+	w.Clock.Advance(dt)
+	service := w.passengerRoutes.forRoutes(routes)
+	restrictToRoutes := len(routes) > 0 && routes[0] != nil
+	rate := w.PassengerSpawnRate.Multiplier()
+	for _, stop := range w.Stops {
+		destinations, served := service[stop.ID]
+		if restrictToRoutes && !served {
+			stop.clearWaitingQueue()
 			continue
 		}
-
-		// Collect union of all reachable upcoming destination stop IDs across all passing lines
-		var dests []int
-		seen := make(map[int]bool)
-		for _, line := range servingRoutes {
-			cands := line.GetUpcomingCandidateStopIDsForStop(s.ID)
-			for _, cid := range cands {
-				if cid != s.ID && !seen[cid] {
-					seen[cid] = true
-					dests = append(dests, cid)
-				}
-			}
-		}
-		// Fallback safety if cands is empty (e.g. 1-stop line or terminus)
-		if len(dests) == 0 {
-			for _, line := range servingRoutes {
-				for _, sid := range line.StopIDs {
-					if sid != s.ID && !seen[sid] {
-						seen[sid] = true
-						dests = append(dests, sid)
-					}
-				}
-			}
-		}
-
-		s.UpdateWithDestinations(dt, rateMult, dests)
+		stop.UpdateWithDestinations(dt, rate, destinations)
 	}
 }

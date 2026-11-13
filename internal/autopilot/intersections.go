@@ -239,6 +239,12 @@ func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach int
 	} else if isStraight {
 		// Going straight through intersection:
 		if is6Lane {
+			if f.world != nil && approach.distToStopLine > f.bus.Length/2+math.Max(120, f.speedAbs) {
+				center, _, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+				if ad.preferClearSixLaneCurb(f, center, dt) {
+					return
+				}
+			}
 			// 6-Lane Road: Two valid straight through lanes:
 			// Middle through lane (-laneWidth) and Outer through lane (0.0).
 			// (Innermost lane -2*lw is dedicated left-turn, strictly prohibited for straight)

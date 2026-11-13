@@ -225,7 +225,7 @@ func RoadLaneOffset(roadCoord float64, isEW bool, lw float64, w *World, posOptio
 		}
 	}
 	if lanes >= 6 {
-		return lw * 2.5
+		return lw * (float64(lanes)/2 - .5)
 	}
 	if lanes >= 4 {
 		return lw * 1.5

@@ -5,6 +5,9 @@ import (
 	"math"
 )
 
+// Match the checked moving horizon of the ordinary lane-retreat controller.
+const midLaneRetreatSweepSamples = 49
+
 // A lane policy can already have frozen its target at a fractional offset,
 // so retry from the physical body rather than requiring a new rightward intent.
 func (ad *AutopilotDriver) retryStoppedMidLaneReturn(f autopilotFrame) {
@@ -74,9 +77,42 @@ func (ad *AutopilotDriver) advanceMidLaneRecovery(f autopilotFrame, dt float64) 
 		return false
 	}
 	r := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
+	if ad.straightLaneRetreatActive() {
+		base := ad.pointAt(f.s)
+		actual := f.bus.Pos.Sub(base).Dot(r)
+		destination := ad.approachMerge.Target.Sub(base).Dot(r)
+		// Creep only while the remaining lateral move still fits before the
+		// stop line (same 5:1 runway as approachManeuverSpeed); otherwise a
+		// later release would enter the junction from the wrong lane.
+		runway := 5 * math.Abs(destination-actual)
+		ad.busTurnHoldDistance = math.Max(.01, approachMergeStopDistance(f, ad.approachMerge)-25-runway)
+		if requiredMergeLaneClear(f, request.Heading, actual, destination) {
+			ad.midLaneRecovery = nil
+			return false
+		}
+	}
 	desired := request.Target.Sub(ad.pointAt(f.s)).Dot(r)
 	aligned := math.Abs(sim.NormalizeAngle(f.bus.Heading-request.Heading)) < .08 && math.Abs(f.bus.SteeringAngle) < .08
-	if math.Abs(f.bus.Pos.Sub(request.Target).Dot(r)) < 3 && aligned {
+	tolerance := 3.
+	if ad.BerserkMode {
+		// Once the entire bus is safely inside its committed lane, ordinary
+		// pursuit can finish a small centering error at normal acceleration.
+		tolerance = math.Min(8, math.Max(3, (f.laneWidth-f.bus.Width)/2-2))
+	}
+	centered := math.Abs(f.bus.Pos.Sub(request.Target).Dot(r)) < tolerance
+	if centered && !aligned && f.world != nil {
+		// Roundabout entry has its own steering and clearance rules. Once
+		// centered, don't keep a straight-road recovery active into the turn.
+		forward := sim.UnitFromAngle(request.Heading)
+		for _, rb := range f.world.Roundabouts {
+			delta := rb.Center.Sub(f.bus.Pos)
+			if delta.Dot(forward) > 0 && math.Abs(delta.Dot(r)) < f.laneWidth*2 && delta.Length() < rb.Radius+320 {
+				aligned = true
+				break
+			}
+		}
+	}
+	if centered && aligned && wholeBusInMergeLane(f.bus, request, f.laneWidth) {
 		ad.holdLaneOffset(desired)
 		ad.midLaneRecovery = nil
 		if f.bus.LaneMergeRequest == request {
@@ -86,6 +122,12 @@ func (ad *AutopilotDriver) advanceMidLaneRecovery(f autopilotFrame, dt float64) 
 	}
 	request.Remaining = .3
 	f.bus.LaneMergeRequest = request
+	if ad.straightLaneRetreatActive() {
+		// Settling stays inside the current lane; keep advertising the
+		// pending through-lane return so following traffic can yield to it.
+		ad.approachMerge.Remaining = .3
+		f.bus.LaneMergeRequest = ad.approachMerge
+	}
 	ad.TargetLaneOffset = desired
 	ad.OvertakeState = OvertakeReturning
 	ad.progressLaneOffset(dt, f.speedAbs)
@@ -124,6 +166,17 @@ func (ad *AutopilotDriver) midLaneSafeSteering(f autopilotFrame, steer float64) 
 		if ad.midLaneSweepSafe(f, candidate) {
 			ad.midLaneSweepClear = true
 			return candidate
+		}
+	}
+	if ad.approachMerge != nil && f.bus.IsArticulated() {
+		// A car beside the tail can already touch the ordinary safety skin.
+		// Reuse the full physical crawl check and keep the lane-center goal.
+		heading := ad.midLaneRecovery.Heading
+		center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+		for _, candidate := range []float64{direction * .2, direction * .05, direction * .01, 0} {
+			if ad.sidecarSweepClearSamples(f, candidate, heading, center, ew, nil, midLaneRetreatSweepSamples) {
+				return candidate
+			}
 		}
 	}
 	// Preposition the wheels while stationary, then retry the moving sweep.

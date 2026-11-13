@@ -7,17 +7,28 @@ import (
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-func drawBuilding(screen *ebiten.Image, cam *sim.Camera, b sim.Building, plan bool, theme sim.MapTheme) {
+func drawBuilding(screen *ebiten.Image, cam *sim.Camera, b sim.Building, plan, night bool, theme sim.MapTheme) {
 	if !cam.IsBoxVisible(b.Pos.X-b.W/2-45, b.Pos.Y-b.H/2-45, b.Pos.X+b.W/2+45, b.Pos.Y+b.H/2+45) {
+		return
+	}
+	if theme != sim.MapThemeCustom {
+		variant := metropolisVariant(b.Pos)
+		if b.W > 420 {
+			halfW := (b.W - 18) / 2
+			west := sim.Building{Pos: b.Pos.Add(sim.Vec2{X: -(halfW/2 + 9)}), W: halfW, H: b.H}
+			east := sim.Building{Pos: b.Pos.Add(sim.Vec2{X: halfW/2 + 9}), W: halfW, H: b.H}
+			styles := [...]metroStyle{metroTower, metroShops, metroHomes, metroCourt, metroRowhouses}
+			drawMetropolisLot(screen, cam, metroLot{footprint: west, style: styles[variant%len(styles)], variant: variant}, plan, night)
+			drawMetropolisLot(screen, cam, metroLot{footprint: east, style: styles[(variant+2)%len(styles)], variant: variant + 7}, plan, night)
+			return
+		}
+		drawMetropolisLot(screen, cam, metroLot{footprint: b, style: metroStyle(variant % 6), variant: variant}, plan, night)
 		return
 	}
 	p := sceneColors(theme)
 	// The shapes retain their real footprint; depth comes from roof structure and
 	// shadows, rather than shifting the physical building toward a drivable road.
 	shadow := sim.Vec2{X: 18, Y: 22}
-	if theme == sim.MapThemeMetropolis {
-		shadow = sim.Vec2{X: 30, Y: 38}
-	}
 	drawRotatedBox(screen, cam, b.Pos.Add(shadow), 1, 0, b.W, b.H, sim.RGBA(9, 17, 23, 95))
 	switch theme {
 	case sim.MapThemeCoastalBay:
@@ -62,6 +73,17 @@ func drawBuilding(screen *ebiten.Image, cam *sim.Camera, b sim.Building, plan bo
 	case sim.MapThemeCustom:
 		drawRotatedBox(screen, cam, b.Pos, 1, 0, b.W, b.H, b.Color)
 		drawRotatedBox(screen, cam, b.Pos, 1, 0, b.W-10, b.H-10, b.Roof)
+		if night && cam.Zoom >= .24 && b.W >= 34 && b.H >= 24 {
+			seed := metropolisVariant(b.Pos)
+			if seed%5 < 2 {
+				for i := -1; i <= 1; i++ {
+					if (seed+i)%3 != 0 {
+						pos := b.Pos.Add(sim.Vec2{X: float64(i) * b.W * .22, Y: b.H/2 - 8})
+						drawRotatedBox(screen, cam, pos, 1, 0, math.Min(12, b.W*.16), 5, rgb(255, 215, 140))
+					}
+				}
+			}
+		}
 	default:
 		drawGlassBuilding(screen, cam, b, plan, p, false)
 	}

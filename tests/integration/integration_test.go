@@ -25,8 +25,15 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 			g := game.NewGame(1280, 720)
 			g.EnterCity(theme)
 			// This test teleports between bays to verify passenger/route service.
-			// Live traffic would turn those teleports into artificial collisions.
+			// Live traffic would turn those teleports into artificial collisions,
+			// including AI buses dispatched to the same route's berths.
 			g.TrafficMgr.Cars = nil
+			g.AIBusMgr.Buses = nil
+			// Ambient traffic refills on every update; keep the road empty.
+			update := func() error {
+				g.TrafficMgr.Cars = nil
+				return g.Update()
+			}
 
 			if g.State != game.StatePlaying {
 				t.Fatalf("[%s] Game state must be StatePlaying, got %v", theme.DisplayName(), g.State)
@@ -92,13 +99,13 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 				prevIndex := g.Route.CurrentIndex
 
 				// Execute game simulation ticks until passenger service completes
-				err := g.Update()
+				err := update()
 				if err != nil {
-					t.Fatalf("[%s] g.Update() failed during passenger service: %v", theme.DisplayName(), err)
+					t.Fatalf("[%s] update() failed during passenger service: %v", theme.DisplayName(), err)
 				}
 				for g.Bus.PassengerServiceRemaining() > 0 {
-					if err := g.Update(); err != nil {
-						t.Fatalf("[%s] g.Update() failed during passenger service: %v", theme.DisplayName(), err)
+					if err := update(); err != nil {
+						t.Fatalf("[%s] update() failed during passenger service: %v", theme.DisplayName(), err)
 					}
 				}
 
@@ -116,9 +123,9 @@ func TestIntegrationAllMapsRouteCompletion(t *testing.T) {
 				g.Bus.Speed = 25.0
 
 				// Execute tick outside the stop bay to clear boarding state
-				err = g.Update()
+				err = update()
 				if err != nil {
-					t.Fatalf("[%s] g.Update() failed during departure: %v", theme.DisplayName(), err)
+					t.Fatalf("[%s] update() failed during departure: %v", theme.DisplayName(), err)
 				}
 			}
 

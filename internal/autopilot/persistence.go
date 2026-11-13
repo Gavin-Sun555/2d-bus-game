@@ -6,52 +6,56 @@ import (
 	"math"
 )
 
-const currentDrivePathRevision = 5
+const currentDrivePathRevision = 9
 
 // DriverSnapshot stores controller progress without serializing world pointers.
 type DriverSnapshot struct {
-	DepartureEscapeActive  bool                     `json:",omitempty"`
-	SidecarEscapeActive    bool                     `json:",omitempty"`
-	RoundaboutEdgeRecovery *RoundaboutEdgeRecovery  `json:",omitempty"`
-	PathReturnHold         *sim.BusLaneMergeRequest `json:",omitempty"`
-	DockDepartureRun       float64
-	SmoothDockDeparture    bool
-	ArticulatedPath        bool
-	Public                 AutopilotDriver
-	QueueStopID            *int
-	Turn                   *TurnSnapshot
-	Dock                   *DockSnapshot
-	SkippedStop            int
-	SkippedPosition        sim.Vec2
-	SkippedServed          bool
-	ParallelEntryCenter    *sim.Vec2
-	ApproachMerge          *sim.BusLaneMergeRequest
-	ApproachMergeJoined    bool
-	RoadSafetyHold         bool
-	RoadRecoverySpeed      float64
-	MidLaneRecovery        *sim.BusLaneMergeRequest
-	MidLaneSweepClear      bool
-	LastTargetLaneOffset   float64
-	DrivePath              []sim.Vec2
-	PathRevision           int
-	PathFromID             int
-	PathToID               int
-	PathLane               float64
-	PathSynced             bool
-	DepartureFromDock      bool
-	PathSkipTarget         bool
-	BypassStopID           int
-	DirectRoundaboutExit   *sim.Vec2
-	BusLaneJunction        *sim.Vec2
-	MedianRightChoice      *sim.Vec2
-	CurbBusRight           bool
-	RightTurnJunction      *sim.Vec2
-	RightTurnHeading       float64
-	RightTurnWaiting       bool
-	BusJunctionEntered     bool
-	OrdinaryBusLeft        bool
-	PathOrdinaryBusLeft    bool
-	BusTurnHoldDistance    float64
+	RoadReverseActive       bool                     `json:",omitempty"`
+	DepartureEscapeActive   bool                     `json:",omitempty"`
+	SidecarEscapeActive     bool                     `json:",omitempty"`
+	RoundaboutEdgeRecovery  *RoundaboutEdgeRecovery  `json:",omitempty"`
+	PathReturnHold          *sim.BusLaneMergeRequest `json:",omitempty"`
+	DockDepartureRun        float64
+	SmoothDockDeparture     bool
+	ArticulatedPath         bool
+	Public                  AutopilotDriver
+	QueueStopID             *int
+	Turn                    *TurnSnapshot
+	Dock                    *DockSnapshot
+	SkippedStop             int
+	SkippedPosition         sim.Vec2
+	SkippedServed           bool
+	ParallelEntryCenter     *sim.Vec2
+	ApproachMerge           *sim.BusLaneMergeRequest
+	ApproachMergeJoined     bool
+	StraightMergeLaneChosen bool
+	RoadSafetyHold          bool
+	RoadRecoverySpeed       float64
+	MidLaneRecovery         *sim.BusLaneMergeRequest
+	MidLaneSweepClear       bool
+	LastTargetLaneOffset    float64
+	DrivePath               []sim.Vec2
+	PathRevision            int
+	PathFromID              int
+	PathToID                int
+	PathLane                float64
+	PathSynced              bool
+	DepartureFromDock       bool
+	PathSkipTarget          bool
+	BypassStopID            int
+	DirectRoundaboutExit    *sim.Vec2
+	ExitCruise              *sim.BusLaneMergeRequest
+	BusLaneJunction         *sim.Vec2
+	BusLaneTurnChosen       bool
+	MedianRightChoice       *sim.Vec2
+	CurbBusRight            bool
+	RightTurnJunction       *sim.Vec2
+	RightTurnHeading        float64
+	RightTurnWaiting        bool
+	BusJunctionEntered      bool
+	OrdinaryBusLeft         bool
+	PathOrdinaryBusLeft     bool
+	BusTurnHoldDistance     float64
 }
 type TurnSnapshot struct {
 	Center, Forward sim.Vec2
@@ -67,6 +71,7 @@ type DockSnapshot struct {
 
 func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	s := DriverSnapshot{Public: *ad, SkippedStop: -1, ArticulatedPath: ad.articulatedPath, DockDepartureRun: ad.dockDepartureRun, SmoothDockDeparture: ad.smoothDockDeparture}
+	s.Public.BeforeRecovery = nil
 	s.SidecarEscapeActive = ad.sidecarEscapeActive
 	s.DepartureEscapeActive = ad.departureEscapeActive
 	queue := ad.queueStopID
@@ -79,8 +84,10 @@ func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	s.PathReturnHold = ad.pathReturnHold
 	s.ApproachMerge = ad.approachMerge
 	s.ApproachMergeJoined = ad.approachMergeJoined
+	s.StraightMergeLaneChosen = ad.approachMerge != nil && ad.straightMergeChoice == ad.approachMerge
 	s.RoadSafetyHold = ad.roadSafetyHold
 	s.RoadRecoverySpeed = ad.roadRecoverySpeed
+	s.RoadReverseActive = ad.roadReverseActive
 	s.MidLaneRecovery = ad.midLaneRecovery
 	s.MidLaneSweepClear = ad.midLaneSweepClear
 	s.LastTargetLaneOffset = ad.lastTargetLaneOffset
@@ -94,7 +101,9 @@ func (ad *AutopilotDriver) Snapshot() DriverSnapshot {
 	s.PathSkipTarget = ad.pathSkipTarget
 	s.BypassStopID = ad.bypassStopID
 	s.DirectRoundaboutExit = ad.directRoundaboutExit
+	s.ExitCruise = ad.exitCruise
 	s.BusLaneJunction = ad.busLaneJunction
+	s.BusLaneTurnChosen = ad.busLaneTurnChosen
 	s.MedianRightChoice = ad.medianRightChoice
 	s.CurbBusRight = ad.curbBusRight
 	s.RightTurnJunction = ad.rightTurnJunction
@@ -144,8 +153,13 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 	ad.parallelEntryCenter = s.ParallelEntryCenter
 	ad.approachMerge = s.ApproachMerge
 	ad.approachMergeJoined = s.ApproachMergeJoined
+	ad.straightMergeChoice = nil
+	if s.StraightMergeLaneChosen {
+		ad.straightMergeChoice = ad.approachMerge
+	}
 	ad.roadSafetyHold = s.RoadSafetyHold
 	ad.roadRecoverySpeed = s.RoadRecoverySpeed
+	ad.roadReverseActive = s.RoadReverseActive
 	ad.midLaneRecovery = s.MidLaneRecovery
 	ad.midLaneSweepClear = s.MidLaneSweepClear
 	ad.lastTargetLaneOffset = s.LastTargetLaneOffset
@@ -167,7 +181,9 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 	ad.pathSkipTarget = s.PathSkipTarget
 	ad.bypassStopID = s.BypassStopID
 	ad.directRoundaboutExit = s.DirectRoundaboutExit
+	ad.exitCruise = s.ExitCruise
 	ad.busLaneJunction = s.BusLaneJunction
+	ad.busLaneTurnChosen = s.BusLaneTurnChosen
 	ad.medianRightChoice = s.MedianRightChoice
 	ad.curbBusRight = s.CurbBusRight
 	ad.rightTurnJunction = s.RightTurnJunction
@@ -184,7 +200,7 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 		ad.cumLen[i] = ad.cumLen[i-1] + ad.drivePath[i].Distance(ad.drivePath[i-1])
 	}
 	if s.Turn != nil {
-		ad.uTurn = &uTurnManeuver{s.Turn.Center, s.Turn.Forward, s.Turn.Entered}
+		ad.uTurn = &uTurnManeuver{center: s.Turn.Center, forward: s.Turn.Forward, entered: s.Turn.Entered}
 	}
 	if s.Dock != nil {
 		d := s.Dock
@@ -201,6 +217,9 @@ func (s DriverSnapshot) Restore(w *sim.World) (*AutopilotDriver, error) {
 // Preserve an in-progress turn/dock rather than moving its pursuit target across
 // traffic on load; the next leg then obtains the new geometry normally.
 func (ad *AutopilotDriver) refreshUnenteredSavedPath(w *sim.World) {
+	if ad.uTurn != nil && ad.uTurn.entered {
+		return
+	}
 	if len(ad.drivePath) < 2 || !ad.pathSynced || ad.stationDock != nil || ad.skippedDeparture != nil || ad.directRoundaboutExit != nil || ad.approachMerge != nil || ad.midLaneRecovery != nil {
 		return
 	}
@@ -251,6 +270,7 @@ func (ad *AutopilotDriver) refreshUnenteredSavedPath(w *sim.World) {
 	ad.drivePath = path
 	ad.pathRevision = currentDrivePathRevision
 	ad.pathSynced = false
+	ad.uTurn = nil
 	ad.WaypointIdx = 0
 	ad.cumLen = make([]float64, len(path))
 	for i := 1; i < len(path); i++ {

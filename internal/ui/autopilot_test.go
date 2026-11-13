@@ -7,9 +7,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
-// TestUnifiedMaxSpeedLimitManualAndBerserk verifies that the configurable top speed limit
-// (60, 80, 100, 120 km/h) applies consistently to BOTH manual driving and AI Berserk mode.
-func TestUnifiedMaxSpeedLimitManualAndBerserk(t *testing.T) {
+func TestBerserkPresetsAndManualCeiling(t *testing.T) {
 	s := NewSettings()
 
 	// 1. Verify default is 80 km/h
@@ -23,27 +21,24 @@ func TestUnifiedMaxSpeedLimitManualAndBerserk(t *testing.T) {
 		t.Fatalf("Default berserk cruise speed should be 445.0 px/s (80 km/h), got %.2f", s.GetBerserkCruiseSpeed())
 	}
 
-	testCases := []struct {
-		kmh          int
-		manualMaxSpd float64
-		cruiseSpd    float64
-	}{
-		{60, 334.0, 333.0},
-		{80, 445.0, 445.0},
-		{100, 556.0, 555.0},
-		{120, 667.0, 667.0},
-	}
-
-	for _, tc := range testCases {
-		s.SetMaxSpeed(tc.kmh)
-		if s.AutopilotBerserkMaxSpeed != tc.kmh {
-			t.Fatalf("Expected speed %d, got %d", tc.kmh, s.AutopilotBerserkMaxSpeed)
+	for _, kmh := range []int{80, 120, 160, 180} {
+		s.SetMaxSpeed(kmh)
+		s.AutopilotEnabled, s.AutopilotBerserk = true, false
+		want := sim.SpeedKPH(kmh)
+		if s.GetBusMaxSpeed() != want {
+			t.Fatalf("[%d km/h] Standard autopilot ignored the player top speed: %.2f", kmh, s.GetBusMaxSpeed())
 		}
-		if math.Abs(s.GetBusMaxSpeed()-tc.manualMaxSpd) > 0.1 {
-			t.Fatalf("[%d km/h] Expected bus manual max speed %.1f, got %.2f", tc.kmh, tc.manualMaxSpd, s.GetBusMaxSpeed())
+		s.AutopilotBerserk = true
+		if s.GetBusMaxSpeed() != want || s.GetBerserkCruiseSpeed() != want {
+			t.Fatalf("[%d km/h] Incorrect Berserk ceiling", kmh)
 		}
-		if math.Abs(s.GetBerserkCruiseSpeed()-tc.cruiseSpd) > 0.1 {
-			t.Fatalf("[%d km/h] Expected berserk cruise speed %.1f, got %.2f", tc.kmh, tc.cruiseSpd, s.GetBerserkCruiseSpeed())
+		s.AutopilotEnabled = false
+		if s.GetBusMaxSpeed() != want {
+			t.Fatalf("[%d km/h] Switching to manual changed the ceiling to %.2f", kmh, s.GetBusMaxSpeed())
+		}
+		s.AutopilotBerserk = false
+		if s.GetBusMaxSpeed() != want {
+			t.Fatalf("[%d km/h] Clearing Berserk changed the manual ceiling to %.2f", kmh, s.GetBusMaxSpeed())
 		}
 
 		// 2. Simulate manual driving kinematics
@@ -57,29 +52,27 @@ func TestUnifiedMaxSpeedLimitManualAndBerserk(t *testing.T) {
 		}
 
 		// Verify speed capped at MaxSpeedFwd
-		if bus.Speed > bus.MaxSpeedFwd+0.01 {
-			t.Fatalf("[%d km/h] Manual bus exceeded speed limit! Speed=%.2f, Max=%.2f", tc.kmh, bus.Speed, bus.MaxSpeedFwd)
+		if math.Abs(bus.Speed-want) > 0.01 {
+			t.Fatalf("[%d km/h] Manual bus speed %.2f, want %.2f", kmh, bus.Speed, want)
 		}
 
 		// Verify converted KM/H on HUD matches target speed limit
 		hudKmh := int(math.Abs(bus.Speed) * 0.18)
-		if hudKmh != tc.kmh {
-			t.Fatalf("[%d km/h] Expected HUD speed %d km/h, got %d km/h (raw speed: %.2f)", tc.kmh, tc.kmh, hudKmh, bus.Speed)
+		if hudKmh != kmh {
+			t.Fatalf("[%d km/h] Expected HUD speed %d km/h, got %d km/h (raw speed: %.2f)", kmh, kmh, hudKmh, bus.Speed)
 		}
 	}
 
-	// 3. Test Cycling Sequence: 60 -> 80 -> 100 -> 120 -> 60
-	s.SetMaxSpeed(60)
-	if next := s.CycleMaxSpeed(); next != 80 {
-		t.Fatalf("Expected cycle 60 -> 80, got %d", next)
+	s.SetMaxSpeed(80)
+	for _, want := range []int{120, 160, 180, 80} {
+		if next := s.CycleMaxSpeed(); next != want {
+			t.Fatalf("cycled to %d km/h, want %d", next, want)
+		}
 	}
-	if next := s.CycleMaxSpeed(); next != 100 {
-		t.Fatalf("Expected cycle 80 -> 100, got %d", next)
-	}
-	if next := s.CycleMaxSpeed(); next != 120 {
-		t.Fatalf("Expected cycle 100 -> 120, got %d", next)
-	}
-	if next := s.CycleMaxSpeed(); next != 60 {
-		t.Fatalf("Expected cycle 120 -> 60, got %d", next)
+	for _, legacy := range []int{60, 100} {
+		s.AutopilotBerserkMaxSpeed = legacy
+		if got := s.BerserkSpeedKPH(); got != 80 {
+			t.Fatalf("legacy preset %d resolved to %d", legacy, got)
+		}
 	}
 }

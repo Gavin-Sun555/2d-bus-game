@@ -12,6 +12,7 @@ type carSpriteKey struct {
 	Length, Width  float64
 	Type           sim.CarType
 	Braking, Beams bool
+	Headlights     bool
 }
 type carSprite struct {
 	image  *ebiten.Image
@@ -24,10 +25,10 @@ var carSprites = map[carSpriteKey]carSprite{}
 // lamps and beams as one image. Shadows stay in world space. Braking and zoom
 // beam visibility have independent keys, so the cache never hides live state.
 func drawCachedCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) bool {
-	key := carSpriteKey{c.Color, c.Length, c.Width, c.Type, c.IsBraking, cam.Zoom >= .20}
+	key := carSpriteKey{Color: c.Color, Length: c.Length, Width: c.Width, Type: c.Type, Braking: c.IsBraking, Beams: cam.Zoom >= .20, Headlights: c.HeadlightsOn}
 	sprite, ok := carSprites[key]
 	if !ok {
-		if len(carSprites) >= 128 {
+		if len(carSprites) >= 256 {
 			return false
 		}
 		width, height := int(math.Ceil((c.Length+65)*2)), int(math.Ceil((c.Width+30)*2))
@@ -44,7 +45,7 @@ func drawCachedCar(screen *ebiten.Image, cam *sim.Camera, c *sim.TrafficCar) boo
 	var op ebiten.DrawImageOptions
 	op.GeoM.Translate(-sprite.origin.X, -sprite.origin.Y)
 	op.GeoM.Scale(cam.Zoom/2, cam.Zoom/2)
-	op.GeoM.Rotate(c.Heading - cam.Rotation)
+	op.GeoM.Rotate(c.VisualHeading() - cam.Rotation)
 	p := cam.WorldToScreen(c.Pos)
 	op.GeoM.Translate(p.X, p.Y)
 	op.Filter = ebiten.FilterLinear

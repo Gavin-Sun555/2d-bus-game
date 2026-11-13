@@ -6,6 +6,11 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+type busMergeObservation struct {
+	bus  *sim.Bus
+	stop *sim.BusStop
+}
+
 // Cars create a gap for route-required and station merges. Cars already
 // alongside or too close to brake comfortably clear the bus first.
 func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64 {
@@ -27,7 +32,20 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 		car.IsBraking = true
 		target = math.Min(target, limit)
 	}
-	for _, bus := range f.buses {
+	// Production frames share a stable, ordered active-request list. Direct
+	// rule callers retain the uncached path for independently built frames.
+	count := len(f.buses)
+	if f.mergeBusesReady {
+		count = len(f.mergeBuses)
+	}
+	for i := 0; i < count; i++ {
+		var bus *sim.Bus
+		var stop *sim.BusStop
+		if f.mergeBusesReady {
+			bus, stop = f.mergeBuses[i].bus, f.mergeBuses[i].stop
+		} else {
+			bus = f.buses[i]
+		}
 		if bus == nil || bus.DoorsOpen {
 			continue
 		}
@@ -37,11 +55,12 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 		if bus.StationMergeRequest == nil || bus.StationMergeRequest.Remaining <= 0 {
 			continue
 		}
-		var stop *sim.BusStop
-		for _, candidate := range f.world.Stops {
-			if candidate.ID == bus.StationMergeRequest.StopID {
-				stop = candidate
-				break
+		if !f.mergeBusesReady {
+			for _, candidate := range f.world.Stops {
+				if candidate.ID == bus.StationMergeRequest.StopID {
+					stop = candidate
+					break
+				}
 			}
 		}
 		if stop == nil || car.LaneIndex != max(0, stop.RoadLanes/2-1) || math.Cos(car.Heading-stop.Heading) < .98 || math.Cos(bus.Heading-stop.Heading) < .8 {

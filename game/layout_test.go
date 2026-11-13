@@ -69,6 +69,7 @@ func TestViewportKeepsMenusAndHUDInsideCanvas(t *testing.T) {
 		g.Draw(screen)
 		inside("start", g.menuStartBounds)
 		inside("language", g.menuLangBounds)
+		inside("save", g.menuSaveBounds)
 		inside("continue", g.menuContinueBounds)
 		inside("large_grid", g.menuLargeGridBounds)
 		for _, r := range g.menuCardBounds {

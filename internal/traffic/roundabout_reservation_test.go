@@ -1,8 +1,10 @@
 package traffic
 
 import (
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"math"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 func reservationBus(x float64, model sim.BusModel) *sim.Bus {
@@ -115,6 +117,45 @@ func TestReservedRoundaboutCarWaitsThenEnters(t *testing.T) {
 		}
 	}
 	t.Fatal("car did not enter after reservation released")
+}
+
+func TestRoundaboutReservationLetsSameLaneCarClearFirst(t *testing.T) {
+	rb := sim.Roundabout{Radius: 240, InnerRadius: 120}
+	owner := reservationBus(-457, sim.BusArticulated)
+	owner.Pos.Y = 78
+	lead := &sim.TrafficCar{Pos: sim.Vec2{X: -355, Y: 78}, Length: 46, Width: 22}
+	tm := &TrafficManager{roundaboutReservations: []roundaboutReservation{{owner: owner}}}
+	forward := sim.Vec2{X: 1}
+	if tm.roundaboutReservedForCar(rb, lead, forward, 52) {
+		t.Fatal("car ahead of the reserving bus cannot clear the entrance")
+	}
+	lead.Pos.Y = 26
+	if !tm.roundaboutReservedForCar(rb, lead, forward, 52) {
+		t.Fatal("adjacent lane car should still yield to the reservation")
+	}
+	lead.Pos.Y = 78
+	tm.roundaboutReservations[0].entered = true
+	if !tm.roundaboutReservedForCar(rb, lead, forward, 52) {
+		t.Fatal("car must yield once the reserving bus has entered")
+	}
+}
+
+func TestRoundaboutReservationRotatesBetweenQueuedApproaches(t *testing.T) {
+	w := &sim.World{Roundabouts: []sim.Roundabout{{Radius: 240, InnerRadius: 120}}}
+	west := reservationBus(-457, sim.BusArticulated)
+	east := reservationBus(333, sim.BusArticulated)
+	east.Heading = math.Pi
+	east.Pos.Y = -26
+	east.ResetArticulation()
+	east.RoundaboutEntry.Forward.X = -1
+	tm := &TrafficManager{
+		AIBusMgr:               &AIBusManager{Buses: []*AIBus{{Bus: east}}},
+		roundaboutReservations: []roundaboutReservation{{lastApproach: sim.Vec2{X: -1}}},
+	}
+	tm.updateRoundaboutReservations(west, w, 0, 52)
+	if tm.roundaboutReservations[0].owner != west || east.RoundaboutAdmissionHold == nil {
+		t.Fatal("the closer east queue took another turn ahead of the west queue")
+	}
 }
 
 func TestAbreastArticulatedEntrantsDoNotReserveAgainstInnerLeader(t *testing.T) {

@@ -46,6 +46,7 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 	}
 	// A. Anticipate corners / roundabout arcs ahead, and slow while circulating
 	targetSpd = math.Min(targetSpd, ad.cornerSpeedLimit(f.s, f.speedAbs))
+	targetSpd = math.Min(targetSpd, ad.exitCruiseSpeed(f))
 	if ad.dockDepartureRun > f.s {
 		targetSpd = math.Min(targetSpd, ad.dockDepartureSpeed(f))
 	}
@@ -58,7 +59,11 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 	}
 
 	if ad.uTurn.needsTurnSpeed(f.bus) {
-		targetSpd = math.Min(targetSpd, 70)
+		turnSpeed := 90.
+		if ad.BerserkMode {
+			turnSpeed = 105
+		}
+		targetSpd = math.Min(targetSpd, turnSpeed)
 	}
 	targetSpd = ad.recoverySpeed(f, targetSpd, isApproachingSharpTurn)
 	targetSpd = ad.stationSpeed(f, targetSpd)
@@ -69,8 +74,8 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 		}
 	}
 	targetSpd = math.Min(targetSpd, ad.junctionAdmissionSpeed(f))
-	if ad.approachMerge != nil {
-		mergeSpeed := 80.0
+	if ad.approachMerge != nil && ad.midLaneRecovery == nil {
+		mergeSpeed := ad.approachManeuverSpeed(f, ad.approachMerge)
 		if ad.approachMergeJoined {
 			mergeSpeed = apCruiseSpeed
 			if ad.BerserkMode {
@@ -83,14 +88,15 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 
 	// Returning to the reserved turn lane is a controlled queue merge, not a
 	// high-speed passing maneuver. Retain front headway even when the gap fits.
-	if ad.busLaneJunction != nil && !ad.busJunctionEntered {
+	if ad.busLaneApproachActive(f) {
 		heading := approachRoadHeading(f.bus.Heading)
 		right := sim.Vec2{X: -math.Sin(heading), Y: math.Cos(heading)}
 		target := ad.pointAt(f.s)
 		if math.Abs(target.Sub(f.bus.Pos).Dot(right)) > 4 {
-			targetSpd = math.Min(targetSpd, 80)
+			request := &sim.BusLaneMergeRequest{Target: target, Heading: heading, Junction: *ad.busLaneJunction}
+			targetSpd = math.Min(targetSpd, ad.approachManeuverSpeed(f, request))
 		}
-		request := &sim.BusLaneMergeRequest{Target: target, Heading: heading, LeftTurn: true}
+		request := ad.approachTrafficRequest(f, &sim.BusLaneMergeRequest{Target: target, Heading: heading, LeftTurn: true, Junction: *ad.busLaneJunction})
 		for _, ob := range f.obstacles {
 			// The route taper can already be sweeping safely away from the
 			// curb queue while the yawed body still shares its road-axis band.
@@ -119,6 +125,9 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 	}
 	targetSpd = ad.obstacleSpeed(f, targetSpd)
 	targetSpd = math.Min(targetSpd, ad.junctionSweptSpeed(f))
+	if ad.stationBypassHold > 0 {
+		targetSpd = math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, ad.stationBypassHold-220)))
+	}
 
 	if ad.CruiseSpeedLimit > 0 {
 		targetSpd = math.Min(targetSpd, ad.CruiseSpeedLimit)

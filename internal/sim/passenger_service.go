@@ -152,6 +152,9 @@ func (b *Bus) StepStationService(busID int, stop *BusStop, route *Route, ops *Tr
 		b.PassengerService.AlightedSoFar += alightedNow
 		if ops != nil && alightedNow > 0 {
 			ops.Alight(busID, stop.ID, alightedNow)
+			if route != nil {
+				ops.lineStationActivity(route.Name, stop.ID).Alighted += alightedNow
+			}
 		}
 	}
 	stillBoarding := PendingSteps(b.PassengerService.BoardingRemaining, b.PassengerService.rates().Boarding)
@@ -169,9 +172,14 @@ func (b *Bus) StepStationService(busID int, stop *BusStop, route *Route, ops *Tr
 					savedIdx = route.CurrentIndex
 					route.CurrentIndex = b.PassengerService.RouteIndex
 				}
-				dests := stop.BoardMatchingPassengers(take, b.PassengerService.Candidates)
+				dests, samples, seconds := stop.boardWaitingPassengers(take, b.PassengerService.Candidates)
 				if ops != nil {
 					boardedNow, fareNow = ops.BoardWithDestinations(busID, b, route, stop.ID, dests)
+					if route != nil && samples > 0 {
+						activity := ops.lineStationActivity(route.Name, stop.ID)
+						activity.WaitSamples += samples
+						activity.WaitSeconds += seconds
+					}
 				} else {
 					boardedNow = b.BoardPassengersWithDestinations(dests)
 				}

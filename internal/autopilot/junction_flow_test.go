@@ -50,35 +50,94 @@ func TestGreenBusFollowsTurningCarWithoutAdmissionPause(t *testing.T) {
 	}
 }
 
+// A green left-turning platoon keeps moving through the junction and each bus
+// stays in its lane; covers ordinary and berserk followers.
 func TestGreenTurningBusPlatoonKeepsMoving(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		crossLanes int
+		berserk    bool
+	}{{"cross4", 4, false}, {"berserk/cross2", 2, true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			const lw = 52.
+			w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 6}, {P1: sim.Vec2{Y: -3000}, P2: sim.Vec2{Y: 3000}, Lanes: tc.crossLanes}}}
+			w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", sim.Vec2{X: -2000}, 0, 6, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", sim.Vec2{Y: -2000}, -math.Pi/2, tc.crossLanes, sim.RGBA(0, 0, 0, 255), lw)}
+			w.RebuildIntersections()
+			tls := sim.NewTrafficLightSystem()
+			tls.BuildForWorld(w)
+			it := tls.Intersections[0]
+			it.Phase = sim.PhaseEWLeftGreen
+			line := it.GetStopLineDistForHeading(0, lw)
+			leader, follower := sim.NewBus(-line-60, lw/2, 0), sim.NewBus(-line-280, lw/2, 0)
+			leader.Speed, follower.Speed = 85, 85
+			a, b := NewAutopilotDriver(), NewAutopilotDriver()
+			b.BerserkMode = tc.berserk
+			ra, rb := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}, &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+			for tick := 0; tick < 1800; tick++ {
+				th, br, st, hb, d, _ := a.ComputeControls(leader, ra, w, tls, nil, lw, 1./60)
+				leader.Update(1./60, th, br, st, hb, d)
+				ob := VehicleObstacle{Pos: leader.Pos, Heading: leader.Heading, Speed: leader.Speed, Length: leader.Length, Width: leader.Width, JunctionCorridor: leader.JunctionCorridor}
+				th, br, st, hb, d, _ = b.ComputeControls(follower, rb, w, tls, []VehicleObstacle{ob}, lw, 1./60)
+				follower.Update(1./60, th, br, st, hb, d)
+				if follower.Pos.X > -line-35 && follower.Pos.X < -line+35 && follower.Speed < 5 {
+					t.Fatalf("bus paused at green line tick%d speed%.2f target%.2f", tick, follower.Speed, b.LastTargetSpeed)
+				}
+				if hit, _, _ := sim.CheckOBBCollision(sim.OBB{Center: leader.Pos, Heading: leader.Heading, HalfLen: leader.Length / 2, HalfWid: leader.Width / 2}, sim.OBB{Center: follower.Pos, Heading: follower.Heading, HalfLen: follower.Length / 2, HalfWid: follower.Width / 2}); hit {
+					t.Fatalf("bus platoon contact tick%d", tick)
+				}
+				if follower.Pos.Y < -550 {
+					return
+				}
+			}
+			t.Fatalf("bus platoon did not clear: %v speed%.2f", follower.Pos, follower.Speed)
+		})
+	}
+}
+
+func TestUTurnYieldsToOpposingLeftOnSharedGreen(t *testing.T) {
 	const lw = 52.
-	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 6}, {P1: sim.Vec2{Y: -3000}, P2: sim.Vec2{Y: 3000}, Lanes: 4}}}
-	w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", sim.Vec2{X: -2000}, 0, 6, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", sim.Vec2{Y: -2000}, -math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), lw)}
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 6},
+		{P1: sim.Vec2{Y: -3000}, P2: sim.Vec2{Y: 3000}, Lanes: 6},
+	}}
 	w.RebuildIntersections()
 	tls := sim.NewTrafficLightSystem()
 	tls.BuildForWorld(w)
 	it := tls.Intersections[0]
 	it.Phase = sim.PhaseEWLeftGreen
 	line := it.GetStopLineDistForHeading(0, lw)
-	leader, follower := sim.NewBus(-line-60, lw/2, 0), sim.NewBus(-line-280, lw/2, 0)
-	leader.Speed, follower.Speed = 85, 85
-	a, b := NewAutopilotDriver(), NewAutopilotDriver()
-	ra, rb := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}, &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
-	for tick := 0; tick < 1800; tick++ {
-		th, br, st, hb, d, _ := a.ComputeControls(leader, ra, w, tls, nil, lw, 1./60)
-		leader.Update(1./60, th, br, st, hb, d)
-		ob := VehicleObstacle{Pos: leader.Pos, Heading: leader.Heading, Speed: leader.Speed, Length: leader.Length, Width: leader.Width, JunctionCorridor: leader.JunctionCorridor}
-		th, br, st, hb, d, _ = b.ComputeControls(follower, rb, w, tls, []VehicleObstacle{ob}, lw, 1./60)
-		follower.Update(1./60, th, br, st, hb, d)
-		if follower.Pos.X > -line-35 && follower.Pos.X < -line+35 && follower.Speed < 5 {
-			t.Fatalf("bus paused at green line tick%d speed%.2f target%.2f", tick, follower.Speed, b.LastTargetSpeed)
-		}
-		if hit, _, _ := sim.CheckOBBCollision(sim.OBB{Center: leader.Pos, Heading: leader.Heading, HalfLen: leader.Length / 2, HalfWid: leader.Width / 2}, sim.OBB{Center: follower.Pos, Heading: follower.Heading, HalfLen: follower.Length / 2, HalfWid: follower.Width / 2}); hit {
-			t.Fatalf("bus platoon contact tick%d", tick)
-		}
-		if follower.Pos.Y < -550 {
-			return
-		}
+	bus := sim.NewBus(-line-66, lw/2, 0)
+	leftBus := sim.NewBus(line+66, -lw/2, math.Pi)
+	turn := func(b *sim.Bus, exit float64) *sim.JunctionCorridor {
+		c := &sim.JunctionCorridor{EntryHeading: b.Heading, Remaining: .25, Bodies: []sim.OBB{
+			{Center: b.Pos, Heading: b.Heading, HalfLen: b.Length / 2, HalfWid: b.Width / 2},
+			{Heading: exit, HalfLen: b.Length / 2, HalfWid: b.Width / 2},
+		}}
+		c.RebuildBounds()
+		return c
 	}
-	t.Fatalf("bus platoon did not clear: %v speed%.2f", follower.Pos, follower.Speed)
+	bus.JunctionCorridor = turn(bus, math.Pi)
+	leftBus.JunctionCorridor = turn(leftBus, math.Pi/2)
+	ad := NewAutopilotDriver()
+	f := autopilotFrame{bus: bus, world: w, tls: tls, laneWidth: lw, obstacles: []VehicleObstacle{ObserveBus(leftBus)}}
+	if got := ad.junctionAdmissionSpeed(f); math.IsInf(got, 1) {
+		t.Fatal("conflicting U-turn had no entry speed limit")
+	}
+	f.bus, f.obstacles[0] = leftBus, ObserveBus(bus)
+	if got := ad.junctionAdmissionSpeed(f); !math.IsInf(got, 1) {
+		t.Fatalf("regular left was also held: %.1f", got)
+	}
+	bus.JunctionCorridor.UTurnReady = true
+	if got := ad.junctionAdmissionSpeed(f); math.IsInf(got, 1) {
+		t.Fatal("regular left did not yield to the waiting U-turn")
+	}
+	f.bus, f.obstacles[0] = bus, ObserveBus(leftBus)
+	if got := ad.junctionAdmissionSpeed(f); !math.IsInf(got, 1) {
+		t.Fatalf("waiting U-turn was still held by the unentered left: %.1f", got)
+	}
+	leftBus.JunctionCorridor.Entered = true
+	if got := ad.junctionAdmissionSpeed(f); math.IsInf(got, 1) {
+		t.Fatal("U-turn ignored a vehicle that had already entered")
+	}
+
 }

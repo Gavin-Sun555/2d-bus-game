@@ -105,3 +105,46 @@ func TestMedianRightIgnoresLaterStraightJunction(t *testing.T) {
 		t.Fatal("protected right stopped for a junction outside its turn")
 	}
 }
+
+func TestMedianBRTGeneralLeftAndThroughUseSeparatePhases(t *testing.T) {
+	const lw = 52.
+	// Legacy maps can specify the road type without an explicit lane count.
+	w := &World{Roads: []RoadSegment{
+		{P1: Vec2{X: -1800}, P2: Vec2{X: 1800}, Type: RoadBusBoulevard8Lane, MedianBusLane: true},
+		{P1: Vec2{Y: -1800}, P2: Vec2{Y: 1800}, Type: RoadBusBoulevard8Lane, MedianBusLane: true},
+	}}
+	w.RebuildIntersections()
+	tls := NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	inter := tls.Intersections[0]
+	for _, heading := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+		u := UnitFromAngle(heading)
+		r := Vec2{X: -u.Y, Y: u.X}
+		throughGreen, leftGreen := PhaseEWGreen, PhaseEWLeftGreen
+		if math.Abs(u.Y) > .5 {
+			throughGreen, leftGreen = PhaseNSGreen, PhaseNSLeftGreen
+		}
+		for _, phase := range []LightPhase{throughGreen, leftGreen} {
+			inter.Phase = phase
+			through, left := inter.GetSignalForApproach(heading)
+			wantThrough, wantLeft := SignalGreen, SignalRed
+			if phase == leftGreen {
+				wantThrough, wantLeft = SignalRed, SignalGreen
+			}
+			if through != wantThrough || left != wantLeft {
+				t.Fatalf("heading %.2f phase %d: through %v left %v", heading, phase, through, left)
+			}
+			approach := u.Mul(-inter.GetStopLineDistForHeading(heading, lw) - 45)
+			for _, leftTurn := range []bool{false, true} {
+				lane := 2.5
+				if leftTurn {
+					lane = 1.5
+				}
+				stop, _ := tls.CheckStopForVehicleAtSpeed(approach.Add(r.Mul(lane*lw)), heading, 400, lw, leftTurn, false, false, 80, true)
+				if stop != (leftTurn != (phase == leftGreen)) {
+					t.Fatalf("heading %.2f phase %d: leftTurn %v stopped %v", heading, phase, leftTurn, stop)
+				}
+			}
+		}
+	}
+}

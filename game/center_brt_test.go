@@ -65,7 +65,7 @@ func TestCenterBRTSelectionResetAndSave(t *testing.T) {
 	g.Draw(screen)
 }
 
-func TestCustomMapCenterBRTOptionAndIndependentSave(t *testing.T) {
+func TestBuiltinBRTButtonsAndLegacyCustomSave(t *testing.T) {
 	g := NewGame(1280, 720)
 	data := sim.GetDefaultCustomMapData()
 	data.Roads[0].Lanes = 8
@@ -77,8 +77,13 @@ func TestCustomMapCenterBRTOptionAndIndependentSave(t *testing.T) {
 	screen := ebiten.NewImage(1280, 720)
 	defer screen.Dispose()
 	g.Draw(screen)
-	if g.menuCardBRTBounds[0].W <= 0 || g.menuCardBRTBounds[4].W <= 0 {
-		t.Fatal("eligible map missing BRT button")
+	for i := 0; i < 4; i++ {
+		if g.menuCardBRTBounds[i].W <= 0 {
+			t.Fatalf("built-in map %d missing BRT button", i)
+		}
+	}
+	if g.menuCardBRTBounds[4].W != 0 {
+		t.Fatal("custom map must not expose a BRT option")
 	}
 	for i, theme := range sim.SelectableMapThemes() {
 		if g.menuCardBRTBounds[i].W > 0 != g.centerBRTAvailable(theme) {

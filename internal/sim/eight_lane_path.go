@@ -6,6 +6,47 @@ import "math"
 // Complete the lateral transition inside the junction, rather than exiting in
 // the median lane and then cutting across a queue outside the junction.
 func WideLeftTurnPath(center, in, out Vec2, inOffset, outOffset float64, geometry JunctionGeometry) []Vec2 {
+	return leftTurnWithHandle(center, in, out, inOffset, outOffset, geometry, .7)
+}
+
+// InnerLeftTurnPath stays nearer the inside corner so a bus can turn from
+// the curb into a separate lane outside this curve.
+func InnerLeftTurnPath(center, in, out Vec2, inOffset, outOffset float64, geometry JunctionGeometry, incoming, outgoing int) []Vec2 {
+	_, carHandle := parallelLeftHandles(incoming, outgoing)
+	return leftTurnWithHandle(center, in, out, inOffset, outOffset, geometry, carHandle)
+}
+
+// CurbBusLeftTurnPath leaves room for inner left turns on ordinary roads,
+// including the trailer's inward sweep on a narrower receiving road.
+func CurbBusLeftTurnPath(center, in, out Vec2, inOffset, outOffset float64, geometry JunctionGeometry, incoming, outgoing int) []Vec2 {
+	busHandle, _ := parallelLeftHandles(incoming, outgoing)
+	return leftTurnWithHandle(center, in, out, inOffset, outOffset, geometry, busHandle)
+}
+
+// Pair the two curves. Wider tangent handles reduce peak curvature, but the
+// inner path still needs room beside the bus and the opposing approaches.
+func parallelLeftHandles(incoming, outgoing int) (bus, car float64) {
+	switch {
+	case incoming == 4 && outgoing == 8:
+		return .82, .56
+	case incoming == 8 && outgoing == 4:
+		return 1.10, .52
+	case incoming == 4 && outgoing == 4:
+		return .96, .50
+	case min(incoming, outgoing) == 4 && max(incoming, outgoing) == 6:
+		return 1.16, .42
+	case incoming == 6 && outgoing == 6:
+		return .95, .36
+	case min(incoming, outgoing) == 6 && max(incoming, outgoing) == 8:
+		return 1.15, .52
+	case incoming == 8 && outgoing == 8:
+		return 1.03, .49
+	default:
+		return .7, .4
+	}
+}
+
+func leftTurnWithHandle(center, in, out Vec2, inOffset, outOffset float64, geometry JunctionGeometry, handleScale float64) []Vec2 {
 	rightIn := Vec2{X: -in.Y, Y: in.X}
 	rightOut := Vec2{X: -out.Y, Y: out.X}
 	entry := math.Abs(in.X)*geometry.HalfX + math.Abs(in.Y)*geometry.HalfY
@@ -15,7 +56,7 @@ func WideLeftTurnPath(center, in, out Vec2, inOffset, outOffset float64, geometr
 	// Shorter handles keep the middle of the curve on its own side of the
 	// opposing-left-turn diagonal. A quarter circle between curb lanes cuts
 	// across that diagonal; merely changing its exit offset is unsafe.
-	handle := .7 * math.Min(entry-inOffset, exit-outOffset)
+	handle := handleScale * math.Min(entry-inOffset, exit-outOffset)
 	p1 := p0.Add(in.Mul(handle))
 	p2 := p3.Sub(out.Mul(handle))
 	const steps = 40
@@ -51,8 +92,8 @@ func appendWideLeftLaneReturn(points []Vec2, center, out Vec2, from, to, availab
 	return points
 }
 
-// Buses cruise in the outer through lane and enter the right-turn lane before
-// the stop line. A path taper avoids treating a turn-lane change as overtaking.
+// Join the curb lane before a right turn if the approach path starts in a
+// different lane. The protected median bus turn has its own geometry.
 func appendEightLaneRightTurn(points []Vec2, w *World, center, in, out Vec2, inCoord, outCoord float64, inEW, outEW bool, inProbe, outProbe Vec2, lw float64, curbRight ...bool) []Vec2 {
 	right := Vec2{X: -in.Y, Y: in.X}
 	geometry := w.JunctionAt(center, lw)

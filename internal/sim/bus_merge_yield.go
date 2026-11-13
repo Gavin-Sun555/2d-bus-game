@@ -18,7 +18,16 @@ func BusMergeYieldLimit(follower, merging *Bus, laneWidth float64, continuing bo
 		// merge. Recheck projected full-body gap and braking below every tick.
 		minAlignment = .25
 	}
-	if request == nil || request.Remaining <= 0 || request.Joined || (math.Cos(follower.Heading-request.Heading) < .98 && (math.Abs(follower.Speed) > 20 || math.Cos(follower.Heading-request.Heading) < .95)) || math.Cos(merging.Heading-request.Heading) < minAlignment {
+	if request == nil {
+		return 0, false
+	}
+	followerAligned := math.Cos(follower.Heading-request.Heading) >= .98 || (math.Abs(follower.Speed) <= 20 && math.Cos(follower.Heading-request.Heading) >= .95)
+	if continuing {
+		// An angled follower that granted the slot must keep it as the leader
+		// pulls away; the gap-based limit below already bounds its speed.
+		followerAligned = math.Cos(follower.Heading-request.Heading) >= .9
+	}
+	if request.Remaining <= 0 || request.Joined || !followerAligned || math.Cos(merging.Heading-request.Heading) < minAlignment {
 		return 0, false
 	}
 	forward := UnitFromAngle(request.Heading)

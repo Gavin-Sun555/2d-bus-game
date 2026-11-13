@@ -27,6 +27,7 @@ type HUD struct {
 	MapThemeBtnBounds     sim.Rect
 	MenuBtnBounds         sim.Rect
 	PlanUndoBtnBounds     sim.Rect
+	PlanSearchBtnBounds   sim.Rect
 	PlanClearBtnBounds    sim.Rect
 	PlanPanelBounds       sim.Rect
 	ReturnToMenuRequested bool
@@ -50,9 +51,6 @@ type HUD struct {
 	cachedDurStr         string
 	cachedSteerDeg       int
 	cachedSteerStr       string
-	cachedBerserkSpeed   int
-	cachedBskText        string
-	cachedManText        string
 	cachedDistSecDist    int
 	cachedDistSecRem     int
 	cachedSigDistText    string
@@ -69,7 +67,6 @@ func NewHUD() *HUD {
 		cachedWaitingPax:   -1,
 		cachedDurability:   -1,
 		cachedSteerDeg:     -999,
-		cachedBerserkSpeed: -1,
 		cachedDistSecDist:  -1,
 		cachedDistSecRem:   -1,
 	}

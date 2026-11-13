@@ -73,7 +73,7 @@ func TestBusLanePreferenceAndPassing(t *testing.T) {
 	}
 }
 
-func TestBusLaneLeftTurnUsesShorterLegalQueue(t *testing.T) {
+func TestBusLaneLeftTurnRetainsCurbDespiteShorterInnerQueue(t *testing.T) {
 	for _, queued := range []bool{false, true} {
 		t.Run(fmt.Sprint(queued), func(t *testing.T) {
 			const lw = 52.0
@@ -93,7 +93,7 @@ func TestBusLaneLeftTurnUsesShorterLegalQueue(t *testing.T) {
 			ad.trackPath(bus.Pos)
 			f := autopilotFrame{bus: bus, world: w, tls: tls, obstacles: obstacles, laneWidth: lw, s: ad.LastPathS, speedAbs: 60, remaining: 3000, targetStop: w.Stops[1]}
 			ad.updateBusLane(f, .016)
-			if ad.ordinaryBusLeft != queued {
+			if ad.ordinaryBusLeft {
 				t.Fatalf("ordinary-left choice %v for bus queue%v", ad.ordinaryBusLeft, queued)
 			}
 		})

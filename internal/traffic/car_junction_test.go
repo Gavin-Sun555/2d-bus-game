@@ -63,7 +63,7 @@ func TestCarLeftTurnJoinsDestinationLaneWithoutSliding(t *testing.T) {
 							}
 							if turning && car.JunctionTurn == nil {
 								finished = true
-								if car.LaneIndex != min(1, destination.lanes/2-1) {
+								if car.LaneIndex != 0 {
 									t.Fatalf("wrong destination lane: %d", car.LaneIndex)
 								}
 								expected := (float64(car.LaneIndex) + .5) * lw

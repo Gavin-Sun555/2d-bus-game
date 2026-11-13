@@ -11,8 +11,9 @@ type trafficCell struct{ x, y int }
 type carBucket struct{ ids []int }
 
 type carSpatialIndex struct {
-	buckets map[trafficCell]*carBucket
-	cells   []trafficCell
+	revision uint64
+	buckets  map[trafficCell]*carBucket
+	cells    []trafficCell
 	// The bounded dense directory avoids a map lookup for every empty query
 	// cell. Buckets retain their identity when this directory grows; sparse or
 	// out-of-directory coordinates still use the exact map fallback.
@@ -52,6 +53,7 @@ func (s *carSpatialIndex) add(k trafficCell, id int) {
 }
 
 func (s *carSpatialIndex) build(cars []*sim.TrafficCar) {
+	s.revision++
 	if s.buckets == nil {
 		s.buckets = make(map[trafficCell]*carBucket)
 	}
@@ -122,6 +124,7 @@ func (s *carSpatialIndex) move(i int, pos sim.Vec2) {
 	}
 	s.add(next, i)
 	s.cells[i] = next
+	s.revision++
 }
 func (s *carSpatialIndex) query(pos sim.Vec2, radius float64, dst []int) []int {
 	dst = s.queryUnsorted(pos, radius, dst)
@@ -154,8 +157,17 @@ func (s *carSpatialIndex) query(pos sim.Vec2, radius float64, dst []int) []int {
 // Junction queries add committed turns before performing their one stable-ID
 // sort. Other perception/collision queries continue to use query above.
 func (s *carSpatialIndex) queryUnsorted(pos sim.Vec2, radius float64, dst []int) []int {
+	lo, hi := trafficQueryCells(pos, radius)
+	return s.queryCellsUnsorted(lo, hi, dst)
+}
+
+func trafficQueryCells(pos sim.Vec2, radius float64) (trafficCell, trafficCell) {
+	offset := sim.Vec2{X: radius, Y: radius}
+	return cellAt(pos.Sub(offset)), cellAt(pos.Add(offset))
+}
+
+func (s *carSpatialIndex) queryCellsUnsorted(lo, hi trafficCell, dst []int) []int {
 	dst = dst[:0]
-	lo, hi := cellAt(pos.Sub(sim.Vec2{X: radius, Y: radius})), cellAt(pos.Add(sim.Vec2{X: radius, Y: radius}))
 	for x := lo.x; x <= hi.x; x++ {
 		for y := lo.y; y <= hi.y; y++ {
 			if b := s.lookup(trafficCell{x, y}); b != nil {

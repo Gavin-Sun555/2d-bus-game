@@ -1,15 +1,18 @@
 package autopilot
 
 import (
+	"context"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
+	"runtime/trace"
 )
 
 // A yawed articulated departure can be pinned by a stopped rear follower:
 // one steering choice swings its tail toward that follower, while a slightly
 // different forward steering choice safely draws both sections away.
 // Prove a short, slow actuator trajectory against every physical body before
-// using it. This never ignores an obstacle, reverses, or relocates the bus.
+// using it. A missed berth may also use the separately proved short backing
+// maneuver when no forward actuator trajectory fits.
 func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired float64) (float64, bool) {
 	ad.departurePresteerValid = false
 	active := ad.departureEscapeActive
@@ -29,7 +32,11 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 			}
 		}
 	}
-	if (!f.bus.IsArticulated() && ad.State != AutopilotStateDeparting && !inBay) || f.world == nil || f.speedAbs > 25 || f.bus.DoorsOpen || f.bus.PassengerServiceRemaining() > 0 || ad.roadSafetyHold || ad.pathFromID < 0 || ad.pathFromID >= len(f.world.Stops) || f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
+	// The state label can already say cruising while the saved departure
+	// prefix is still merging out of a rear berth. Its checked crawl remains
+	// eligible even behind the bay center, where ContainsBus can reject yaw.
+	departing := ad.State == AutopilotStateDeparting || (ad.dockDepartureRun > 0 && f.s < ad.dockDepartureRun)
+	if (!f.bus.IsArticulated() && !departing && !inBay) || f.world == nil || f.speedAbs > 25 || f.bus.DoorsOpen || f.bus.PassengerServiceRemaining() > 0 || ad.roadSafetyHold || ad.pathFromID < 0 || ad.pathFromID >= len(f.world.Stops) || f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.OverallLength()/2) {
 		return 0, false
 	}
 	if f.bus.RoundaboutAdmissionHold != nil {
@@ -44,7 +51,34 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	// The complete actuator/body proof below, rather than that combined
 	// envelope, decides whether a slow forward departure is actually clear.
 	from := f.world.Stops[ad.pathFromID]
-	if f.bus.Pos.Distance(from.Pos) > from.Length+150 || math.Cos(f.bus.Heading-from.Heading) < .7 || ad.trafficLightSpeed(f, 30) <= .5 {
+	// A missed stop can be advanced while the bus is still moving. It may
+	// then stop at the taper without having armed beginRoadDeparture's crawl.
+	// Reacquire it from the actual stalled pose, including older saves.
+	if !active && inBay && !from.CenterBRT && f.bus.IsArticulated() && f.speedAbs <= .1 &&
+		ad.skippedDeparture != nil && !ad.skippedDeparture.served && ad.skippedDeparture.stop.ID == from.ID &&
+		f.bus.Pos.Sub(from.FrontBerthPosition()).Dot(sim.UnitFromAngle(from.Heading)) > 12 &&
+		math.Abs(sim.NormalizeAngle(f.bus.Heading-from.Heading)) > .5 && math.Cos(f.bus.TailHeading()-from.Heading) > .95 {
+		empty := f
+		empty.obstacles = nil
+		active = ad.articulatedSweptSpeed(empty, desired) <= .5
+	}
+	// A served departure can stall the same way: the commanded steering
+	// grazes the shelter with the trailer while a gentler steering, proved by
+	// the same full-body scan below, would pass. Only static geometry counts.
+	if !active && (departing || inBay) && !from.CenterBRT && f.bus.IsArticulated() && f.speedAbs <= .1 &&
+		f.bus.Pos.Distance(from.Pos) <= from.Length+150 {
+		empty := f
+		empty.obstacles = nil
+		active = ad.articulatedSweptSpeed(empty, desired) <= .5
+	}
+	missedBerth := active && ad.skippedDeparture != nil && !ad.skippedDeparture.served
+	minHeadingAlignment := .7
+	if missedBerth {
+		// A missed berth can leave the powered section angled more sharply
+		// than a normal departure. The same full-body sweep still has to pass.
+		minHeadingAlignment = .5
+	}
+	if f.bus.Pos.Distance(from.Pos) > from.Length+150 || math.Cos(f.bus.Heading-from.Heading) < minHeadingAlignment || ad.trafficLightSpeed(f, 30) <= .5 {
 		return 0, false
 	}
 	if ad.followingSpeed(f) <= .5 && !ad.hasParallelDepartureNeighbor(f) {
@@ -53,9 +87,11 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	// Keep the proven crawl until the full tail has passed the shelter's
 	// longitudinal extent. Otherwise a nominal acceleration can invalidate the
 	// low-speed proof on the very next frame while the trailer is still beside it.
+	// Clearing the shelter alone is insufficient while the nose still points
+	// into its taper: retain the proof until the powered section is aligned.
 	if active {
 		rear, _ := stationBodyRange(f.bus, sim.UnitFromAngle(from.Heading))
-		if rear > from.Pos.Dot(sim.UnitFromAngle(from.Heading))+50 {
+		if rear > from.Pos.Dot(sim.UnitFromAngle(from.Heading))+50 && math.Cos(f.bus.Heading-from.Heading) > .98 {
 			return 0, false
 		}
 	}
@@ -73,6 +109,22 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	}
 	var scan forwardEscapeScan
 	scan.prepare(f, 18)
+	// A rear-berth departure can already be beside an arriving bus with a
+	// real gap smaller than the ordinary 2px prediction margin. Retain a
+	// positive collision skin, checking every physical section at every tick.
+	if departing && !from.CenterBRT {
+		u := sim.UnitFromAngle(from.Heading)
+		right := sim.Vec2{X: -u.Y, Y: u.X}
+		for i := 0; i < scan.count; i++ {
+			e := &scan.entries[i]
+			ob := f.obstacles[e.index]
+			delta := ob.Pos.Sub(f.bus.Pos)
+			if ob.Bus != nil && math.Abs(ob.Speed) < 1 && math.Cos(ob.Heading-from.Heading) > .95 &&
+				math.Abs(delta.Dot(u)) < (f.bus.Length+ob.Length)/2 && math.Abs(delta.Dot(right)) > (f.bus.Width+ob.Width)*.4 {
+				e.padding = .05
+			}
+		}
+	}
 	f.forwardEscape = &scan
 	turn := math.Copysign(1, f.bus.SteeringAngle)
 	choices := []float64{desired, turn, -turn, desired * .5, 0}
@@ -98,6 +150,15 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 			}
 		}
 	}
+	if missedBerth && f.speedAbs <= .1 && ad.roundaboutEdgeRetry <= 0 {
+		yaw := sim.NormalizeAngle(f.bus.Heading - from.Heading)
+		empty := f
+		empty.obstacles, empty.forwardEscape = nil, nil
+		ad.roundaboutEdgeRetry = 1
+		if math.Abs(yaw) > .5 && !ad.stationDepartureEscapeClear(empty, desired) {
+			ad.planEdgeRecovery(f, math.Copysign(1, yaw))
+		}
+	}
 
 	return 0, false
 }
@@ -106,6 +167,9 @@ func (ad *AutopilotDriver) stationDepartureEscapeClear(f autopilotFrame, steer f
 }
 
 func (ad *AutopilotDriver) stationForwardEscapeClear(f autopilotFrame, steer, speed float64, goal sim.Vec2, minimumProgress float64) bool {
+	if trace.IsEnabled() {
+		defer trace.StartRegion(context.Background(), "autopilot.stationForwardEscapeClear").End()
+	}
 	var local forwardEscapeScan
 	if f.forwardEscape == nil {
 		local.prepare(f, speed)
@@ -116,7 +180,7 @@ func (ad *AutopilotDriver) stationForwardEscapeClear(f autopilotFrame, steer, sp
 	if !f.forwardEscape.poseClear(f, &b, 0) {
 		return false
 	}
-	for tick := 1; tick <= 120; tick++ {
+	for tick := 1; tick <= forwardEscapeTicks; tick++ {
 		throttle, brake := ad.longitudinalControls(b.Speed, speed)
 		b.SetNextAccelerationScale(1)
 		b.Update(1./60, throttle, brake, steer, false, false)

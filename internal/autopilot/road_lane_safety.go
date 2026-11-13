@@ -56,7 +56,15 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 	// Straight-road lane protection must agree with the route's road axis.
 	// A crossing road underneath a corner or a bay taper is not its centerline.
 	tangent := ad.pointAt(f.s + 25).Sub(ad.pointAt(f.s)).Normalize()
-	if math.Abs(tangent.Dot(sim.UnitFromAngle(heading))) < .97 && !ad.onDepartureRoad(f, center, ew, heading) {
+	onApproach := false
+	if ad.busLaneJunction != nil && !ad.busJunctionEntered {
+		across := ad.busLaneJunction.Y
+		if !ew {
+			across = ad.busLaneJunction.X
+		}
+		onApproach = math.Abs(across-center) < 1 && ad.busLaneJunction.Sub(f.bus.Pos).Dot(sim.UnitFromAngle(heading)) > 0
+	}
+	if math.Abs(tangent.Dot(sim.UnitFromAngle(heading))) < .97 && !onApproach && !ad.onDepartureRoad(f, center, ew, heading) {
 		return steer
 	}
 
@@ -81,9 +89,11 @@ func (ad *AutopilotDriver) roadLaneSafeSteering(f autopilotFrame, steer float64)
 	}
 	// Limit the approach angle as well as the swept envelope: entering a
 	// roundabout must not inherit a steep yaw from a last-second lane change.
-	if yaw < -.28 {
+	// A planned junction merge can use the available carriageway width;
+	// validate its actual swept clearance below instead of limiting its yaw.
+	if yaw < -.28 && !onApproach {
 		steer = math.Max(steer, sim.Clamp((-yaw-.28)*6+.25, .25, 1))
-	} else if yaw < -.20 && steer < 0 {
+	} else if yaw < -.20 && steer < 0 && !onApproach {
 		steer = 0
 	}
 	// Curved ring approaches use the ring's radial envelope, rather than

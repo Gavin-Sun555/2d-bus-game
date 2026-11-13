@@ -5,8 +5,8 @@ import (
 	"math"
 )
 
-// Only the outer general-purpose lane supplies right turns into the shared
-// bus lane. Select early enough to finish merging before the solid lane lines.
+// Prepare curb-lane right turns before the solid lane lines. Only a reserved
+// curb bus lane requires cars without a right turn to merge out.
 func (tm *TrafficManager) prepareEightLaneApproach(f carFrame) {
 	car := f.car
 	if f.world == nil || car.InRoundabout || car.JunctionTurn != nil {
@@ -45,24 +45,9 @@ func (tm *TrafficManager) prepareEightLaneApproach(f carFrame) {
 	// Cars already leaving the map should keep their exit corridor; a new
 	// lane-change path would delay rear-body boundary removal.
 	roadAhead := math.Max(road.P1.Sub(car.Pos).Dot(forward), road.P2.Sub(car.Pos).Dot(forward))
-	if car.LaneIndex == 3 && !wantRight && roadAhead >= mergeLength+car.Length/2+40 {
-		if (road.HasBusLane() || !tm.eightLaneRightExitAhead(f, forward)) && tm.laneMergeClear(f, forward, -1) {
-			tm.beginCarLaneChange(f, 2)
-		}
+	if road.HasBusLane() && car.LaneIndex == 3 && !wantRight && roadAhead >= mergeLength+car.Length/2+40 && tm.laneMergeClear(f, forward, -1) {
+		tm.beginCarLaneChange(f, 2)
 	}
-}
-
-func (tm *TrafficManager) eightLaneRightExitAhead(f carFrame, forward sim.Vec2) bool {
-	if f.tls == nil {
-		return false
-	}
-	for _, inter := range f.tls.Intersections {
-		delta := inter.Center.Sub(f.car.Pos)
-		if delta.Dot(forward) > 0 && math.Abs(delta.X*forward.Y-delta.Y*forward.X) < f.laneWidth*4.2 && hasRoadInDirection(f.world, inter.Center, f.car.Heading+math.Pi/2) {
-			return true
-		}
-	}
-	return false
 }
 
 func (tm *TrafficManager) rightMergeClear(f carFrame, forward sim.Vec2) bool {
@@ -78,6 +63,8 @@ func (tm *TrafficManager) laneMergeClear(f carFrame, forward sim.Vec2, direction
 		return math.Abs(delta.Dot(right)) > (width+f.car.Width)/2+4 || along > (length+f.car.Length)/2+math.Max(35, f.car.Speed*.8) || along < -(length+f.car.Length)/2-math.Max(40, speed*1.2)
 	}
 	active := tm.carsForFrame(f)
+	// Borrowed only during this synchronous rule; live turn plans retain their
+	// own points/bodies. Bound retained storage for unusually long custom paths.
 	var ours []sim.OBB
 	for _, other := range active {
 		if other != f.car && !clear(other.Pos, other.Length, other.Width, other.Speed) {
@@ -96,17 +83,25 @@ func (tm *TrafficManager) laneMergeClear(f carFrame, forward sim.Vec2, direction
 		}
 		if ours == nil {
 			length := carLaneChangeLength(f.car, f.laneWidth)
-			points := make([]sim.Vec2, 33)
+			var points [33]sim.Vec2
 			for i := range points {
 				t := float64(i) / 32
 				ease := t * t * t * (10 - 15*t + 6*t*t)
 				points[i] = f.car.Pos.Add(forward.Mul(length * t)).Add(right.Mul(f.laneWidth * direction * ease))
 			}
-			ours = sim.AppendPathBodies(nil, points, f.car.Length, f.car.Width)
+			ours = sim.AppendPathBodies(tm.mergeOwnBodies[:0], points[:], f.car.Length, f.car.Width)
+			if cap(ours) <= 4096 {
+				tm.mergeOwnBodies = ours[:0]
+			}
 		}
 		turn := other.JunctionTurn
-		remaining := append([]sim.Vec2{other.Pos}, turn.Points[turn.Segment+1:]...)
-		theirs := sim.AppendPathBodies(nil, remaining, other.Length, other.Width)
+		var pointStorage [65]sim.Vec2
+		remaining := append(pointStorage[:0], other.Pos)
+		remaining = append(remaining, turn.Points[turn.Segment+1:]...)
+		theirs := sim.AppendPathBodies(tm.mergeOtherBodies[:0], remaining, other.Length, other.Width)
+		if cap(theirs) <= 4096 {
+			tm.mergeOtherBodies = theirs[:0]
+		}
 		if !sim.CorridorsSeparated(ours, theirs) {
 			return false
 		}

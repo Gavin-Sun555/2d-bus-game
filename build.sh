@@ -41,7 +41,20 @@ cmd_run() {
     cmd_build
     echo ""
     echo -e "${GREEN}🎮 正在启动游戏...${NC}"
-    exec "./${APP_NAME}"
+    if [[ "$(uname -s)" == Darwin ]]; then
+        # HIToolbox writes these diagnostics to stderr even when input works.
+        # Filter only these lines and preserve the executable's exit status.
+        exec "./${APP_NAME}" "$@" 2> >(filter_macos_input_logs >&2)
+    fi
+    exec "./${APP_NAME}" "$@"
+}
+
+filter_macos_input_logs() {
+    awk '
+        /TSM AdjustCapsLockLEDForKeyTransitionHandling - _ISSetPhysicalKeyboardCapsLockLED (Inhibit|Enable)$/ { next }
+        /error messaging the mach port for IMKCFRunLoopWakeUpReliable$/ { next }
+        { print; fflush() }
+    '
 }
 
 cmd_test() {
@@ -167,7 +180,8 @@ cmd_open() {
 
 case "$1" in
     run)
-        cmd_run
+        shift
+        cmd_run "$@"
         ;;
     app)
         cmd_app
@@ -196,7 +210,7 @@ case "$1" in
         echo ""
         echo "选项说明:"
         echo "  (无参数)      编译生成当前系统可执行文件 ./${APP_NAME}"
-        echo "  run           编译并立即在终端启动运行游戏"
+        echo "  run [参数]    编译并在终端启动游戏，例如 run --debug"
         echo "  app           构建带专属高清图标的 macOS 原生应用程序包 (${BUNDLE_NAME})"
         echo "  open          构建并以 macOS 原生 App 方式启动 (在 Dock 显示专属图标)"
         echo "  test          运行基础快速测试 (平时开发秒级通过)"

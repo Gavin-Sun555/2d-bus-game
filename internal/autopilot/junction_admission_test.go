@@ -58,7 +58,7 @@ func TestBusWaitsBeforeEntryUntilExitQueueClears(t *testing.T) {
 				ad.BerserkMode = true
 				ad.PrepareLeg(w, a, z, lw)
 				ad.trackPath(p)
-				ad.publishJunctionCorridor(autopilotFrame{bus: bus, world: w, tls: tls, laneWidth: lw, s: ad.LastPathS})
+				ad.publishJunctionCorridor(autopilotFrame{bus: bus, world: w, tls: tls, laneWidth: lw, s: ad.LastPathS}, 0)
 				if bus.JunctionCorridor == nil {
 					t.Fatal("missing route corridor")
 				}

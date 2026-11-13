@@ -15,9 +15,11 @@ const (
 
 // TrafficCar represents an autonomous AI civilian vehicle
 type TrafficCar struct {
+	HeadlightsOn    bool `json:",omitempty"`
 	ID              int
 	Pos             Vec2
 	Heading         float64
+	RoadCurveYaw    float64 `json:"-"` // Body yaw while following a BRT taper. Routing retains the road heading.
 	Speed           float64
 	TargetSpeed     float64
 	MaxSpeedKPH     int // Fixed at spawn; slowing for traffic never changes this limit.
@@ -32,10 +34,11 @@ type TrafficCar struct {
 	Length float64
 	Width  float64
 
+	turnSignal turnSignal
 	IsBraking  bool
 	RoadCenter float64 // The Y or X axis of the road being followed
 	IsEW       bool    // true if on East-West road, false if on North-South
-	LaneIndex  int     // Counted from median: on eight-lane roads 0 left, 1/2 through, 3 right/shared bus lane.
+	LaneIndex  int     // Counted from median: on eight-lane roads 0 left, 1/2 through, 3 curb.
 
 	// Intersection turns follow the same swept corridors as buses.
 	JunctionTurn     *CarJunctionTurn
@@ -63,6 +66,8 @@ type TrafficCar struct {
 	DeadlockTimer   float64 // Time in seconds spent motionless while jammed against another non-player vehicle
 	DeadlockTracker StationaryTracker
 }
+
+func (c *TrafficCar) VisualHeading() float64 { return c.Heading + c.RoadCurveYaw }
 
 // CarJunctionTurn retains a continuous path until the vehicle clears its arc.
 type CarJunctionTurn struct {

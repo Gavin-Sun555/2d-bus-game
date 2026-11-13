@@ -147,5 +147,35 @@ func TestArrivalAtFrontEdgeFinishesInsidePlatform(t *testing.T) {
 			return
 		}
 	}
-	t.Fatalf("arrival remained outside: pos%v heading%v contains%v targetSpeed%v plan%+v",f.bus.Pos,f.bus.Heading,f.targetStop.ContainsBus(f.bus),ad.LastTargetSpeed,ad.stationDock)
+	t.Fatalf("arrival remained outside: pos%v heading%v contains%v targetSpeed%v plan%+v", f.bus.Pos, f.bus.Heading, f.targetStop.ContainsBus(f.bus), ad.LastTargetSpeed, ad.stationDock)
+}
+
+func TestStationArrivalChecksAngledNeighborAtNominalWidth(t *testing.T) {
+	const laneWidth = 52
+	stop := sim.NewBusStop(0, "Theatre", sim.Vec2{}, math.Pi, 8, sim.RGBA(0, 0, 0, 255), laneWidth)
+	world := &sim.World{
+		Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -1000}, P2: sim.Vec2{X: 1000}, Lanes: 8}},
+		Stops: []*sim.BusStop{stop},
+	}
+	// The separation of the centers is just under one bus width, while the
+	// yaw and longitudinal offset leave the actual corners clear.
+	bus := sim.NewBus(-7.142, -193.417, -3.06243)
+	bus.SteeringAngle = -.539
+	neighbor := sim.NewBus(14.337, -229.371, -3.09451)
+	if hit, _, _ := sim.CheckBusesCollision(bus, neighbor); hit {
+		t.Fatal("fixture bodies already overlap")
+	}
+	f := autopilotFrame{bus: bus, world: world, laneWidth: laneWidth, targetStop: stop, obstacles: []VehicleObstacle{ObserveBus(neighbor)}}
+	ad := NewAutopilotDriver()
+	if _, ok := ad.stationArrivalEscape(f, -1); !ok {
+		t.Fatal("station arrival rejected a clear low-speed trajectory")
+	}
+	neighbor.Pos.Y += 3
+	f.obstacles[0] = ObserveBus(neighbor)
+	if hit, _, _ := sim.CheckBusesCollision(bus, neighbor); !hit {
+		t.Fatal("fixture did not create a physical overlap")
+	}
+	if _, ok := ad.stationArrivalEscape(f, -1); ok {
+		t.Fatal("station arrival accepted overlapping bodies")
+	}
 }

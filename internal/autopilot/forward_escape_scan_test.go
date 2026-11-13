@@ -31,6 +31,7 @@ func TestForwardEscapeScanMatchesEveryOriginalPoseCheck(t *testing.T) {
 		}
 		var scan forwardEscapeScan
 		scan.prepare(f, 18)
+		scan.boundaries = new(forwardEscapeBoundaries)
 		for _, steer := range []float64{-1, -.3, 0, .3, 1} {
 			b := *bus
 			ad := NewAutopilotDriver()
@@ -77,5 +78,28 @@ func TestForwardEscapeScanRetainsFullFallbacks(t *testing.T) {
 	scan.prepare(f, 18)
 	if scan.valid {
 		t.Fatal("abnormal input did not fall back")
+	}
+}
+
+func TestForwardEscapeBoundaryMemoRefreshesAfterMapEdit(t *testing.T) {
+	const width = 52
+	bus := sim.NewBus(0, 25, 0)
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -1000}, P2: sim.Vec2{X: 1000}, Lanes: 4}}}
+	f := autopilotFrame{bus: bus, world: w, laneWidth: width}
+	w.PrepareJunctionGeometry(width)
+	var cache forwardEscapeBoundaries
+	w.BeginBoundaryQueries(width)
+	cache.reset(f)
+	if cache.blocked(f, bus) {
+		t.Fatal("the road is clear")
+	}
+	w.EndBoundaryQueries()
+
+	w.Buildings = append(w.Buildings, sim.Building{Pos: bus.Pos, W: 40, H: 40})
+	w.BeginBoundaryQueries(width)
+	defer w.EndBoundaryQueries()
+	cache.reset(f)
+	if !cache.blocked(f, bus) {
+		t.Fatal("the edited map still used the cached clear pose")
 	}
 }

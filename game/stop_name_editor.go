@@ -15,6 +15,11 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+type stopNameEditor struct {
+	stopID int
+	stationTextInput
+}
+
 type stopNameLayout struct {
 	panel               sim.Rect
 	fields              [2]sim.Rect
@@ -34,9 +39,10 @@ func (g *Game) openStopNameEditor(id int) {
 	}
 	g.closeStopNameEditor()
 	s := g.World.Stops[id]
-	e := &stopNameEditor{stopID: id, fields: [2]string{s.CustomNameZH, s.CustomNameEN}}
+	e := &stopNameEditor{stopID: id}
+	e.fields = [2]string{s.CustomNameZH, s.CustomNameEN}
 	e.caret = len(e.fields[0])
-	e.initIME(g)
+	e.initIME(func(i int) sim.Rect { return g.stopNameEditorLayout().fields[i] })
 	g.stopNameEditor = e
 	g.isDragging = false
 }
@@ -75,18 +81,7 @@ func (g *Game) updateStopNameEditor() {
 		e.ime.Confirm()
 		return
 	}
-	e.committed = false
-	handled, err := e.ime.Update()
-	// Unicode accessibility input can bypass the native IME client. Accept
-	// unconsumed character events, without duplicating native commits/preedit.
-	if !handled && !e.committed && e.composition == "" {
-		if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
-			e.insert(string(chars))
-		}
-	}
-	if err != nil {
-		e.err = err.Error()
-	}
+	handled := e.readInput()
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		x, y := ebiten.CursorPosition()
 		p := sim.Vec2{X: float64(x), Y: float64(y)}
@@ -154,37 +149,8 @@ func (g *Game) drawStopNameEditor(dst *ebiten.Image) {
 	limits := [2]int{12, 30}
 	for i, box := range b.fields {
 		textui.DrawText(dst, labels[i], box.X, box.Y-23, 13, sim.RGBA(203, 213, 225, 255))
-		edge := sim.RGBA(71, 85, 105, 255)
-		if i == e.focused {
-			edge = sim.RGBA(56, 189, 248, 255)
-		}
-		vector.DrawFilledRect(dst, float32(box.X), float32(box.Y), float32(box.W), float32(box.H), sim.RGBA(30, 41, 59, 255), true)
-		vector.StrokeRect(dst, float32(box.X), float32(box.Y), float32(box.W), float32(box.H), 1.5, edge, true)
-		value := e.fields[i]
-		caret := len(value)
-		preedit := ""
-		if i == e.focused {
-			caret = e.caret
-			preedit = e.composition
-		}
-		visible := value[:caret] + preedit + value[caret:]
-		advance, _ := textui.MeasureText(value[:caret]+preedit, 16)
-		scroll := math.Max(0, advance-(box.W-30))
-		clip := dst.SubImage(image.Rect(int(box.X+8), int(box.Y+5), int(box.X+box.W-8), int(box.Y+box.H-5))).(*ebiten.Image)
-		if i == e.focused && e.selected {
-			width, _ := textui.MeasureText(value, 16)
-			vector.DrawFilledRect(clip, float32(box.X+12-scroll), float32(box.Y+11), float32(width), 21, sim.RGBA(37, 99, 235, 180), false)
-		}
-		textui.DrawText(clip, visible, box.X+12-scroll, box.Y+12, 16, color.White)
-		if i == e.focused {
-			cx := box.X + 12 + advance - scroll
-			vector.StrokeLine(clip, float32(cx), float32(box.Y+10), float32(cx), float32(box.Y+32), 1, sim.RGBA(125, 211, 252, 255), false)
-			if preedit != "" {
-				preWidth, _ := textui.MeasureText(preedit, 16)
-				vector.StrokeLine(clip, float32(cx-preWidth), float32(box.Y+33), float32(cx), float32(box.Y+33), 1, sim.RGBA(125, 211, 252, 255), false)
-			}
-		}
-		count := utf8.RuneCountInString(value)
+		e.drawField(dst, box, i)
+		count := utf8.RuneCountInString(e.fields[i])
 		countColor := sim.RGBA(148, 163, 184, 255)
 		if count > limits[i] {
 			countColor = sim.RGBA(248, 113, 113, 255)
@@ -210,4 +176,37 @@ func (g *Game) drawStopNameEditor(dst *ebiten.Image) {
 	drawStopEditorButton(dst, b.reset, locale.T("恢复默认", "Reset names"), sim.RGBA(71, 85, 105, 255))
 	drawStopEditorButton(dst, b.cancel, locale.T("取消", "Cancel"), sim.RGBA(51, 65, 85, 255))
 	drawStopEditorButton(dst, b.save, locale.T("保存", "Save"), sim.RGBA(2, 132, 199, 255))
+}
+
+func (e *stationTextInput) drawField(dst *ebiten.Image, box sim.Rect, i int) {
+	edge := sim.RGBA(71, 85, 105, 255)
+	if i == e.focused {
+		edge = sim.RGBA(56, 189, 248, 255)
+	}
+	vector.DrawFilledRect(dst, float32(box.X), float32(box.Y), float32(box.W), float32(box.H), sim.RGBA(30, 41, 59, 255), true)
+	vector.StrokeRect(dst, float32(box.X), float32(box.Y), float32(box.W), float32(box.H), 1.5, edge, true)
+	value := e.fields[i]
+	caret := len(value)
+	preedit := ""
+	if i == e.focused {
+		caret = e.caret
+		preedit = e.composition
+	}
+	visible := value[:caret] + preedit + value[caret:]
+	advance, _ := textui.MeasureText(value[:caret]+preedit, 16)
+	scroll := math.Max(0, advance-(box.W-30))
+	clip := dst.SubImage(image.Rect(int(box.X+8), int(box.Y+5), int(box.X+box.W-8), int(box.Y+box.H-5))).(*ebiten.Image)
+	if i == e.focused && e.selected {
+		width, _ := textui.MeasureText(value, 16)
+		vector.DrawFilledRect(clip, float32(box.X+12-scroll), float32(box.Y+11), float32(width), 21, sim.RGBA(37, 99, 235, 180), false)
+	}
+	textui.DrawText(clip, visible, box.X+12-scroll, box.Y+12, 16, color.White)
+	if i == e.focused {
+		cx := box.X + 12 + advance - scroll
+		vector.StrokeLine(clip, float32(cx), float32(box.Y+10), float32(cx), float32(box.Y+32), 1, sim.RGBA(125, 211, 252, 255), false)
+		if preedit != "" {
+			preWidth, _ := textui.MeasureText(preedit, 16)
+			vector.StrokeLine(clip, float32(cx-preWidth), float32(box.Y+33), float32(cx), float32(box.Y+33), 1, sim.RGBA(125, 211, 252, 255), false)
+		}
+	}
 }

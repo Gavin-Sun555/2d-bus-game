@@ -42,6 +42,10 @@ type measurement struct {
 	UpdateMS, DrawSubmitMS                             float64
 }
 type check struct {
+	hour                 float64
+	headlights           bool
+	careerView           string
+	english              bool
 	centerBRT, largeGrid bool
 	focusBRTStop         bool
 	vsync                bool
@@ -85,10 +89,10 @@ func (c *check) configure() {
 		c.g.Settings.AutopilotBerserk = true
 		c.g.EnterCity(sim.MapThemeMetropolis)
 		c.g.Settings.IsOpen = false
-		lineCount := max(1, (c.fleetBuses+7)/8)
+		lineCount := max(1, (c.fleetBuses+traffic.MaxBusesPerLine-1)/traffic.MaxBusesPerLine)
 		c.g.SetTransitLineCount(lineCount)
 		for i := 0; i < lineCount; i++ {
-			c.g.SetLineFleet(i, traffic.LineFleetSettings{BusCount: min(8, max(0, c.fleetBuses-i*8)), Model: c.busModel, PlayerModel: c.busModel, SpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 80}})
+			c.g.SetLineFleet(i, traffic.LineFleetSettings{BusCount: min(traffic.MaxBusesPerLine, max(0, c.fleetBuses-i*traffic.MaxBusesPerLine)), Model: c.busModel, PlayerModel: c.busModel, SpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 80}})
 		}
 		if c.busModel != sim.BusStandard {
 			c.g.Bus.SetModel(c.busModel)
@@ -136,6 +140,35 @@ func (c *check) configure() {
 		c.g.Settings.Language = locale.LanguageEN
 		c.current.Scene = "settings-en"
 	}
+	if c.careerView != "" {
+		if c.careerView == "modes" {
+			c.g.ShowModeSelection()
+		} else {
+			c.g.SelectMode(game.ModeCareer)
+			if c.careerView == "fleet" {
+				c.g.Career.Balance = 5000000
+				for _, spec := range []string{"yuanchuan-s70", "xingtu-a100", "yuanchuan-d140"} {
+					_, _ = c.g.Career.Buy(spec)
+				}
+				c.g.Cash = int(c.g.Career.Balance)
+			}
+			switch c.careerView {
+			case "shop":
+				c.g.OpenCareerOffice(0)
+			case "fleet":
+				c.g.OpenCareerOffice(1)
+			case "achievements":
+				c.g.OpenCareerOffice(2)
+			case "driving":
+				c.g.EnterCity(sim.MapThemeMetropolis)
+			}
+		}
+		if c.english {
+			locale.SetLanguage(locale.LanguageEN)
+			c.g.Settings.Language = locale.LanguageEN
+		}
+		c.current.Scene = "career-" + c.careerView
+	}
 	if c.focusBRTStop && c.g.State == game.StatePlaying {
 		for _, stop := range c.g.World.Stops {
 			if stop.CenterBRT {
@@ -145,6 +178,24 @@ func (c *check) configure() {
 				break
 			}
 		}
+	}
+	if c.english {
+		locale.SetLanguage(locale.LanguageEN)
+		c.g.Settings.Language = locale.LanguageEN
+	}
+	if c.hour >= 0 {
+		minutes := c.hour*60 - 8*60
+		if minutes < 0 {
+			minutes += 24 * 60
+		}
+		c.g.World.Clock.ElapsedMinutes = minutes
+	}
+	c.g.Bus.HeadlightsOn = c.headlights
+	for _, car := range c.g.TrafficMgr.Cars {
+		car.HeadlightsOn = c.g.World.Clock.IsNight()
+	}
+	for _, bus := range c.g.AIBusMgr.Buses {
+		bus.Bus.HeadlightsOn = c.g.World.Clock.IsNight()
 	}
 	c.current.CenterBRT = c.g.World.CenterBRT
 	c.current.LargeGrid = c.g.World.LargeGrid
@@ -284,14 +335,34 @@ func main() {
 	rotation := flag.Float64("rotation", 0, "Camera rotation in radians for frozen visual checks")
 	freeze := flag.Bool("freeze", false, "Keep simulation static for pixel-identical renderer comparisons")
 	only := flag.Int("only-scene", -1, "Run one numbered scene (0-31) for controlled profiling")
-	buses := flag.Int("buses", 48, "AI bus count for scene 31 (0-48)")
+	buses := flag.Int("buses", traffic.MaxFleetBuses, fmt.Sprintf("AI bus count for scene 31 (0-%d)", traffic.MaxFleetBuses))
 	model := flag.Int("bus-model", 0, "Bus model for scene 31: 0 standard, 1 double-decker, 2 articulated")
 	warmup := flag.Int("warmup", 10, "Warm-up update count excluded from timing")
 	profile := flag.String("cpuprofile", "", "Optional CPU profile file")
 	singleThread := flag.Bool("single-thread", false, "Use Ebitengine main-thread event/render loop for controlled platform comparison")
 	vsync := flag.Bool("vsync", true, "Enable display synchronization for controlled frame-pacing comparison")
 	customMapPath := flag.String("custom-map", "", "Optional validated custom map fixture for qualification")
+	careerView := flag.String("career-view", "", "Career review: modes, cities, shop, fleet, achievements, driving")
+	english := flag.Bool("english", false, "Use English for visual review")
+	hour := flag.Float64("hour", -1, "Start at this game hour for day/night review (0-24)")
+	headlights := flag.Bool("headlights", false, "Switch player headlights on")
 	flag.Parse()
+	if *hour < -1 || *hour >= 24 {
+		panic("invalid game hour")
+	}
+	if *careerView != "" {
+		valid := false
+		for _, v := range []string{"modes", "cities", "shop", "fleet", "achievements", "driving"} {
+			if v == *careerView {
+				valid = true
+			}
+		}
+		if !valid {
+			panic("invalid Career view")
+		}
+		*only = 0
+		*freeze = true
+	}
 	if *profile != "" {
 		f, err := os.Create(*profile)
 		if err != nil {
@@ -303,7 +374,7 @@ func main() {
 		defer f.Close()
 		defer pprof.StopCPUProfile()
 	}
-	if *buses < 0 || *buses > 48 {
+	if *buses < 0 || *buses > traffic.MaxFleetBuses {
 		panic("invalid bus count")
 	}
 	if *warmup < 0 || *warmup >= *frames || *model < 0 || *model >= int(sim.BusModelCount) {
@@ -316,7 +387,7 @@ func main() {
 		panic(err)
 	}
 	sim.SeedSimulation(5)
-	c := &check{focusBRTStop: *focusBRTStop, centerBRT: *centerBRT, largeGrid: *largeGrid, vsync: *vsync, singleThread: *singleThread, g: game.NewGame(1280, 720), output: *output, frames: *frames, fleetBuses: *buses, busModel: sim.BusModel(*model), warmupFrames: *warmup}
+	c := &check{hour: *hour, headlights: *headlights, careerView: *careerView, english: *english, focusBRTStop: *focusBRTStop, centerBRT: *centerBRT, largeGrid: *largeGrid, vsync: *vsync, singleThread: *singleThread, g: game.NewGame(1280, 720), output: *output, frames: *frames, fleetBuses: *buses, busModel: sim.BusModel(*model), warmupFrames: *warmup}
 	if *customMapPath != "" {
 		data, err := sim.LoadCustomMapFromFile(*customMapPath)
 		if err != nil {

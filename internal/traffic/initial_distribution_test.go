@@ -2,7 +2,6 @@ package traffic
 
 import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
-	"math"
 	"testing"
 )
 
@@ -17,7 +16,7 @@ func parkInitialFleetForTest(m *AIBusManager, st *sim.BusStop, lw float64) {
 	}
 }
 
-func TestInitialFleetDistributedByMileageWithCorrectTargets(t *testing.T) {
+func TestInitialFleetBalancedAcrossStationsWithCorrectTargets(t *testing.T) {
 	for _, model := range []sim.BusModel{sim.BusStandard, sim.BusDoubleDecker, sim.BusArticulated} {
 		w := sim.NewWorld(52, sim.MapThemeMetropolis)
 		r := sim.GetStandardRouteForMap(w.Theme, w)
@@ -29,7 +28,8 @@ func TestInitialFleetDistributedByMileageWithCorrectTargets(t *testing.T) {
 		if len(m.Buses) != 8 {
 			t.Fatalf("model%v count %d", model, len(m.Buses))
 		}
-		runs, total := initialRouteRuns(r, w, 52)
+		counts := map[int]int{}
+		stationBuses := 0
 		others := []*sim.Bus{player}
 		for i, ab := range m.Buses {
 			if ab.Bus.Model != model {
@@ -38,21 +38,21 @@ func TestInitialFleetDistributedByMileageWithCorrectTargets(t *testing.T) {
 			if !safeInitialSpawn(ab.Bus, w, 52, others, nil) {
 				t.Fatalf("unsafe initial bus%d model%v pos%v", i, model, ab.Bus.Pos)
 			}
-			best := math.Inf(1)
-			ideal := (float64(i) + .5) * total / 8
-			for _, run := range runs {
-				delta := ab.Bus.Pos.Sub(run.start)
-				along := delta.Dot(run.direction)
-				if run.target != ab.Route.CurrentIndex || along < 0 || along > run.length || delta.Sub(run.direction.Mul(along)).Length() > 1e-5 {
-					continue
-				}
-				gap := math.Abs(run.at + along - ideal)
-				best = math.Min(best, math.Min(gap, total-gap))
+			stop := w.Stops[ab.Route.GetCurrentTargetStopID()]
+			if stop.ContainsBus(ab.Bus) {
+				counts[stop.ID]++
+				stationBuses++
 			}
-			if best > math.Max(1024, total/8*.5) {
-				t.Fatalf("bus%d not spread near %.0f: error %.0f target%d", i, ideal, best, ab.Route.CurrentIndex)
-			}
+
 			others = append(others, ab.Bus)
+		}
+		if stationBuses < min(len(m.Buses), len(r.StopIDs)-1)-1 {
+			t.Fatalf("too few station starts: %d", stationBuses)
+		}
+		for id, count := range counts {
+			if count > 2 {
+				t.Fatalf("stop%d concentrated %d buses", id, count)
+			}
 		}
 		// Editing speed or count must not relocate vehicles already in service.
 		first, pos := m.Buses[0], m.Buses[0].Bus.Pos
@@ -133,7 +133,7 @@ func TestMaximumDistributedArticulatedFleetAcrossMapsWithTraffic(t *testing.T) {
 			m := NewAIBusManager()
 			m.ConfigureLineFleets(plans, w, lw, player, true, cars)
 			if len(m.Buses) != len(routes)*8 {
-				t.Fatal("lost vehicles")
+				t.Fatalf("lost vehicles map%v width%.0f: %d / %d", theme, lw, len(m.Buses), len(routes)*8)
 			}
 			others := []*sim.Bus{player}
 			for _, ab := range m.Buses {

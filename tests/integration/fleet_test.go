@@ -10,7 +10,7 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 )
 
-// TestAIBusManagerConfigurableCounts verifies setting fleet counts for the route (0~8 buses).
+// TestAIBusManagerConfigurableCounts verifies setting fleet counts for the route (0~MaxBusesPerLine buses).
 func TestAIBusManagerConfigurableCounts(t *testing.T) {
 	world := sim.NewWorld(52.0)
 	mgr := traffic.NewAIBusManager()
@@ -31,11 +31,11 @@ func TestAIBusManagerConfigurableCounts(t *testing.T) {
 		t.Fatalf("Expected 8 total AI buses, got %d", len(mgr.Buses))
 	}
 
-	// 2. Test CycleLineCount (0 -> 1 -> ... -> 8 -> 0)
-	mgr.SetLineCount(8, world, 52.0)
+	// 2. Test CycleLineCount (0 -> 1 -> ... -> MaxBusesPerLine -> 0)
+	mgr.SetLineCount(traffic.MaxBusesPerLine, world, 52.0)
 	next := mgr.CycleLineCount(world, 52.0)
 	if next != 0 || mgr.GetLineCount() != 0 {
-		t.Fatalf("CycleLineCount after 8 should wrap to 0, got %d", next)
+		t.Fatalf("CycleLineCount after %d should wrap to 0, got %d", traffic.MaxBusesPerLine, next)
 	}
 
 	next = mgr.CycleLineCount(world, 52.0)

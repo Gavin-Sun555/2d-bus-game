@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Gavin-Sun555/2d-bus-game/internal/platforminput"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/exp/textinput"
@@ -12,20 +14,20 @@ import (
 )
 
 // Editor buffer belongs to the UI, never the station until Save succeeds.
-type stopNameEditor struct {
-	stopID, focused int
-	fields          [2]string
-	caret           int // UTF-8 byte boundary in the focused field.
-	selected        bool
-	composition     string
-	committed       bool
-	err             string
-	ime             textinput.Composer
+type stationTextInput struct {
+	focused     int
+	fields      [2]string
+	caret       int // UTF-8 byte boundary in the focused field.
+	selected    bool
+	composition string
+	committed   bool
+	err         string
+	ime         textinput.Composer
 }
 
-func (e *stopNameEditor) initIME(g *Game) {
+func (e *stationTextInput) initIME(bounds func(int) sim.Rect) {
 	e.ime.OnNewSession = func() *textinput.SessionOptions {
-		box := g.stopNameEditorLayout().fields[e.focused]
+		box := bounds(e.focused)
 		prefix, suffix := e.fields[e.focused][:e.caret], e.fields[e.focused][e.caret:]
 		if e.selected {
 			prefix, suffix = "", ""
@@ -58,7 +60,7 @@ func (e *stopNameEditor) initIME(g *Game) {
 		}
 	}
 }
-func (e *stopNameEditor) insert(text string) {
+func (e *stationTextInput) insert(text string) {
 	value := e.fields[e.focused]
 	if e.selected {
 		value = ""
@@ -74,7 +76,7 @@ func (e *stopNameEditor) insert(text string) {
 	e.caret += len(text)
 	e.err = ""
 }
-func (e *stopNameEditor) focus(index int) {
+func (e *stationTextInput) focus(index int) {
 	e.ime.Confirm()
 	e.focused = index
 	e.caret = len(e.fields[index])
@@ -84,11 +86,11 @@ func repeatedKey(key ebiten.Key) bool {
 	n := inpututil.KeyPressDuration(key)
 	return n == 1 || (n >= 24 && (n-24)%3 == 0)
 }
-func (e *stopNameEditor) editKeys() {
+func (e *stationTextInput) editKeys() {
 	ctrl := ebiten.IsKeyPressed(ebiten.KeyControl) || ebiten.IsKeyPressed(ebiten.KeyMeta)
 	if ctrl && inpututil.IsKeyJustPressed(ebiten.KeyV) && !e.committed {
 		e.ime.Confirm()
-		if text := stopNameClipboardText(); text != "" && !strings.ContainsAny(text, "\n\r\t") {
+		if text := platforminput.ClipboardText(); text != "" && !strings.ContainsAny(text, "\n\r\t") {
 			e.insert(text)
 		}
 		return
@@ -142,4 +144,19 @@ func (e *stopNameEditor) editKeys() {
 	}
 	e.selected = false
 	e.err = ""
+}
+
+func (e *stationTextInput) readInput() bool {
+	e.committed = false
+	handled, err := e.ime.Update()
+	// Some accessibility input is delivered outside the native IME.
+	if !handled && !e.committed && e.composition == "" {
+		if chars := ebiten.AppendInputChars(nil); len(chars) > 0 {
+			e.insert(string(chars))
+		}
+	}
+	if err != nil {
+		e.err = err.Error()
+	}
+	return handled
 }

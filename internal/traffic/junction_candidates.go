@@ -34,6 +34,13 @@ func (tm *TrafficManager) observeJunctionCandidate(i int, car *sim.TrafficCar) {
 	}
 }
 
+type junctionCandidateSet struct {
+	lo, hi    trafficCell
+	revision  uint64
+	committed int
+	ids       []int
+}
+
 func (tm *TrafficManager) junctionScanCandidates(f carFrame, inter *sim.TrafficIntersection, approachReach, exitReach float64) ([]int, bool) {
 	if !tm.spatialActive || tm.disableJunctionCandidates || tm.disableJunctionBroadPhase || f.activeCount != len(tm.spatial.cells) {
 		return nil, false
@@ -44,10 +51,26 @@ func (tm *TrafficManager) junctionScanCandidates(f carFrame, inter *sim.TrafficI
 		return nil, false
 	}
 	radius += 1e-7 * (1 + radius)
-	ids := tm.spatial.queryUnsorted(inter.Center, radius, tm.junctionCandidates)
-	ids = append(ids, tm.junctionCommitted...)
-	tm.junctionCandidates = orderedJunctionCandidates(ids, f.activeCount)
+	lo, hi := trafficQueryCells(inter.Center, radius)
+	if inter.ID >= 0 && inter.ID < len(tm.junctionCandidateSets) {
+		set := &tm.junctionCandidateSets[inter.ID]
+		// Membership changes only when a car crosses a spatial cell or a
+		// turn is registered. Callers still inspect live poses in slot order.
+		if set.revision != tm.spatial.revision || set.committed != len(tm.junctionCommitted) || set.lo != lo || set.hi != hi {
+			set.ids = tm.collectJunctionCandidates(lo, hi, set.ids, f.activeCount)
+			set.lo, set.hi = lo, hi
+			set.revision, set.committed = tm.spatial.revision, len(tm.junctionCommitted)
+		}
+		return set.ids, true
+	}
+	tm.junctionCandidates = tm.collectJunctionCandidates(lo, hi, tm.junctionCandidates, f.activeCount)
 	return tm.junctionCandidates, true
+}
+
+func (tm *TrafficManager) collectJunctionCandidates(lo, hi trafficCell, dst []int, count int) []int {
+	ids := tm.spatial.queryCellsUnsorted(lo, hi, dst)
+	ids = append(ids, tm.junctionCommitted...)
+	return orderedJunctionCandidates(ids, count)
 }
 
 // Keep the exact ascending slot order used by Sort + Compact. Normal city

@@ -4,120 +4,113 @@ import "math"
 
 type roadState struct{ i, j, dir int }
 
-// shortestRoadStates performs the heading-aware graph search. Its deterministic
-// scan order resolves equal-cost routes consistently across cache rebuilds.
 func shortestRoadStates(w *World, xs, ys []float64, start, target roadState) ([]roadState, bool) {
+	states, found := searchRoadStates(w, xs, ys, start, target, true)
+	for i := 1; i < len(states); i++ {
+		if (states[i].dir-states[i-1].dir+4)%4 == 2 {
+			withoutTurn, ok := searchRoadStates(w, xs, ys, start, target, false)
+			if ok && roadStatesDistance(withoutTurn, xs, ys) <= roadStatesDistance(states, xs, ys)+1000/MetersPerPixel {
+				return withoutTurn, true
+			}
+			break
+		}
+	}
+	return states, found
+}
+
+func roadStatesDistance(states []roadState, xs, ys []float64) float64 {
+	distance := 0.
+	for i := 1; i < len(states); i++ {
+		a, b := states[i-1], states[i]
+		distance += math.Abs(xs[b.i]-xs[a.i]) + math.Abs(ys[b.j]-ys[a.j])
+	}
+	return distance
+}
+
+// Each edge combines the turn with travel to the next intersection. An arrival
+// may turn onto its final road, but consecutive turns at the same intersection
+// cannot disguise a U-turn as two cheaper 90-degree turns.
+func searchRoadStates(w *World, xs, ys []float64, start, target roadState, allowUTurn bool) ([]roadState, bool) {
 	numX, numY := len(xs), len(ys)
 	dx := [4]int{1, 0, -1, 0}
 	dy := [4]int{0, 1, 0, -1}
-
-	dist := make([][][4]float64, numX)
-	visited := make([][][4]bool, numX)
-	prev := make([][][4]roadState, numX)
-	hasPrev := make([][][4]bool, numX)
-
-	for i := 0; i < numX; i++ {
-		dist[i] = make([][4]float64, numY)
-		visited[i] = make([][4]bool, numY)
-		prev[i] = make([][4]roadState, numY)
-		hasPrev[i] = make([][4]bool, numY)
-		for j := 0; j < numY; j++ {
-			for d := 0; d < 4; d++ {
-				dist[i][j][d] = math.MaxFloat64
-			}
-		}
+	type node struct {
+		dist     float64
+		turnCost int
+		prev     roadState
+		visited  bool
 	}
-
-	dist[start.i][start.j][start.dir] = 0
-
+	nodes := make([]node, numX*numY*4)
+	index := func(s roadState) int { return (s.i*numY+s.j)*4 + s.dir }
+	for i := range nodes {
+		nodes[i] = node{dist: math.Inf(1), turnCost: math.MaxInt}
+	}
+	nodes[index(start)] = node{}
+	best, bestTurnCost := math.Inf(1), math.MaxInt
+	var finish roadState
 	for {
-		// Find unvisited roadState with minimum distance
-		minD := math.MaxFloat64
-		var curr roadState
-		found := false
-		for i := 0; i < numX; i++ {
-			for j := 0; j < numY; j++ {
-				for d := 0; d < 4; d++ {
-					if !visited[i][j][d] && dist[i][j][d] < minD {
-						minD = dist[i][j][d]
-						curr = roadState{i: i, j: j, dir: d}
-						found = true
-					}
-				}
+		currentIndex := -1
+		minD, minTurnCost := best, bestTurnCost
+		for i, n := range nodes {
+			if !n.visited && (n.dist < minD || (n.dist == minD && n.turnCost < minTurnCost)) {
+				minD, minTurnCost, currentIndex = n.dist, n.turnCost, i
 			}
 		}
-		if !found || minD == math.MaxFloat64 {
+		if currentIndex < 0 {
 			break
 		}
-
-		visited[curr.i][curr.j][curr.dir] = true
-
-		if curr.i == target.i && curr.j == target.j && curr.dir == target.dir {
-			break // Reached destination in proper arrival heading
+		nodes[currentIndex].visited = true
+		current := roadState{currentIndex / (numY * 4), currentIndex / 4 % numY, currentIndex % 4}
+		if current == target {
+			best, finish = minD, current
+			break
 		}
-
-		// Action 1: Move forward to adjacent intersection along current direction
-		ni := curr.i + dx[curr.dir]
-		nj := curr.j + dy[curr.dir]
-		if ni >= 0 && ni < numX && nj >= 0 && nj < numY {
-			p1 := Vec2{X: xs[curr.i], Y: ys[curr.j]}
-			p2 := Vec2{X: xs[ni], Y: ys[nj]}
-			if isRoadConnecting(p1, p2, w) {
-				moveCost := math.Abs(xs[ni]-xs[curr.i]) + math.Abs(ys[nj]-ys[curr.j])
-				if dist[curr.i][curr.j][curr.dir]+moveCost < dist[ni][nj][curr.dir] {
-					dist[ni][nj][curr.dir] = dist[curr.i][curr.j][curr.dir] + moveCost
-					prev[ni][nj][curr.dir] = curr
-					hasPrev[ni][nj][curr.dir] = true
-				}
+		for _, turn := range [...]struct {
+			offset int
+			cost   int
+		}{{0, 0}, {1, 30}, {3, 60}, {2, 5000}} {
+			if turn.offset == 2 && !allowUTurn {
+				continue
 			}
-		}
-
-		// Action 2: Turn at current intersection to a different direction
-		turnDirs := []int{(curr.dir + 1) % 4, (curr.dir + 3) % 4, (curr.dir + 2) % 4}
-		turnCosts := []float64{30.0, 60.0, 5000.0} // Right turn (30), Left turn (60), U-turn (5000)
-		for tIdx, nd := range turnDirs {
-			nni := curr.i + dx[nd]
-			nnj := curr.j + dy[nd]
-			roadAvail := false
-			if nni >= 0 && nni < numX && nnj >= 0 && nnj < numY {
-				if isRoadConnecting(Vec2{X: xs[curr.i], Y: ys[curr.j]}, Vec2{X: xs[nni], Y: ys[nnj]}, w) {
-					roadAvail = true
-				}
+			dir := (current.dir + turn.offset) % 4
+			next := roadState{current.i + dx[dir], current.j + dy[dir], dir}
+			if next.i < 0 || next.i >= numX || next.j < 0 || next.j >= numY {
+				continue
 			}
-			if roadAvail {
-				tc := turnCosts[tIdx]
-				if dist[curr.i][curr.j][curr.dir]+tc < dist[curr.i][curr.j][nd] {
-					dist[curr.i][curr.j][nd] = dist[curr.i][curr.j][curr.dir] + tc
-					prev[curr.i][curr.j][nd] = curr
-					hasPrev[curr.i][curr.j][nd] = true
-				}
+			from := Vec2{X: xs[current.i], Y: ys[current.j]}
+			to := Vec2{X: xs[next.i], Y: ys[next.j]}
+			if !isRoadConnecting(from, to, w) {
+				continue
+			}
+			turnCost := minTurnCost + turn.cost
+			if current.i == target.i && current.j == target.j && dir == target.dir &&
+				(minD < best || (minD == best && turnCost < bestTurnCost)) {
+				best, bestTurnCost, finish = minD, turnCost, current
+			}
+			distance := minD + math.Abs(to.X-from.X) + math.Abs(to.Y-from.Y)
+			n := &nodes[index(next)]
+			if distance < n.dist || (distance == n.dist && turnCost < n.turnCost) {
+				n.dist, n.turnCost, n.prev = distance, turnCost, current
 			}
 		}
 	}
-
-	// If target was not reached, fallback to straight line
-	if !visited[target.i][target.j][target.dir] && !(start.i == target.i && start.j == target.j && start.dir == target.dir) {
+	if math.IsInf(best, 1) {
 		return nil, false
 	}
-
-	// Reconstruct path of states from target back to start
-	curr := roadState{i: target.i, j: target.j, dir: target.dir}
-	revStates := []roadState{curr}
-	for {
-		if curr.i == start.i && curr.j == start.j && curr.dir == start.dir {
-			break
-		}
-		if !hasPrev[curr.i][curr.j][curr.dir] {
-			break
-		}
-		curr = prev[curr.i][curr.j][curr.dir]
-		revStates = append(revStates, curr)
+	states := []roadState{target}
+	if finish != target {
+		states = append(states, finish)
 	}
-
-	states := make([]roadState, len(revStates))
-	for idx := range revStates {
-		states[idx] = revStates[len(revStates)-1-idx]
+	for current := finish; current != start; {
+		prev := nodes[index(current)].prev
+		if prev.dir != current.dir {
+			states = append(states, roadState{prev.i, prev.j, current.dir})
+		}
+		states = append(states, prev)
+		current = prev
 	}
-
+	for i, j := 0, len(states)-1; i < j; i, j = i+1, j-1 {
+		states[i], states[j] = states[j], states[i]
+	}
 	return states, true
 }

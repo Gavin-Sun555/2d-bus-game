@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"slices"
+
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sound"
@@ -9,8 +11,14 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 )
 
+var berserkSpeedPresets = [...]int{80, 120, 160, 180}
+
 // Settings manages user game configuration
 type Settings struct {
+	ClockRate                    sim.ClockRate
+	clockRateBounds              [3]sim.Rect
+	CareerMode                   bool `json:"-"`
+	OpenCareerRequested          bool `json:"-"`
 	IsOpen                       bool
 	SaveRequested, LoadRequested bool
 	saveBounds, loadBounds       sim.Rect
@@ -37,45 +45,45 @@ type Settings struct {
 	// AI Autopilot & Route AI Buses Configurations
 	AutopilotEnabled         bool
 	AutopilotBerserk         bool // Berserk mode: straightaways top speed boost while obeying traffic rules
-	AutopilotBerserkMaxSpeed int  // Berserk top speed in km/h: 60, 80, 100, 120 (default: 80)
+	AutopilotBerserkMaxSpeed int  // Berserk top speed in km/h.
 	AICarMinSpeed            int
 	AICarMaxSpeed            int
 	AIBusMinSpeed            int
 	AIBusMaxSpeed            int
 	speedRangeBounds         [2][2]sim.Rect // decrement/increment for car min/max
-	AIBusCount               int            // Number of AI buses on the route (0 ~ 8)
+	AIBusCount               int            // Number of AI buses on the route
 	AIBusFleetChanged        bool
 	PlayerModel              sim.BusModel `json:",omitempty"` // Configured player bus model (standard, double-decker, articulated)
 
 	// UI Localization Language
-	Language                 locale.Language
-	Announcements            AnnouncementMode
-	AnnouncementVoice        sound.VoiceStyle
-	PassengerRates           *[sim.BusModelCount]sim.PassengerRates `json:",omitempty"`
-	PassengerTimingOpen      bool                                   `json:"-"`
-	passengerTimingBounds    sim.Rect
-	passengerTimingClose     sim.Rect
-	passengerRateBounds      [sim.BusModelCount][2]sim.Rect
-	AudioVolumes             *sound.Volumes `json:",omitempty"`
-	volumeBounds             [3][2]sim.Rect
-	announcementVoiceBounds  sim.Rect
-	announcementsBounds      sim.Rect
-	PassengerSpawnRate       sim.PassengerSpawnRate
-	passengerSpawnRateBounds sim.Rect
+	Language                  locale.Language
+	Announcements             AnnouncementMode
+	AnnouncementVoice         sound.VoiceStyle
+	PassengerCapacities       *[sim.BusModelCount]int `json:",omitempty"` // Legacy absolute capacities, migrated on load.
+	PassengerOverloadPercents *[sim.BusModelCount]int `json:",omitempty"`
+	passengerCapacityBounds   [sim.BusModelCount][2]sim.Rect
+	PassengerRates            *[sim.BusModelCount]sim.PassengerRates `json:",omitempty"`
+	PassengerTimingOpen       bool                                   `json:"-"`
+	passengerTimingBounds     sim.Rect
+	passengerTimingClose      sim.Rect
+	passengerRateBounds       [sim.BusModelCount][2]sim.Rect
+	AudioVolumes              *sound.Volumes `json:",omitempty"`
+	volumeBounds              [3][2]sim.Rect
+	announcementVoiceBounds   sim.Rect
+	announcementsBounds       sim.Rect
+	PassengerSpawnRate        sim.PassengerSpawnRate
+	passengerSpawnRateBounds  sim.Rect
 
 	// Button bounds for click detection
-	fineToggleBounds      sim.Rect
-	densityToggleBounds   sim.Rect
-	cameraToggleBounds    sim.Rect
-	autopilotBounds       sim.Rect
-	berserkSpeed60Bounds  sim.Rect
-	berserkSpeed80Bounds  sim.Rect
-	berserkSpeed100Bounds sim.Rect
-	berserkSpeed120Bounds sim.Rect
-	aiBusToggleBounds     sim.Rect
-	langToggleBounds      sim.Rect
-	menuButtonBounds      sim.Rect
-	closeButtonBounds     sim.Rect
+	fineToggleBounds    sim.Rect
+	densityToggleBounds sim.Rect
+	cameraToggleBounds  sim.Rect
+	autopilotBounds     sim.Rect
+	berserkSpeedBounds  [len(berserkSpeedPresets)]sim.Rect
+	aiBusToggleBounds   sim.Rect
+	langToggleBounds    sim.Rect
+	menuButtonBounds    sim.Rect
+	closeButtonBounds   sim.Rect
 }
 
 func NewSettings() *Settings {
@@ -111,36 +119,22 @@ func (s *Settings) CyclePassengerSpawnRate() sim.PassengerSpawnRate {
 	return s.PassengerSpawnRate
 }
 
-func (s *Settings) GetBerserkCruiseSpeed() float64 {
-	switch s.AutopilotBerserkMaxSpeed {
-	case 60:
-		return 333.0
-	case 80:
-		return 445.0
-	case 100:
-		return 555.0
-	case 120:
-		return 667.0
-	default:
-		return 445.0
+// BerserkSpeedKPH also resolves retired 60/100 km/h presets from old saves.
+func (s *Settings) BerserkSpeedKPH() int {
+	if slices.Contains(berserkSpeedPresets[:], s.AutopilotBerserkMaxSpeed) {
+		return s.AutopilotBerserkMaxSpeed
 	}
+	return berserkSpeedPresets[0]
 }
 
-// GetBusMaxSpeed returns the vehicle physics max forward speed in px/s based on the configured speed limit.
-// In manual driving mode, the bus accelerates up to this limit (reaching 60, 80, 100, or 120 km/h).
+func (s *Settings) GetBerserkCruiseSpeed() float64 {
+	return sim.SpeedKPH(s.BerserkSpeedKPH())
+}
+
+// GetBusMaxSpeed is the player bus top speed shared by manual driving and
+// both autopilot modes.
 func (s *Settings) GetBusMaxSpeed() float64 {
-	switch s.AutopilotBerserkMaxSpeed {
-	case 60:
-		return 334.0 // 334 * 0.18 = 60.12 km/h
-	case 80:
-		return 445.0 // 445 * 0.18 = 80.1 km/h
-	case 100:
-		return 556.0 // 556 * 0.18 = 100.08 km/h
-	case 120:
-		return 667.0 // 667 * 0.18 = 120.06 km/h
-	default:
-		return 445.0
-	}
+	return s.GetBerserkCruiseSpeed()
 }
 
 func (s *Settings) GetPlayerModel() sim.BusModel {
@@ -151,7 +145,7 @@ func (s *Settings) GetPlayerModel() sim.BusModel {
 }
 
 func (s *Settings) SetBerserkMaxSpeed(speed int) {
-	if speed == 60 || speed == 80 || speed == 100 || speed == 120 {
+	if slices.Contains(berserkSpeedPresets[:], speed) {
 		s.AutopilotBerserkMaxSpeed = speed
 	}
 }
@@ -161,18 +155,8 @@ func (s *Settings) SetMaxSpeed(speed int) {
 }
 
 func (s *Settings) CycleBerserkMaxSpeed() int {
-	switch s.AutopilotBerserkMaxSpeed {
-	case 60:
-		s.AutopilotBerserkMaxSpeed = 80
-	case 80:
-		s.AutopilotBerserkMaxSpeed = 100
-	case 100:
-		s.AutopilotBerserkMaxSpeed = 120
-	case 120:
-		s.AutopilotBerserkMaxSpeed = 60
-	default:
-		s.AutopilotBerserkMaxSpeed = 80
-	}
+	index := slices.Index(berserkSpeedPresets[:], s.AutopilotBerserkMaxSpeed)
+	s.AutopilotBerserkMaxSpeed = berserkSpeedPresets[(index+1)%len(berserkSpeedPresets)]
 	return s.AutopilotBerserkMaxSpeed
 }
 
@@ -186,6 +170,10 @@ func (s *Settings) GetLaneWidth() float64 {
 
 func (s *Settings) Toggle() {
 	s.IsOpen = !s.IsOpen
+}
+
+func (s *Settings) HasSaveLoadButtons() bool {
+	return s != nil && s.saveBounds.W > 0 && s.loadBounds.W > 0
 }
 
 func (s *Settings) Update(cam ...*sim.Camera) {
@@ -222,6 +210,14 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 				s.PassengerTimingOpen = false
 				return
 			}
+			for model, row := range s.passengerCapacityBounds {
+				for direction, b := range row {
+					if b.Contains(mPos) {
+						s.AdjustPassengerOverload(sim.BusModel(model), direction*2-1)
+						return
+					}
+				}
+			}
 			for model, row := range s.passengerRateBounds {
 				for door, b := range row {
 					if b.Contains(mPos) {
@@ -231,6 +227,12 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 				}
 			}
 			return
+		}
+		for rate, bounds := range s.clockRateBounds {
+			if bounds.Contains(mPos) {
+				s.ClockRate = sim.ClockRate(rate)
+				return
+			}
 		}
 		if s.passengerTimingBounds.Contains(mPos) {
 			s.PassengerTimingOpen = true
@@ -276,11 +278,11 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 			s.BusSignalPriority = !s.BusSignalPriority
 			return
 		}
-		if s.saveBounds.Contains(mPos) {
+		if !s.CareerMode && s.saveBounds.Contains(mPos) {
 			s.SaveRequested = true
 			return
 		}
-		if s.loadBounds.Contains(mPos) {
+		if !s.CareerMode && s.loadBounds.Contains(mPos) {
 			s.LoadRequested = true
 			return
 		}
@@ -320,16 +322,14 @@ func (s *Settings) Update(cam ...*sim.Camera) {
 				s.AutopilotEnabled = false
 				s.AutopilotBerserk = false
 			}
-		} else if s.berserkSpeed60Bounds.Contains(mPos) {
-			s.AutopilotBerserkMaxSpeed = 60
-		} else if s.berserkSpeed80Bounds.Contains(mPos) {
-			s.AutopilotBerserkMaxSpeed = 80
-		} else if s.berserkSpeed100Bounds.Contains(mPos) {
-			s.AutopilotBerserkMaxSpeed = 100
-		} else if s.berserkSpeed120Bounds.Contains(mPos) {
-			s.AutopilotBerserkMaxSpeed = 120
+		} else if index := slices.IndexFunc(s.berserkSpeedBounds[:], func(bounds sim.Rect) bool { return bounds.Contains(mPos) }); index >= 0 {
+			s.SetBerserkMaxSpeed(berserkSpeedPresets[index])
 		} else if s.aiBusToggleBounds.Contains(mPos) {
-			s.OpenNetworkRequested = true
+			if s.CareerMode {
+				s.OpenCareerRequested = true
+			} else {
+				s.OpenNetworkRequested = true
+			}
 			s.IsOpen = false
 		} else if s.langToggleBounds.Contains(mPos) {
 			s.Language = locale.ToggleLanguage()
@@ -380,11 +380,11 @@ func (s *Settings) AdjustAISpeed(field, delta int) {
 	case 0:
 		s.AICarMinSpeed = max(30, min(s.AICarMaxSpeed, s.AICarMinSpeed+delta))
 	case 1:
-		s.AICarMaxSpeed = max(s.AICarMinSpeed, min(100, s.AICarMaxSpeed+delta))
+		s.AICarMaxSpeed = max(s.AICarMinSpeed, min(sim.TrafficMaxSpeedKPH, s.AICarMaxSpeed+delta))
 	case 2:
 		s.AIBusMinSpeed = max(30, min(s.AIBusMaxSpeed, s.AIBusMinSpeed+delta))
 	case 3:
-		s.AIBusMaxSpeed = max(s.AIBusMinSpeed, min(80, s.AIBusMaxSpeed+delta))
+		s.AIBusMaxSpeed = max(s.AIBusMinSpeed, min(sim.TrafficMaxSpeedKPH, s.AIBusMaxSpeed+delta))
 	}
 }
 

@@ -239,6 +239,10 @@ func TestAIMissedStopOppositeRoadNoFalseOvershoot(t *testing.T) {
 	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
 	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 75.0, Y: sinH * 75.0}).Add(toRoadDir.Mul(30.0))
 	g.skipCooldown = 0.0
+	// The bus was teleported; the skip decided for the empty stop above
+	// would otherwise still hold for these late riders.
+	g.autopilotSkip.Reset()
+	g.AutopilotDriver.CanSkipTargetStop = false
 
 	_ = g.Update()
 
@@ -366,8 +370,8 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			}
 		})
 
-		// 2. Station occupied by another vehicle with no alighting passengers -> AI must skip automatically
-		t.Run(modeName+"_OccupiedStationAutoSkip", func(t *testing.T) {
+		// 2. Station occupied by another vehicle with riders waiting -> AI still serves it
+		t.Run(modeName+"_OccupiedStationKeptForWaitingRiders", func(t *testing.T) {
 			g := NewGame(1280, 720)
 			g.State = StatePlaying
 			g.Settings.AutopilotEnabled = true
@@ -397,19 +401,9 @@ func TestAIAutopilotProactiveSkipInBerserkAndStandardMode(t *testing.T) {
 			prevRouteIdx := g.Route.CurrentIndex
 			_ = g.Update()
 
-			if g.Route.CurrentIndex == prevRouteIdx {
-				t.Fatalf("[%s] AI mode failed to proactively skip occupied station! Index remained at %d", modeName, g.Route.CurrentIndex)
-			}
-
-			foundToast := false
-			for _, toast := range g.HUD.Toasts {
-				if strings.Contains(toast.Text, "AI自主飞站") || strings.Contains(toast.Text, "AI Skip") {
-					foundToast = true
-					break
-				}
-			}
-			if !foundToast {
-				t.Fatalf("[%s] Expected AI proactive skip toast for occupied station, got: %+v", modeName, g.HUD.Toasts)
+			// Both modes follow the fleet rule: an occupied bay is not a reason to skip.
+			if g.Route.CurrentIndex != prevRouteIdx {
+				t.Fatalf("[%s] AI mode should keep occupied station with waiting passengers for tandem docking! Index changed to %d", modeName, g.Route.CurrentIndex)
 			}
 		})
 
@@ -510,9 +504,11 @@ func TestAIMissedStopStoppedOutsideBayResumesDriving(t *testing.T) {
 	g.Cash = 100
 
 	// 1. Update: Must NOT be falsely penalized or skipped while waiting alongside! (Point 2)
+	// Like fleet buses, standard autopilot may serve the stop from beside the
+	// occupied bay; that is a service, not a skip.
 	_ = g.Update()
 
-	if g.Route.GetCurrentTargetStopID() != targetStopID {
+	if g.Route.GetCurrentTargetStopID() != targetStopID && g.AutopilotDriver.State != autopilot.AutopilotStateDocked {
 		t.Fatalf("Player bus was wrongfully skipped to next stop while waiting for front bus!")
 	}
 	if g.Cash != 100 {
@@ -549,9 +545,8 @@ func TestAIMissedStopStoppedOutsideBayResumesDriving(t *testing.T) {
 	}
 }
 
-// TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast verifies that when an AI bus in outer/passing lane
-// has its reference point past the forward berth (e.g. forwardProj = 30px) and comes to a crawl/stop
-// while unable to dock into the curb bay, it directly triggers fly-past, advances to next stop, and resumes driving.
+// TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast verifies that an AI bus stopped in the
+// outer lane just past the forward berth does not stall there: it serves from the outer lane and departs.
 func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
 	g := NewGame(1280, 720)
 	g.State = StatePlaying
@@ -583,26 +578,23 @@ func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
 	g.Bus.IsBraking = true
 	g.AutopilotDriver.LaneOffset = -laneW
 
-	// 1. Update frame: Must trigger fly-past (missed stop with -$50 fine)
+	// 1. Like a fleet bus with overtaking enabled, the autopilot serves the
+	// stop from the outer lane instead of stalling or being fined for a miss.
 	_ = g.Update()
 
-	if g.Cash != 50 {
-		t.Fatalf("Expected -$50 fine for overshot stop in outer lane, got cash: %d", g.Cash)
+	if g.Cash != 100 {
+		t.Fatalf("Outer-lane service must not be fined, got cash: %d", g.Cash)
 	}
-	if g.Route.GetCurrentTargetStopID() == targetStopID {
-		t.Fatalf("Expected route to advance to next stop after front overshot in outer lane")
-	}
-
-	// 2. Bus must not remain locked on brakes; autopilot state must become cruising
-	if g.AutopilotDriver.State != autopilot.AutopilotStateCruising {
-		t.Fatalf("Expected autopilot state to be Cruising, got: %v", g.AutopilotDriver.State)
+	if g.AutopilotDriver.State != autopilot.AutopilotStateDocked || !g.Bus.DoorsOpen {
+		t.Fatalf("Expected outer-lane service, got state %v doors %v", g.AutopilotDriver.State, g.Bus.DoorsOpen)
 	}
 
-	// 3. Run further frames: Bus must accelerate away and not freeze at 0 km/h
-	for frame := 0; frame < 60; frame++ {
+	// 2. After service the bus must not stay locked at 0 km/h.
+	for frame := 0; frame < 1800; frame++ {
 		_ = g.Update()
+		if !g.Bus.DoorsOpen && g.Bus.Speed > 10 {
+			return
+		}
 	}
-	if g.Bus.Speed < 10.0 {
-		t.Fatalf("Expected bus to accelerate away towards next stop, speed is still %.2f", g.Bus.Speed)
-	}
+	t.Fatalf("Expected bus to depart after outer-lane service, state %v speed %.2f doors %v", g.AutopilotDriver.State, g.Bus.Speed, g.Bus.DoorsOpen)
 }

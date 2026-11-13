@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
@@ -303,6 +304,9 @@ func TestOnlyPlannedRouteStopsGeneratePassengersAndDestinationsStrictlyOnRoute(t
 func TestStopBoardingToastMessages(t *testing.T) {
 	g := NewGame(1280, 720)
 	g.EnterCity(sim.MapThemeMetropolis)
+	// The assertions read Chinese toasts; earlier save loads change the global language.
+	defer locale.SetLanguage(locale.CurrentLanguage)
+	locale.SetLanguage(locale.LanguageZH)
 
 	stop := g.World.Stops[0]
 	g.Bus.Pos = stop.Pos

@@ -159,8 +159,18 @@ func (m *Mixer) sample() float32 {
 }
 
 func (m *Mixer) Read(p []byte) (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// The audio backend can ask for a large buffer. Let game-thread
+	// controls take the lock between short runs of stereo samples.
+	const chunkBytes = 256 * 8
+	for offset := 0; offset < len(p); offset += chunkBytes {
+		m.mu.Lock()
+		m.readChunk(p[offset:min(offset+chunkBytes, len(p))])
+		m.mu.Unlock()
+	}
+	return len(p), nil
+}
+
+func (m *Mixer) readChunk(p []byte) {
 	written := 0
 	for written < len(p) {
 		if m.pendingN == 0 {
@@ -173,7 +183,6 @@ func (m *Mixer) Read(p []byte) (int, error) {
 		written += n
 		m.pendingN -= n
 	}
-	return written, nil
 }
 
 // SetVolumes changes presentation gain without changing vehicle state.

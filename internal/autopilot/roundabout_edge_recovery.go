@@ -14,6 +14,32 @@ type RoundaboutEdgeRecovery struct {
 	AlignForward           bool
 }
 
+// A bus already inside the ring can stall when its nominal steering would
+// clip the island. Try steering away from the island at crawl speed, keeping
+// the full boundary and traffic sweeps for both sections.
+func (ad *AutopilotDriver) roundaboutIslandSteering(f autopilotFrame, desired float64) (float64, bool) {
+	for _, rb := range f.world.Roundabouts {
+		if f.bus.Pos.Distance(rb.Center) >= rb.Radius {
+			continue
+		}
+		empty := f
+		empty.obstacles = nil
+		if ad.articulatedSweptSpeed(empty, desired) > 0 {
+			return 0, false
+		}
+		forward := sim.UnitFromAngle(f.bus.Heading)
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		outward := math.Copysign(1, f.bus.Pos.Sub(rb.Center).Dot(right))
+		for _, steer := range []float64{outward * .5, outward} {
+			if ad.controlSweptSpeed(f, steer) >= 16 && ad.articulatedSweptSpeed(f, steer, true) >= 16 {
+				return steer, true
+			}
+		}
+		break
+	}
+	return 0, false
+}
+
 func edgeRecoveryPose(b sim.Bus, distance, steering float64) sim.Bus {
 	h := b.Heading + distance/b.WheelBase*math.Tan(steering*b.MaxSteerAngle)
 	return b.AtPose(b.Pos.Add(sim.UnitFromAngle(h).Mul(distance)), h)
@@ -64,12 +90,16 @@ func (ad *AutopilotDriver) tryRoundaboutEdgeRecovery(f autopilotFrame, steer flo
 		return false
 	}
 	ad.roundaboutEdgeRetry = 1
+	return ad.planEdgeRecovery(f, -math.Copysign(1, steer))
+}
+
+// Check the reverse path and the forward turn before issuing a backing maneuver.
+func (ad *AutopilotDriver) planEdgeRecovery(f autopilotFrame, direction float64) bool {
 	// Never turn a traffic wait into a reverse maneuver. The current full
 	// body and every subsequent sample must be physically separated.
 	if !edgeRecoveryPoseClear(f, f.bus, 0) {
 		return false
 	}
-	direction := -math.Copysign(1, steer)
 	for distance := 6.; distance <= 10; distance += .5 {
 		b := *f.bus
 		safe := true

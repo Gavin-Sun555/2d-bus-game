@@ -1,7 +1,10 @@
 package game
 
 import (
+	"context"
 	"fmt"
+	"runtime/trace"
+	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -18,15 +21,32 @@ type GameState int
 const (
 	StateMainMenu GameState = iota
 	StatePlaying
+	StateModeSelect
 )
 
 type Game struct {
-	stopNames      *stopNameStore
-	stopNameEditor *stopNameEditor
-	vehicleAudio   *vehicleAudio
-	announcements  *announcementState
-	Width          int
-	Height         int
+	trafficDebug                                    *trafficDebugState
+	autosavesEnabled, sessionStarted, exitAutosaved bool
+	careerChanged                                   bool
+	lastAutosaveAt, lastAutosaveAttempt             time.Time
+	pendingAutosave                                 *intervalAutosave
+
+	Mode              PlayMode
+	Career            *sim.CareerProfile
+	careerCities      map[sim.MapTheme]citySave
+	modeSessions      map[PlayMode]*Game
+	careerOffice      careerOffice
+	modeButtons       [2]sim.Rect
+	modeBackBounds    sim.Rect
+	careerOpenBounds  sim.Rect
+	careerRevenueMark int
+	stopNames         *stopNameStore
+	stopNameEditor    *stopNameEditor
+	stationSearch     *stationSearch
+	vehicleAudio      *vehicleAudio
+	announcements     *announcementState
+	Width             int
+	Height            int
 
 	State                   GameState
 	SelectedMapTheme        sim.MapTheme
@@ -39,6 +59,7 @@ type Game struct {
 	menuCardLargeGridBounds [5]sim.Rect
 	menuStartBounds         sim.Rect
 	menuLangBounds          sim.Rect
+	menuSaveBounds          sim.Rect
 	menuContinueBounds      sim.Rect
 	activeSaveSlot          int
 	savePicker              saveSlotPicker
@@ -83,13 +104,17 @@ type Game struct {
 	// Track lane width changes
 	lastLaneWidth float64
 
-	// Mouse dragging for planning mode
-	isDragging   bool
-	dragStartPos sim.Vec2
-	camStartPos  sim.Vec2
+	// Mouse dragging & pinch-to-zoom for planning mode
+	isDragging         bool
+	dragStartPos       sim.Vec2
+	camStartPos        sim.Vec2
+	touchIDsBuf        []ebiten.TouchID
+	pinchTouchActive   bool
+	pinchLastTouchDist float64
 
 	// Route planning tracking
 	planModeInitialStops  []int
+	planModeInitialIndex  int
 	planModeRouteModified bool
 
 	// Boarding tracking
@@ -101,6 +126,7 @@ type Game struct {
 	bellToastShown      bool
 	skipCooldown        float64
 	lastSkippedStopID   int
+	autopilotSkip       traffic.StationSkip // Standard autopilot keeps a skip decided for its target stop.
 }
 
 func NewGame(width, height int) *Game {
@@ -182,7 +208,32 @@ func NewGame(width, height int) *Game {
 }
 
 func (g *Game) Update() error {
+	if g.autosavesEnabled && ebiten.IsWindowBeingClosed() {
+		if err := g.SaveOnExit(); err != nil {
+			g.saveMessage = locale.T("退出自动存档失败，请重试：", "Exit autosave failed; retry closing: ") + err.Error()
+			g.HUD.AddWarningToast(g.saveMessage)
+			if g.savePicker.open {
+				g.savePicker.message = g.saveMessage
+			}
+			if g.careerOffice.open {
+				g.careerOffice.message = g.saveMessage
+			}
+			if g.stopNameEditor != nil {
+				g.stopNameEditor.err = g.saveMessage
+			}
+			return nil
+		}
+		return ebiten.Termination
+	}
+	g.updateAutosave(time.Now())
 	audioDriving := false
+	if g.State == StateModeSelect {
+		g.updateModeSelection()
+		return nil
+	}
+	if g.updateCareerOffice() {
+		return nil
+	}
 	if g.announcements != nil {
 		g.syncAnnouncements(g.announcementsAllowed())
 	}
@@ -191,15 +242,19 @@ func (g *Game) Update() error {
 		g.updateStopNameEditor()
 		return nil
 	}
+	if g.stationSearch != nil {
+		g.updateStationSearch()
+		return nil
+	}
 	if g.savePicker.open {
 		g.updateSavePicker()
 		return nil
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyF9) {
+	if (!g.isCareer() || g.State == StateMainMenu) && inpututil.IsKeyJustPressed(ebiten.KeyF9) {
 		g.openSavePicker(true)
 		return nil
 	}
-	if g.State == StatePlaying && inpututil.IsKeyJustPressed(ebiten.KeyF5) {
+	if ((g.State == StatePlaying && !g.isCareer()) || (g.State == StateMainMenu && g.isCareer())) && inpututil.IsKeyJustPressed(ebiten.KeyF5) {
 		g.openSavePicker(false)
 		return nil
 	}
@@ -211,11 +266,13 @@ func (g *Game) Update() error {
 	// Playing state: Check if returning to menu was requested via HUD or Settings
 	if g.HUD.ReturnToMenuRequested {
 		g.HUD.ReturnToMenuRequested = false
+		g.leaveCurrentCareerCity()
 		g.State = StateMainMenu
 		return nil
 	}
 	if g.Settings.ReturnToMenuRequested {
 		g.Settings.ReturnToMenuRequested = false
+		g.leaveCurrentCareerCity()
 		g.State = StateMainMenu
 		return nil
 	}
@@ -227,8 +284,8 @@ func (g *Game) Update() error {
 		g.Settings.IsOpen = false
 	}
 	if g.OperationsPanel.IsOpen {
-		g.ensureOperations()
-		g.OperationsPanel.Update(&g.Settings.Fare, g.Operations)
+		g.refreshOperationsPanel()
+		g.OperationsPanel.Update(&g.Settings.Fare, g.Operations, g.activeLines()...)
 		return nil
 	}
 	if g.updateNetworkPanel() {
@@ -236,14 +293,28 @@ func (g *Game) Update() error {
 	}
 	// 1. Settings menu takes priority
 	g.Settings.Update(g.Camera)
+	g.syncPassengerCapacities()
+	g.World.Clock.Rate = g.Settings.ClockRate
+	if g.isCareer() {
+		g.configureCareerPlans()
+	}
+	if g.Settings.OpenCareerRequested {
+		g.Settings.OpenCareerRequested = false
+		g.OpenCareerOffice(1)
+		return nil
+	}
 	if g.Settings.LoadRequested {
 		g.Settings.LoadRequested = false
-		g.openSavePicker(true)
+		if !g.isCareer() {
+			g.openSavePicker(true)
+		}
 		return nil
 	}
 	if g.Settings.SaveRequested {
 		g.Settings.SaveRequested = false
-		g.openSavePicker(false)
+		if !g.isCareer() {
+			g.openSavePicker(false)
+		}
 		return nil
 	}
 	g.syncPassengerRates()
@@ -257,12 +328,13 @@ func (g *Game) Update() error {
 	}
 	if g.Settings.OpenOperationsRequested {
 		g.Settings.OpenOperationsRequested = false
-		g.ensureOperations()
+		g.refreshOperationsPanel()
 		g.OperationsPanel.IsOpen = true
 		return nil
 	}
 	if g.Settings.ReturnToMenuRequested {
 		g.Settings.ReturnToMenuRequested = false
+		g.leaveCurrentCareerCity()
 		g.State = StateMainMenu
 		return nil
 	}
@@ -300,6 +372,10 @@ func (g *Game) Update() error {
 		return nil
 	}
 
+	if g.updateClockControls() {
+		return nil
+	}
+
 	// Hotkey L: Toggle interface language (Chinese / English)
 	if inpututil.IsKeyJustPressed(ebiten.KeyL) {
 		newLang := locale.ToggleLanguage()
@@ -332,18 +408,28 @@ func (g *Game) Update() error {
 	// 3. Game simulation (Traffic lights, AI traffic, AI buses, passenger arrivals, violations)
 	// Fully PAUSED during Planning Mode so the city stops and no new passengers generate while planning!
 	if !g.IsPlanMode {
+		cashBefore, boardedBefore := g.Cash, g.careerBoarded()
+		defer func() { g.settleCareer(dt, cashBefore, boardedBefore) }()
 		g.trackOperations(0)
 		// Traffic lights update
-		g.updateBusSignalPriority()
+		signalRegion := trace.StartRegion(context.Background(), "simulation.signals")
+		g.updateBusSignalPriority(dt)
 		g.TrafficLights.Update(dt)
+		signalRegion.End()
+
+		g.updateTrafficDebug(dt)
 
 		// AI Traffic vehicles update with dynamic lane width and active world for roundabout navigation
+		carRegion := trace.StartRegion(context.Background(), "simulation.cars")
 		g.TrafficMgr.Update(dt, g.Bus, g.TrafficLights, g.Settings.TrafficDensity, currentLaneW, g.World)
+		carRegion.End()
 
 		// AI Route buses update
 		if g.AIBusMgr != nil {
 			beforeRevenue := g.Operations.Revenue
+			busRegion := trace.StartRegion(context.Background(), "simulation.buses")
 			g.AIBusMgr.Update(dt, g.Bus, g.World, g.TrafficLights, g.TrafficMgr, currentLaneW, g.Settings.TrafficDensity)
+			busRegion.End()
 			g.Cash += g.Operations.Revenue - beforeRevenue
 		}
 
@@ -372,6 +458,7 @@ func (g *Game) Update() error {
 	}
 
 	if !g.IsPlanMode {
+		g.syncAutoHeadlights()
 		g.trackOperations(dt)
 		g.recordGreenWaits(dt)
 	}

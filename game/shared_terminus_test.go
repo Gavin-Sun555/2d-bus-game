@@ -30,10 +30,6 @@ func TestSharedTerminusQueuesPlayerBehindExistingFleet(t *testing.T) {
 		parkSharedTerminusForTest(g, st)
 		g.resetBusesToRouteStart(false)
 		checkStationQueue(t, g, st)
-		u := sim.Vec2{X: math.Cos(st.Heading), Y: math.Sin(st.Heading)}
-		if g.Bus.Pos.Sub(st.Pos).Dot(u) >= -120 {
-			t.Fatal("replanning inserted player into an occupied terminus")
-		}
 		if !g.SelectPlayerLine(1) {
 			t.Fatal("cannot select shared terminus")
 		}
@@ -46,13 +42,35 @@ func TestSharedTerminusQueuesPlayerBehindExistingFleet(t *testing.T) {
 		checkStationQueue(t, g, st)
 	}
 }
+
+// The fleet must form one queue at the shared terminus. The player either
+// takes its own slot in that queue or is dispatched to a free berth at another
+// route stop; it is never placed beside the queue or into an occupied slot.
 func checkStationQueue(t *testing.T, g *Game, st *sim.BusStop) {
 	t.Helper()
 	u := sim.Vec2{X: math.Cos(st.Heading), Y: math.Sin(st.Heading)}
 	r := sim.Vec2{X: -u.Y, Y: u.X}
-	buses := []*sim.Bus{g.Bus}
+	lw := g.Settings.GetLaneWidth()
+	buses := []*sim.Bus{}
 	for _, ab := range g.AIBusMgr.Buses {
 		buses = append(buses, ab.Bus)
+	}
+	if !traffic.SafeInitialBusPosition(g.Bus, g.World, lw) {
+		t.Fatalf("player dispatched to an unsafe position: %v", g.Bus.Pos)
+	}
+	queueEnd := 0.
+	for _, b := range buses {
+		queueEnd = math.Min(queueEnd, b.Pos.Sub(st.Pos).Dot(u)-b.Length)
+	}
+	if d := g.Bus.Pos.Sub(st.Pos); math.Abs(d.Dot(r)) < 2*lw && d.Dot(u) > queueEnd-g.Bus.Length && d.Dot(u) < st.Length {
+		// Near the terminus: the player is a queue member like the fleet.
+		buses = append([]*sim.Bus{g.Bus}, buses...)
+	} else {
+		for _, b := range buses {
+			if hit, _, _ := sim.CheckBusesCollision(g.Bus, b); hit {
+				t.Fatalf("player overlaps fleet bus at %v", b.Pos)
+			}
+		}
 	}
 	for i, b := range buses {
 		delta := b.Pos.Sub(st.Pos)

@@ -44,11 +44,11 @@ func TestMixedModelFleetCountsAndStableSlots(t *testing.T) {
 		t.Fatal("editing mix replaced existing decker or another service")
 	}
 	c = c.ChangeModelCount(sim.BusArticulated, 100)
-	if c.BusCount != 8 {
+	if c.BusCount != MaxBusesPerLine {
 		t.Fatal("fleet exceeded per-line cap")
 	}
 	c = c.ChangeModelCount(sim.BusStandard, -100)
-	if c.ModelCounts[0] != 0 || c.BusCount != 6 {
+	if c.ModelCounts[0] != 0 || c.BusCount != MaxBusesPerLine-2 {
 		t.Fatal("invalid count clamp")
 	}
 }

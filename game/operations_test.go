@@ -66,6 +66,9 @@ func TestOperationsOnlyCountsActiveSimulationTime(t *testing.T) {
 	g.Settings.AIBusCount = 0
 	g.AIBusMgr.BuildFleet(g.World, 0, g.Settings.GetLaneWidth(), g.Bus)
 	g.trackOperations(0)
+	g.Settings.AutopilotEnabled = true
+	g.Settings.AutopilotBerserk = true
+	g.Settings.SetBerserkMaxSpeed(180)
 	for _, pause := range []string{"statistics", "settings", "planning"} {
 		g.OperationsPanel.IsOpen = pause == "statistics"
 		g.Settings.IsOpen = pause == "settings"
@@ -79,6 +82,9 @@ func TestOperationsOnlyCountsActiveSimulationTime(t *testing.T) {
 		if g.Operations.Vehicle(0).Seconds != before {
 			t.Fatalf("%s time counted as service", pause)
 		}
+		if pause == "statistics" && g.Operations.Vehicle(0).MaxSpeedKPH != 180 {
+			t.Fatal("paused statistics did not show the current player speed limit")
+		}
 	}
 	g.OperationsPanel.IsOpen = false
 	g.Settings.IsOpen = false
@@ -88,6 +94,29 @@ func TestOperationsOnlyCountsActiveSimulationTime(t *testing.T) {
 	}
 	if g.Operations.Vehicle(0).Seconds != 1.0/60 {
 		t.Fatal("stationary active time must count toward service speed")
+	}
+}
+
+func TestManualTakeoverKeepsPlayerSpeedLimit(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.Settings.SetBerserkMaxSpeed(160)
+	g.Settings.AutopilotEnabled, g.Settings.AutopilotBerserk = true, true
+	g.refreshOperationsPanel()
+	want := sim.SpeedKPH(160)
+	if g.Bus.MaxSpeedFwd != want {
+		t.Fatalf("Berserk cap = %.2f, want %.2f", g.Bus.MaxSpeedFwd, want)
+	}
+	g.Settings.AutopilotEnabled = false
+	for _, berserk := range []bool{true, false} {
+		g.Settings.AutopilotBerserk = berserk
+		g.manualControls()
+		if g.Bus.MaxSpeedFwd != want {
+			t.Fatalf("manual cap = %.2f, want %.2f", g.Bus.MaxSpeedFwd, want)
+		}
+		g.refreshOperationsPanel()
+		if got := g.Operations.Vehicle(0).MaxSpeedKPH; got != 160 {
+			t.Fatalf("operations panel reports %d km/h, want 160", got)
+		}
 	}
 }
 

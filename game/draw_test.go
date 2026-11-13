@@ -17,6 +17,10 @@ func TestGameDrawAllModes(t *testing.T) {
 		t.Run(theme.Name(), func(t *testing.T) {
 			g.EnterCity(theme)
 			g.Draw(screen)
+			drivingZoom := g.Camera.Zoom
+			g.Camera.Zoom = .25
+			g.Draw(screen)
+			g.Camera.Zoom = drivingZoom
 			g.IsPlanMode = true
 			g.Draw(screen)
 			g.Settings.IsOpen = true

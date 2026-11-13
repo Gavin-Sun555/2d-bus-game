@@ -30,6 +30,9 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 		if signal == sim.SignalRed && !right && forward > stopLineDist {
 			continue
 		}
+		if inter.HoldingUTurnClearance() && forward-car.Length/2 > stopLineDist {
+			continue
+		}
 		if signal == sim.SignalYellow && inter.YellowRemaining() <= 0 && forward > stopLineDist {
 			continue
 		}
@@ -67,24 +70,63 @@ func (tm *TrafficManager) turnCarAtIntersection(f carFrame) {
 // T junctions and the shared right-turn/bus lane on eight-lane roads.
 func carIntersectionTurns(f carFrame, inter *sim.TrafficIntersection) (left, right bool) {
 	car := f.car
+	scratch := f.junctionScratch()
+	var key carTurnIntentKey
+	if scratch != nil {
+		key = carTurnIntentKey{
+			world:      f.world,
+			center:     inter.Center,
+			pos:        car.Pos,
+			heading:    car.Heading,
+			roadCenter: car.RoadCenter,
+			lane:       car.LaneIndex,
+			id:         car.ID,
+			ew:         car.IsEW,
+			lanes:      inter.ApproachLanes,
+			busLane:    inter.ApproachBusLane,
+			dedicated:  inter.ApproachIs4Lane,
+		}
+		if f.world != nil {
+			key.revision = f.world.GeometryRevision()
+		}
+		if scratch.intentValid && scratch.intentKey == key {
+			return scratch.intentLeft, scratch.intentRight
+		}
+	}
 	leftLane := 0
 	if f.world != nil {
 		if road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok {
 			leftLane = road.FirstGeneralTrafficLane()
 		}
 	}
-	straight := hasRoadInDirection(f.world, inter.Center, car.Heading) || isMapExitAhead(f.world, inter.Center, car.Heading)
+	dedicated := inter.ApproachHasDedicatedLanesForHeading(car.Heading)
+	hasLeft := false
+	if !dedicated || car.LaneIndex == leftLane {
+		hasLeft = hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) || (dedicated && car.LaneIndex == leftLane && isMapExitAhead(f.world, inter.Center, car.Heading-math.Pi/2))
+		if dedicated && car.LaneIndex == leftLane && hasLeft {
+			if scratch != nil {
+				scratch.intentKey, scratch.intentValid = key, true
+				scratch.intentLeft, scratch.intentRight = true, false
+			}
+			return true, false
+		}
+	}
 	// Boundary exits are legal movements too. Use the same destinations for
 	// signal selection, swept-corridor admission and the committed path.
-	dedicated := inter.ApproachHasDedicatedLanesForHeading(car.Heading)
-	hasLeft := hasRoadInDirection(f.world, inter.Center, car.Heading-math.Pi/2) || (dedicated && car.LaneIndex == leftLane && isMapExitAhead(f.world, inter.Center, car.Heading-math.Pi/2))
+	straight := hasRoadInDirection(f.world, inter.Center, car.Heading) || isMapExitAhead(f.world, inter.Center, car.Heading)
 	hasRight := hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2)
 	left = hasLeft && ((!straight && (!hasRight || car.LaneIndex == leftLane)) || (car.LaneIndex == leftLane && dedicated))
 	if dedicated && car.LaneIndex != leftLane {
 		left = false
 	}
-	lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(car.Heading)]
-	right = !left && hasRight && ((lanes >= 8 && car.LaneIndex == 3) || !straight)
+	approach := inter.GetApproachIndexForHeading(car.Heading)
+	curbTurn := inter.ApproachLanes[approach] >= 8 && car.LaneIndex == 3 &&
+		(inter.ApproachBusLane[approach] || car.ID%3 == 0)
+	right = !left && hasRight && (curbTurn || !straight)
+	if scratch != nil {
+		scratch.intentKey, scratch.intentValid = key, true
+		scratch.intentLeft, scratch.intentRight = left, right
+	}
 	return
 }
 
@@ -141,14 +183,21 @@ func buildCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJu
 		roadCenter = inter.Center.X
 	}
 	lanes := max(2, inter.ApproachLanes[inter.GetApproachIndexForHeading(heading+math.Pi)])
+	curbIsGeneral, medianExit, medianEntry := false, false, false
 	if f.world != nil {
-		lanes = f.world.GetRoadLanes(roadCenter, newEW, inter.Center.Add(out.Mul(geometry.TurnRadius+60)))
+		probe := inter.Center.Add(out.Mul(geometry.TurnRadius + 60))
+		lanes = f.world.GetRoadLanes(roadCenter, newEW, probe)
+		if road, ok := f.world.RoadAt(roadCenter, newEW, probe); ok {
+			curbIsGeneral = road.LaneCount() == 8 && !road.HasBusLane()
+			medianExit = road.HasMedianBusLane()
+		}
 	}
 	exitLane := min(1, lanes/2-1)
 	inOffset, outOffset, radius := f.laneWidth/2, (float64(exitLane)+.5)*f.laneWidth, geometry.TurnRadius
 	if turnLeft && f.world != nil {
 		if road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok && road.HasMedianBusLane() {
 			inOffset = 1.5 * f.laneWidth
+			medianEntry = true
 		}
 	}
 	if turnRight {
@@ -159,10 +208,23 @@ func buildCarJunctionTurn(f carFrame, inter *sim.TrafficIntersection) *sim.CarJu
 		outOffset, radius = f.laneWidth/2, 90
 		if lanes >= 4 {
 			exitLane = min(2, lanes/2-1)
+			if curbIsGeneral {
+				exitLane = 3
+			}
 			outOffset = (float64(exitLane) + .5) * f.laneWidth
 		}
 	}
-	path := sim.QuarterTurnPath(inter.Center, in, out, inOffset, outOffset, radius)
+	var path []sim.Vec2
+	incoming := inter.ApproachLanes[inter.GetApproachIndexForHeading(car.Heading)]
+	if turnLeft && car.LaneIndex == 0 && incoming >= 4 && lanes >= 4 && !medianEntry && !medianExit {
+		// Keep the inner exit lane for the inner approach. A bus turning
+		// beside it can use the outside curve and a separate receiving lane.
+		exitLane = 0
+		outOffset = (float64(exitLane) + .5) * f.laneWidth
+		path = sim.InnerLeftTurnPath(inter.Center, in, out, inOffset, outOffset, geometry, incoming, lanes)
+	} else {
+		path = sim.QuarterTurnPath(inter.Center, in, out, inOffset, outOffset, radius)
+	}
 	// The arc ends at its outgoing tangent, usually still inside the box.
 	// Retain the original approach and committed lane until the rear clears;
 	// otherwise a phase change admits crossing traffic too early.

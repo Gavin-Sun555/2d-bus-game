@@ -1,8 +1,11 @@
 package traffic
 
 import (
+	"context"
 	"math"
+	"runtime/trace"
 	"slices"
+	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -65,6 +68,7 @@ func (abm *AIBusManager) Update(
 	}
 
 	hasRetired := false
+	traceControls := trace.IsEnabled()
 	for _, ab := range abm.Buses {
 		abm.updateMergeYield(ab.Bus, playerBus, laneWidth)
 
@@ -103,12 +107,18 @@ func (abm *AIBusManager) Update(
 		abm.obstacles = obstacles
 		if ab.Driver != nil {
 			ab.Driver.DisallowOncomingOvertake = true
+			ab.Driver.FleetBus = true
 			if ab.Driver.State == autopilot.AutopilotStateDocked && ab.Bus.DoorsOpen {
 				if _, retired := abm.serviceDockedStation(ab, playerBus, world, obstacles, laneWidth, dt); retired {
 					hasRetired = true
 					continue
 				}
 			}
+			ab.Driver.CanSkipTargetStop = ab.skipTargetStation(world)
+		}
+		var controlsStarted time.Time
+		if traceControls {
+			controlsStarted = time.Now()
 		}
 		throttle, brake, steer, handbrake, toggleDoors, isDocked := ab.Driver.ComputeControls(
 			ab.Bus,
@@ -120,8 +130,30 @@ func (abm *AIBusManager) Update(
 			dt,
 		)
 
-		ab.recoverPassedStation(world, laneWidth, dt, throttle == 0 && brake > 0 && !isDocked)
+		if traceControls {
+			if elapsed := time.Since(controlsStarted); elapsed >= 300*time.Microsecond {
+				trace.Logf(context.Background(), "autopilot.slowControls", "AI %d: %s", ab.ID, elapsed)
+			}
+		}
+
+		held := throttle == 0 && brake > 0 && !isDocked
+		if ab.Driver == nil || !ab.Driver.CanSkipTargetStop {
+			ab.recoverPassedStation(world, laneWidth, dt, held)
+		}
+		if ab.Driver.RecoverStrandedStationDeparture(ab.Bus, world, tls, obstacles, laneWidth, dt, held) || ab.Driver.RecoverStrandedMedianApproach(ab.Bus, world, obstacles, laneWidth, dt, tls) {
+			abm.Operations.InterruptJourney(ab.ID)
+			ab.DeadlockTimer = 0
+			ab.DeadlockTracker = sim.StationaryTracker{}
+			continue
+		}
+		before := ab.Bus.Pos
 		ab.Bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+		if world.ProtectBusAtRail(tls, ab.Bus, before) {
+			ab.Bus.Durability = math.Max(0, ab.Bus.Durability-20)
+		}
+		if ab.Driver != nil {
+			ab.advancePastEmptyStation(world, laneWidth, dt)
+		}
 
 		// Passenger exchange simulation when parked at station
 		if isDocked && ab.Bus.DoorsOpen {
@@ -252,7 +284,7 @@ func (abm *AIBusManager) Update(
 				}
 			}
 
-			if ab.updateDeadlock(dt, isBusDeadlocked, tls, world) {
+			if ab.updateDeadlock(dt, isBusDeadlocked, tls, world, abm.BeforeRecovery) {
 				others := make([]*sim.Bus, 0, len(abm.Buses)+1)
 				if playerBus != nil {
 					others = append(others, playerBus)
@@ -359,6 +391,10 @@ func (abm *AIBusManager) serviceDockedStation(
 		ab.Bus.BeginStationService(targetStopID, ab.Route.CurrentIndex, offCount, isTerminus, candidates, abm.PassengerRates[ab.Bus.Model])
 	}
 
+	if ab.Retiring && isTerminus {
+		ab.Bus.PassengerService.BoardingTarget = 0
+		ab.Bus.PassengerService.BoardingRemaining = 0
+	}
 	_, boardedNow, _ := ab.Bus.StepStationService(ab.ID, st, ab.Route, abm.Operations)
 	ab.PassengersCarried += boardedNow
 
@@ -370,6 +406,7 @@ func (abm *AIBusManager) serviceDockedStation(
 		}
 		ab.Route.AdvanceToNextStop()
 		abm.Operations.Track(ab.ID, ab.Bus, ab.Route, dt)
+		abm.Operations.EndVehicleService(ab.ID)
 		ab.retireReady = true
 		ab.Bus.LaneMergeRequest = nil
 		ab.Bus.StationMergeRequest = nil
@@ -397,6 +434,7 @@ func (abm *AIBusManager) serviceDockedStation(
 				site.Obstacles = append(site.Obstacles, sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 2, HalfWid: ob.Width/2 + 2})
 			}
 		}
+		previousModel := ab.Bus.Model
 		if !ab.Bus.ReplaceModelAtTerminus(ab.Route, targetStopID, site) {
 			if ab.Bus.PendingModel != nil && *ab.Bus.PendingModel == sim.BusArticulated && site.OtherPlatformBus() {
 				ab.Bus.TerminalReplacementHold = false
@@ -404,6 +442,12 @@ func (abm *AIBusManager) serviceDockedStation(
 			ab.DeadlockTimer = 0
 			return true, false
 		}
+		if ab.Bus.Model != previousModel {
+			r := ab.AssignedSpeedRange.Normalize(50, sim.TrafficMaxSpeedKPH)
+			ab.assignLineSpeed(r, r.Sample())
+			abm.Operations.Track(ab.ID, ab.Bus, ab.Route, 0)
+		}
+		abm.ApplyPassengerCapacity(ab.Bus)
 		ab.Bus.SetStationServiceRates(abm.PassengerRates[ab.Bus.Model].ForModel(ab.Bus.Model))
 		newlyJoined = true
 	}

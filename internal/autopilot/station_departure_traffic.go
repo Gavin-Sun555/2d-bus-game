@@ -109,15 +109,11 @@ func (ad *AutopilotDriver) clearsStoppedDepartureFollower(f autopilotFrame, ob V
 	if !active {
 		return false
 	}
+	along := ob.Pos.Sub(f.bus.Pos).Dot(forward)
 	yaw := ob.Heading - math.Atan2(forward.Y, forward.X)
-	nose := ob.Pos.Sub(f.bus.Pos).Dot(forward) + ob.Length/2*math.Abs(math.Cos(yaw)) + ob.Width/2*math.Abs(math.Sin(yaw))
-	if nose >= -f.bus.Length/2-6 {
-		// A stationary outer bus can be alongside our rear, rather than
-		// wholly behind it. Do not make it advance to release us: allow the
-		// full departure sweep below to prove a separated forward exit.
-		if nose > f.bus.Length/2 || roadSideClearance(f.bus, ob) <= 2 {
-			return false
-		}
+	nose := along + ob.Length/2*math.Abs(math.Cos(yaw)) + ob.Width/2*math.Abs(math.Sin(yaw))
+	if along >= -20 || nose > 0 || roadSideClearance(f.bus, ob) <= 2 {
+		return false
 	}
 	pointAt := func(distance float64) (sim.Vec2, float64) {
 		p := ad.pointAt(f.s + distance)

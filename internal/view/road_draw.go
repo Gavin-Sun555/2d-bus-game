@@ -11,6 +11,9 @@ import (
 )
 
 func drawIntersectionPads(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWidth float64, planMode bool) {
+	if planMode {
+		return
+	}
 	for _, c := range w.Intersections {
 		if w.IsAtRoundabout(c) {
 			continue // Roundabouts render their own circular roadway, apron, and center plaza
@@ -22,10 +25,7 @@ func drawIntersectionPads(screen *ebiten.Image, cam *sim.Camera, w *sim.World, l
 		if !cam.IsPointVisible(c, math.Max(shoulderHalfX, shoulderHalfY)*1.5) {
 			continue
 		}
-		// In plan mode, skip shoulder backing apron at intersections
-		if !planMode {
-			drawRotatedBox(screen, cam, c, 1, 0, shoulderHalfX*2, shoulderHalfY*2, sceneColors(w.Theme).paving)
-		}
+		drawRotatedBox(screen, cam, c, 1, 0, shoulderHalfX*2, shoulderHalfY*2, sceneColors(w.Theme).paving)
 	}
 }
 
@@ -81,14 +81,43 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 	heading := math.Atan2(dir.Y, dir.X)
 	sinH, cosH := math.Sincos(heading)
 
+	var brtStationCenters []sim.Vec2
+	if r.HasMedianBusLane() && w != nil && w.CenterBRT {
+		for _, s := range w.Stops {
+			if s == nil || !s.CenterBRT {
+				continue
+			}
+			dPerp := s.RoadCenter.Sub(center).Dot(sim.Vec2{X: -sinH, Y: cosH})
+			dAlong := s.RoadCenter.Sub(center).Dot(sim.Vec2{X: cosH, Y: sinH})
+			if math.Abs(dPerp) < 2.0 && dAlong >= -len/2-30 && dAlong <= len/2+30 {
+				dup := false
+				for _, prev := range brtStationCenters {
+					if prev.Distance(s.RoadCenter) < 1.0 {
+						dup = true
+						break
+					}
+				}
+				if !dup && cam.IsPointVisible(s.RoadCenter, math.Hypot(sim.BRTCrossingCoreHalf+sim.BRTCrossingTaperLen+16, roadW/2+sim.BRTStationMaxFlare+sim.ShoulderWidth)) {
+					brtStationCenters = append(brtStationCenters, s.RoadCenter)
+				}
+			}
+		}
+	}
+
 	// 1. Soft Shoulder (drivable buffer with deceleration, ShoulderWidth = 40px)
 	if !planMode && cam.Zoom >= 0.35 {
 		shoulderTotalW := roadW + sim.ShoulderWidth*2
 		drawRotatedBox(screen, cam, center, cosH, sinH, len, shoulderTotalW, sceneColors(w.Theme).paving) // Slate sidewalk / shoulder
+		for _, st := range brtStationCenters {
+			drawBRTStationFlarePad(screen, cam, st, cosH, sinH, roadW, sim.ShoulderWidth*2, sceneColors(w.Theme).paving)
+		}
 	}
 
 	// 2. Asphalt Road Surface (#1e293b)
 	drawRotatedBox(screen, cam, center, cosH, sinH, len, roadW, sceneColors(w.Theme).asphalt)
+	for _, st := range brtStationCenters {
+		drawBRTStationFlarePad(screen, cam, st, cosH, sinH, roadW, 0, sceneColors(w.Theme).asphalt)
+	}
 
 	if r.HasBusLane() {
 		drawBusLaneSurface(screen, cam, r, center, cosH, sinH, len, laneWidth)
@@ -100,8 +129,8 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 	// 3. Road Curb dividing lines & Hard Crash Barrier along outer edge of shoulder (skip in plan mode / low zoom)
 	if !planMode && cam.Zoom >= 0.35 {
 		curbOffset := roadW / 2
-		drawParallelLine(screen, cam, center, cosH, sinH, len, curbOffset, sceneColors(w.Theme).curb, 2)
-		drawParallelLine(screen, cam, center, cosH, sinH, len, -curbOffset, sceneColors(w.Theme).curb, 2)
+		drawRoadLine(screen, cam, w, r, center, cosH, sinH, len, curbOffset, laneWidth, sceneColors(w.Theme).curb, 2)
+		drawRoadLine(screen, cam, w, r, center, cosH, sinH, len, -curbOffset, laneWidth, sceneColors(w.Theme).curb, 2)
 
 		var splits []float64
 		isEW := math.Abs(r.P2.Y-r.P1.Y) < 1.0
@@ -134,9 +163,9 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 				for _, sign := range []float64{-1, 1} {
 					offset := sign * float64(lane) * laneWidth
 					if r.HasBusLane() && ((!r.HasMedianBusLane() && lane == 3) || (r.HasMedianBusLane() && lane == 1)) {
-						drawParallelLine(screen, cam, center, cosH, sinH, len, offset, sim.RGBA(250, 204, 21, 230), 2.5)
+						drawRoadLine(screen, cam, w, r, center, cosH, sinH, len, offset, laneWidth, sim.RGBA(250, 204, 21, 230), 2.5)
 					} else {
-						drawDashedWhiteLine(screen, cam, center, cosH, sinH, len, offset, planMode)
+						drawDashedWhiteLine(screen, cam, w, r, center, cosH, sinH, len, offset, laneWidth, planMode)
 					}
 				}
 			}
@@ -144,6 +173,85 @@ func drawRoad(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSeg
 		} else {
 			drawDashedYellowLine(screen, cam, center, cosH, sinH, len, planMode)
 		}
+	}
+}
+
+func drawBRTStationFlarePad(screen *ebiten.Image, cam *sim.Camera, st sim.Vec2, cosH, sinH, roadW, extraW float64, c color.RGBA) {
+	forward := sim.Vec2{X: cosH, Y: sinH}
+	maxFlare := sim.BRTStationMaxFlare
+	coreLen := sim.BRTCrossingCoreHalf * 2.0
+	// 1. Core pad (flared by maxFlare on each side)
+	drawRotatedBox(screen, cam, st, cosH, sinH, coreLen, roadW+2*maxFlare+extraW, c)
+	// 2. Smooth taper transition slices
+	taperLen := sim.BRTCrossingTaperLen
+	sliceLen := 32.0
+	numSlices := int(math.Ceil(taperLen / sliceLen))
+	for _, sign := range []float64{-1, 1} {
+		for i := 0; i < numSlices; i++ {
+			d := sim.BRTCrossingCoreHalf + (float64(i)+0.5)*sliceLen
+			t := (sim.BRTCrossingCoreHalf + taperLen - d) / taperLen
+			if t < 0 {
+				t = 0
+			}
+			f := maxFlare * t * t * (3.0 - 2.0*t)
+			sliceCenter := st.Add(forward.Mul(sign * d))
+			drawRotatedBox(screen, cam, sliceCenter, cosH, sinH, sliceLen+2.0, roadW+2*f+extraW, c)
+		}
+	}
+}
+
+func drawRoadLine(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSegment, center sim.Vec2, cosH, sinH, len, offset, laneWidth float64, c color.RGBA, stroke float32) {
+	// The station taper displaces a marking by less than one screen pixel
+	// on the city overview. Draw one continuous line at that scale.
+	if !r.HasMedianBusLane() || w == nil || !w.CenterBRT || sim.BRTStationMaxFlare*cam.Zoom < 1 {
+		drawParallelLine(screen, cam, center, cosH, sinH, len, offset, c, stroke)
+		return
+	}
+	forward := sim.Vec2{X: cosH, Y: sinH}
+	forEachFlaredSegment(cam, w, center.Sub(forward.Mul(len/2)), forward, len, offset, laneWidth, func(a, b sim.Vec2) {
+		worldLine(screen, cam, a, b, float64(stroke), c)
+	})
+}
+
+// Sample only the visible road span, preserving the original 25-unit phase.
+// Join adjacent samples with equal flare into one stroke on straight sections.
+func forEachFlaredSegment(cam *sim.Camera, w *sim.World, origin, forward sim.Vec2, length, offset, laneWidth float64, draw func(a, b sim.Vec2)) {
+	const step = 25.
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	delta := cam.Pos.Add(cam.ShakeOffset).Sub(origin)
+	along := delta.Dot(forward)
+	span := (math.Hypot(float64(cam.ScreenWidth), float64(cam.ScreenHeight))/2+60)/cam.Zoom + step
+	if math.Abs(delta.Dot(right)-offset) > span+sim.BRTStationMaxFlare {
+		return
+	}
+	start := math.Max(0, math.Floor((along-span)/step)*step)
+	end := math.Min(length, math.Ceil((along+span)/step)*step)
+	if start >= end {
+		return
+	}
+
+	point := origin.Add(forward.Mul(start))
+	flare := w.BRTStationFlareAt(point, laneWidth)
+	runStart := point.Add(right.Mul(offset + math.Copysign(flare, offset)))
+	prev := runStart
+	for d := start + step; ; d += step {
+		next := origin.Add(forward.Mul(math.Min(d, end)))
+		nextFlare := w.BRTStationFlareAt(next, laneWidth)
+		next = next.Add(right.Mul(offset + math.Copysign(nextFlare, offset)))
+		if nextFlare != flare {
+			if runStart != prev {
+				draw(runStart, prev)
+			}
+			draw(prev, next)
+			runStart = next
+		}
+		prev, flare = next, nextFlare
+		if d >= end {
+			break
+		}
+	}
+	if runStart != prev {
+		draw(runStart, prev)
 	}
 }
 
@@ -180,12 +288,7 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 			}
 			segEnd := ix - gapAt(ix)
 			if segEnd > segStart {
-				p1 := sim.Vec2{X: segStart, Y: r.P1.Y + offset}
-				p2 := sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
-				s1 := cam.WorldToScreen(p1)
-				s2 := cam.WorldToScreen(p2)
-				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+				drawHazardBarrierSegment(screen, cam, w, r, isEW, segStart, segEnd, offset, laneWidth)
 			}
 			prevX = ix
 		}
@@ -196,12 +299,7 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 		}
 		segEnd := maxX
 		if segEnd > segStart {
-			p1 := sim.Vec2{X: segStart, Y: r.P1.Y + offset}
-			p2 := sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
-			s1 := cam.WorldToScreen(p1)
-			s2 := cam.WorldToScreen(p2)
-			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+			drawHazardBarrierSegment(screen, cam, w, r, isEW, segStart, segEnd, offset, laneWidth)
 		}
 	} else {
 		minY := math.Min(r.P1.Y, r.P2.Y)
@@ -214,12 +312,7 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 			}
 			segEnd := iy - gapAt(iy)
 			if segEnd > segStart {
-				p1 := sim.Vec2{X: r.P1.X - offset, Y: segStart}
-				p2 := sim.Vec2{X: r.P1.X - offset, Y: segEnd}
-				s1 := cam.WorldToScreen(p1)
-				s2 := cam.WorldToScreen(p2)
-				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-				strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+				drawHazardBarrierSegment(screen, cam, w, r, isEW, segStart, segEnd, offset, laneWidth)
 			}
 			prevY = iy
 		}
@@ -230,14 +323,35 @@ func drawHazardBarrier(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r si
 		}
 		segEnd := maxY
 		if segEnd > segStart {
-			p1 := sim.Vec2{X: r.P1.X - offset, Y: segStart}
-			p2 := sim.Vec2{X: r.P1.X - offset, Y: segEnd}
-			s1 := cam.WorldToScreen(p1)
-			s2 := cam.WorldToScreen(p2)
-			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
-			strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+			drawHazardBarrierSegment(screen, cam, w, r, isEW, segStart, segEnd, offset, laneWidth)
 		}
 	}
+}
+
+func drawHazardBarrierSegment(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSegment, isEW bool, segStart, segEnd, offset, laneWidth float64) {
+	if !r.HasMedianBusLane() || w == nil || !w.CenterBRT {
+		var p1, p2 sim.Vec2
+		if isEW {
+			p1 = sim.Vec2{X: segStart, Y: r.P1.Y + offset}
+			p2 = sim.Vec2{X: segEnd, Y: r.P1.Y + offset}
+		} else {
+			p1 = sim.Vec2{X: r.P1.X - offset, Y: segStart}
+			p2 = sim.Vec2{X: r.P1.X - offset, Y: segEnd}
+		}
+		s1 := cam.WorldToScreen(p1)
+		s2 := cam.WorldToScreen(p2)
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(5*cam.Zoom), sim.RGBA(15, 23, 42, 255), true)
+		strokeLine(screen, float32(s1.X), float32(s1.Y), float32(s2.X), float32(s2.Y), float32(2*cam.Zoom), sim.RGBA(234, 179, 8, 255), true)
+		return
+	}
+	origin, forward := sim.Vec2{X: segStart, Y: r.P1.Y}, sim.Vec2{X: 1}
+	if !isEW {
+		origin, forward = sim.Vec2{X: r.P1.X, Y: segStart}, sim.Vec2{Y: 1}
+	}
+	forEachFlaredSegment(cam, w, origin, forward, segEnd-segStart, offset, laneWidth, func(a, b sim.Vec2) {
+		worldLine(screen, cam, a, b, 5, sim.RGBA(15, 23, 42, 255))
+		worldLine(screen, cam, a, b, 2, sim.RGBA(234, 179, 8, 255))
+	})
 }
 
 func drawCenterDividers(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, cosH, sinH, len, perpOffset float64, c color.RGBA) {
@@ -271,10 +385,13 @@ func drawDashedYellowLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2
 	}
 }
 
-func drawDashedWhiteLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, cosH, sinH, len, perpOffset float64, planMode bool) {
+func drawDashedWhiteLine(screen *ebiten.Image, cam *sim.Camera, w *sim.World, r sim.RoadSegment, center sim.Vec2, cosH, sinH, len, perpOffset, laneWidth float64, planMode bool) {
 	if planMode || cam.Zoom < 0.38 {
-		// Low zoom / Plan mode: Draw single continuous line to eliminate ~220 vector calls per road
-		drawCenterDividers(screen, cam, center, cosH, sinH, len, perpOffset, sim.RGBA(241, 245, 249, 130))
+		if !r.HasMedianBusLane() || w == nil || !w.CenterBRT {
+			drawCenterDividers(screen, cam, center, cosH, sinH, len, perpOffset, sim.RGBA(241, 245, 249, 130))
+			return
+		}
+		drawRoadLine(screen, cam, w, r, center, cosH, sinH, len, perpOffset, laneWidth, sim.RGBA(241, 245, 249, 130), 1.5)
 		return
 	}
 	dashLen := 24.0
@@ -282,11 +399,22 @@ func drawDashedWhiteLine(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2,
 	step := dashLen + gapLen
 	lineCenter := center.Add(sim.Vec2{X: -sinH * perpOffset, Y: cosH * perpOffset})
 	first, last := visibleDashRange(cam, lineCenter, sim.Vec2{X: cosH, Y: sinH}, len, dashLen, step)
+	hasBRT := r.HasMedianBusLane() && w != nil && w.CenterBRT
 	for i := first; i < last; i++ {
 		dStart := -len/2 + float64(i)*step
 		dEnd := dStart + dashLen
-		da := center.Add(sim.Vec2{X: cosH*dStart - sinH*perpOffset, Y: sinH*dStart + cosH*perpOffset})
-		db := center.Add(sim.Vec2{X: cosH*dEnd - sinH*perpOffset, Y: sinH*dEnd + cosH*perpOffset})
+		ptA := center.Add(sim.Vec2{X: cosH * dStart, Y: sinH * dStart})
+		ptB := center.Add(sim.Vec2{X: cosH * dEnd, Y: sinH * dEnd})
+		offA := perpOffset
+		offB := perpOffset
+		if hasBRT {
+			flareA := w.BRTStationFlareAt(ptA, laneWidth)
+			flareB := w.BRTStationFlareAt(ptB, laneWidth)
+			offA += math.Copysign(flareA, perpOffset)
+			offB += math.Copysign(flareB, perpOffset)
+		}
+		da := ptA.Add(sim.Vec2{X: -sinH * offA, Y: cosH * offA})
+		db := ptB.Add(sim.Vec2{X: -sinH * offB, Y: cosH * offB})
 		sa := cam.WorldToScreen(da)
 		sb := cam.WorldToScreen(db)
 		strokeLine(screen, float32(sa.X), float32(sa.Y), float32(sb.X), float32(sb.Y),
@@ -390,15 +518,12 @@ func drawCrosswalks(screen *ebiten.Image, cam *sim.Camera, w *sim.World, laneWid
 			for lane := 0; lane < lanes/2; lane++ {
 				for _, back := range offsets {
 					pos := pt.Sub(fwd.Mul(stop + back)).Add(right.Mul((float64(lane) + .5) * laneWidth))
-					if lanes == 8 && lane == 3 {
+					if lanes >= 6 && lane == lanes/2-1 {
 						drawGroundTurnArrow(screen, cam, pos, heading, true)
-						roadCoord := pt.Y
-						if approach >= 2 {
-							roadCoord = pt.X
-						}
-						road, ok := w.RoadAt(roadCoord, approach < 2, pt.Sub(fwd.Mul(stop+50)))
-						if ok && road.HasBusLane() && !road.HasMedianBusLane() {
-							drawGroundArrow(screen, cam, pos, heading, true)
+						if roadOK {
+							if lanes >= 6 {
+								drawGroundLaneArrow(screen, cam, pos, heading, true, false, sim.RGBA(34, 211, 238, 225))
+							}
 							drawGroundArrow(screen, cam, pos, heading, false)
 						}
 					} else if medianBRT && lane == 0 {
@@ -462,7 +587,7 @@ func drawGroundArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, headin
 func drawGroundTurnArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, right bool) {
 	drawGroundLaneArrow(screen, cam, pos, heading, true, right)
 }
-func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, isLeftTurn, rightTurn bool) {
+func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, heading float64, isLeftTurn, rightTurn bool, busColor ...color.RGBA) {
 	scale := float32(cam.Zoom)
 	if scale < 0.28 {
 		return
@@ -475,6 +600,9 @@ func drawGroundLaneArrow(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, he
 		left = left.Mul(-1)
 	}
 	col := sim.RGBA(248, 250, 252, 225)
+	if len(busColor) > 0 {
+		col = busColor[0]
+	}
 	lw := float32(2.8 * scale)
 
 	if !isLeftTurn {

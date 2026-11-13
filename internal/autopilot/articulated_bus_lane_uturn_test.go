@@ -9,6 +9,17 @@ import (
 func TestArticulatedBusLaneUTurnClearsShortStationApproach(t *testing.T) {
 	for _, berserk := range []bool{false, true} {
 		w := sim.NewWorld(52, sim.MapThemeMetropolis)
+		// Remove the surrounding loop so this exercises a necessary U-turn.
+		center := w.Stops[8].RoadCenter.X
+		destinationRoad := w.Stops[20].RoadCenter.Y
+		roads := w.Roads[:0]
+		for _, road := range w.Roads {
+			if (road.P1.X == center && road.P2.X == center) ||
+				(road.P1.Y == road.P2.Y && (road.P1.Y == 0 || road.P1.Y == destinationRoad)) {
+				roads = append(roads, road)
+			}
+		}
+		w.Roads = roads
 		tls := sim.NewTrafficLightSystem()
 		tls.BuildForWorld(w)
 		for _, it := range tls.Intersections {

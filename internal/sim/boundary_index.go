@@ -21,6 +21,7 @@ type boundaryStop struct {
 	pos                    Vec2
 	heading, length, width float64
 	lanes                  int
+	centerBRT              bool
 	cos, sin               float64
 }
 type boundaryGeometryCache struct {
@@ -47,8 +48,24 @@ func (w *World) BeginBoundaryQueries(width float64) {
 }
 func (w *World) EndBoundaryQueries() { w.boundaryDepth-- }
 
+// BoundaryQueryVersion identifies static inputs shared by repeated clearance
+// checks in a validated batch. Central BRT flare geometry reads live stops.
+type BoundaryQueryVersion struct {
+	boundaries *boundaryGeometryCache
+	junctions  *worldGeometryCache
+}
+
+func (w *World) BoundaryQueryVersion(width float64) (BoundaryQueryVersion, bool) {
+	boundaries, junctions := w.boundaryCache, w.geometryCache
+	if w.CenterBRT || w.boundaryDepth <= 0 || boundaries == nil || boundaries.width != width ||
+		junctions == nil || junctions.width != width || !slices.Equal(w.Roundabouts, junctions.roundabouts) {
+		return BoundaryQueryVersion{}, false
+	}
+	return BoundaryQueryVersion{boundaries, junctions}, true
+}
+
 func boundaryStopKey(s *BusStop) boundaryStop {
-	return boundaryStop{pos: s.Pos, heading: s.Heading, length: s.Length, width: s.Width, lanes: s.RoadLanes}
+	return boundaryStop{pos: s.Pos, heading: s.Heading, length: s.Length, width: s.Width, lanes: s.RoadLanes, centerBRT: s.CenterBRT}
 }
 func (c *boundaryGeometryCache) matches(w *World, width float64) bool {
 	if c == nil || c.width != width || !slices.Equal(c.roads, w.Roads) || !slices.Equal(c.buildings, w.Buildings) || len(c.stops) != len(w.Stops) {
@@ -94,7 +111,7 @@ func buildBoundaryGeometry(w *World, width float64) *boundaryGeometryCache {
 		// Include the full approach queue, exit taper AND shelter.
 		loLong, hiLong := -1200.0, math.Max(42, s.Length/2+taper)
 		loLat := math.Min(24, -float64(s.RoadLanes)/2*width-s.Width*.48-15)
-		hiLat := math.Max(48, s.Width*.5+12)
+		hiLat := math.Max(48, math.Max(s.Width*.5+12, width+16))
 		box := boundaryBox{Vec2{math.Inf(1), math.Inf(1)}, Vec2{math.Inf(-1), math.Inf(-1)}}
 		for _, longitudinal := range []float64{loLong, hiLong} {
 			for _, lateral := range []float64{loLat, hiLat} {
@@ -120,7 +137,11 @@ func buildBoundaryGeometry(w *World, width float64) *boundaryGeometryCache {
 		}
 		box := boundaryBox{r.P1, r.P1}.include(boundaryBox{r.P2, r.P2})
 		roads[len(c.roadHalves)] = box.padded()
-		c.roadHalves = append(c.roadHalves, r.GetWidth(width)/2)
+		half := r.GetWidth(width) / 2
+		if r.HasMedianBusLane() {
+			half += 25.0
+		}
+		c.roadHalves = append(c.roadHalves, half)
 	}
 	c.buildingTree.build(buildings, nil)
 	c.stopTree.build(stops, nil)

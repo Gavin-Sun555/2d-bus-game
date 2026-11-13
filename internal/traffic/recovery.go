@@ -31,6 +31,9 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 		return
 	}
 	car := tm.Cars[index]
+	if tm.BeforeRecovery != nil {
+		tm.BeforeRecovery(sim.TrafficRecoveryEvent{Kind: "car", ID: car.ID, Pos: car.Pos, Reason: "deadlock-reset"})
+	}
 	if w == nil || len(w.Roads) == 0 {
 		tm.DespawnCar(index)
 		return
@@ -41,6 +44,9 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 	for attempt := 0; attempt < 25; attempt++ {
 		rIdx := sim.RandomIntn(len(w.Roads))
 		r := w.Roads[rIdx]
+		if attempt < 16 && !preferTrafficRoad(r) {
+			continue
+		}
 		dir := r.P2.Sub(r.P1)
 		lenR := dir.Length()
 		if lenR < 350 {
@@ -178,8 +184,9 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 	for i := 0; i < activeCount; i++ {
 		car := tm.Cars[i]
 
-		// 1. Moving vehicles are never deadlocked
-		if math.Abs(car.Speed) >= 3.0 {
+		// 1. Moving vehicles and cars whose controls just released the brake
+		// are not deadlocked. Clear a saved timeout on the first acceleration tick.
+		if math.Abs(car.Speed) >= 3.0 || (!car.IsBraking && car.Speed > .5) {
 			car.DeadlockTimer = 0
 			continue
 		}
@@ -248,7 +255,7 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				}
 				dist := car.Pos.Distance(other.Pos)
 				maxJamDist := (car.Length+other.Length)*0.5 + 35.0
-				if dist < maxJamDist {
+				if dist < maxJamDist && carDeadlockCorridor(car, other) {
 					toOther := other.Pos.Sub(car.Pos)
 					sinH, cosH := math.Sincos(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
@@ -295,8 +302,30 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 			timeout = tls.DeadlockTimeoutAt(car.Pos)
 		}
 		if car.DeadlockTimer >= timeout {
-			tm.DespawnCar(i)
+			if tm.BeforeRecovery != nil {
+				tm.BeforeRecovery(sim.TrafficRecoveryEvent{Kind: "car", ID: car.ID, Pos: car.Pos, Reason: "deadlock-reset"})
+			}
+			tm.queueCarReplacement(i)
 			break
 		}
 	}
+}
+
+// Adjacent queues can be close in Euclidean distance without blocking each
+// other. Project the other body's width onto this car's lateral axis so that
+// parallel lanes stay distinct while crossing and oncoming wedges still count.
+func carDeadlockCorridor(car, other *sim.TrafficCar) bool {
+	u := sim.UnitFromAngle(car.Heading)
+	d := other.Pos.Sub(car.Pos)
+	yaw := other.Heading - car.Heading
+	// A clean nose-to-tail queue inherits the leader's wait. Removing its
+	// followers cannot resolve a blocked junction and needlessly churns cars.
+	// Apply this symmetrically: a close but non-overlapping rear follower must
+	// not make the leading car look wedged either.
+	otherHalfLength := other.Length/2*math.Abs(math.Cos(yaw)) + other.Width/2*math.Abs(math.Sin(yaw))
+	if math.Cos(yaw) > .98 && math.Abs(d.Dot(u)) > car.Length/2+otherHalfLength+.5 {
+		return false
+	}
+	otherHalfWidth := other.Length/2*math.Abs(math.Sin(yaw)) + other.Width/2*math.Abs(math.Cos(yaw))
+	return math.Abs(d.X*u.Y-d.Y*u.X) <= car.Width/2+otherHalfWidth+8
 }

@@ -24,8 +24,8 @@ func TestFastCarsPassAndReturnSmoothly(t *testing.T) {
 					w := &sim.World{Roads: []sim.RoadSegment{road}}
 					lane := min(1, lanes/2-1)
 					side := (float64(lane) + .5) * 52
-					fast := &sim.TrafficCar{ID: 1, Pos: r.Mul(side), Heading: h, Length: 48, Width: 22, IsEW: math.Abs(u.X) > .5, LaneIndex: lane, Speed: sim.SpeedKPH(60), TargetSpeed: sim.SpeedKPH(60), MaxSpeedKPH: 60, CanOvertake: true}
-					slow := &sim.TrafficCar{ID: 2, Pos: fast.Pos.Add(u.Mul(250)), Heading: h, Length: 48, Width: 22, IsEW: fast.IsEW, LaneIndex: lane, Speed: sim.SpeedKPH(30), TargetSpeed: sim.SpeedKPH(30), MaxSpeedKPH: 30}
+					fast := &sim.TrafficCar{ID: 1, Pos: r.Mul(side), Heading: h, Length: 48, Width: 22, IsEW: math.Abs(u.X) > .5, LaneIndex: lane, Speed: sim.SpeedKPH(120), TargetSpeed: sim.SpeedKPH(120), MaxSpeedKPH: 120, CanOvertake: true}
+					slow := &sim.TrafficCar{ID: 2, Pos: fast.Pos.Add(u.Mul(1100)), Heading: h, Length: 48, Width: 22, IsEW: fast.IsEW, LaneIndex: lane, Speed: sim.SpeedKPH(30), TargetSpeed: sim.SpeedKPH(30), MaxSpeedKPH: 30}
 					tm := &TrafficManager{Cars: []*sim.TrafficCar{fast, slow}}
 					passed, changed := false, false
 					for tick := 0; tick < 1800; tick++ {
@@ -84,7 +84,7 @@ func TestCarPassingRespectsMinimumTierAndOccupiedGap(t *testing.T) {
 }
 
 func TestFastCarBrakesForStationaryLeader(t *testing.T) {
-	for _, kph := range []int{60, 80, 100} {
+	for _, kph := range []int{60, 80, 100, 120} {
 		t.Run(fmt.Sprint(kph), func(t *testing.T) {
 			w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -5000}, P2: sim.Vec2{X: 5000}, Lanes: 2}}}
 			car := &sim.TrafficCar{ID: 1, Pos: sim.Vec2{Y: 26}, Heading: 0, Length: 48, Width: 22, IsEW: true, TargetSpeed: sim.SpeedKPH(kph), Speed: sim.SpeedKPH(kph)}
@@ -161,5 +161,26 @@ func TestBlockedPassingReturnKeepsLegalLaneMoving(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBlockedCarPassRetreatsWithoutMovingItsPose(t *testing.T) {
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -5000}, P2: sim.Vec2{X: 5000}, Lanes: 4}}}
+	bus := sim.NewBus(90, 79.61, -.028)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = .016
+	car := &sim.TrafficCar{Pos: sim.Vec2{Y: 43.08}, Heading: .399, Length: 46, Width: 22, IsEW: true, CanOvertake: true, Passing: true}
+	car.JunctionTurn = &sim.CarJunctionTurn{LaneChange: true, ExitLane: 1, ExitEW: true,
+		Points: []sim.Vec2{car.Pos, {X: 30, Y: 56}, {X: 80, Y: 75}, {X: 130, Y: 78}}}
+	tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
+	f := carFrame{car: car, world: w, laneWidth: 52, buses: []*sim.Bus{bus}}
+	start := car.Pos
+	tm.retreatBlockedCarPass(f)
+	plan := car.JunctionTurn
+	if car.Pos != start || car.Passing || plan.ExitLane != 0 || plan.SpeedLimit != carRecoveryLaneChangeSpeed {
+		t.Fatal("failed to replace the blocked pass with a continuous retreat")
+	}
+	if !recoveryLaneChangeClearsStoppedBus(car, bus) {
+		t.Fatal("retreat intersects the parked bus")
 	}
 }

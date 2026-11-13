@@ -50,7 +50,7 @@ func (ad *AutopilotDriver) dockedControls(bus *sim.Bus, route *sim.Route, speedA
 	isRoadDock := (ad.stationDock != nil && ad.stationDock.rank > 0)
 	if !isRoadDock && ad.BerserkMode && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
 		stop, laneWidth := ad.pathWorld.Stops[ad.DockedStopID], ad.pathLane
-		isRoadDock = stop.ContainsBusInOuterLane(bus, laneWidth)
+		isRoadDock = stop.ContainsBusInOuterLane(bus, laneWidth) && !stop.ContainsBus(bus)
 	}
 	if isRoadDock && ad.pathWorld != nil && ad.DockedStopID >= 0 && ad.DockedStopID < len(ad.pathWorld.Stops) {
 		stop, laneWidth := ad.pathWorld.Stops[ad.DockedStopID], ad.pathLane

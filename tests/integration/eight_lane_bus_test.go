@@ -84,7 +84,8 @@ func testEightLaneBusMovements(t *testing.T, rightOnRed bool) {
 								if turn == -1 && lateral > 1 && kind != sim.RoadBusBoulevard8Lane {
 									t.Fatalf("left turn from lane offset %.2f", lateral)
 								}
-								if turn == 0 && (lateral < 1 || lateral > 3) && kind != sim.RoadBusBoulevard8Lane {
+								// The eight-lane curb lane is shared by through and right-turn traffic.
+								if turn == 0 && (lateral < 1 || lateral > 4) && kind != sim.RoadBusBoulevard8Lane {
 									t.Fatalf("through movement uses a turn lane: %.2f", lateral)
 								}
 							}

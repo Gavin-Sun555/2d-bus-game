@@ -53,7 +53,9 @@ func hasRoadInDirection(w *sim.World, center sim.Vec2, heading float64) bool {
 	return false
 }
 
-func (tm *TrafficManager) handleCarNavigation(car *sim.TrafficCar, laneWidth float64, w *sim.World) {
+func (tm *TrafficManager) handleCarNavigation(car *sim.TrafficCar, laneWidth float64, w *sim.World, beforeMove sim.Vec2) {
+	previousYaw := car.RoadCurveYaw
+	car.RoadCurveYaw = 0
 	if car.InRoundabout || car.JunctionTurn != nil {
 		return // Do not apply straight lane Lerp while circulating in roundabout!
 	}
@@ -81,6 +83,36 @@ func (tm *TrafficManager) handleCarNavigation(car *sim.TrafficCar, laneWidth flo
 
 	car.LaneIndex = max(0, min(car.LaneIndex, lanes/2-1))
 	laneOffset := (float64(car.LaneIndex) + .5) * laneWidth
+	if w != nil && w.CenterBRT && car.LaneIndex >= 1 {
+		if road, ok := w.RoadAt(car.RoadCenter, car.IsEW, car.Pos); ok && road.HasMedianBusLane() {
+			forward := sim.UnitFromAngle(car.Heading)
+			right := sim.Vec2{X: -forward.Y, Y: forward.X}
+			origin := sim.Vec2{X: car.RoadCenter}
+			if car.IsEW {
+				origin = sim.Vec2{Y: car.RoadCenter}
+			}
+			// Sample the same taper as the painted lane, at the before/after
+			// longitudinal positions. Ease out any inherited lane error by
+			// distance so a stopped car never slides sideways.
+			beforeAxis := origin.Add(forward.Mul(beforeMove.Sub(origin).Dot(forward)))
+			afterAxis := origin.Add(forward.Mul(car.Pos.Sub(origin).Dot(forward)))
+			after := w.BRTStationFlareAt(afterAxis, laneWidth)
+			before := w.BRTStationFlareAt(beforeAxis, laneWidth)
+			if before > 0 || after > 0 {
+				distance := car.Pos.Sub(beforeMove).Dot(forward)
+				if distance <= 0 {
+					car.RoadCurveYaw = previousYaw
+					return
+				}
+				error := laneOffset + before - beforeMove.Sub(beforeAxis).Dot(right)
+				correction := sim.Clamp(error*math.Min(1, distance/65), -.25*distance, .25*distance)
+				shift := after - before + correction
+				car.Pos = car.Pos.Add(right.Mul(shift))
+				car.RoadCurveYaw = math.Atan2(shift, distance)
+				return
+			}
+		}
+	}
 
 	if car.IsEW {
 		targetY := car.RoadCenter

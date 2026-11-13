@@ -73,7 +73,11 @@ func TestEightLaneCivilianRightTurns(t *testing.T) {
 							return
 						}
 						if lane != 1 && car.Pos.Dot(right) > 700 {
-							if math.Abs(sim.NormalizeAngle(car.Heading-heading-math.Pi/2)) > .01 || car.LaneIndex > 2 {
+							exitLane := 3
+							if kind == sim.RoadBusBoulevard8Lane {
+								exitLane = 2
+							}
+							if math.Abs(sim.NormalizeAngle(car.Heading-heading-math.Pi/2)) > .01 || car.LaneIndex != exitLane {
 								t.Fatal("right turn exits into wrong lane")
 							}
 							return
@@ -101,5 +105,46 @@ func TestEightLaneRightMergeYieldsToBus(t *testing.T) {
 	tm.prepareEightLaneApproach(frame)
 	if car.LaneIndex != 2 || car.JunctionTurn == nil || !car.JunctionTurn.LaneChange || car.JunctionTurn.ExitLane != 3 {
 		t.Fatal("car did not prepare a smooth right merge after the lane cleared")
+	}
+}
+
+func TestOrdinaryEightLaneCurbSupportsThroughTraffic(t *testing.T) {
+	const lw = 52.
+	for _, heading := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+		t.Run(fmt.Sprintf("heading%.2f", heading), func(t *testing.T) {
+			w, tls := eightLaneWorld(sim.RoadBoulevard8Lane)
+			inter := tls.Intersections[0]
+			u := sim.UnitFromAngle(heading)
+			right := sim.Vec2{X: -u.Y, Y: u.X}
+			car := &sim.TrafficCar{ID: 1, Heading: heading, Speed: 90, TargetSpeed: 90, Length: 46, Width: 22, LaneIndex: 3, IsEW: math.Abs(u.X) > .5}
+			car.Pos = u.Mul(-1300).Add(right.Mul(3.5 * lw))
+			tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
+			// On a long ordinary segment without a right exit, stay in the curb lane.
+			tm.prepareEightLaneApproach(carFrame{car: car, world: w, laneWidth: lw})
+			if car.JunctionTurn != nil {
+				t.Fatal("forced out of ordinary curb lane")
+			}
+			red, green := sim.PhaseNSGreen, sim.PhaseEWGreen
+			if !car.IsEW {
+				red, green = green, red
+			}
+			inter.Phase = red
+			for tick := 0; tick < 1200; tick++ {
+				tm.StepCar(1./60, car, 0, nil, tls, 1, lw, w)
+			}
+			if car.Speed != 0 || car.Pos.Dot(u) >= -inter.GetStopLineDistForHeading(heading, lw) {
+				t.Fatalf("curb through car did not stop on red: %v speed %.1f", car.Pos, car.Speed)
+			}
+			inter.Phase = green
+			for tick := 0; tick < 1200; tick++ {
+				tm.StepCar(1./60, car, 0, nil, tls, 1, lw, w)
+				if car.Pos.Dot(u) > 650 {
+					break
+				}
+			}
+			if car.Pos.Dot(u) <= 650 || car.LaneIndex != 3 || math.Abs(car.Pos.Dot(right)-3.5*lw) > .01 {
+				t.Fatalf("through car did not continue in curb lane: pos %v lane %d", car.Pos, car.LaneIndex)
+			}
+		})
 	}
 }

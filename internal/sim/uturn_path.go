@@ -8,12 +8,22 @@ import "math"
 func UTurnPath(center Vec2, heading, inOffset, outOffset float64, geometry JunctionGeometry) []Vec2 {
 	forward := UnitFromAngle(heading)
 	right := Vec2{X: -forward.Y, Y: forward.X}
-	radius := math.Max(90, (inOffset+outOffset)/2)
-	shift := 2*radius - inOffset - outOffset
 	halfAlong := math.Abs(forward.X)*geometry.HalfX + math.Abs(forward.Y)*geometry.HalfY
+	radius := math.Max(90, (inOffset+outOffset)/2)
+	const taperRatio = 3.2
+	// On a wide road, reverse into the receiving side of the road first,
+	// then use the straight exit to reach the destination lane. Keep enough
+	// radius for the trailer and enough runway for the lateral taper.
+	if radius > 135 {
+		taperRadius := (taperRatio*(inOffset+outOffset) - halfAlong + 60) / (2*taperRatio - 1)
+		radius = min(radius, max(135, (inOffset+48)/2, taperRadius))
+	}
+	shift := 2*radius - inOffset - outOffset
 	startForward := -radius
-	if shift > 1e-6 {
-		startForward = halfAlong - radius - 30
+	if math.Abs(shift) > 1e-6 {
+		// Start as soon as the return taper fits. Small boxes can still
+		// use their far-side apron to provide the necessary runway.
+		startForward = min(halfAlong-radius-30, max(-radius, taperRatio*math.Abs(shift)+60-halfAlong))
 	}
 	points := make([]Vec2, 0, 66)
 	points = append(points, center.Sub(forward.Mul(math.Max(80, -startForward+30))).Add(right.Mul(inOffset)))
@@ -22,7 +32,7 @@ func UTurnPath(center Vec2, heading, inOffset, outOffset float64, geometry Junct
 		theta := math.Pi * float64(i) / 48
 		points = append(points, circle.Add(right.Mul(radius*math.Cos(theta))).Add(forward.Mul(radius*math.Sin(theta))))
 	}
-	if shift > 1e-6 {
+	if math.Abs(shift) > 1e-6 {
 		length := halfAlong + startForward - 60
 		for i := 1; i <= 12; i++ {
 			u := float64(i) / 12

@@ -22,6 +22,17 @@ var menuLogoBytes []byte
 var menuLogoImg *ebiten.Image
 
 func (g *Game) updateMainMenu() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.ShowModeSelection()
+		return
+	}
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		x, y := ebiten.CursorPosition()
+		if g.modeBackBounds.Contains(sim.Vec2{X: float64(x), Y: float64(y)}) {
+			g.ShowModeSelection()
+			return
+		}
+	}
 	// 1. Keyboard shortcuts: [1]..[6] / [C]
 	if inpututil.IsKeyJustPressed(ebiten.Key1) {
 		g.SelectedMapTheme = sim.MapThemeMetropolis
@@ -44,12 +55,12 @@ func (g *Game) updateMainMenu() {
 	}
 
 	// Hotkey G: Toggle Large Road Network for the currently selected city
-	if inpututil.IsKeyJustPressed(ebiten.KeyG) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyG) && g.careerMapAllowed(g.SelectedMapTheme) {
 		g.Settings.ToggleLargeRoadNetwork(g.SelectedMapTheme)
 	}
 
 	// Hotkey B: toggle the selected map variant; entering the city rebuilds it.
-	if inpututil.IsKeyJustPressed(ebiten.KeyB) && g.centerBRTAvailable(g.SelectedMapTheme) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyB) && g.centerBRTAvailable(g.SelectedMapTheme) && g.careerMapAllowed(g.SelectedMapTheme) {
 		g.Settings.ToggleCenterBRT(g.SelectedMapTheme)
 	}
 
@@ -76,19 +87,23 @@ func (g *Game) updateMainMenu() {
 		mx, my := ebiten.CursorPosition()
 		mPos := sim.Vec2{X: float64(mx), Y: float64(my)}
 
+		if g.isCareer() && g.menuSaveBounds.Contains(mPos) {
+			g.openSavePicker(false)
+			return
+		}
 		if g.menuContinueBounds.Contains(mPos) {
 			g.openSavePicker(true)
 			return
 		}
 		for i, theme := range sim.SelectableMapThemes() {
-			if g.menuCardBRTBounds[i].Contains(mPos) && g.centerBRTAvailable(theme) {
+			if g.menuCardBRTBounds[i].Contains(mPos) && g.centerBRTAvailable(theme) && g.careerMapAllowed(theme) {
 				g.Settings.ToggleCenterBRT(theme)
 				g.SelectedMapTheme = theme
 				return
 			}
 		}
 		for idx := 0; idx < 4; idx++ {
-			if g.menuCardLargeGridBounds[idx].Contains(mPos) {
+			if g.menuCardLargeGridBounds[idx].Contains(mPos) && g.careerMapAllowed(sim.SelectableMapThemes()[idx]) {
 				selectable := sim.SelectableMapThemes()
 				if idx < len(selectable) {
 					th := selectable[idx]
@@ -182,6 +197,9 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 	textui.DrawText(screen, titleText, headerStartX, titleY, 24, sim.RGBA(248, 250, 252, 255))
 
 	subText := locale.T("请选择营运城市与地图线路 (4 座大型城市 · 街区双侧设站 · 1～6 条线路 · 支持玩家自定义地图及热重载)", "Select city & route (4 expanded cities · Stops on both street sides · 1–6 lines · Custom map & hot-reload supported)")
+	if g.isCareer() {
+		subText = locale.T("Career：扩充车队解锁城市 · [F2] 经营车库 · 按历史最大车队规模解锁", "Career: grow your fleet to unlock cities · [F2] Company & garage · Unlocks use peak fleet size")
+	}
 	subW, _ := textui.MeasureText(subText, 14)
 	textui.DrawText(screen, subText, (sw-subW)/2.0, titleY+42, 14, sim.RGBA(148, 163, 184, 255))
 
@@ -384,6 +402,18 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 			vector.StrokeRect(screen, float32(cx+12), float32(btnBoxY), float32(btnBoxW), float32(btnBoxH), 1.0, sim.RGBA(100, 116, 139, 200), true)
 			textui.DrawText(screen, locale.Tf("点击选择 [%d]", "Select [%d]", i+1), cx+36, btnBoxY+8, 12, sim.RGBA(148, 163, 184, 255))
 		}
+		if !g.careerMapAllowed(th) {
+			panelBox(screen, sim.Rect{X: cx + 10, Y: cy + 80, W: cardW - 20, H: cardH - 90}, sim.RGBA(8, 15, 28, 245))
+			label := locale.T("需扩充车队解锁", "Grow your fleet to unlock")
+			need := map[sim.MapTheme]int{sim.MapThemeCoastalBay: 3, sim.MapThemeRiverValley: 5, sim.MapThemeTwinCities: 8}[th]
+			if need > 0 {
+				label = locale.Tf("历史车队达到 %d 辆", "Reach %d owned buses", need)
+			} else {
+				label = locale.T("仅限 Fast 模式", "Fast mode only")
+			}
+			careerText(screen, "LOCKED", cx+42, cy+165, 22, careerMuted)
+			careerText(screen, label, cx+18, cy+210, 12, careerAccent)
+		}
 	}
 
 	// 4. Large Action Button: Start Playing
@@ -400,17 +430,49 @@ func (g *Game) drawMainMenu(screen *ebiten.Image) {
 
 	// 5. Bottom Operation Tips
 	continueY := btnY + btnH + 12
-	g.menuContinueBounds = sim.Rect{X: btnX, Y: continueY, W: btnW, H: 40}
-	vector.DrawFilledRect(screen, float32(btnX), float32(continueY), float32(btnW), 40, sim.RGBA(51, 65, 85, 255), true)
-	label := locale.T("读取存档 [F9] · 10 个存档槽位", "Load game [F9] · 10 save slots")
-	textui.DrawText(screen, label, btnX+20, continueY+12, 14, sim.RGBA(186, 230, 253, 255))
+	if g.isCareer() {
+		pairGap := 16.0
+		halfW := (btnW + 100.0 - pairGap) / 2.0
+		pairX := (sw - (2*halfW + pairGap)) / 2.0
+		g.menuSaveBounds = sim.Rect{X: pairX, Y: continueY, W: halfW, H: 40}
+		g.menuContinueBounds = sim.Rect{X: pairX + halfW + pairGap, Y: continueY, W: halfW, H: 40}
+
+		vector.DrawFilledRect(screen, float32(g.menuSaveBounds.X), float32(g.menuSaveBounds.Y), float32(g.menuSaveBounds.W), 40, sim.RGBA(15, 118, 110, 240), true)
+		vector.StrokeRect(screen, float32(g.menuSaveBounds.X), float32(g.menuSaveBounds.Y), float32(g.menuSaveBounds.W), 40, 1.5, sim.RGBA(94, 234, 212, 255), true)
+		saveLabel := locale.T("💾 保存生涯存档 [F5]", "💾 Save Career [F5]")
+		swText, _ := textui.MeasureText(saveLabel, 14)
+		textui.DrawText(screen, saveLabel, g.menuSaveBounds.X+(g.menuSaveBounds.W-swText)/2, continueY+12, 14, color.White)
+
+		vector.DrawFilledRect(screen, float32(g.menuContinueBounds.X), float32(g.menuContinueBounds.Y), float32(g.menuContinueBounds.W), 40, sim.RGBA(30, 58, 138, 240), true)
+		vector.StrokeRect(screen, float32(g.menuContinueBounds.X), float32(g.menuContinueBounds.Y), float32(g.menuContinueBounds.W), 40, 1.5, sim.RGBA(125, 211, 252, 255), true)
+		loadLabel := locale.T("📂 读取生涯存档 [F9]", "📂 Load Career [F9]")
+		lwText, _ := textui.MeasureText(loadLabel, 14)
+		textui.DrawText(screen, loadLabel, g.menuContinueBounds.X+(g.menuContinueBounds.W-lwText)/2, continueY+12, 14, sim.RGBA(186, 230, 253, 255))
+	} else {
+		g.menuSaveBounds = sim.Rect{}
+		g.menuContinueBounds = sim.Rect{X: btnX, Y: continueY, W: btnW, H: 40}
+		vector.DrawFilledRect(screen, float32(btnX), float32(continueY), float32(btnW), 40, sim.RGBA(51, 65, 85, 255), true)
+		label := g.Mode.String() + " · " + locale.T("读取存档 [F9] · 10 个存档槽位", "Load game [F9] · 10 save slots")
+		textui.DrawText(screen, label, btnX+20, continueY+12, 14, sim.RGBA(186, 230, 253, 255))
+	}
 	if g.saveMessage != "" {
 		textui.DrawText(screen, g.saveMessage, 24, sh-24, 12, sim.RGBA(251, 191, 36, 255))
 	}
 	bottomY := continueY + 54.0
-	tips := locale.T("【操作提示】1-5 / ←→ 选图 · G 大小路网 · B 中央BRT（有专用道地图） · L 语言 · R 重载 · 驾驶中按 ESC 返回换图；重新进入将重置营运", "1-5 / Arrows: City · G: Grid · B: Center BRT (bus-lane maps) · L: Language · R: Reload · ESC: Maps; entering a city resets the game")
+	tips := locale.T("【操作提示】1-5 / ←→ 选图 · G 大小路网 · B 中央BRT（四张内置地图） · L 语言 · R 重载 · 驾驶中按 ESC 返回换图；重新进入将重置营运", "1-5 / Arrows: City · G: Grid · B: Center BRT (built-in cities) · L: Language · R: Reload · ESC: Maps; entering a city resets the game")
+	if g.isCareer() {
+		tips = locale.T("[F2] 经营车库 · [F5] 保存生涯存档 · [F9] 读取生涯存档 · [ESC] 选择模式 · 生涯存档完整保存所有城市进度、车辆与解锁状态", "[F2] Garage · [F5] Save Career · [F9] Load Career · [ESC] Modes · Career saves preserve all cities, fleet and unlocks")
+	}
 	tipW, _ := textui.MeasureText(tips, 12)
 	textui.DrawText(screen, tips, (sw-tipW)/2.0, bottomY, 12, sim.RGBA(148, 163, 184, 255))
+	g.modeBackBounds = sim.Rect{X: 18, Y: 18, W: 180, H: 30}
+	panelBox(screen, g.modeBackBounds, sim.RGBA(30, 58, 70, 255))
+	careerText(screen, g.Mode.String()+locale.T(" · 选择模式 [Esc]", " · Modes [Esc]"), 28, 26, 12, careerAccent)
+	if g.isCareer() {
+		g.careerOpenBounds = sim.Rect{X: 18, Y: 54, W: 215, H: 28}
+		panelBox(screen, g.careerOpenBounds, sim.RGBA(30, 58, 70, 255))
+		careerText(screen, locale.T("[F2] 经营车库 / 购车", "[F2] Garage / Dealership"), 24, 61, 12, careerAccent)
+	}
 }
 
 func previousTheme(theme sim.MapTheme) sim.MapTheme {

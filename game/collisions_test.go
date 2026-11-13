@@ -7,6 +7,35 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+func TestPlayerCollisionIncludesRearOfAngledTrailer(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.AIBusMgr = nil
+	g.Bus.SetModel(sim.BusArticulated)
+	g.Bus.Heading = 0
+	g.Bus.TrailerHeading = .45
+	g.Bus.Speed = sim.SpeedKPH(150)
+	tail := g.Bus.TrailerBody()
+	car := &sim.TrafficCar{
+		Pos:     tail.Center.Sub(sim.UnitFromAngle(tail.Heading).Mul(tail.HalfLen - 8)),
+		Heading: tail.Heading,
+		Length:  48,
+		Width:   22,
+	}
+	g.TrafficMgr.Cars = []*sim.TrafficCar{car}
+	carBody := sim.OBB{Center: car.Pos, Heading: car.Heading, HalfLen: car.Length / 2, HalfWid: car.Width / 2}
+	if front, _, _ := sim.CheckOBBCollision(g.Bus.BodyParts()[0], carBody); front {
+		t.Fatal("fixture must contact only the rear section")
+	}
+	if hit, _, _ := sim.CheckOBBCollision(tail, carBody); !hit {
+		t.Fatal("fixture must contact the angled trailer")
+	}
+	before := g.Bus.Pos
+	g.checkBusCarCollisions()
+	if g.Bus.Pos == before {
+		t.Fatal("player collision check missed the rear of the trailer")
+	}
+}
+
 // TestRoundaboutCarsYieldToCirculatingBusAndAutopilotNoFines tests that:
 // 1. A civilian traffic car approaching a roundabout yields and stops behind the yield line while a bus is circulating.
 // 2. In Autopilot mode, any collision contact is zero-fine protected.

@@ -15,6 +15,18 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			rb := &f.world.Roundabouts[i]
 			distance := f.bus.Pos.Distance(rb.Center)
 			parallelApproach := distance <= rb.Radius+160 && ad.parallelRoundaboutJoin(f, rb)
+			// A car stopped at the yield line can keep a long bus outside
+			// the steering zone. Publish the approach so the reservation
+			// can let that car and then its follower take their turn.
+			if f.bus.IsArticulated() && distance > rb.Radius+160 && distance <= rb.Radius+300 {
+				if entry, forward, ok := ad.roundaboutEntry(rb); ok && f.s < ad.cumLen[entry] {
+					delta := rb.Center.Sub(f.bus.Pos)
+					right := sim.Vec2{X: -forward.Y, Y: forward.X}
+					if delta.Dot(forward) > 0 && math.Abs(delta.Dot(right)) < f.laneWidth*2 {
+						f.bus.RoundaboutEntry = &sim.BusRoundaboutEntry{Center: rb.Center, Forward: forward, Remaining: .3}
+					}
+				}
+			}
 			if parallelApproach || distance <= rb.Radius+80 {
 				nearRoundabout = distance <= rb.Radius+80
 				nearRb = &f.world.Roundabouts[i]
@@ -123,6 +135,9 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		runway := ad.busLaneJunction.Sub(f.bus.Pos).Dot(forward) - half - 20
 		lookahead = math.Max(lookahead, math.Min(120, runway))
 	}
+	if ad.exitCruiseSettling(f) {
+		lookahead = math.Min(lookahead, 60)
+	}
 	baseTargetPt := ad.pointAt(f.s + lookahead)
 	targetPt = baseTargetPt
 	if ad.LaneOffset != 0 && len(ad.drivePath) >= 2 {
@@ -175,6 +190,9 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 				}
 			}
 
+			if !insideJunction && nearRb == nil && ad.busLaneJunction == nil {
+				effOffset += ad.medianGeneralLaneFlare(f.world, baseTargetPt, baseTargetPt, f.bus.Heading, f.laneWidth, effOffset)
+			}
 			targetPt = baseTargetPt.Add(trgRight.Mul(effOffset))
 
 			if nearRb != nil {
@@ -306,25 +324,36 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		}
 	}
 
-	if ad.approachMerge != nil {
+	if ad.approachMerge != nil && ad.midLaneRecovery == nil {
 		forward := sim.UnitFromAngle(ad.approachMerge.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
 		corridor := ad.pointAt(f.s).Add(right.Mul(ad.LaneOffset))
 		mergeLookahead := math.Max(60, math.Abs(ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right))*.8)
-		if !ad.approachMerge.RightTurn {
+		if !ad.approachMerge.RightTurn && !ad.approachMerge.Is2Lane {
 			// Near the median, a sharp rightward yaw sweeps the long rear
 			// corner across the centerline before the bus has moved outward.
 			lateral := 1.5*f.laneWidth - ad.approachMerge.Target.Sub(f.bus.Pos).Dot(right)
-			if f.world != nil && ad.approachMerge.LeftTurn && ad.busLaneJunction != nil && !ad.ordinaryBusLeft {
-				center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, ad.approachMerge.Heading, f.laneWidth)
-				origin := sim.Vec2{Y: center}
-				if !ew {
-					origin = sim.Vec2{X: center}
+			if f.world != nil {
+				center, ew, isMulti, is6 := sim.CurrentRoadInfo(f.world, f.bus.Pos, ad.approachMerge.Heading, f.laneWidth)
+				if isMulti || is6 {
+					origin := sim.Vec2{Y: center}
+					if !ew {
+						origin = sim.Vec2{X: center}
+					}
+					lateral = f.bus.Pos.Sub(origin).Dot(right)
 				}
-				lateral = f.bus.Pos.Sub(origin).Dot(right)
 			}
 			yawLimit := sim.Clamp((lateral-f.bus.Width/2-3)/(f.bus.Length/2), .06, .4)
 			mergeLookahead = math.Max(60, math.Abs(corridor.Sub(f.bus.Pos).Dot(right))/math.Tan(yawLimit))
+		}
+		if ad.BerserkMode && !ad.approachMerge.Is2Lane && (f.speedAbs > 160 || approachMergeStopDistance(f, ad.approachMerge) > 700) {
+			// Match the steering horizon to actual speed, including the time
+			// still needed to brake. A fixed 60px target makes a high-speed
+			// return snap across the lane and then spend seconds correcting.
+			mergeLookahead = math.Max(mergeLookahead, f.speedAbs*.8+40)
+			if f.bus.IsArticulated() && approachMergeStopDistance(f, ad.approachMerge) > 700 {
+				mergeLookahead = math.Max(mergeLookahead, 160)
+			}
 		}
 		targetPt = f.bus.Pos.Add(forward.Mul(mergeLookahead)).Add(right.Mul(corridor.Sub(f.bus.Pos).Dot(right)))
 	} else if recovery := ad.midLaneRecovery; recovery != nil {

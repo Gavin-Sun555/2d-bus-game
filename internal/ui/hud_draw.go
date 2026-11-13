@@ -13,6 +13,32 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+// DrawDriveRouteShortcuts shows the two route controls over a solid backdrop.
+func (h *HUD) DrawDriveRouteShortcuts(screen *ebiten.Image, lineName string, bottomMargin float64) {
+	const width, height = 258, 64
+	x := float64(screen.Bounds().Dx()) - width - 24
+	y := float64(screen.Bounds().Dy()) - height - bottomMargin
+	vector.DrawFilledRect(screen, float32(x), float32(y), width, height, sim.RGBA(15, 23, 42, 255), true)
+	vector.StrokeRect(screen, float32(x), float32(y), width, height, 1.5, sim.RGBA(71, 85, 105, 255), true)
+	drawHUDText(screen, locale.T("当前线路 · ", "Current line · ")+lineName,
+		sim.Rect{X: x + 2, Y: y + 3, W: width - 4, H: 24}, 13, color.White)
+	vector.StrokeLine(screen, float32(x+12), float32(y+29), float32(x+width-12), float32(y+29), 1, sim.RGBA(51, 65, 85, 255), true)
+	for _, shortcut := range []struct {
+		key, label string
+		offset     float64
+	}{
+		{"Tab", locale.T("路线规划", "Plan route"), 12},
+		{"T", locale.T("线路管理", "Manage lines"), 130},
+	} {
+		keyWidth, _ := textui.MeasureText(shortcut.key, 11)
+		keyWidth += 14
+		left := x + shortcut.offset
+		vector.DrawFilledRect(screen, float32(left), float32(y+36), float32(keyWidth), 19, sim.RGBA(30, 64, 95, 255), true)
+		textui.DrawText(screen, shortcut.key, left+7, y+39, 11, sim.RGBA(186, 230, 253, 255))
+		textui.DrawText(screen, shortcut.label, left+keyWidth+8, y+38, 12, sim.RGBA(241, 245, 249, 255))
+	}
+}
+
 func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *sim.World, isPlanMode bool, cash int, activeStop *sim.BusStop, settings *Settings, stopBellRung bool, passengersAlighting int, cam *sim.Camera, tls ...*sim.TrafficLightSystem) {
 	w := screen.Bounds().Dx()
 	layout := newHUDTopLayout(float64(w))
@@ -28,19 +54,22 @@ func (h *HUD) Draw(screen *ebiten.Image, bus *sim.Bus, route *sim.Route, world *
 	vector.StrokeLine(screen, 0, hudTopHeight, float32(w), hudTopHeight, 1.5, sim.RGBA(51, 65, 85, 255), false)
 
 	// Mode Indicator Badge
-	modeText := locale.T("驾驶模式 · TAB 规划", "DRIVE · TAB Plan")
+	modeText := locale.T("驾驶模式 · [Tab] 路线规划", "Driving · [Tab] Plan route")
 	modeBg := sim.RGBA(14, 165, 233, 240) // Cyan
 	if isPlanMode {
-		modeText = locale.T("线路规划 · 已暂停 [TAB]", "PLAN · Paused [TAB]")
+		modeText = locale.T("路线规划 · [Tab] 返回驾驶", "Planning · [Tab] Resume driving")
 		modeBg = sim.RGBA(168, 85, 247, 240) // Purple
 	}
 	vector.DrawFilledRect(screen, 16, 12, 220, 32, modeBg, true)
 	drawHUDText(screen, modeText, layout.mode, 13, color.White)
 
 	// Economy & Capacity Badges
-	if cash != h.cachedCash {
+	if cash != h.cachedCash || settings.CareerMode {
 		h.cachedCash = cash
 		h.cachedCashText = locale.Tf("营收: $%d", "Revenue: $%d", cash)
+		if settings.CareerMode {
+			h.cachedCashText = locale.Tf("资金: ¥%d", "Balance: ¥%d", cash)
+		}
 	}
 	drawHUDText(screen, h.cachedCashText, layout.cash, 13, sim.RGBA(250, 204, 21, 255))
 

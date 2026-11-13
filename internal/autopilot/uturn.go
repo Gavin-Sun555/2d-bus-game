@@ -8,6 +8,25 @@ import (
 type uTurnManeuver struct {
 	center, forward sim.Vec2
 	entered         bool
+	entryWait       float64
+}
+
+func (turn *uTurnManeuver) occupiesJunction(bus *sim.Bus, w *sim.World, lw float64) bool {
+	g := w.JunctionAt(turn.center, lw)
+	box := sim.OBB{Center: turn.center,
+		HalfLen: g.HalfX + math.Abs(turn.forward.X)*sim.JunctionStopInset,
+		HalfWid: g.HalfY + math.Abs(turn.forward.Y)*sim.JunctionStopInset}
+	hit, _, _ := bus.CollidesBody(box)
+	return hit
+}
+
+// UTurnClearance reports an entered maneuver while either body section still
+// occupies the junction. A bus queued before the stop line has no claim.
+func (ad *AutopilotDriver) UTurnClearance(bus *sim.Bus, w *sim.World, lw float64) (sim.Vec2, bool) {
+	if ad != nil && ad.uTurn != nil && ad.uTurn.entered && bus != nil && w != nil && ad.uTurn.occupiesJunction(bus, w, lw) {
+		return ad.uTurn.center, true
+	}
+	return sim.Vec2{}, false
 }
 
 // Identify the incoming and reversed outgoing tangents through the same mouth.
@@ -40,7 +59,8 @@ func (ad *AutopilotDriver) updateUTurn(bus *sim.Bus, w *sim.World, lw float64) {
 		g := w.JunctionAt(ad.uTurn.center, lw)
 		half := math.Abs(ad.uTurn.forward.X)*g.HalfX + math.Abs(ad.uTurn.forward.Y)*g.HalfY
 		along := bus.Pos.Sub(ad.uTurn.center).Dot(ad.uTurn.forward)
-		if ad.uTurn.entered && along < -half-bus.Length/2-80 {
+		if ad.uTurn.entered && along < -half && sim.UnitFromAngle(bus.Heading).Dot(ad.uTurn.forward) < -.5 &&
+			!ad.uTurn.occupiesJunction(bus, w, lw) {
 			ad.uTurn = nil
 			return
 		}

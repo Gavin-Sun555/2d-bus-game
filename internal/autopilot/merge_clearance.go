@@ -95,15 +95,37 @@ func stoppedOriginFollowerClearsMerge(f autopilotFrame, ob VehicleObstacle, head
 	}
 	u := sim.UnitFromAngle(heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
-	d := ob.Pos.Sub(f.bus.Pos)
-	if math.Abs(d.Dot(r)) > f.laneWidth*.2 {
+	origin := ob.Pos
+	if ob.Bus != nil {
+		// A bent trailer can shift the envelope's center across the lane
+		// tolerance. Use the powered section for lane identity and both
+		// sections below for the physical rear gap.
+		origin = ob.Bus.Pos
+	}
+	if math.Abs(origin.Sub(f.bus.Pos).Dot(r)) > f.laneWidth*.2 {
 		return false
 	}
-	yaw := f.bus.Heading - heading
-	body := f.bus.BodyEnvelope()
-	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw)) - body.Center.Sub(f.bus.Pos).Dot(u)
+	// The leader moves away longitudinally while leaving this lane. Measure
+	// the actual rear and nose, including yaw, instead of reserving a passing
+	// gap behind a stationary follower.
+	rear := math.Inf(1)
+	for _, part := range f.bus.BodyParts() {
+		if part.HalfLen > 0 {
+			yaw := part.Heading - heading
+			extent := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
+			rear = math.Min(rear, part.Center.Sub(f.bus.Pos).Dot(u)-extent)
+		}
+	}
+	nose := math.Inf(-1)
+	for _, part := range predictedObstacleBodies(ob, 0) {
+		if part.HalfLen > 0 {
+			yaw := part.Heading - heading
+			extent := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
+			nose = math.Max(nose, part.Center.Sub(f.bus.Pos).Dot(u)+extent)
+		}
+	}
 	braking := ob.Speed*ob.Speed/(2*220) + math.Abs(ob.Speed)*.2
-	return d.Dot(u) < -(extent + ob.Length/2 + 25 + braking)
+	return !math.IsInf(nose, 0) && rear-nose > 8+braking
 }
 
 func requiredMergeForwardGap(f autopilotFrame, ob VehicleObstacle, heading, current, target float64) (float64, bool) {
@@ -132,7 +154,7 @@ func requiredMergeForwardGap(f autopilotFrame, ob VehicleObstacle, heading, curr
 }
 
 func (ad *AutopilotDriver) requiredMergeTrafficSpeed(f autopilotFrame) float64 {
-	return mergeTrafficSpeed(f, ad.approachMerge)
+	return mergeTrafficSpeed(f, ad.approachTrafficRequest(f, ad.approachMerge))
 }
 
 func mergeTrafficSpeed(f autopilotFrame, request *sim.BusLaneMergeRequest) float64 {

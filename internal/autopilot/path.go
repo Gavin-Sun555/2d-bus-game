@@ -138,6 +138,17 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 			return
 		}
 	}
+	// A stop's passenger demand can change mid-leg. Rebuilding its road-only
+	// or bay approach must preserve the current physical lane, rather than
+	// reusing an offset measured from the previous path or the skipped stop.
+	var laneAnchor, laneForward sim.Vec2
+	preserveLane := len(ad.drivePath) >= 2 && ad.pathWorld == w && ad.pathFromID == from.ID &&
+		ad.pathToID == to.ID && ad.pathLane == lw && ad.pathSkipTarget != ad.CanSkipTargetStop
+	if preserveLane {
+		base := ad.pointAt(ad.LastPathS)
+		laneForward = ad.pointAt(ad.LastPathS + 20).Sub(base).Normalize()
+		laneAnchor = base.Add(sim.Vec2{X: -laneForward.Y, Y: laneForward.X}.Mul(ad.LaneOffset))
+	}
 	if ad.pathFromID != from.ID || ad.pathToID != to.ID {
 		ad.dockDepartureRun = 0
 		ad.smoothDockDeparture = false
@@ -147,7 +158,9 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		ad.parallelEntryCenter = nil
 		ad.uTurn = nil
 		ad.ordinaryBusLeft = false
+		ad.exitCruise = nil
 		ad.busLaneJunction = nil
+		ad.busLaneTurnChosen = false
 		ad.medianRightChoice = nil
 		ad.curbBusRight = false
 		ad.rightTurnJunction = nil
@@ -174,6 +187,24 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 	ad.cumLen = make([]float64, len(ad.drivePath))
 	for i := 1; i < len(ad.drivePath); i++ {
 		ad.cumLen[i] = ad.cumLen[i-1] + ad.drivePath[i].Distance(ad.drivePath[i-1])
+	}
+	if preserveLane && laneForward.Length() > .9 {
+		best := math.Inf(1)
+		var reference sim.Vec2
+		for i := 1; i < len(ad.drivePath); i++ {
+			a, b := ad.drivePath[i-1], ad.drivePath[i]
+			if b.Sub(a).Normalize().Dot(laneForward) < .97 {
+				continue
+			}
+			t, distance := projectToSegment(laneAnchor, a, b)
+			if distance < best {
+				best, reference = distance, a.Add(b.Sub(a).Mul(t))
+			}
+		}
+		if best <= 4*lw {
+			right := sim.Vec2{X: -laneForward.Y, Y: laneForward.X}
+			ad.holdLaneOffset(laneAnchor.Sub(reference).Dot(right))
+		}
 	}
 	ad.pathWorld = w
 	ad.pathFromID = from.ID
@@ -354,6 +385,16 @@ func (ad *AutopilotDriver) cornerSpeedLimit(s, speed float64) float64 {
 				vc = math.Min(ad.GetBerserkCruiseSpeed(), math.Max(135.0, ad.GetBerserkCruiseSpeed()*0.42))
 			}
 		}
+		// Short links on a sampled broad arc are not independent sharp
+		// corners. Use local radius rather than the accumulated angle of four
+		// links, which otherwise gives wide left turns the tight-corner cap.
+		if ad.BerserkMode && turn > .20 && a.Length() < 120 && b.Length() < 120 {
+			cross := math.Abs(a.X*b.Y - a.Y*b.X)
+			if cross > 1e-6 {
+				radius := a.Length() * b.Length() * a.Add(b).Length() / (2 * cross)
+				vc = math.Max(vc, math.Min(220, math.Sqrt(85*radius)))
+			}
+		}
 		if math.IsInf(vc, 1) {
 			continue
 		}
@@ -381,6 +422,9 @@ func (ad *AutopilotDriver) basePathPosition(pos sim.Vec2, world *sim.World, head
 			}
 			effOffset := ad.LaneOffset
 			if world != nil && !world.InsideJunction(pos, laneWidth, 0) {
+				if ad.busLaneJunction == nil {
+					effOffset += ad.medianGeneralLaneFlare(world, pos, ad.pointAt(ad.LastPathS), heading, laneWidth, effOffset)
+				}
 				wpt := ad.drivePath[wIdx]
 				roadCenter, isEW, isMultiLane, is6Lane := sim.CurrentRoadInfo(world, wpt, heading, laneWidth)
 				if isMultiLane || is6Lane {

@@ -23,8 +23,12 @@ func (ad *AutopilotDriver) requestStationMerge(f autopilotFrame) {
 	distance := stop.Pos.Sub(f.bus.Pos).Dot(forward)
 	curb := (float64(max(2, stop.RoadLanes))/2 - .5) * f.laneWidth
 	lateral := f.bus.Pos.Sub(stop.RoadCenter).Dot(right)
+	front := stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward)
 	// Reserve only the adjacent curb lane; other traffic remains free to pass.
-	if distance > 0 && distance < 650 && lateral >= curb-f.laneWidth-12 && lateral < stop.Pos.Sub(stop.RoadCenter).Dot(right)-3 && math.Cos(f.bus.Heading-stop.Heading) > .9 {
+	if distance > -front && distance < 650 && lateral >= curb-f.laneWidth-12 && lateral < stop.Pos.Sub(stop.RoadCenter).Dot(right)-3 && math.Cos(f.bus.Heading-stop.Heading) > .9 {
 		f.bus.StationMergeRequest = &sim.BusStationMergeRequest{StopID: stop.ID, Remaining: .3}
+		if !stop.CenterBRT {
+			f.bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: stop.Pos, Heading: stop.Heading, Remaining: .3}
+		}
 	}
 }

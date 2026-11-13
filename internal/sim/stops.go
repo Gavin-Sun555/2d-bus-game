@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -27,7 +28,9 @@ type BusStop struct {
 	Width        float64 // Width of stop bay
 
 	WaitingPassengers   int
-	WaitingDestinations []int `json:",omitempty"`
+	WaitingDestinations []int     `json:",omitempty"`
+	WaitingSince        []float64 `json:",omitempty"` // Queue timestamps. Zero denotes a passenger from an older save.
+	WaitingClock        float64   `json:",omitempty"` // Active simulation seconds at 1×.
 	MaxWaiting          int
 	SpawnTimer          float64
 	SpawnInterval       float64
@@ -123,18 +126,18 @@ func NewBusStop(id int, name string, roadCenter Vec2, heading float64, roadLanes
 		waitPax = initialWaiting[0]
 	}
 	s := &BusStop{
-		ID:                id,
-		Name:              name,
-		RoadCenter:        roadCenter,
-		Heading:           heading,
-		RoadLanes:         roadLanes,
-		Length:            StandardStopLength,
-		Width:             44,
-		WaitingPassengers: waitPax,
-		MaxWaiting:        DefaultStopMaxWaiting,
-		SpawnInterval:     20.0 + RandomFloat64()*15.0, // 20-35s passenger arrival rate
-		AccentColor:       accent,
+		ID:            id,
+		Name:          name,
+		RoadCenter:    roadCenter,
+		Heading:       heading,
+		RoadLanes:     roadLanes,
+		Length:        StandardStopLength,
+		Width:         44,
+		MaxWaiting:    DefaultStopMaxWaiting,
+		SpawnInterval: 20.0 + RandomFloat64()*15.0, // 20-35s passenger arrival rate
+		AccentColor:   accent,
 	}
+	s.SeedWaitingPassengers(waitPax)
 	s.UpdateGeometry(laneWidth)
 	return s
 }
@@ -152,8 +155,62 @@ func (s *BusStop) UpdateGeometry(laneWidth float64) {
 	s.ShelterPos = s.Pos.Add(Vec2{X: perpX * 36, Y: perpY * 36})
 	if s.CenterBRT {
 		s.Pos = s.RoadCenter.Add(Vec2{X: perpX * laneWidth * .5, Y: perpY * laneWidth * .5})
-		s.ShelterPos = s.RoadCenter.Add(Vec2{X: cosH * 80, Y: sinH * 80})
+		platOffset := BRTPlatformOffset(laneWidth)
+		s.ShelterPos = s.RoadCenter.Add(Vec2{X: perpX * platOffset, Y: perpY * platOffset})
 	}
+}
+
+// SeedWaitingPassengers adds passengers at the current simulation time.
+func (s *BusStop) SeedWaitingPassengers(count int) {
+	if count > s.WaitingPassengers {
+		s.syncWaitingTimes()
+		for i := s.WaitingPassengers; i < count; i++ {
+			s.WaitingSince = append(s.WaitingSince, s.WaitingClock+1)
+		}
+		s.WaitingPassengers = count
+	}
+}
+
+func (s *BusStop) syncWaitingTimes() {
+	if len(s.WaitingSince) > s.WaitingPassengers {
+		s.WaitingSince = s.WaitingSince[:s.WaitingPassengers]
+	} else if missing := s.WaitingPassengers - len(s.WaitingSince); missing > 0 {
+		s.WaitingSince = append(s.WaitingSince, make([]float64, missing)...)
+	}
+}
+
+// WaitingForLine counts people whose destination can be served on any visit
+// by this line. The queue is shared across all eligible lines.
+func (s *BusStop) WaitingForLine(route *Route) int {
+	if route == nil || !route.ContainsStop(s.ID) {
+		return 0
+	}
+	destinations := make(map[int]bool)
+	for index, id := range route.StopIDs {
+		if id == s.ID {
+			for _, dest := range route.GetUpcomingCandidateStopIDs(index) {
+				destinations[dest] = true
+			}
+		}
+	}
+	if len(destinations) == 0 {
+		return s.WaitingPassengers
+	}
+	n := min(s.WaitingPassengers, len(s.WaitingDestinations))
+	count := s.WaitingPassengers - n
+	for _, dest := range s.WaitingDestinations[:n] {
+		if dest == -1 || destinations[dest] {
+			count++
+		}
+	}
+	return count
+}
+
+func (s *BusStop) clearWaitingQueue() {
+	s.WaitingPassengers = 0
+	s.WaitingDestinations = nil
+	s.WaitingSince = nil
+	s.SpawnTimer = 0
 }
 
 // SyncWaitingQueue ensures WaitingDestinations has length equal to WaitingPassengers.
@@ -162,8 +219,10 @@ func (s *BusStop) SyncWaitingQueue(fallbackCandidates []int) {
 	if s.WaitingPassengers <= 0 {
 		s.WaitingPassengers = 0
 		s.WaitingDestinations = s.WaitingDestinations[:0]
+		s.WaitingSince = s.WaitingSince[:0]
 		return
 	}
+	s.syncWaitingTimes()
 	if len(s.WaitingDestinations) > s.WaitingPassengers {
 		s.WaitingDestinations = s.WaitingDestinations[:s.WaitingPassengers]
 		return
@@ -176,6 +235,23 @@ func (s *BusStop) SyncWaitingQueue(fallbackCandidates []int) {
 		s.WaitingDestinations = append(s.WaitingDestinations, dest)
 	}
 	s.WaitingPassengers = len(s.WaitingDestinations)
+}
+
+// HasMatchingWaiting checks boarding demand without assigning destinations to
+// legacy queue entries before a bus actually starts passenger service.
+func (s *BusStop) HasMatchingWaiting(candidates []int) bool {
+	if s.WaitingPassengers <= 0 {
+		return false
+	}
+	if len(candidates) == 0 || s.WaitingPassengers > len(s.WaitingDestinations) {
+		return true
+	}
+	for _, destination := range s.WaitingDestinations[:s.WaitingPassengers] {
+		if destination == -1 || slices.Contains(candidates, destination) {
+			return true
+		}
+	}
+	return false
 }
 
 // CountMatchingWaiting returns how many waiting passengers have their target destination in candidates.
@@ -201,40 +277,42 @@ func (s *BusStop) CountMatchingWaiting(candidates []int) int {
 // BoardMatchingPassengers extracts up to maxCount passengers whose destination is in candidates.
 // Returns a slice of the boarded passengers' target destination IDs.
 func (s *BusStop) BoardMatchingPassengers(maxCount int, candidates []int) []int {
+	destinations, _, _ := s.boardWaitingPassengers(maxCount, candidates)
+	return destinations
+}
+
+func (s *BusStop) boardWaitingPassengers(maxCount int, candidates []int) (boarded []int, samples int, seconds float64) {
 	s.SyncWaitingQueue(candidates)
-	if maxCount <= 0 || len(s.WaitingDestinations) == 0 {
-		return nil
+	if maxCount <= 0 || s.WaitingPassengers == 0 {
+		return nil, 0, 0
 	}
-	if len(candidates) == 0 {
-		take := min(maxCount, len(s.WaitingDestinations))
-		boarded := make([]int, take)
-		copy(boarded, s.WaitingDestinations[:take])
-		s.WaitingDestinations = s.WaitingDestinations[take:]
-		s.WaitingPassengers = len(s.WaitingDestinations)
-		return boarded
+	eligible := make(map[int]bool, len(candidates))
+	for _, id := range candidates {
+		eligible[id] = true
 	}
-
-	candMap := make(map[int]bool, len(candidates))
-	for _, c := range candidates {
-		candMap[c] = true
-	}
-
-	boarded := make([]int, 0, maxCount)
-	remaining := make([]int, 0, len(s.WaitingDestinations))
-	for _, dest := range s.WaitingDestinations {
-		if len(boarded) < maxCount && (dest == -1 || candMap[dest]) {
-			targetDest := dest
-			if targetDest == -1 && len(candidates) > 0 {
-				targetDest = candidates[RandomIntn(len(candidates))]
+	boarded = make([]int, 0, min(maxCount, s.WaitingPassengers))
+	remaining := 0
+	for i, dest := range s.WaitingDestinations {
+		since := s.WaitingSince[i]
+		if len(boarded) < maxCount && (len(candidates) == 0 || dest == -1 || eligible[dest]) {
+			if dest == -1 && len(candidates) > 0 {
+				dest = candidates[RandomIntn(len(candidates))]
 			}
-			boarded = append(boarded, targetDest)
+			boarded = append(boarded, dest)
+			if since > 0 {
+				samples++
+				seconds += max(0, s.WaitingClock+1-since)
+			}
 		} else {
-			remaining = append(remaining, dest)
+			s.WaitingDestinations[remaining] = dest
+			s.WaitingSince[remaining] = since
+			remaining++
 		}
 	}
-	s.WaitingDestinations = remaining
-	s.WaitingPassengers = len(s.WaitingDestinations)
-	return boarded
+	s.WaitingDestinations = s.WaitingDestinations[:remaining]
+	s.WaitingSince = s.WaitingSince[:remaining]
+	s.WaitingPassengers = remaining
+	return boarded, samples, seconds
 }
 
 // Update advances the spawn timer with default 1.0x rate and nil destinations.
@@ -250,19 +328,7 @@ func (s *BusStop) UpdateWithDestinations(dt float64, rateMultiplier float64, can
 	}
 	s.SyncWaitingQueue(candidateDestinations)
 
-	// Reconcile any existing destinations that are no longer reachable by any passing line
-	if len(candidateDestinations) > 0 {
-		candSet := make(map[int]bool, len(candidateDestinations))
-		for _, c := range candidateDestinations {
-			candSet[c] = true
-		}
-		for i, dest := range s.WaitingDestinations {
-			if dest != -1 && !candSet[dest] {
-				s.WaitingDestinations[i] = candidateDestinations[RandomIntn(len(candidateDestinations))]
-			}
-		}
-	}
-
+	s.WaitingClock += dt
 	s.SpawnTimer += dt * rateMultiplier
 	if s.SpawnTimer >= s.SpawnInterval {
 		s.SpawnTimer = 0
@@ -277,6 +343,7 @@ func (s *BusStop) UpdateWithDestinations(dt float64, rateMultiplier float64, can
 					dest = candidateDestinations[RandomIntn(len(candidateDestinations))]
 				}
 				s.WaitingDestinations = append(s.WaitingDestinations, dest)
+				s.WaitingSince = append(s.WaitingSince, s.WaitingClock+1)
 			}
 			s.WaitingPassengers = len(s.WaitingDestinations)
 		}

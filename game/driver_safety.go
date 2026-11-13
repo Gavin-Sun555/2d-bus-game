@@ -43,8 +43,9 @@ func (g *Game) applyRoadBoundaries(currentLaneW float64) {
 
 			if g.Bus.Durability <= 0 {
 				g.Bus.Durability = 50.0
-				g.Cash -= 200
-				g.HUD.AddWarningToast("[严重损毁] 车况归零！已紧急呼叫拖车抢修至 50% (维修费 -$200)")
+				repairCost := g.emergencyRepairCost()
+				g.Cash -= repairCost
+				g.HUD.AddWarningToast(fmt.Sprintf("[严重损毁] 拖车抢修至 50%% / Emergency repair: -$%d", repairCost))
 			}
 		}
 	}

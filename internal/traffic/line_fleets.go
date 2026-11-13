@@ -5,7 +5,45 @@ import (
 	"slices"
 )
 
-const MaxBusesPerLine = 8
+const (
+	MaxBusesPerLine  = sim.MaxBusesPerLine
+	MaxFleetBuses    = 6 * MaxBusesPerLine
+	legacyBusSlots   = 8
+	legacyFleetBuses = 6 * legacyBusSlots
+)
+
+// Keep IDs 1–48 assigned to their original lines so existing saves and
+// references to buses and their statistics need no migration.
+func lineBusID(line, slot int) int {
+	if slot < legacyBusSlots {
+		return line*legacyBusSlots + slot + 1
+	}
+	return legacyFleetBuses + line*(MaxBusesPerLine-legacyBusSlots) + slot - legacyBusSlots + 1
+}
+
+// FleetSlotID is the stable configuration key, separate from the ID of the
+// individual bus assigned to that slot.
+func (b *AIBus) FleetSlotID() int {
+	if b.LineIndex < 0 || b.LineIndex >= 6 || b.ID < 1 {
+		return 0
+	}
+	if b.FleetSlot != 0 {
+		if b.FleetSlot < 1 || b.FleetSlot > MaxBusesPerLine {
+			return 0
+		}
+		slotID := lineBusID(b.LineIndex, b.FleetSlot-1)
+		if b.ID > MaxFleetBuses || b.ID == slotID {
+			return slotID
+		}
+		return 0
+	}
+	for slot := 0; slot < MaxBusesPerLine; slot++ {
+		if b.ID == lineBusID(b.LineIndex, slot) {
+			return b.ID
+		}
+	}
+	return 0
+}
 
 type LineFleetSettings struct {
 	BusCount    int
@@ -36,7 +74,7 @@ func (c LineFleetSettings) Normalize() LineFleetSettings {
 	} else {
 		c.ModelCounts = [sim.BusModelCount]int{}
 	}
-	c.SpeedRange = c.SpeedRange.Normalize(50, 80)
+	c.SpeedRange = c.SpeedRange.Normalize(50, sim.TrafficMaxSpeedKPH)
 	return c
 }
 
@@ -71,8 +109,10 @@ type LineFleetPlan struct {
 func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, lw float64, player *sim.Bus, reset bool, traffic ...[]*sim.TrafficCar) {
 	previous := map[int]*AIBus{}
 	for _, b := range m.Buses {
-		previous[b.ID] = b
+		previous[b.FleetSlotID()] = b
+		m.LastBusID = max(m.LastBusID, b.ID)
 	}
+	initialDispatch := m.LastBusID == 0
 	buses := make([]*AIBus, 0)
 	pending := []*AIBus{}
 	initialLines := map[int]bool{}
@@ -97,12 +137,6 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 			sim.EnsureLongBusBays(w, p.Route)
 		}
 		m.Routes = append(m.Routes, p.Route)
-		builder := NewAIBusManager()
-		builder.stationOnlyBuild = true
-		builder.ActiveRoute = p.Route
-		builder.BusSpeedRange = c.SpeedRange
-		// The existing dispatcher supplies legal bay positions and driver initialization.
-		builder.BuildFleet(w, c.BusCount, lw, player)
 		// Keep matching models in their existing slots when the mix changes.
 		// In particular, adding a standard bus does not turn a double-decker
 		// already in service into a different vehicle just to sort the roster.
@@ -113,7 +147,7 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 		remaining := c.Counts()
 		if !reset {
 			for slot := range slotModels {
-				old := previous[line*MaxBusesPerLine+slot+1]
+				old := previous[lineBusID(line, slot)]
 				if old == nil || old.LineIndex != line || !slices.Equal(old.Route.StopIDs, p.Route.StopIDs) {
 					continue
 				}
@@ -136,34 +170,56 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 				}
 			}
 		}
-		freshIndex := 0
+		var freshBuses []*AIBus
 		for slot, model := range slotModels {
 			if !model.Valid() {
 				continue
 			}
-			fresh := builder.Buses[freshIndex]
-			freshIndex++
-			id := line*MaxBusesPerLine + slot + 1
-			fresh.ID = id
-			fresh.Bus.SetModel(model)
-			fresh.Color = p.Route.Color
-			fresh.LineIndex = line
-			fresh.AssignedSpeedRange = c.SpeedRange
-			old := previous[id]
-			if !reset && old != nil && old.LineIndex == line && slices.Equal(old.Route.StopIDs, p.Route.StopIDs) {
+			slotID := lineBusID(line, slot)
+			old := previous[slotID]
+			sameService := old != nil && old.LineIndex == line && slices.Equal(old.Route.StopIDs, p.Route.StopIDs)
+			if !reset && sameService {
 				old.Retiring = false
 				if old.Bus.PlannedModel() != model {
 					old.Bus.RequestModel(model)
 				}
 				if old.AssignedSpeedRange != c.SpeedRange {
-					setLineSpeed(old, c.SpeedRange)
+					old.assignLineSpeed(c.SpeedRange, c.SpeedRange.Sample())
+					m.Operations.Track(old.ID, old.Bus, old.Route, 0)
 				}
 				buses = append(buses, old)
 			} else {
-				if reset && old != nil && old.LineIndex == line && slices.Equal(old.Route.StopIDs, p.Route.StopIDs) {
+				if freshBuses == nil {
+					// The dispatcher supplies legal bay positions and initializes drivers.
+					builder := NewAIBusManager()
+					builder.stationOnlyBuild = true
+					builder.ActiveRoute = p.Route
+					builder.BuildFleet(w, c.BusCount, lw, player)
+					freshBuses = builder.Buses
+				}
+				fresh := freshBuses[0]
+				freshBuses = freshBuses[1:]
+				fresh.FleetSlot = slot + 1
+				fresh.Bus.SetModel(model)
+				fresh.Color = p.Route.Color
+				fresh.LineIndex = line
+				if sameService {
+					fresh.ID = old.ID
 					fresh.Bus.SetModel(old.Bus.Model)
 					fresh.Bus.RequestModel(model)
+				} else if initialDispatch {
+					fresh.ID = slotID
+					m.LastBusID = max(m.LastBusID, fresh.ID)
+				} else {
+					m.LastBusID = max(m.LastBusID, MaxFleetBuses) + 1
+					fresh.ID = m.LastBusID
 				}
+				if sameService && old.AssignedSpeedRange == c.SpeedRange && old.MaxSpeedKPH > 0 {
+					fresh.assignLineSpeed(c.SpeedRange, old.MaxSpeedKPH)
+				} else {
+					fresh.assignLineSpeed(c.SpeedRange, c.SpeedRange.Sample())
+				}
+				m.ApplyPassengerCapacity(fresh.Bus)
 				pending = append(pending, fresh)
 			}
 		}
@@ -172,18 +228,23 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 				if model.Valid() {
 					continue
 				}
-				old := previous[line*MaxBusesPerLine+slot+1]
+				old := previous[lineBusID(line, slot)]
 				if old == nil || old.LineIndex != line || !slices.Equal(old.Route.StopIDs, p.Route.StopIDs) {
 					continue
 				}
 				old.Retiring = true
 				old.Bus.RequestModel(old.Bus.Model)
 				if old.AssignedSpeedRange != c.SpeedRange {
-					setLineSpeed(old, c.SpeedRange)
+					old.assignLineSpeed(c.SpeedRange, c.SpeedRange.Sample())
+					m.Operations.Track(old.ID, old.Bus, old.Route, 0)
 				}
 				buses = append(buses, old)
 			}
 		}
+	}
+	var cars []*sim.TrafficCar
+	if len(traffic) > 0 {
+		cars = traffic[0]
 	}
 	others := make([]*sim.Bus, 0, 1+len(previous)+len(pending))
 	if player != nil {
@@ -196,15 +257,11 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 		if initialLines[b.LineIndex] {
 			continue
 		}
-		stop := w.Stops[b.Route.GetCurrentTargetStopID()]
-		sim.PlaceBusInStationQueue(b.Bus, stop, others, lw)
-		b.Driver.QueueAtStation(stop.ID)
+		if !PlaceInitialBusOnRoute(b.Bus, b.Driver, b.Route, w, lw, others, cars) {
+			continue
+		}
 		others = append(others, b.Bus)
 		buses = append(buses, b)
-	}
-	var cars []*sim.TrafficCar
-	if len(traffic) > 0 {
-		cars = traffic[0]
 	}
 	for line := range plans {
 		if !initialLines[line] {
@@ -216,7 +273,7 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 				fresh = append(fresh, b)
 			}
 		}
-		distributeInitialLine(fresh, w, lw, others, cars)
+		fresh = distributeInitialLine(fresh, w, lw, others, cars)
 		for _, b := range fresh {
 			others = append(others, b.Bus)
 			buses = append(buses, b)
@@ -224,18 +281,28 @@ func (m *AIBusManager) ConfigureLineFleets(plans []LineFleetPlan, w *sim.World, 
 	}
 
 	slices.SortFunc(buses, func(a, b *AIBus) int { return a.ID - b.ID })
+	for _, old := range m.Buses {
+		_, kept := slices.BinarySearchFunc(buses, old.ID, func(b *AIBus, id int) int { return b.ID - id })
+		if !kept {
+			m.Operations.EndVehicleService(old.ID)
+		}
+	}
+	for _, fresh := range pending {
+		m.Operations.Track(fresh.ID, fresh.Bus, fresh.Route, 0)
+	}
 	m.Buses = buses
 	m.BusCount = len(buses)
 	m.CurrentMap = w.Theme
 	m.CurrentLane = lw
 }
-func setLineSpeed(b *AIBus, r sim.SpeedRange) {
-	kph := r.Sample()
+func (b *AIBus) assignLineSpeed(r sim.SpeedRange, kph int) {
 	b.AssignedSpeedRange = r
 	b.MaxSpeedKPH = kph
 	b.CanOvertake = kph > r.MinKPH
 	b.Bus.MaxSpeedFwd = sim.SpeedKPH(kph)
+	b.Bus.ApplyCatalogLimits()
+	b.Bus.Speed = min(b.Bus.Speed, b.Bus.MaxSpeedFwd)
 	b.Driver.BerserkMode = b.CanOvertake
-	b.Driver.BerserkMaxSpeed = sim.SpeedKPH(kph)
-	b.Driver.CruiseSpeedLimit = sim.SpeedKPH(kph)
+	b.Driver.BerserkMaxSpeed = b.Bus.MaxSpeedFwd
+	b.Driver.CruiseSpeedLimit = b.Bus.MaxSpeedFwd
 }

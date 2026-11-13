@@ -3,6 +3,7 @@ package game
 import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 	"math"
 	"sort"
 )
@@ -95,11 +96,30 @@ func (g *Game) queuePlayerAtStop(stop *sim.BusStop) {
 	for _, b := range g.AIBusMgr.Buses {
 		others = append(others, b.Bus)
 	}
-	if sim.PlaceBusInStationQueue(g.Bus, stop, others, g.Settings.GetLaneWidth()) {
-		g.Bus.DoorsOpen = false
+	preferred := 0
+	for i, id := range g.Route.StopIDs {
+		if id == stop.ID {
+			preferred = i
+			break
+		}
+	}
+	lw := g.Settings.GetLaneWidth()
+	var cars []*sim.TrafficCar
+	if g.TrafficMgr != nil {
+		cars = g.TrafficMgr.Cars
+	}
+	if index, ok := traffic.PlaceInitialBusAtStation(g.Bus, g.Route, g.World, lw, others, cars, preferred); ok {
+		g.Route.CurrentIndex = index
+		g.Bus.DoorsOpen = true
 		g.boardedThisStop = false
 		if g.AutopilotDriver != nil {
-			g.AutopilotDriver.QueueAtStation(stop.ID)
+			g.AutopilotDriver.Reset()
+			g.AutopilotDriver.QueueAtStation(g.Route.StopIDs[index])
 		}
+		return
+	}
+	if g.AutopilotDriver != nil && traffic.PlaceInitialBusOnRoute(g.Bus, g.AutopilotDriver, g.Route, g.World, lw, others, cars) {
+		g.Bus.DoorsOpen = false
+		g.boardedThisStop = false
 	}
 }

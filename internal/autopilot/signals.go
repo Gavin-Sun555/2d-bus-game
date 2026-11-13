@@ -12,6 +12,9 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 	if f.tls == nil {
 		return targetSpd
 	}
+	bumperPos := f.bus.Pos.Add(sim.UnitFromAngle(f.bus.Heading).Mul(f.bus.Length * .5))
+	targetSpd = math.Min(targetSpd, f.world.RailSpeedLimit(f.tls, bumperPos, f.bus.Heading, f.speedAbs, 135))
+	targetSpd = math.Min(targetSpd, f.world.StationCrossingSpeedLimit(f.tls, bumperPos, f.bus.Heading, f.speedAbs, f.laneWidth, 135))
 	// Once lawfully across the entry line, the same junction's other
 	// approaches must not stop the bus in the middle of its U-turn. Signals
 	// at subsequent junctions and every obstacle check remain active.
@@ -44,15 +47,17 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 		inter        *sim.TrafficIntersection
 		forwardDist  float64
 		stopLineDist float64
+		railPullback float64
 	}
 	var candidates []tlCandidate
 	for _, inter := range f.tls.Intersections {
 		stopLineDist := inter.GetStopLineDistForHeading(heading, f.laneWidth)
+		railPullback := f.world.RailIntersectionPullback(inter, bumperPos, heading, f.laneWidth, f.bus.OverallLength())
 		toInter := inter.Center.Sub(f.bus.Pos)
 		forwardDist := toInter.X*cosH + toInter.Y*sinH
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
-		if forwardDist > -stopLineDist && forwardDist < stopLineDist+lookaheadTL+120.0 && lateralDist < f.laneWidth*4.8 {
-			candidates = append(candidates, tlCandidate{inter, forwardDist, stopLineDist})
+		if forwardDist > -stopLineDist && forwardDist < stopLineDist+railPullback+lookaheadTL+120.0 && lateralDist < f.laneWidth*4.8 {
+			candidates = append(candidates, tlCandidate{inter, forwardDist, stopLineDist, railPullback})
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].forwardDist < candidates[j].forwardDist })
@@ -65,7 +70,11 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 		}
 	}
 	fallbackLimit := -1.0
+	allowYellow := ad.BerserkMode
+	upcomingUTurn := false
 	bumperAhead := f.bus.Length * 0.5 * math.Cos(f.bus.Heading-heading)
+	var selectedInter *sim.TrafficIntersection
+	railPullback := 0.0
 	for _, c := range candidates {
 		inter, stopLineDist := c.inter, c.stopLineDist
 		exitLatThreshold := exitLatBase
@@ -85,10 +94,23 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 			continue
 		}
 
+		selectedInter = inter
+		railPullback = c.railPullback
 		hasIntersectionExit = hasRouteExit
 		isUpcomingLeft = turn == routeTurnLeft
 		isUpcomingRight = turn == routeTurnRight
 		fallbackLimit = c.forwardDist + stopLineDist
+		if ad.uTurn != nil && !ad.uTurn.entered && inter.Center.Distance(ad.uTurn.center) < 1 {
+			hasIntersectionExit, isUpcomingLeft, isUpcomingRight = true, true, false
+			upcomingUTurn = true
+			allowYellow = false
+			// Use the controller's active window, including priority extension.
+			if inter.GetSignalForHeading(heading, true) == sim.SignalGreen &&
+				inter.GreenRemaining(f.tls.BusPriorityEnabled) < 1.2 {
+				gap := c.forwardDist - bumperAhead - stopLineDist - c.railPullback
+				return math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, gap-14)))
+			}
+		}
 
 		// If no exit waypoint was found, check if vehicle is physically positioned in dedicated left-turn lane
 		if !hasRouteExit && inter.ApproachHasDedicatedLanesForHeading(f.bus.Heading) {
@@ -142,24 +164,67 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 		isUpcomingRight = false
 	}
 
-	bumperPos := f.bus.Pos.Add(sim.Vec2{X: math.Cos(f.bus.Heading) * (f.bus.Length * 0.5), Y: math.Sin(f.bus.Heading) * (f.bus.Length * 0.5)})
-
 	// While returning before the line, consult the intended through signal.
 	// The merge controller still stops for an occupied gap, and red through
 	// signals retain their normal longitudinal stopping profile.
-	if ad.approachMerge != nil {
+	if ad.approachMerge != nil && !upcomingUTurn {
 		right := sim.Vec2{X: -sinH, Y: cosH}
 		bumperPos = bumperPos.Add(right.Mul(ad.approachMerge.Target.Sub(bumperPos).Dot(right)))
-	}
-	if ad.approachMerge != nil {
 		isUpcomingLeft, isUpcomingRight = ad.approachMerge.LeftTurn, ad.approachMerge.RightTurn
+		if selectedInter != nil {
+			railPullback = f.world.RailIntersectionPullback(selectedInter, bumperPos, heading, f.laneWidth, f.bus.OverallLength())
+		}
+	}
+	onRailCrossing := f.world.VehicleOnLevelCrossing(bumperPos, heading, f.bus.OverallLength())
+	if railPullback > 0 && selectedInter != nil {
+		allowYellow = false
+		idx := selectedInter.GetApproachIndexForHeading(heading)
+		lateral := math.Abs(bumperPos.Sub(selectedInter.Center).Dot(sim.Vec2{X: -sinH, Y: cosH}))
+		medianRight := isUpcomingRight && !isUpcomingLeft && selectedInter.ApproachMedianBusLane[idx] && lateral < f.laneWidth
+		rightOnRed := isUpcomingRight && !isUpcomingLeft && !medianRight
+		if !rightOnRed {
+			sig := selectedInter.GetSignalForHeading(heading, isUpcomingLeft)
+			greenDur := selectedInter.GreenDuration
+			if isUpcomingLeft && selectedInter.ApproachHasDedicatedLanesForHeading(heading) {
+				greenDur = selectedInter.LeftGreenDuration
+			}
+			if medianRight {
+				sig = selectedInter.GetMedianBusRightSignal(heading)
+				greenDur = selectedInter.LeftGreenDuration
+			}
+			distToStopLine := selectedInter.Center.Sub(bumperPos).Dot(sim.Vec2{X: cosH, Y: sinH}) - selectedInter.GetStopLineDistForHeading(heading, f.laneWidth)
+			distToHold := distToStopLine - railPullback
+			if distToHold > 0 {
+				distToClearRail := distToHold + 210.0 + f.bus.OverallLength()
+				timeNeeded := distToClearRail / math.Max(f.speedAbs, 90.0)
+				if f.speedAbs < 40.0 {
+					timeNeeded = math.Sqrt(2*distToClearRail/70.0) + 0.8
+				}
+				greenRem := greenDur - selectedInter.Timer
+				if sig != sim.SignalGreen || (greenDur > 0 && greenRem < timeNeeded) {
+					if distToHold < lookaheadTL {
+						if distToHold <= 14.0 {
+							return 0
+						}
+						return math.Min(targetSpd, math.Sqrt(2*135.0*math.Max(0.0, distToHold-14.0)))
+					}
+				}
+			}
+		}
+	} else if onRailCrossing {
+		allowYellow = true
+	}
+	checkSpeed := f.speedAbs
+	if onRailCrossing {
+		checkSpeed = math.Max(checkSpeed, 140.0)
 	}
 	// Berserk mode may proceed on yellow only when it reaches the line before
 	// red; otherwise it would enter on red, so it brakes like normal mode.
-	shouldStop, distToLine := f.tls.CheckStopForVehicleAtSpeed(bumperPos, heading, lookaheadTL, f.laneWidth, isUpcomingLeft, isUpcomingRight, ad.BerserkMode, f.speedAbs, hasIntersectionExit || ad.approachMerge != nil)
+	shouldStop, distToLine := f.tls.CheckStopForVehicleAtSpeed(bumperPos, heading, lookaheadTL+railPullback, f.laneWidth, isUpcomingLeft, isUpcomingRight, allowYellow, checkSpeed, hasIntersectionExit || ad.approachMerge != nil)
 	if !shouldStop {
 		return targetSpd
 	}
+	distToLine, _ = f.world.ClampStopBeforeRailCrossing(bumperPos, heading, distToLine, f.bus.OverallLength(), 14.0)
 	if distToLine <= 14.0 {
 		return 0
 	}

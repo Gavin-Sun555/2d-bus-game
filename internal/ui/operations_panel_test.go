@@ -37,8 +37,14 @@ func TestFareControlsAndOperationsPanelLayout(t *testing.T) {
 		v.CompletedLaps = 1
 		v.CompletedKM = 5
 		v.CompletedSeconds = 900
+		v.MaxSpeedKPH = 80 + id*10
 		v.KM = 5.5
 		o.Revenue += v.Revenue
+	}
+	o.EndVehicleService(1)
+	ids := operationsVehicleIDs(o, r)
+	if ids[len(ids)-1] != 1 {
+		t.Fatal("ended vehicle must appear after the active fleet")
 	}
 	original := locale.CurrentLanguage
 	defer func() { locale.CurrentLanguage = original }()
@@ -48,6 +54,9 @@ func TestFareControlsAndOperationsPanelLayout(t *testing.T) {
 			p := NewOperationsPanel()
 			p.IsOpen = true
 			p.Tab = tab
+			if tab == 2 {
+				p.Scroll = 1 // Show the ended vehicle row too.
+			}
 			screen := ebiten.NewImage(1280, 720)
 			f.Mode = sim.FareByDistance
 			p.Draw(screen, f, o, w, r)

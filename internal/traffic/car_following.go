@@ -48,7 +48,7 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 			}
 		}
 
-		if carClearsStoppedBusAhead(f.car, b) || committedThroughCarClearsStoppedTurn(f.car, b) {
+		if carClearsStoppedBusAhead(f.car, b) || recoveryLaneChangeClearsStoppedBus(f.car, b) || committedCarClearsStoppedTurn(f.car, b) {
 			continue
 		}
 
@@ -136,6 +136,12 @@ func (tm *TrafficManager) busFollowingSpeed(f carFrame, targetSpd float64) float
 
 				if isBusStopped && !isWrongWay {
 					// Lawfully stopped bus directly ahead in our travel corridor
+					if f.world != nil && math.Cos(b.Heading-f.car.Heading) > .8 {
+						bumper := f.car.Pos.Add(sim.Vec2{X: cosH * carHalfLen, Y: sinH * carHalfLen})
+						if railDist, clamped := f.world.ClampStopBeforeRailCrossing(bumper, f.car.Heading, bumperDist-11, f.car.Length, 14); clamped {
+							bumperDist = railDist + 11
+						}
+					}
 					if bumperDist <= 28.0 {
 						targetSpd = 0
 						f.car.IsBraking = true
@@ -211,6 +217,13 @@ func (tm *TrafficManager) carFollowingSpeed(f carFrame, targetSpd float64) float
 		alongExtent := other.Length/2*math.Abs(math.Cos(yaw)) + other.Width/2*math.Abs(math.Sin(yaw))
 		gap := forward - f.car.Length/2 - alongExtent
 		lead := math.Max(0, other.Speed*math.Cos(yaw))
+		if lead < 15 && f.world != nil && math.Cos(yaw) > .8 {
+			bumper := f.car.Pos.Add(u.Mul(f.car.Length / 2))
+			if railDist, clamped := f.world.ClampStopBeforeRailCrossing(bumper, f.car.Heading, gap-4, f.car.Length, 14); clamped {
+				gap = railDist + 4
+				lead = 0
+			}
+		}
 		closing := math.Max(0, f.car.Speed-lead)
 		if gap > math.Max(90, closing*closing/(2*220)+closing*.5+30) {
 			continue
@@ -258,7 +271,12 @@ func committedCarPathClear(car, other *sim.TrafficCar) bool {
 // closed merge gap. Prove clearance along its actual committed path, including
 // both bus sections, rather than treating a side safety margin as a leader.
 func carClearsStoppedBusAhead(car *sim.TrafficCar, bus *sim.Bus) bool {
-	if math.Abs(bus.Speed) > .1 || car.YieldingToBus == bus || (bus.LaneMergeRequest != nil && (car.JunctionTurn == nil || car.JunctionTurn.LaneChange || !car.JunctionTurn.Straight)) || car.InRoundabout || math.Cos(bus.Heading-car.Heading) < .75 {
+	// A station arrival also publishes a lane request, but only traffic behind
+	// the bus yields to it. A car already leading the bus must be free to leave,
+	// otherwise the bus waits for that car while the car waits for the bus.
+	stationArrival := bus.StationMergeRequest != nil && bus.StationMergeRequest.Remaining > 0
+	laneMerge := bus.LaneMergeRequest != nil && !stationArrival
+	if math.Abs(bus.Speed) > .1 || car.YieldingToBus == bus || (laneMerge && (car.JunctionTurn == nil || car.JunctionTurn.LaneChange || !car.JunctionTurn.Straight)) || car.InRoundabout || math.Cos(bus.Heading-car.Heading) < .75 {
 		return false
 	}
 	u := sim.UnitFromAngle(car.Heading)
@@ -278,13 +296,27 @@ func carClearsStoppedBusAhead(car *sim.TrafficCar, bus *sim.Bus) bool {
 	return true
 }
 
-// A committed through car clears a stopped oncoming turn before that turn
-// resumes. A generous straight following margin must not freeze both vehicles
-// when their actual bodies are separated throughout the car's crossing.
-func committedThroughCarClearsStoppedTurn(car *sim.TrafficCar, bus *sim.Bus) bool {
+func recoveryLaneChangeClearsStoppedBus(car *sim.TrafficCar, bus *sim.Bus) bool {
+	turn := car.JunctionTurn
+	if turn == nil || !turn.LaneChange || turn.SpeedLimit != carRecoveryLaneChangeSpeed || math.Abs(bus.Speed) >= 1 {
+		return false
+	}
+	for distance := 0.; distance <= 120; distance += 3 {
+		p, h := turn.Predict(distance)
+		if hit, _, _ := bus.CollidesBody(sim.OBB{Center: p, Heading: h, HalfLen: car.Length / 2, HalfWid: car.Width / 2}); hit {
+			return false
+		}
+	}
+	return true
+}
+
+// A committed car can clear a stopped oncoming turn along its selected path.
+// Check the whole curve rather than extending the current tangent into a
+// fictitious straight following corridor. Physical sections retain their margin.
+func committedCarClearsStoppedTurn(car *sim.TrafficCar, bus *sim.Bus) bool {
 	turn := car.JunctionTurn
 	corridor := bus.JunctionCorridor
-	if turn == nil || turn.LaneChange || !turn.Straight || car.InRoundabout || math.Abs(bus.Speed) > .1 || corridor == nil || corridor.Remaining <= 0 || corridor.Center.Distance(turn.Center) > 1 || math.Cos(bus.Heading-car.Heading) > -.9 {
+	if turn == nil || turn.LaneChange || car.InRoundabout || math.Abs(bus.Speed) > .1 || corridor == nil || corridor.Remaining <= 0 || corridor.Center.Distance(turn.Center) > 1 || (turn.Straight && math.Cos(bus.Heading-car.Heading) > -.9) {
 		return false
 	}
 	forward := sim.UnitFromAngle(car.Heading)

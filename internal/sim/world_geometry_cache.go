@@ -16,6 +16,11 @@ type cachedWorldJunction struct {
 	geometry   JunctionGeometry
 	roundabout bool
 }
+type junctionBounds struct {
+	center       Vec2
+	halfX, halfY float64
+}
+
 type worldGeometryCache struct {
 	roads              []RoadSegment
 	roundabouts        []Roundabout
@@ -23,7 +28,7 @@ type worldGeometryCache struct {
 	width              float64
 	revision           uint64
 	entries            map[Vec2]cachedWorldJunction
-	cells              map[junctionCell][]Vec2
+	cells              map[junctionCell][]junctionBounds
 	maxHalfX, maxHalfY float64
 }
 
@@ -40,13 +45,16 @@ func (w *World) PrepareJunctionGeometry(width float64) {
 	}
 	w.geometryRevision++
 	revision := w.geometryRevision
-	c := &worldGeometryCache{roads: slices.Clone(w.Roads), roundabouts: slices.Clone(w.Roundabouts), centers: slices.Clone(w.Intersections), width: width, revision: revision, entries: make(map[Vec2]cachedWorldJunction, len(w.Intersections)), cells: make(map[junctionCell][]Vec2)}
+	c := &worldGeometryCache{roads: slices.Clone(w.Roads), roundabouts: slices.Clone(w.Roundabouts), centers: slices.Clone(w.Intersections), width: width, revision: revision, entries: make(map[Vec2]cachedWorldJunction, len(w.Intersections)), cells: make(map[junctionCell][]junctionBounds)}
 	for _, p := range w.Intersections {
 		ew, ns := w.uncachedIntersectionRoadDimensions(p, width)
 		g := NewJunctionGeometry(ew, ns, width)
 		rb := w.uncachedIsAtRoundabout(p)
 		c.entries[p] = cachedWorldJunction{ew, ns, g, rb}
-		c.cells[junctionCellAt(p)] = append(c.cells[junctionCellAt(p)], p)
+		if !rb {
+			cell := junctionCellAt(p)
+			c.cells[cell] = append(c.cells[cell], junctionBounds{p, g.HalfX, g.HalfY})
+		}
 		c.maxHalfX = math.Max(c.maxHalfX, g.HalfX)
 		c.maxHalfY = math.Max(c.maxHalfY, g.HalfY)
 	}
@@ -66,9 +74,8 @@ func (c *worldGeometryCache) inside(pos Vec2, margin float64) bool {
 	hi := junctionCellAt(pos.Add(Vec2{X: c.maxHalfX + math.Max(0, margin), Y: c.maxHalfY + math.Max(0, margin)}))
 	for x := lo.x; x <= hi.x; x++ {
 		for y := lo.y; y <= hi.y; y++ {
-			for _, p := range c.cells[junctionCell{x, y}] {
-				e := c.entries[p]
-				if !e.roundabout && math.Abs(pos.X-p.X) <= e.geometry.HalfX+margin && math.Abs(pos.Y-p.Y) <= e.geometry.HalfY+margin {
+			for _, j := range c.cells[junctionCell{x, y}] {
+				if math.Abs(pos.X-j.center.X) <= j.halfX+margin && math.Abs(pos.Y-j.center.Y) <= j.halfY+margin {
 					return true
 				}
 			}

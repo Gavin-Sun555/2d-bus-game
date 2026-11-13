@@ -1,7 +1,6 @@
 package sim
 
 import (
-	"fmt"
 	"math"
 	"sort"
 )
@@ -108,17 +107,7 @@ func (w *World) addBlockStops(lw float64) {
 				continue
 			}
 			id := len(w.Stops)
-			direction, en := "南行", "Southbound"
-			if ew {
-				direction, en = "东行", "Eastbound"
-			}
-			if side == 1 {
-				direction, en = "北行", "Northbound"
-				if ew {
-					direction, en = "西行", "Westbound"
-				}
-			}
-			st := NewBusStop(id, fmt.Sprintf("街区%d·%s站 (Block %d %s)", id+1, direction, id+1, en), block.Center, h, block.Lanes, RGBA(56, 189, 248, 255), lw, 0)
+			st := NewBusStop(id, blockStopName(w.Theme, id, h), block.Center, h, block.Lanes, RGBA(56, 189, 248, 255), lw, 0)
 			if w.InsideJunction(st.Pos, lw, 70+160) {
 				continue
 			}
@@ -147,7 +136,9 @@ func (w *World) StopAtScreen(cam *Camera, p Vec2, radius float64) int {
 	id := -1
 	nearest := radius
 	for _, s := range w.Stops {
-		d := cam.WorldToScreen(s.Pos).Distance(p)
+		dPos := cam.WorldToScreen(s.Pos).Distance(p)
+		dShelter := cam.WorldToScreen(s.ShelterPos).Distance(p)
+		d := math.Min(dPos, dShelter)
 		if d < nearest {
 			id = s.ID
 			nearest = d

@@ -1,6 +1,8 @@
 package sim
 
-// SpeedRange describes spawn-time speed limits, in discrete 10 km/h steps.
+const TrafficMaxSpeedKPH = 120
+
+// SpeedRange describes vehicle speed limits in discrete 10 km/h steps.
 type SpeedRange struct{ MinKPH, MaxKPH int }
 
 func (r SpeedRange) Normalize(defaultMax, ceiling int) SpeedRange {

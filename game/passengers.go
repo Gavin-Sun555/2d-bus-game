@@ -10,7 +10,7 @@ import (
 )
 
 func (g *Game) activeDockedStop() (activeStop, misalignedStop *sim.BusStop) {
-	isPlayerBerserk := g.Settings.AutopilotBerserk || (g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
+	isPlayerBerserk := g.outerLaneDockAllowed()
 	currentLaneW := g.Settings.GetLaneWidth()
 	for _, s := range g.World.Stops {
 		isBerserkOuterLane := isPlayerBerserk && s.ContainsBusInOuterLane(g.Bus, currentLaneW)
@@ -71,7 +71,7 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 	g.syncPassengerRates()
 	g.ensureOperations()
 	activeStop, misalignedStop := g.activeDockedStop()
-	isPlayerBerserk := g.Settings.AutopilotBerserk || (g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
+	isPlayerBerserk := g.outerLaneDockAllowed()
 
 	// Feedback if driver tries to open doors near a stop from wrong side or reverse orientation
 	if toggleDoors && activeStop == nil && misalignedStop != nil {
@@ -128,6 +128,7 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 							g.boardedThisStop = false
 							return
 						}
+						g.applyPlayerPassengerCapacity()
 						g.Bus.SetStationServiceRates(g.Settings.ModelPassengerRates(g.Bus.Model))
 						g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
 					}
@@ -146,11 +147,16 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 					sinH := math.Sin(activeStop.Heading)
 					cosH := math.Cos(activeStop.Heading)
 					sideDist := toCenter.X*(-sinH) + toCenter.Y*cosH
-					if activeStop.RoadLanes <= 2 && sideDist < -5.0 {
+					switch {
+					case !g.Settings.AutopilotBerserk:
+						toastMsg = locale.Tf("【外道靠站】[%s] 下客 %d 人！",
+							"【Outer-Lane Dock】[%s] %d alighted!",
+							activeStop.CleanName(), offCount)
+					case activeStop.RoadLanes <= 2 && sideDist < -5.0:
 						toastMsg = locale.Tf("【⚡ 狂暴对向借道靠站】[%s] 下客 %d 人！",
 							"【⚡ Berserk Opposing-Lane Dock】[%s] %d alighted!",
 							activeStop.CleanName(), offCount)
-					} else {
+					default:
 						toastMsg = locale.Tf("【⚡ 狂暴外道靠站】[%s] 下客 %d 人！",
 							"【⚡ Berserk Outer-Lane Dock】[%s] %d alighted!",
 							activeStop.CleanName(), offCount)
@@ -173,6 +179,7 @@ func (g *Game) updatePassengerExchange(toggleDoors bool) {
 				site := g.vehicleHandoverSite()
 				site.Stop = activeStop
 				if g.Bus.ReplaceModelAtTerminus(g.Route, activeStop.ID, site) {
+					g.applyPlayerPassengerCapacity()
 					g.Bus.SetStationServiceRates(g.Settings.ModelPassengerRates(g.Bus.Model))
 					g.HUD.AddToast(locale.Tf("终点站换车完成：%s · %d 人", "Terminal replacement: %s · %d passengers", locale.T(g.Bus.Model.Name(), g.Bus.Model.EnglishName()), g.Bus.Capacity), true)
 					sim.RebalanceStationBoarding(activeStop, g.dockedBusesAtStop(activeStop), true)
@@ -239,6 +246,26 @@ func (g *Game) vehicleHandoverSite() sim.VehicleHandoverSite {
 		}
 	}
 	return site
+}
+
+func (g *Game) applyPlayerPassengerCapacity() {
+	if g.Bus != nil && g.Settings.PassengerOverloadPercents != nil {
+		g.Bus.Capacity = g.Settings.ModelPassengerCapacity(g.Bus.Model)
+	}
+}
+
+func (g *Game) syncPassengerCapacities() {
+	g.Settings.NormalizePassengerOverloads()
+	if g.Settings.PassengerOverloadPercents == nil {
+		return
+	}
+	g.applyPlayerPassengerCapacity()
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.PassengerOverloadPercents = g.Settings.PassengerOverloadPercents
+		for _, vehicle := range g.AIBusMgr.Buses {
+			g.AIBusMgr.ApplyPassengerCapacity(vehicle.Bus)
+		}
+	}
 }
 
 func (g *Game) syncPassengerRates() {

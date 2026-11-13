@@ -61,7 +61,11 @@ func TestLeftTurnRetainsPathUntilRearClearsEveryRoadSize(t *testing.T) {
 						if rear := car.Pos.Sub(it.Center).Dot(out) - car.Length/2; rear < half {
 							t.Fatalf("turn protection ended inside box: rear %.1f box edge %.1f", rear, half)
 						}
-						if car.LaneIndex != min(1, dest.lanes/2-1) || math.Abs(sim.NormalizeAngle(car.Heading-(h-math.Pi/2))) > .001 {
+						wantLane := 0
+						if inLanes == 2 && dest.lanes >= 4 {
+							wantLane = 1 // The approach has no parallel turn lane.
+						}
+						if car.LaneIndex != wantLane || math.Abs(sim.NormalizeAngle(car.Heading-(h-math.Pi/2))) > .001 {
 							t.Fatal("incorrect outgoing lane or direction")
 						}
 					})

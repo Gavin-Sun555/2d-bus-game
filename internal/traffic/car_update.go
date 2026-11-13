@@ -26,6 +26,7 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 	busesToCheck := tm.observedBuses
 
 	frame := carFrame{car: car, bus: bus, tls: tls, world: w, index: index, activeCount: activeCount, laneWidth: laneWidth, buses: busesToCheck, parkedBuses: tm.observedParked[:len(busesToCheck)]}
+	frame.mergeBuses, frame.mergeBusesReady = tm.observedMerges, true
 	frame.scratch = tm.scratchForCar(car, index)
 	tm.localCarsReady = false
 	if tm.spatialActive {
@@ -43,6 +44,8 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 		tm.nearbyJunctionIDs, tm.nearbyJunctions = tls.NearbyJunctions(car.Pos, radius, tm.nearbyJunctionIDs, tm.nearbyJunctions)
 		frame.junctions, frame.indexedJunctions = tm.nearbyJunctions, true
 	}
+	tm.retreatBlockedCarPass(frame)
+	tm.releaseCarBesideBusTail(frame)
 	forcedLeftLimit := tm.prepareForcedLeftApproach(frame)
 	if forcedLeftLimit < targetSpd {
 		car.IsBraking = true
@@ -59,6 +62,14 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 	targetSpd = tm.carFollowingSpeed(frame, targetSpd)
 	targetSpd = tm.intersectionYieldSpeed(frame, targetSpd)
 	targetSpd = tm.roundaboutSpeed(frame, targetSpd)
+	if turn := car.JunctionTurn; turn != nil && turn.LaneChange && targetSpd > 0 {
+		horizon := math.Max(45, car.Speed*car.Speed/(2*220)+car.Speed*.2+20)
+		clearance := tm.carLaneChangeConflict(frame, horizon, false)
+		if limit := math.Sqrt(2 * 220 * math.Max(0, clearance-12)); limit < targetSpd {
+			car.IsBraking = true
+			targetSpd = limit
+		}
+	}
 
 	if car.JunctionTurn != nil && !car.JunctionTurn.LaneChange && !car.JunctionTurn.Straight {
 		targetSpd = math.Min(targetSpd, 85)
@@ -75,14 +86,27 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 		car.Speed = math.Max(targetSpd, car.Speed-280*dt)
 	}
 
+	motionStart := car.Pos
+	beforeMove := motionStart
+	onStraightRoad := !car.InRoundabout && car.JunctionTurn == nil
 	moveCar(car, dt)
 
 	tm.turnCarAtIntersection(frame)
 
 	// 4. Preserve lane tracking until the car leaves the map.
-	tm.handleCarNavigation(car, laneWidth, w)
+	if !onStraightRoad {
+		beforeMove = car.Pos
+	}
+	tm.handleCarNavigation(car, laneWidth, w, beforeMove)
+	body := sim.OBB{Center: car.Pos, Heading: car.Heading, HalfLen: car.Length / 2, HalfWid: car.Width / 2}
+	if shift, _ := w.RailGateCorrection(tls, motionStart, body); shift != 0 {
+		car.Pos.Y += shift
+		car.Speed = 0
+		car.IsBraking = true
+	}
 	publishCarJunctionCorridor(frame)
 	publishRoundaboutCorridor(car)
+	car.UpdateTurnSignal(dt)
 }
 
 // carFrame shares the tick's observations across perception rules. Rules run in
@@ -98,6 +122,8 @@ type carFrame struct {
 	world              *sim.World
 	buses              []*sim.Bus
 	parkedBuses        []bool
+	mergeBuses         []busMergeObservation
+	mergeBusesReady    bool
 	candidates         []*sim.TrafficCar
 	localCarRadius     float64
 	index, activeCount int
@@ -145,4 +171,26 @@ func (tm *TrafficManager) prepareBusPerception(bus *sim.Bus, w *sim.World) {
 		}
 	}
 	tm.observedBuses = busesToCheck
+	tm.observedMerges = tm.mergeStorage[:0]
+	for _, b := range busesToCheck {
+		if b.DoorsOpen {
+			continue
+		}
+		lane := b.LaneMergeRequest
+		station := b.StationMergeRequest
+		if (lane == nil || lane.Remaining <= 0 || lane.Joined) && (station == nil || station.Remaining <= 0) {
+			continue
+		}
+		var stop *sim.BusStop
+		if w != nil && station != nil && station.Remaining > 0 {
+			for _, candidate := range w.Stops {
+				if candidate.ID == station.StopID {
+					stop = candidate
+					break
+				}
+			}
+		}
+		tm.observedMerges = append(tm.observedMerges, busMergeObservation{bus: b, stop: stop})
+	}
+	clear(tm.mergeStorage[len(tm.observedMerges):])
 }

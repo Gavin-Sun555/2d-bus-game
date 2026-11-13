@@ -135,3 +135,43 @@ func TestRightTurnOffsetResetWaitsForOccupiedApproachLane(t *testing.T) {
 		}
 	}
 }
+
+func TestEarlyRightTurnMergeStaysInCurbLane(t *testing.T) {
+	const lw, dt = 52., 1. / 60
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -6500}, P2: sim.Vec2{X: 2000}, Lanes: 6},
+		{P1: sim.Vec2{Y: -2200}, P2: sim.Vec2{Y: 2200}, Lanes: 4},
+	}}
+	w.RebuildIntersections()
+	from := sim.NewBusStop(0, "from", sim.Vec2{X: -5300}, 0, 6, sim.RGBA(0, 0, 0, 255), lw)
+	to := sim.NewBusStop(1, "to", sim.Vec2{Y: 1400}, math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{from, to}
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	tls.Intersections[0].Phase = sim.PhaseEWGreen
+
+	bus := sim.NewBus(-2700, 2.5*lw, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Speed = 80
+	ad := NewAutopilotDriver()
+	ad.BerserkMode = true
+	ad.BerserkMaxSpeed = 667
+	ad.articulatedPath = true
+	ad.PrepareLeg(w, from, to, lw)
+	ad.approachMerge = &sim.BusLaneMergeRequest{RightTurn: true, Target: sim.Vec2{Y: 2.5 * lw}}
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	lead := VehicleObstacle{Pos: bus.Pos.Add(sim.Vec2{X: 400}), Speed: 240, Length: 46, Width: 22}
+	maxSpeed := bus.Speed
+	for tick := 0; tick < 240; tick++ {
+		lead.Pos.X += lead.Speed * dt
+		th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, w, tls, []VehicleObstacle{lead}, lw, dt)
+		bus.Update(dt, th, br, st, hb, doors)
+		if math.Abs(bus.Pos.Y-2.5*lw) > lw/4 || ad.TargetLaneOffset < -lw/2 {
+			t.Fatalf("left the required curb lane at tick %d: pos %v, target offset %.1f", tick, bus.Pos, ad.TargetLaneOffset)
+		}
+		maxSpeed = math.Max(maxSpeed, bus.Speed)
+	}
+	if maxSpeed < 200 {
+		t.Fatalf("held maneuver speed after joining the curb lane: %.1f", maxSpeed)
+	}
+}

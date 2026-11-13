@@ -24,7 +24,7 @@ var treeSprites = map[treeSpriteKey]treeSprite{}
 // drawCachedTree renders a static pre-baked tree sprite if available,
 // collapsing up to 16 individual DrawTriangles calls per tree into a single batched DrawImage.
 func drawCachedTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, theme sim.MapTheme) bool {
-	if cam.Zoom < 0.28 {
+	if cam.Zoom < 0.05 {
 		return false
 	}
 	radius := t.Radius * 1.2

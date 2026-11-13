@@ -3,7 +3,6 @@ package game
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,16 +10,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/savefile"
 )
 
 const MaxSaveSlots = 10
 const MaxSaveNameRunes = 24
 
 type SaveSlotInfo struct {
-	Slot    int
-	Exists  bool
-	SavedAt time.Time
-	Name    string
+	Slot     int
+	Exists   bool
+	SavedAt  time.Time
+	Name     string
+	Metadata *SaveMetadata
 }
 
 func validateSaveSlotName(name string) (string, error) {
@@ -36,29 +37,7 @@ func validateSaveSlotName(name string) (string, error) {
 	return clean, nil
 }
 
-func readSaveSlotName(path string) string {
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, maxSaveBytes+1))
-	if err != nil || len(raw) > maxSaveBytes {
-		return ""
-	}
-	var header struct {
-		Version int    `json:"version"`
-		Name    string `json:"name"`
-	}
-	if err := json.Unmarshal(raw, &header); err != nil || header.Version != saveVersion {
-		return ""
-	}
-	clean, err := validateSaveSlotName(header.Name)
-	if err != nil {
-		return ""
-	}
-	return clean
-}
+func readSaveSlotName(path string) string { name, _, _ := readSaveSlotHeader(path); return name }
 
 // Slot zero retains the original filename, so single-slot saves need no migration.
 func (g *Game) saveSlotPath(slot int) (string, error) {
@@ -72,6 +51,9 @@ func (g *Game) saveSlotPath(slot int) (string, error) {
 			return "", err
 		}
 		base = filepath.Join(dir, "2d-bus-game", "save.json")
+	}
+	if g.Mode == ModeCareer {
+		base = filepath.Join(filepath.Dir(base), "career", filepath.Base(base))
 	}
 	if slot == 0 {
 		return base, nil
@@ -100,7 +82,11 @@ func (g *Game) SaveSlots() ([MaxSaveSlots]SaveSlotInfo, error) {
 		}
 		slots[i].Exists = true
 		slots[i].SavedAt = info.ModTime()
-		slots[i].Name = readSaveSlotName(path)
+		var stamp time.Time
+		slots[i].Name, slots[i].Metadata, stamp = readSaveSlotHeader(path)
+		if !stamp.IsZero() {
+			slots[i].SavedAt = stamp.Local()
+		}
 	}
 	return slots, nil
 }
@@ -151,7 +137,7 @@ func (g *Game) RenameSaveSlot(slot int, name string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("save slot %d is not a regular file", slot+1)
 	}
-	envelope, err := readSaveEnvelope(path)
+	envelope, err := savefile.Read[SaveMetadata](path)
 	if err != nil {
 		return err
 	}
@@ -160,10 +146,7 @@ func (g *Game) RenameSaveSlot(slot int, name string) error {
 	if err != nil {
 		return err
 	}
-	if len(data) > maxSaveBytes {
-		return fmt.Errorf("save exceeds size limit")
-	}
-	if err := writeSaveFileAtomically(path, data); err != nil {
+	if err := savefile.Write(path, data); err != nil {
 		return err
 	}
 	_ = os.Chtimes(path, info.ModTime(), info.ModTime())

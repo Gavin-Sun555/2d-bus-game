@@ -8,23 +8,29 @@ import (
 )
 
 type TrafficManager struct {
-	separations            BusCarSeparations
-	disableBusCarIndex     bool
-	recoveryQueries        recoveryQueries
-	disableRecoveryQueries bool
-	laneOrder              laneOrderIndex
-	disableLaneOrder       bool
-	followingIndices       []int
-	followingCandidates    []*sim.TrafficCar
-	busPerceptionActive    bool
-	observedBuses          []*sim.Bus
-	observedParked         [1 + 6*MaxBusesPerLine]bool
+	BeforeRecovery                   func(sim.TrafficRecoveryEvent) `json:"-"`
+	separations                      BusCarSeparations
+	disableBusCarIndex               bool
+	recoveryQueries                  recoveryQueries
+	disableRecoveryQueries           bool
+	laneOrder                        laneOrderIndex
+	disableLaneOrder                 bool
+	followingIndices                 []int
+	followingCandidates              []*sim.TrafficCar
+	busPerceptionActive              bool
+	observedBuses                    []*sim.Bus
+	observedMerges                   []busMergeObservation
+	mergeStorage                     [1 + MaxFleetBuses]busMergeObservation
+	mergeOwnBodies, mergeOtherBodies []sim.OBB
+	observedParked                   [1 + MaxFleetBuses]bool
 	// StepCar is sequential; the perception list is borrowed for that call only.
-	busStorage                    [1 + 6*MaxBusesPerLine]*sim.Bus
+	busStorage                    [1 + MaxFleetBuses]*sim.Bus
 	roundaboutReservations        []roundaboutReservation
 	disableJunctionBroadPhase     bool
 	disableJunctionCandidates     bool
 	junctionCandidates            []int
+	junctionExitCandidates        []int
+	junctionCandidateSets         []junctionCandidateSet
 	junctionCommitted             []int
 	junctionRegistered            []bool
 	junctionMaxHorizon            float64
@@ -41,6 +47,8 @@ type TrafficManager struct {
 	Cars                          []*sim.TrafficCar
 	CarSpeedRange                 sim.SpeedRange
 	pendingExits                  []sim.Vec2
+	populationCapacity            int
+	spawnSites                    *trafficSpawnPool
 	nextCarID                     int
 	AIBusMgr                      *AIBusManager
 }
@@ -92,15 +100,48 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 	tm.pendingExits = nil
 	tm.roundaboutReservations = nil
 	tm.nextCarID = count
+	tm.spawnSites = newTrafficSpawnPool(w, laneWidth)
+	// take reorders the pool it draws from. Dispatch from a copy so the live
+	// replacement pool keeps the canonical order a restored manager rebuilds.
+	dispatch := tm.spawnSites.clone()
+	remaining := dispatch.counts()
+	count = min(count, remaining[0]+remaining[1]+remaining[2])
+	tm.populationCapacity = min(count, MaxTrafficCars)
 
-	type spawnDef struct {
-		pos     sim.Vec2
-		h       float64
-		rc      float64
-		ew      bool
-		laneIdx int
+	for i := 0; i < count; i++ {
+		site := dispatch.take(&remaining)
+		car := site.car(i)
+		car.Speed = 130 + sim.RandomFloat64()*30
+		if i%4 == 0 {
+			car.Type = sim.CarTaxi
+			car.Color = sim.RGBA(234, 179, 8, 255)
+		} else if i%3 == 0 {
+			car.Type = sim.CarSUV
+			car.Length, car.Width = 50, 24
+		}
+		tm.assignCarSpeed(car)
+		tm.Cars = append(tm.Cars, car)
 	}
-	var defs []spawnDef
+}
+
+type trafficSpawnSite struct {
+	pos       sim.Vec2
+	h         float64
+	rc        float64
+	ew        bool
+	laneIdx   int
+	roadClass int
+}
+
+func (s trafficSpawnSite) car(id int) *sim.TrafficCar {
+	return &sim.TrafficCar{
+		ID: id, Pos: s.pos, Heading: s.h, RoadCenter: s.rc, IsEW: s.ew, LaneIndex: s.laneIdx,
+		Color: carPalette[id%len(carPalette)], Length: 46, Width: 22,
+	}
+}
+
+func trafficSpawnSites(w *sim.World, laneWidth float64) []trafficSpawnSite {
+	defs := []trafficSpawnSite{}
 
 	for _, r := range w.Roads {
 		dir := r.P2.Sub(r.P1)
@@ -118,6 +159,7 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 		}
 
 		numLanesPerDir := r.GeneralTrafficLanes()
+		class := trafficRoadClass(r)
 
 		step := 220.0
 		for dist := 260.0; dist <= lenR-260.0; dist += step {
@@ -160,61 +202,20 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 				offset := (float64(lane) + 0.5) * laneWidth
 				if isEW {
 					defs = append(defs,
-						spawnDef{pos: sim.Vec2{X: pt.X, Y: roadCoord + offset}, h: 0, rc: roadCoord, ew: true, laneIdx: lane},
-						spawnDef{pos: sim.Vec2{X: pt.X, Y: roadCoord - offset}, h: math.Pi, rc: roadCoord, ew: true, laneIdx: lane},
+						trafficSpawnSite{pos: sim.Vec2{X: pt.X, Y: roadCoord + offset}, h: 0, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class},
+						trafficSpawnSite{pos: sim.Vec2{X: pt.X, Y: roadCoord - offset}, h: math.Pi, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class},
 					)
 				} else {
 					defs = append(defs,
-						spawnDef{pos: sim.Vec2{X: roadCoord - offset, Y: pt.Y}, h: math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane},
-						spawnDef{pos: sim.Vec2{X: roadCoord + offset, Y: pt.Y}, h: -math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane},
+						trafficSpawnSite{pos: sim.Vec2{X: roadCoord - offset, Y: pt.Y}, h: math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class},
+						trafficSpawnSite{pos: sim.Vec2{X: roadCoord + offset, Y: pt.Y}, h: -math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class},
 					)
 				}
 			}
 		}
 	}
 
-	if count > len(defs) {
-		count = len(defs)
-	}
-
-	stride := 1.0
-	if count > 0 {
-		stride = float64(len(defs)) / float64(count)
-	}
-	for i := 0; i < count; i++ {
-		idx := int(float64(i)*stride) % len(defs)
-		sd := defs[idx]
-
-		cType := sim.CarSedan
-		cColor := carPalette[i%len(carPalette)]
-		if i%4 == 0 {
-			cType = sim.CarTaxi
-			cColor = sim.RGBA(234, 179, 8, 255)
-		} else if i%3 == 0 {
-			cType = sim.CarSUV
-		}
-
-		car := &sim.TrafficCar{
-			ID:          i,
-			Pos:         sd.pos,
-			Heading:     sd.h,
-			Speed:       130 + sim.RandomFloat64()*30,
-			TargetSpeed: 0,
-			Type:        cType,
-			Color:       cColor,
-			Length:      46,
-			Width:       22,
-			RoadCenter:  sd.rc,
-			IsEW:        sd.ew,
-			LaneIndex:   sd.laneIdx,
-		}
-		tm.assignCarSpeed(car)
-		if cType == sim.CarSUV {
-			car.Length = 50
-			car.Width = 24
-		}
-		tm.Cars = append(tm.Cars, car)
-	}
+	return defs
 }
 
 // Update updates all AI cars according to traffic rules, bus proximity, traffic density and customizable lane width
@@ -240,6 +241,9 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 	if tm.spatialActive {
 		tm.spatial.build(tm.Cars[:activeCount])
 		tm.prepareJunctionCandidates(activeCount)
+		if tls != nil && len(tm.junctionCandidateSets) < len(tls.Intersections) {
+			tm.junctionCandidateSets = make([]junctionCandidateSet, len(tls.Intersections))
+		}
 		if !tm.disableLaneOrder {
 			tm.laneOrder.build(tm.Cars[:activeCount], laneWidth)
 		}
@@ -260,13 +264,13 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 	tm.laneOrder.ready = false
 	tm.busPerceptionActive = false
 
-	// Deadlock prevention: when two non-player vehicles are jammed motionless for at least two complete traffic light cycles, disappear
+	// Recycle cars that cannot move after two complete signal cycles.
 	tm.resolveDeadlocks(dt, bus, activeCount, laneWidth, w, tls, recoveryIndexReady)
 	tm.updateBoundaryTraffic(bus, densityLevel, laneWidth, w)
 }
 
 func (tm *TrafficManager) assignCarSpeed(car *sim.TrafficCar) {
-	r := tm.CarSpeedRange.Normalize(60, 100)
+	r := tm.CarSpeedRange.Normalize(60, sim.TrafficMaxSpeedKPH)
 	car.MaxSpeedKPH = r.Sample()
 	car.TargetSpeed = sim.SpeedKPH(car.MaxSpeedKPH)
 	car.CanOvertake = car.MaxSpeedKPH > r.MinKPH

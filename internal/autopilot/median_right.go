@@ -42,19 +42,15 @@ func (ad *AutopilotDriver) selectMedianRightTurn(f autopilotFrame) {
 		origin = sim.Vec2{X: center}
 	}
 	alreadyCurb := f.bus.Pos.Sub(origin).Dot(r) > 2.75*f.laneWidth
-	clear := true
-	for _, ob := range f.obstacles {
-		delta := ob.Pos.Sub(f.bus.Pos)
-		along := delta.Dot(u)
-		lateral := ob.Pos.Sub(origin).Dot(r)
-		// Reserve every crossed lane from behind the bus to the outgoing mouth.
-		if along > -math.Max(250, math.Abs(ob.Speed)*1.5) && along < a.distToStopLine+900 && lateral > f.laneWidth-ob.Width/2 && lateral < 4*f.laneWidth+ob.Width/2 {
-			clear = false
-			break
-		}
+	busQueue, curbQueue, middleClear := medianRightQueues(f, origin, u, r, a.distToStopLine)
+	current := f.bus.Pos.Sub(origin).Dot(r)
+	enoughRunway := a.distToStopLine > math.Max(800, 3*f.laneWidth*4.5+f.bus.OverallLength())
+	preferCurb := busQueue > curbQueue && middleClear && enoughRunway
+	if preferCurb {
+		preferCurb = requiredMergeLaneClear(f, heading, current, 3.5*f.laneWidth)
 	}
 	ad.medianRightChoice = &junction
-	ad.curbBusRight = alreadyCurb || (clear && a.distToStopLine > math.Max(800, 3*f.laneWidth*4.5+f.bus.OverallLength()))
+	ad.curbBusRight = alreadyCurb || preferCurb
 	// A saved curb merge is already a committed maneuver; keep its corridor.
 	if ad.approachMerge != nil && ad.approachMerge.RightTurn && ad.approachMerge.Junction.Distance(junction) < 1 {
 		ad.curbBusRight = true
@@ -70,4 +66,37 @@ func (ad *AutopilotDriver) selectMedianRightTurn(f autopilotFrame) {
 	ad.drivePath = nil
 	ad.PrepareLeg(f.world, f.world.Stops[ad.pathFromID], f.world.Stops[ad.pathToID], f.laneWidth)
 	ad.trackPath(ad.basePathPosition(f.bus.Pos, f.world, f.bus.Heading, f.laneWidth))
+}
+
+// Compare actual waiting vehicles, not a weighted score: an empty or equally
+// queued bus lane always wins. Only inspect middle-lane traffic in the runway
+// we would cross; a distant car beyond the merge does not make a road busy.
+func medianRightQueues(f autopilotFrame, origin, forward, right sim.Vec2, stopDistance float64) (busQueue, curbQueue int, middleClear bool) {
+	middleClear = true
+	mergeRunway := math.Min(stopDistance, math.Max(700, 3*f.laneWidth*4.5+f.bus.OverallLength()+f.speedAbs*1.5))
+	heading := math.Atan2(forward.Y, forward.X)
+	for _, ob := range f.obstacles {
+		if ob.Bus == f.bus {
+			continue
+		}
+		delta := ob.Pos.Sub(f.bus.Pos)
+		along := delta.Dot(forward)
+		yaw := ob.Heading - heading
+		extent := ob.Length/2*math.Abs(math.Sin(yaw)) + ob.Width/2*math.Abs(math.Cos(yaw))
+		lateral := ob.Pos.Sub(origin).Dot(right)
+		low, high := lateral-extent, lateral+extent
+		if high > f.laneWidth+1 && low < 3*f.laneWidth-1 && along > -math.Max(250, math.Abs(ob.Speed)*1.5) && along < mergeRunway {
+			middleClear = false
+		}
+		if along <= 0 || along > stopDistance+50 || math.Cos(yaw) < .8 || math.Abs(ob.Speed) >= 20 {
+			continue
+		}
+		if high > 0 && low < f.laneWidth {
+			busQueue++
+		}
+		if high > 3*f.laneWidth && low < 4*f.laneWidth {
+			curbQueue++
+		}
+	}
+	return
 }

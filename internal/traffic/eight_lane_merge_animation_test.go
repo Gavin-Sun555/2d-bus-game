@@ -11,7 +11,7 @@ import (
 func TestEightLaneRightMergeFollowsHeading(t *testing.T) {
 	for _, lw := range []float64{42, 52, 78} {
 		for _, heading := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
-			for _, speed := range []float64{90, sim.SpeedKPH(100)} {
+			for _, speed := range []float64{90, sim.SpeedKPH(120)} {
 				t.Run(fmt.Sprintf("width%.0f/h%.2f/speed%.0f", lw, heading, speed), func(t *testing.T) {
 					w, tls := eightLaneWorld(sim.RoadBusBoulevard8Lane)
 					inter := tls.Intersections[0]
@@ -23,9 +23,12 @@ func TestEightLaneRightMergeFollowsHeading(t *testing.T) {
 					r := sim.Vec2{X: -u.Y, Y: u.X}
 					car := &sim.TrafficCar{ID: 3, Heading: heading, Speed: speed, TargetSpeed: speed, Length: 46, Width: 22, LaneIndex: 2, IsEW: math.Abs(u.X) > .5}
 					stop := inter.GetStopLineDistForHeading(heading, lw)
-					car.Pos = u.Mul(-stop - carLaneChangeLength(car, lw) - 150).Add(r.Mul(2.5 * lw))
+					mergeLength := carLaneChangeLength(car, lw)
+					minimumYaw := math.Atan(lw / mergeLength)
+					car.Pos = u.Mul(-stop - mergeLength - 150).Add(r.Mul(2.5 * lw))
 					tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
 					merging, rotated, joined, turned := false, false, false, false
+					signaled := false
 					for tick := 0; tick < 2400; tick++ {
 						before := car.Pos
 						oldHeading := car.Heading
@@ -36,11 +39,16 @@ func TestEightLaneRightMergeFollowsHeading(t *testing.T) {
 						}
 						if car.JunctionTurn != nil && car.JunctionTurn.LaneChange {
 							merging = true
+							side := car.TurnSignalSide()
+							if side < 0 {
+								t.Fatal("right merge flashed the left indicator")
+							}
+							signaled = signaled || side > 0
 							if car.LaneIndex != 2 {
 								t.Fatal("lane identity changed before merge completed")
 							}
 							yaw := sim.NormalizeAngle(car.Heading - heading)
-							if yaw > .08 {
+							if yaw > minimumYaw {
 								rotated = true
 							}
 							if delta.Length() > .01 && delta.Normalize().Dot(sim.Vec2{X: math.Cos(car.Heading), Y: math.Sin(car.Heading)}) < .995 {
@@ -63,6 +71,9 @@ func TestEightLaneRightMergeFollowsHeading(t *testing.T) {
 							turned = true
 							break
 						}
+					}
+					if !signaled {
+						t.Fatal("lane change did not flash the turn signal")
 					}
 					if !merging || !rotated || !joined || !turned {
 						t.Fatalf("incomplete: merge%v rotated%v joined%v turned%v pos%v", merging, rotated, joined, turned, car.Pos)
@@ -105,7 +116,7 @@ func TestEightLaneReservedLaneReturnIsCurved(t *testing.T) {
 	for tick := 0; tick < 600 && car.JunctionTurn != nil; tick++ {
 		before := car.Pos
 		moveCar(car, 1./60)
-		tm.handleCarNavigation(car, 52, w)
+		tm.handleCarNavigation(car, 52, w, before)
 		if car.Pos.Distance(before) > car.Speed/60+.001 {
 			t.Fatal("return slid sideways")
 		}

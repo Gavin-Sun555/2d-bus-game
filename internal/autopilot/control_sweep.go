@@ -21,11 +21,6 @@ func (ad *AutopilotDriver) controlSweptSpeed(f autopilotFrame, steer float64) fl
 	speed := math.Max(20, f.speedAbs)
 	horizon := math.Min(1.2, .20+speed/180)
 	limit := math.Inf(1)
-	type controlSample struct {
-		bodies            [2]sim.OBB
-		pos               sim.Vec2
-		heading, steering float64
-	}
 	var samples [32]controlSample
 	var ready [32]bool
 	for _, ob := range f.obstacles {
@@ -52,10 +47,10 @@ func (ad *AutopilotDriver) controlSweptSpeed(f autopilotFrame, steer float64) fl
 				pos = pos.Add(sim.UnitFromAngle(heading).Mul(speed * .04))
 
 				body := sim.OBB{Center: pos, Heading: heading, HalfLen: f.bus.Length/2 + 1, HalfWid: f.bus.Width/2 + 1}
-				samples[index] = controlSample{bodies: sweepBodies(f.bus, body), pos: pos, heading: heading, steering: steering}
+				samples[index] = controlSample{sweepSample: sweepSample{front: body}, pos: pos, heading: heading, steering: steering}
 				ready[index] = true
 			}
-			if sweepBodiesCollision(samples[index].bodies, ob, math.Max(0, ob.Speed)*elapsed, 1, 1) {
+			if samples[index].collides(f.bus, ob, math.Max(0, ob.Speed)*elapsed, 1, 1) {
 				if controlPaddingRelease(f, ob, steer, speed, horizon) || ad.laneChangeLeaderClearance(f, ob, steer, speed, horizon) {
 					limit = math.Min(limit, 35)
 					break
@@ -67,4 +62,10 @@ func (ad *AutopilotDriver) controlSweptSpeed(f autopilotFrame, steer float64) fl
 		}
 	}
 	return limit
+}
+
+type controlSample struct {
+	sweepSample
+	pos               sim.Vec2
+	heading, steering float64
 }

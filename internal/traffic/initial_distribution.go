@@ -16,17 +16,24 @@ type initialRun struct {
 
 // Only new/replanned services use this dispatcher. Live vehicles are never
 // repositioned by count/speed/model edits, and save loading does not call it.
-func distributeInitialLine(buses []*AIBus, w *sim.World, lw float64, occupied []*sim.Bus, cars []*sim.TrafficCar) {
+func distributeInitialLine(buses []*AIBus, w *sim.World, lw float64, occupied []*sim.Bus, cars []*sim.TrafficCar) []*AIBus {
 	if len(buses) == 0 {
-		return
+		return nil
 	}
 	route := buses[0].Route
 	runs, total := initialRouteRuns(route, w, lw)
 	others := append([]*sim.Bus(nil), occupied...)
+	dispatched := make([]*AIBus, 0, len(buses))
 	for slot, b := range buses {
 		ideal := total * (float64(slot) + .5) / float64(len(buses))
 		placed := false
-		if total > 0 {
+		if index, ok := PlaceInitialBusAtStation(b.Bus, b.Route, w, lw, others, cars, slot*max(1, len(b.Route.StopIDs)-1)/len(buses)); ok {
+			b.Route.CurrentIndex = index
+			b.Driver.Reset()
+			b.Driver.QueueAtStation(b.Route.StopIDs[index])
+			placed = true
+		}
+		if !placed && total > 0 {
 			type choice struct {
 				run       initialRun
 				at, delta float64
@@ -49,7 +56,7 @@ func distributeInitialLine(buses []*AIBus, w *sim.World, lw float64, occupied []
 			}
 			sort.SliceStable(choices, func(i, j int) bool { return choices[i].delta < choices[j].delta })
 			for _, c := range choices {
-				for shift := 0.; shift <= 1024 && !placed; shift += 32 {
+				for shift := 0.; shift <= c.run.length && !placed; shift += 32 {
 					for _, sign := range []float64{1, -1} {
 						if shift == 0 && sign < 0 {
 							continue
@@ -81,26 +88,14 @@ func distributeInitialLine(buses []*AIBus, w *sim.World, lw float64, occupied []
 			}
 		}
 		if !placed {
-			// Degenerate/very short routes may have no safe straight roadway.
-			// Keep the existing physical station queue instead of overlapping.
-			b.Route.CurrentIndex = 0
-			stop := w.Stops[b.Route.StopIDs[0]]
-			queueObstacles := append([]*sim.Bus(nil), others...)
-			for _, car := range cars {
-				if car == nil {
-					continue
-				}
-				body := sim.NewBus(car.Pos.X, car.Pos.Y, car.Heading)
-				body.Length, body.Width = car.Length, car.Width
-				body.Speed = car.Speed
-				queueObstacles = append(queueObstacles, body)
-			}
-			sim.PlaceBusInStationQueue(b.Bus, stop, queueObstacles, lw)
-			b.Driver.Reset()
-			b.Driver.QueueAtStation(stop.ID)
+			// No legal dispatch position: do not create a queue in a junction,
+			// ring or shoulder merely to meet the requested vehicle count.
+			continue
 		}
+		dispatched = append(dispatched, b)
 		others = append(others, b.Bus)
 	}
+	return dispatched
 }
 
 func initialRouteRuns(route *sim.Route, w *sim.World, lw float64) ([]initialRun, float64) {
@@ -153,6 +148,8 @@ func initialRouteRuns(route *sim.Route, w *sim.World, lw float64) ([]initialRun,
 	return runs, total
 }
 
+const initialRailClearance = 360
+
 func safeInitialSpawn(bus *sim.Bus, w *sim.World, lw float64, others []*sim.Bus, cars []*sim.TrafficCar) bool {
 	if w.InsideJunction(bus.Pos, lw, bus.OverallLength()+32) || bus.CheckBoundaries(w, lw).Zone != sim.ZoneRoad {
 		return false
@@ -165,6 +162,20 @@ func safeInitialSpawn(bus *sim.Bus, w *sim.World, lw float64, others []*sim.Bus,
 	u := sim.UnitFromAngle(bus.Heading)
 	right := sim.Vec2{X: -u.Y, Y: u.X}
 	rear := bus.OverallLength() - bus.Length/2
+	// Level railway crossings behave like junctions: never start on the
+	// tracks or just short of a gate the bus could not stop for.
+	for _, r := range w.Railways() {
+		for _, c := range r.Crossings {
+			if !c.Level {
+				continue
+			}
+			d := c.Center.Sub(bus.Pos)
+			ahead := d.Dot(u)
+			if math.Abs(d.Dot(right)) < c.RoadHalfWidth+lw && ahead > -(r.HalfWidth+rear+24) && ahead < r.HalfWidth+bus.Length/2+initialRailClearance {
+				return false
+			}
+		}
+	}
 	clear := func(pos sim.Vec2, h, length, width, speed, brake float64) bool {
 		d := pos.Sub(bus.Pos)
 		reach := bus.OverallLength() + length + math.Abs(speed)*math.Abs(speed)/(2*brake) + 80

@@ -28,8 +28,11 @@ func (b *Bus) TailHeading() float64 {
 	return b.TrailerHeading
 }
 func (b *Bus) TrailerBody() OBB {
-	h := b.TailHeading()
-	return OBB{Center: b.HitchPosition().Sub(UnitFromAngle(h).Mul(b.Length / 2)), Heading: h, HalfLen: b.Length / 2, HalfWid: b.Width / 2}
+	return trailerBody(b.Pos, b.Heading, b.TailHeading(), b.Length, b.Width)
+}
+func trailerBody(pos Vec2, heading, tail, length, width float64) OBB {
+	hitch := pos.Sub(UnitFromAngle(heading).Mul(length / 2))
+	return OBB{Center: hitch.Sub(UnitFromAngle(tail).Mul(length / 2)), Heading: tail, HalfLen: length / 2, HalfWid: width / 2}
 }
 func (b *Bus) BodyParts() [2]OBB {
 	parts := [2]OBB{{Center: b.Pos, Heading: b.Heading, HalfLen: b.Length / 2, HalfWid: b.Width / 2}}
@@ -40,8 +43,9 @@ func (b *Bus) BodyParts() [2]OBB {
 	return parts
 }
 func BodyCorners(b OBB) [4]Vec2 {
-	u := UnitFromAngle(b.Heading).Mul(b.HalfLen)
-	r := Vec2{X: -math.Sin(b.Heading), Y: math.Cos(b.Heading)}.Mul(b.HalfWid)
+	direction := UnitFromAngle(b.Heading)
+	u := direction.Mul(b.HalfLen)
+	r := Vec2{X: -direction.Y, Y: direction.X}.Mul(b.HalfWid)
 	return [4]Vec2{b.Center.Add(u).Add(r), b.Center.Add(u).Sub(r), b.Center.Sub(u).Sub(r), b.Center.Sub(u).Add(r)}
 }
 
@@ -102,12 +106,22 @@ func (b *Bus) advanceTrailer(oldPos Vec2, oldHeading float64) (rejected bool) {
 		b.ResetArticulation()
 		return false
 	}
-	oldTail := b.TrailerHeading
-	delta := b.Pos.Sub(oldPos)
-	turn := NormalizeAngle(b.Heading - oldHeading)
+	tail, rejected := integrateTrailer(oldPos, b.Pos, oldHeading, b.Heading, b.TrailerHeading, b.Length)
+	b.TrailerHeading = tail
+	if rejected {
+		b.Pos, b.Heading = oldPos, oldHeading
+		b.Speed, b.IsBraking = 0, true
+	}
+	return rejected
+}
+
+func integrateTrailer(oldPos, pos Vec2, oldHeading, heading, tail, length float64) (float64, bool) {
+	oldTail := tail
+	delta := pos.Sub(oldPos)
+	turn := NormalizeAngle(heading - oldHeading)
 	steps := max(1, int(math.Ceil(math.Max(delta.Length(), math.Abs(turn)*240))))
 	steps = min(steps, 4096)
-	oldHitch := oldPos.Sub(UnitFromAngle(oldHeading).Mul(b.Length / 2))
+	oldHitch := oldPos.Sub(UnitFromAngle(oldHeading).Mul(length / 2))
 	// A zero-yaw prediction has the same powered-section direction at every
 	// substep. Keep the original h arithmetic (including signed zero), and
 	// reuse only bit-identical trig results. Keep the length multiplication
@@ -127,51 +141,78 @@ func (b *Bus) advanceTrailer(oldPos Vec2, oldHeading float64) (rejected bool) {
 		if turn != 0 {
 			direction = UnitFromAngle(h)
 		}
-		hitch := oldPos.Add(delta.Mul(t)).Sub(direction.Mul(b.Length / 2))
+		hitch := oldPos.Add(delta.Mul(t)).Sub(direction.Mul(length / 2))
 		d := hitch.Sub(oldHitch)
-		currentBits := math.Float64bits(b.TrailerHeading)
+		currentBits := math.Float64bits(tail)
 		if !tailReady || currentBits != tailBits {
-			ts, tc := math.Sincos(b.TrailerHeading)
+			ts, tc := math.Sincos(tail)
 			tailDirection = Vec2{X: -ts, Y: tc}
 			tailBits, tailReady = currentBits, true
 		}
-		b.TrailerHeading = NormalizeAngle(b.TrailerHeading + d.Dot(tailDirection)/ArticulatedAxleDistance)
-		angle := NormalizeAngle(h - b.TrailerHeading)
+		tail = NormalizeAngle(tail + d.Dot(tailDirection)/ArticulatedAxleDistance)
+		angle := NormalizeAngle(h - tail)
 		if math.Abs(angle) > MaxArticulationAngle {
-			b.Pos, b.Heading, b.TrailerHeading = oldPos, oldHeading, oldTail
-			b.Speed = 0
-			b.IsBraking = true
-			return true
+			return oldTail, true
 		}
 		oldHitch = hitch
 	}
-	return false
+	return tail, false
 }
 func (b *Bus) AtPose(pos Vec2, heading float64) Bus {
 	copy := *b
-	var entry *busPredictionEntry
-	if b.IsArticulated() && b.predictionCache != nil {
-		var found bool
-		entry, found = b.predictionEntry(pos, heading)
-		if found {
-			copy.Pos, copy.Heading, copy.TrailerHeading, copy.TrailerInitialized = entry.pose.pos, entry.pose.heading, entry.pose.trailer, entry.pose.initialized
-			if entry.pose.rejected {
-				copy.Speed, copy.IsBraking = 0, true
-			}
-			return copy
+	if !b.IsArticulated() {
+		if !copy.TrailerInitialized {
+			copy.ResetArticulation()
 		}
+		copy.Pos, copy.Heading = pos, heading
+		return copy
 	}
-	if !copy.TrailerInitialized {
-		copy.ResetArticulation()
-	}
-	copy.Pos, copy.Heading = pos, heading
-	rejected := copy.advanceTrailer(b.Pos, b.Heading)
-	if entry != nil {
-		entry.pose = busPredictionPose{pos: copy.Pos, heading: copy.Heading, trailer: copy.TrailerHeading, initialized: copy.TrailerInitialized, rejected: rejected}
-		entry.valid = true
+	pose := b.articulatedPoseAt(pos, heading)
+	copy.Pos, copy.Heading, copy.TrailerHeading, copy.TrailerInitialized = pose.pos, pose.heading, pose.trailer, pose.initialized
+	if pose.rejected {
+		copy.Speed, copy.IsBraking = 0, true
 	}
 	return copy
 }
+
+func (b *Bus) articulatedPoseAt(pos Vec2, heading float64) busPredictionPose {
+	var entry *busPredictionEntry
+	if b.predictionCache != nil {
+		var found bool
+		entry, found = b.predictionEntry(pos, heading)
+		if found {
+			return entry.pose
+		}
+	}
+	tail, rejected := integrateTrailer(b.Pos, pos, b.Heading, heading, b.TailHeading(), b.Length)
+	if rejected {
+		pos, heading = b.Pos, b.Heading
+	}
+	pose := busPredictionPose{pos: pos, heading: heading, trailer: tail, initialized: true, rejected: rejected}
+	if entry != nil {
+		entry.pose, entry.valid = pose, true
+	}
+	return pose
+}
+
+// TrailerBodyAtPose shares the exact articulation prediction used by AtPose.
+func (b *Bus) TrailerBodyAtPose(pos Vec2, heading float64) OBB {
+	pose := b.articulatedPoseAt(pos, heading)
+	return trailerBody(pose.pos, pose.heading, pose.trailer, b.Length, b.Width)
+}
+
+// BodyPartsAtPose returns predicted collision geometry without copying the vehicle state.
+func (b *Bus) BodyPartsAtPose(pos Vec2, heading float64) [2]OBB {
+	if !b.IsArticulated() {
+		return [2]OBB{{Center: pos, Heading: heading, HalfLen: b.Length / 2, HalfWid: b.Width / 2}}
+	}
+	pose := b.articulatedPoseAt(pos, heading)
+	return [2]OBB{
+		{Center: pose.pos, Heading: pose.heading, HalfLen: b.Length / 2, HalfWid: b.Width / 2},
+		trailerBody(pose.pos, pose.heading, pose.trailer, b.Length, b.Width),
+	}
+}
+
 func (b *Bus) CollidesBody(other OBB) (bool, Vec2, float64) {
 	hit := false
 	normal := Vec2{}
@@ -206,9 +247,8 @@ func CheckBusAtBody(bus *Bus, front, other OBB) (bool, Vec2, float64) {
 	if !bus.IsArticulated() {
 		return CheckOBBCollision(front, other)
 	}
-	copy := bus.AtPose(front.Center, front.Heading)
 	hit, n, d := CheckOBBCollision(front, other)
-	tail := copy.TrailerBody()
+	tail := bus.TrailerBodyAtPose(front.Center, front.Heading)
 	tail.HalfLen += math.Max(0, front.HalfLen-bus.Length/2)
 	tail.HalfWid += math.Max(0, front.HalfWid-bus.Width/2)
 	if h, n2, d2 := CheckOBBCollision(tail, other); h && (!hit || d2 > d) {
@@ -246,4 +286,22 @@ func (b *Bus) CheckBoundaries(w *World, lw float64) BoundaryCheckResult {
 		}
 	}
 	return result
+}
+
+// HitsHardBarrier is the boolean version of CheckBoundaries. Callers that only
+// need clearance can stop at the first blocked point.
+func (b *Bus) HitsHardBarrier(w *World, lw float64) bool {
+	if w.CheckBoundaries(b.Pos, b.Width/2, lw).Zone == ZoneHardBarrier {
+		return true
+	}
+	if b.IsArticulated() {
+		for _, part := range b.BodyParts() {
+			for _, corner := range BodyCorners(part) {
+				if w.CheckBoundaries(corner, .5, lw).Zone == ZoneHardBarrier {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

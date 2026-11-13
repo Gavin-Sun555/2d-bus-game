@@ -44,6 +44,8 @@ func StandardizeStopBays(w *World, laneWidths ...float64) {
 	if len(laneWidths) > 0 {
 		lw = laneWidths[0]
 	}
+	// Bay fitting can move stations while querying the current road boundaries.
+	w.brtFlares = nil
 	for _, s := range w.Stops {
 		if s == nil {
 			continue
@@ -80,6 +82,16 @@ func StandardizeStopBays(w *World, laneWidths ...float64) {
 		if !found {
 			s.RoadCenter = origin
 			s.UpdateGeometry(lw)
+		} else if s.CenterBRT {
+			for _, other := range w.Stops {
+				if other != nil && other != s && other.CenterBRT && math.Cos(s.Heading-other.Heading) < -0.98 && other.RoadCenter.Distance(origin) < 1.0 {
+					other.RoadCenter = s.RoadCenter
+					other.UpdateGeometry(lw)
+				}
+			}
 		}
 	}
+	w.indexBRTFlares(lw)
+	w.rebuildRailway(lw)
+	w.rebuildStationCrossings(lw)
 }

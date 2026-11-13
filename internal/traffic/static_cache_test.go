@@ -42,7 +42,7 @@ func TestStaticCachesPreserveTrafficFrames(t *testing.T) {
 					t.Fatal("population changed")
 				}
 				for i := range a.Cars {
-					if !reflect.DeepEqual(a.Cars[i], b.Cars[i]) {
+					if !exportedEqual(a.Cars[i], b.Cars[i]) {
 						t.Fatalf("frame%d car%d cached pos%v speed%.8f full pos%v speed%.8f", frame, i, a.Cars[i].Pos, a.Cars[i].Speed, b.Cars[i].Pos, b.Cars[i].Speed)
 					}
 				}
@@ -98,15 +98,17 @@ func TestCachedTurnSamplesExactlyMatchFullSweep(t *testing.T) {
 				for segment := 0; segment < len(turn.Points)-1; segment++ {
 					start := turn.Points[segment].Add(turn.Points[segment+1].Sub(turn.Points[segment]).Mul(.37))
 					points := append([]sim.Vec2{start}, turn.Points[segment+1:]...)
+					pathEnd := len(points)
+					points = append(points, points[pathEnd-1].Add(sim.Vec2{X: 75, Y: 20}))
 					want := sim.AppendPathBodies(nil, points, length, 22)
-					got := scratch.appendBodies(nil, points, turn, length, 22)
+					got := scratch.appendBodies(nil, points, pathEnd, turn, length, 22)
 					if !reflect.DeepEqual(got, want) {
 						t.Fatalf("cached samples changed width%.0f heading%.2f segment%d", lw, heading, segment)
 					}
 				}
 				// In-place path edits and dimensions cannot reuse an obsolete sweep.
 				turn.Points[5].X += 3
-				if got, want := scratch.appendBodies(nil, turn.Points, turn, length+5, 24), sim.AppendPathBodies(nil, turn.Points, length+5, 24); !reflect.DeepEqual(got, want) {
+				if got, want := scratch.appendBodies(nil, turn.Points, len(turn.Points), turn, length+5, 24), sim.AppendPathBodies(nil, turn.Points, length+5, 24); !reflect.DeepEqual(got, want) {
 					t.Fatal("edited sweep reused stale samples")
 				}
 			}

@@ -9,6 +9,7 @@ func TestPerLineFleetCountSpeedAndIsolation(t *testing.T) {
 	w := sim.NewWorld(52)
 	routes := sim.DefaultTransitLines(w)
 	m := NewAIBusManager()
+	m.Operations = sim.NewTransitOperations(w, routes[0], 52, sim.DefaultFarePolicy())
 	plans := []LineFleetPlan{{routes[0], LineFleetSettings{BusCount: 3, SpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 30}}}, {routes[1], LineFleetSettings{BusCount: 5, SpeedRange: sim.SpeedRange{MinKPH: 80, MaxKPH: 80}}}, {routes[2], LineFleetSettings{BusCount: 2, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 60}}}}
 	m.ConfigureLineFleets(plans, w, 52, nil, false)
 	if len(m.Buses) != 10 {
@@ -26,6 +27,9 @@ func TestPerLineFleetCountSpeedAndIsolation(t *testing.T) {
 		}
 		if b.LineIndex == 1 && b.MaxSpeedKPH != 80 {
 			t.Fatal("line1 speed")
+		}
+		if b.LineIndex == 1 {
+			b.Bus.Speed = sim.SpeedKPH(70)
 		}
 	}
 	if counts[0] != 3 || counts[1] != 5 || counts[2] != 2 {
@@ -54,8 +58,12 @@ func TestPerLineFleetCountSpeedAndIsolation(t *testing.T) {
 				t.Fatal("changed other line")
 			}
 		}
-		if b.LineIndex == 1 && b.MaxSpeedKPH != 50 {
-			t.Fatal("range update not applied")
+		if b.LineIndex == 1 {
+			cap := sim.SpeedKPH(50)
+			if b.MaxSpeedKPH != 50 || b.Bus.MaxSpeedFwd != cap || b.Bus.Speed != cap || b.Driver.CruiseSpeedLimit != cap ||
+				m.Operations.Vehicle(b.ID).MaxSpeedKPH != 50 {
+				t.Fatalf("range update not immediately applied to bus %d (retiring %v)", b.ID, b.Retiring)
+			}
 		}
 	}
 	if !found {
@@ -73,6 +81,26 @@ func TestPerLineFleetCountSpeedAndIsolation(t *testing.T) {
 	}
 }
 
+func TestSameRouteResetKeepsAssignedSpeed(t *testing.T) {
+	w := sim.NewWorld(52)
+	r := &sim.Route{Name: "test", StopIDs: []int{0, 2, 10, 0}}
+	speedRange := sim.SpeedRange{MinKPH: 30, MaxKPH: 120}
+	plans := []LineFleetPlan{{r, LineFleetSettings{BusCount: 4, SpeedRange: speedRange}}}
+	m := NewAIBusManager()
+	m.ConfigureLineFleets(plans, w, 52, nil, false)
+	speeds := make(map[int]int)
+	for _, b := range m.Buses {
+		speeds[b.ID] = b.MaxSpeedKPH
+	}
+	m.ConfigureLineFleets(plans, w, 52, nil, false)
+	m.ConfigureLineFleets(plans, w, 52, nil, true)
+	for _, b := range m.Buses {
+		if b.MaxSpeedKPH != speeds[b.ID] || b.Bus.MaxSpeedFwd != sim.SpeedKPH(speeds[b.ID]) {
+			t.Fatalf("reset rerolled bus %d from %d to %d", b.ID, speeds[b.ID], b.MaxSpeedKPH)
+		}
+	}
+}
+
 func TestMaximumPerLineFleetsSpawnWithoutOverlap(t *testing.T) {
 	w := sim.NewWorld(52)
 	routes := sim.DefaultTransitLines(w)
@@ -80,10 +108,10 @@ func TestMaximumPerLineFleetsSpawnWithoutOverlap(t *testing.T) {
 	player := sim.NewBus(w.Stops[0].Pos.X, w.Stops[0].Pos.Y, w.Stops[0].Heading)
 	plans := make([]LineFleetPlan, 6)
 	for i, r := range routes {
-		plans[i] = LineFleetPlan{r, LineFleetSettings{BusCount: 8, SpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 50}}}
+		plans[i] = LineFleetPlan{r, LineFleetSettings{BusCount: MaxBusesPerLine, SpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 50}}}
 	}
 	m.ConfigureLineFleets(plans, w, 52, player, false)
-	if len(m.Buses) != 48 {
+	if len(m.Buses) != MaxFleetBuses {
 		t.Fatalf("max fleet=%d", len(m.Buses))
 	}
 	body := func(b *sim.Bus) sim.OBB {

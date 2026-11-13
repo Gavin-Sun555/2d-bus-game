@@ -23,6 +23,13 @@ func (m BusModel) Capacity() int {
 		return DefaultBusCapacity
 	}
 }
+
+// CapacityWithOverload floors fractional riders after applying the allowance.
+func (m BusModel) CapacityWithOverload(percent int) int {
+	return m.Capacity() * (100 + max(0, min(50, percent))) / 100
+}
+func (m BusModel) MaxPassengerCapacity() int { return m.CapacityWithOverload(50) }
+
 func (m BusModel) Acceleration() float64 {
 	switch m {
 	case BusDoubleDecker:
@@ -57,11 +64,15 @@ func (m BusModel) EnglishName() string {
 // SetModel initializes a vehicle before dispatch. In-service changes must use
 // RequestModel and wait for the terminal passenger exchange.
 func (b *Bus) SetModel(model BusModel) bool {
-	if !model.Valid() || max(b.PassengerCount, len(b.Passengers)) > model.Capacity() {
+	return b.SetModelWithCapacity(model, model.Capacity())
+}
+
+func (b *Bus) SetModelWithCapacity(model BusModel, capacity int) bool {
+	if !model.Valid() || capacity < 1 || capacity > model.MaxPassengerCapacity() || max(b.PassengerCount, len(b.Passengers)) > capacity {
 		return false
 	}
 	b.GeometryVersion = 1
-	b.Model, b.Capacity, b.AccelRate = model, model.Capacity(), model.Acceleration()
+	b.Model, b.Capacity, b.AccelRate = model, capacity, model.Acceleration()
 	b.MaxSteerAngle = .68
 	if model == BusArticulated {
 		b.MaxSteerAngle = .54
@@ -107,6 +118,7 @@ func (b *Bus) ReplaceModelAtTerminus(route *Route, stop int, sites ...VehicleHan
 	if len(sites) > 0 && !placeReplacement(fresh, sites[0]) {
 		return false
 	}
+	fresh.HeadlightsOn = b.HeadlightsOn
 	fresh.MaxSpeedFwd = b.MaxSpeedFwd
 	fresh.TransmissionMode = b.TransmissionMode
 	fresh.DoorsOpen, fresh.DoorProgress = b.DoorsOpen, b.DoorProgress

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"image"
+	"slices"
 	"sort"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -13,17 +15,22 @@ import (
 )
 
 type OperationsPanel struct {
-	IsOpen                       bool
-	Tab, Scroll, SelectedVehicle int
-	closeBounds, vehicleBounds   sim.Rect
-	tabBounds                    [4]sim.Rect
-	modeBounds                   [3]sim.Rect
-	fieldBounds                  [7][2]sim.Rect
+	IsOpen                     bool
+	Tab, SelectedVehicle       int
+	Scroll                     float64 // Row offset, including fractional trackpad movement.
+	closeBounds, vehicleBounds sim.Rect
+	lineBounds                 sim.Rect
+	lineSelection              [2]int
+	tabBounds                  [4]sim.Rect
+	modeBounds                 [3]sim.Rect
+	fieldBounds                [7][2]sim.Rect
 }
 
-func NewOperationsPanel() *OperationsPanel { return &OperationsPanel{SelectedVehicle: -1} }
+func NewOperationsPanel() *OperationsPanel {
+	return &OperationsPanel{SelectedVehicle: -1, lineSelection: [2]int{-1, -1}}
+}
 
-func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations) {
+func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations, routes ...*sim.Route) {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		p.IsOpen = false
 		return
@@ -36,7 +43,7 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 	}
 	_, wheel := ebiten.Wheel()
 	if p.Tab != 0 {
-		p.Scroll = max(0, p.Scroll-int(wheel)*3)
+		p.Scroll = max(0, p.Scroll-wheel*3)
 	}
 	if !inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
 		return
@@ -54,18 +61,30 @@ func (p *OperationsPanel) Update(fare *sim.FarePolicy, o *sim.TransitOperations)
 			return
 		}
 	}
-	if (p.Tab == 1 || p.Tab == 2) && p.vehicleBounds.Contains(pos) {
-		ids := operationsVehicleIDs(o)
-		options := append([]int{-1}, ids...)
-		for i, id := range options {
-			if id == p.SelectedVehicle {
-				p.SelectedVehicle = options[(i+1)%len(options)]
-				p.Scroll = 0
-				return
+	if p.Tab == 1 || p.Tab == 2 {
+		index, route := p.selectedLine(o, routes)
+		if len(routes) > 0 && p.lineBounds.Contains(pos) {
+			next := index + 1
+			if next >= len(routes) {
+				next = -1
+				if p.Tab == 1 {
+					next = 0
+				}
 			}
+			p.lineSelection[p.Tab-1] = next
+			p.SelectedVehicle, p.Scroll = -1, 0
+			return
 		}
-		p.SelectedVehicle = -1
-		return
+		if p.vehicleBounds.Contains(pos) {
+			ids := operationsVehicleIDs(o, route)
+			i := slices.Index(ids, p.SelectedVehicle) + 1
+			p.SelectedVehicle = -1
+			if i < len(ids) {
+				p.SelectedVehicle = ids[i]
+			}
+			p.Scroll = 0
+			return
+		}
 	}
 	if p.Tab != 0 {
 		return
@@ -110,17 +129,48 @@ func AdjustFare(p *sim.FarePolicy, field, delta int) {
 	*p = p.Normalize()
 }
 
-func operationsVehicleIDs(o *sim.TransitOperations) []int {
-	ids := []int{0}
-	if o == nil {
-		return ids
+func (p *OperationsPanel) selectedLine(o *sim.TransitOperations, routes []*sim.Route) (int, *sim.Route) {
+	index := p.lineSelection[p.Tab-1]
+	if index >= 0 && index < len(routes) && routes[index] != nil {
+		return index, routes[index]
 	}
-	for id := range o.Vehicles {
-		if id != 0 {
-			ids = append(ids, id)
+	if p.Tab == 1 && o != nil {
+		player := o.Vehicles[0]
+		for i, route := range routes {
+			if player.ServesLine(route) {
+				return i, route
+			}
+		}
+		if len(routes) > 0 {
+			return 0, routes[0]
 		}
 	}
-	sort.Ints(ids)
+	return -1, nil
+}
+
+func operationsVehicleIDs(o *sim.TransitOperations, route *sim.Route) []int {
+	var ids []int
+	if route == nil {
+		ids = append(ids, 0)
+	}
+	if o != nil {
+		for id, vehicle := range o.Vehicles {
+			if (route == nil && id != 0) || vehicle.ServesLine(route) {
+				ids = append(ids, id)
+			}
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		var a, b *sim.VehicleOperations
+		if o != nil {
+			a, b = o.Vehicles[ids[i]], o.Vehicles[ids[j]]
+		}
+		aEnded, bEnded := a != nil && a.ServiceEnded, b != nil && b.ServiceEnded
+		if aEnded != bEnded {
+			return !aEnded
+		}
+		return ids[i] < ids[j]
+	})
 	return ids
 }
 func operationsVehicleName(id int) string {
@@ -161,7 +211,20 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 		p.tabBounds[i] = sim.Rect{X: x + 24 + float64(i)*(width-48)/4, Y: y + 64, W: (width-48)/4 - 12, H: 34}
 		operationsButton(screen, p.tabBounds[i], title, p.Tab == i)
 	}
+	var route *sim.Route
 	if p.Tab == 1 || p.Tab == 2 {
+		_, route = p.selectedLine(o, routes)
+		if len(routes) > 0 {
+			lineLabel := locale.T("全部线路", "All lines")
+			if route != nil {
+				lineLabel = route.Name
+			}
+			p.lineBounds = sim.Rect{X: x + width - 498, Y: y + 104, W: 224, H: 34}
+			operationsButton(screen, p.lineBounds, locale.T("线路 · ", "Line · ")+lineLabel+"  >", route != nil)
+		}
+		if p.SelectedVehicle >= 0 && !slices.Contains(operationsVehicleIDs(o, route), p.SelectedVehicle) {
+			p.SelectedVehicle, p.Scroll = -1, 0
+		}
 		p.vehicleBounds = sim.Rect{X: x + width - 258, Y: y + 104, W: 234, H: 34}
 		operationsButton(screen, p.vehicleBounds, operationsVehicleName(p.SelectedVehicle)+"  >", false)
 	}
@@ -174,9 +237,9 @@ func (p *OperationsPanel) Draw(screen *ebiten.Image, fare sim.FarePolicy, o *sim
 		return
 	}
 	if p.Tab == 1 {
-		p.drawStations(screen, o, w, x, y+40, width, height-40)
+		p.drawStations(screen, o, w, route, x, y+40, width, height-40)
 	} else if p.Tab == 2 {
-		p.drawVehicles(screen, o, x, y+40, width, height-40)
+		p.drawVehicles(screen, o, route, x, y+40, width, height-40)
 	} else {
 		p.drawLines(screen, o, routes, x, y, width, height)
 	}
@@ -190,9 +253,10 @@ func (p *OperationsPanel) drawLines(screen *ebiten.Image, o *sim.TransitOperatio
 		operationsText(screen, h, x+columns[i], y+164, 13)
 	}
 	rows := max(1, int((height-290)/34))
-	p.Scroll = min(p.Scroll, max(0, len(routes)-rows))
-	for row := 0; row < rows && p.Scroll+row < len(routes); row++ {
-		l := o.LineSummary(routes[p.Scroll+row])
+	p.Scroll = min(p.Scroll, float64(max(0, len(routes)-rows)))
+	first := int(p.Scroll)
+	for row := 0; row < rows && first+row < len(routes); row++ {
+		l := o.LineSummary(routes[first+row])
 		speed := locale.T("待完成首圈", "Awaiting full lap")
 		if v, ok := l.AverageKPH(); ok {
 			speed = fmt.Sprintf("%.1f", v)
@@ -243,98 +307,132 @@ func (p *OperationsPanel) drawFares(screen *ebiten.Image, f sim.FarePolicy, x, y
 	operationsText(screen, locale.T("按乘客起终点的规划道路里程计价，上车时收费；调整只对之后上车的乘客生效。", "Charged at boarding using the planned journey. Edits apply to future boardings."), x+36, y+508, 13)
 }
 
-func (p *OperationsPanel) drawStations(screen *ebiten.Image, o *sim.TransitOperations, w *sim.World, x, y, width, height float64) {
-	distances := o.Distances
-	if v := o.Vehicles[p.SelectedVehicle]; p.SelectedVehicle >= 0 && v != nil && v.Route != nil {
-		distances = o.DistancesFor(v.Route)
+func (p *OperationsPanel) drawStations(screen *ebiten.Image, o *sim.TransitOperations, w *sim.World, route *sim.Route, x, y, width, height float64) {
+	distances, activities, lineActivities := o.Distances, o.Stations, o.Stations
+	if route != nil {
+		distances = o.DistancesFor(route)
+		lineActivities = o.LineStations[route.Name]
+		activities = lineActivities
+	}
+	if p.SelectedVehicle >= 0 {
+		if v := o.Vehicles[p.SelectedVehicle]; v != nil {
+			activities = v.Stations
+			if route == nil && v.Route != nil {
+				route = v.Route
+				distances = o.DistancesFor(route)
+				lineActivities = o.LineStations[route.Name]
+			}
+		}
 	}
 
-	operationsText(screen, fmt.Sprintf(locale.T("当前线路：%d 段 · 全程 %.3f km · 收入见车辆运营页", "Current route: %d legs · %.3f km · Revenue on Vehicles tab"), len(distances.Legs), distances.TotalKM), x+24, y+118, 14)
-	operationsText(screen, locale.T("起点 → 下一站", "Station → Next station"), x+24, y+160, 13)
-	operationsText(screen, locale.T("道路里程 km", "Road km"), x+width-338, y+160, 13)
-	operationsText(screen, locale.T("本站上车", "Boarded here"), x+width-216, y+160, 13)
-	operationsText(screen, locale.T("本站下车", "Alighted here"), x+width-108, y+160, 13)
-	rows := max(1, int((height-232)/30))
-	p.Scroll = min(p.Scroll, max(0, len(distances.Legs)-rows))
+	operationsText(screen, fmt.Sprintf(locale.T("当前线路：%d 段 · 全程 %.3f km", "Current line: %d legs · %.3f km"), len(distances.Legs), distances.TotalKM), x+24, y+118, 14)
+	cols := []float64{24, width - 550, width - 380, width - 295, width - 210, width - 120}
+	headers := []string{locale.T("车站站名", "Station name"), locale.T("至下一站的道路里程", "Road distance to next stop"), locale.T("上车", "Boarded"), locale.T("下车", "Alighted"), locale.T("可搭本线", "Can board"), locale.T("平均候车", "Avg. wait")}
+	for i, header := range headers {
+		operationsText(screen, header, x+cols[i], y+160, 13)
+	}
 	stationName := func(id int) string {
 		if w != nil && id >= 0 && id < len(w.Stops) {
 			r := []rune(w.Stops[id].CleanName())
-			if len(r) > 20 {
-				return string(r[:19]) + "…"
+			if len(r) > 24 {
+				return string(r[:23]) + "…"
 			}
 			return string(r)
 		}
 		return fmt.Sprint(id)
 	}
-	activities := o.Stations
-	if p.SelectedVehicle >= 0 {
-		activities = nil
-		if v := o.Vehicles[p.SelectedVehicle]; v != nil {
-			activities = v.Stations
+	const rowHeight = 30
+	rows := max(1, int((height-260)/rowHeight))
+	p.Scroll = min(p.Scroll, float64(max(0, len(distances.StopIDs)-rows)))
+	top := int(y + 188)
+	list := screen.SubImage(image.Rect(int(x), top, int(x+width), top+rows*rowHeight)).(*ebiten.Image)
+	first := int(p.Scroll)
+	for row := first; row < min(len(distances.StopIDs), first+rows+1); row++ {
+		id := distances.StopIDs[row]
+		name, km := stationName(id), "—"
+		if row < len(distances.Legs) {
+			km = fmt.Sprintf("%.3f km", distances.Legs[row].KM)
+		}
+		boarded, alighted := 0, 0
+		if activity := activities[id]; activity != nil {
+			boarded, alighted = activity.Boarded, activity.Alighted
+		}
+		waiting, average := "—", "—"
+		if route != nil && w != nil && id >= 0 && id < len(w.Stops) {
+			waiting = fmt.Sprint(w.Stops[id].WaitingForLine(route))
+		}
+		if activity := lineActivities[id]; activity != nil && activity.WaitSamples > 0 {
+			seconds := int(activity.WaitSeconds/float64(activity.WaitSamples) + .5)
+			average = fmt.Sprintf(locale.T("%d 分 %02d 秒", "%dm %02ds"), seconds/60, seconds%60)
+		}
+		values := []string{name, km, fmt.Sprint(boarded), fmt.Sprint(alighted), waiting, average}
+		for i, value := range values {
+			operationsText(list, value, x+cols[i], y+194+(float64(row)-p.Scroll)*rowHeight, 13)
 		}
 	}
-	for row := 0; row < rows && p.Scroll+row < len(distances.Legs); row++ {
-		i := p.Scroll + row
-		leg := distances.Legs[i]
-		ry := y + 194 + float64(row)*30
-		activity := activities[leg.From]
-		if activity == nil {
-			activity = &sim.StationActivity{}
-		}
-		operationsText(screen, fmt.Sprintf("%d. %s → %s", i+1, stationName(leg.From), stationName(leg.To)), x+24, ry, 12)
-		operationsText(screen, fmt.Sprintf("%.3f", leg.KM), x+width-338, ry, 13)
-		operationsText(screen, fmt.Sprint(activity.Boarded), x+width-216, ry, 13)
-		operationsText(screen, fmt.Sprint(activity.Alighted), x+width-108, ry, 13)
-	}
-	if len(distances.Legs) > rows {
-		operationsText(screen, locale.T("滚轮滚动查看其余站点", "Scroll for more stations"), x+24, y+height-58, 12)
-	}
+	operationsText(screen, locale.T("候车人数按目的地匹配，同一乘客可能可搭多条线。候车数据按整条线路统计。", "Passengers can qualify for multiple lines. Wait figures cover the selected line."), x+24, y+height-81, 12)
+	operationsText(screen, locale.T("平均候车按已上车样本计算，使用 1 倍速运行时间，暂停不计。无样本显示 —。", "Average uses measured boardings at 1× simulation time. Pauses are excluded. — means no samples."), x+24, y+height-58, 12)
 }
 
-func (p *OperationsPanel) drawVehicles(screen *ebiten.Image, o *sim.TransitOperations, x, y, width, height float64) {
-	var boarded, alighted int
-	var completedKM, completedSeconds float64
-	for _, v := range o.Vehicles {
+func (p *OperationsPanel) drawVehicles(screen *ebiten.Image, o *sim.TransitOperations, route *sim.Route, x, y, width, height float64) {
+	ids := operationsVehicleIDs(o, route)
+	var revenue, boarded, alighted int
+	ended := 0
+	var completedKM, completedSeconds, fleetKM, fleetSeconds float64
+	for _, id := range ids {
+		v := o.Vehicles[id]
+		if v == nil {
+			continue
+		}
+		if v.ServiceEnded {
+			ended++
+			continue
+		}
+		revenue += v.Revenue
 		boarded += v.Boarded
 		alighted += v.Alighted
 		completedKM += v.CompletedKM
 		completedSeconds += v.CompletedSeconds
-	}
-	summary := fmt.Sprintf(locale.T("全部车辆累计：收入 ¥%d · 上车 %d 人 · 下车 %d 人", "All vehicles: revenue ¥%d · Boarded %d · Alighted %d"), o.Revenue, boarded, alighted)
-	operationsText(screen, summary, x+24, y+118, 15)
-	average := locale.T("全线平均速度：完成首圈后显示", "Network average: available after a full lap")
-	if completedSeconds > 0 {
-		average = fmt.Sprintf(locale.T("全线平均速度：%.1f km/h（按已完成圈次加权）", "Network average: %.1f km/h (completed laps, time weighted)"), completedKM/completedSeconds*3600)
-	}
-	operationsText(screen, average, x+24, y+150, 13)
-	var fleetKM, fleetSeconds float64
-	for id, v := range o.Vehicles {
 		if id > 0 {
 			fleetKM += v.CompletedKM
 			fleetSeconds += v.CompletedSeconds
 		}
 	}
+	label := locale.T("全部车辆", "All vehicles")
+	if route != nil {
+		label = route.Name
+	}
+	summary := fmt.Sprintf(locale.T("%s在营累计：收入 ¥%d · 上车 %d 人 · 下车 %d 人", "%s in service: revenue ¥%d · Boarded %d · Alighted %d"), label, revenue, boarded, alighted)
+	operationsText(screen, summary, x+24, y+118, 15)
+	average := locale.T("平均速度：完成首圈后显示", "Average speed: available after a full lap")
+	if completedSeconds > 0 {
+		average = fmt.Sprintf(locale.T("平均速度：%.1f km/h（按已完成圈次加权）", "Average speed: %.1f km/h (completed laps, time weighted)"), completedKM/completedSeconds*3600)
+	}
+	operationsText(screen, average, x+24, y+150, 13)
 	fleetAverage := locale.T("AI 车队均速：待完成首圈", "AI fleet average: awaiting full lap")
 	if fleetSeconds > 0 {
 		fleetAverage = fmt.Sprintf(locale.T("AI 车队均速：%.1f km/h", "AI fleet average: %.1f km/h"), fleetKM/fleetSeconds*3600)
 	}
 	operationsText(screen, fleetAverage, x+24, y+174, 12)
-	cols := []float64{24, 174, 282, 406, 518, 684}
-	headers := []string{locale.T("车辆", "Vehicle"), locale.T("收入（元）", "Revenue"), locale.T("上 / 下车", "Board / Alight"), locale.T("完成圈数", "Laps"), locale.T("平均速度 km/h", "Average km/h"), locale.T("运营里程 km", "Service km")}
+	if ended > 0 {
+		operationsText(screen, fmt.Sprintf(locale.T("已结束运营 %d 辆", "%d ended service"), ended), x+width-184, y+174, 12)
+	}
+	cols := []float64{24, 176, 265, 382, 469, 596, 728, 854}
+	headers := []string{locale.T("车辆", "Vehicle"), locale.T("收入（元）", "Revenue"), locale.T("上 / 下车", "Board / Alight"), locale.T("完成圈数", "Laps"), locale.T("平均速度 km/h", "Average km/h"), locale.T("最高限速 km/h", "Top speed km/h"), locale.T("运营里程 km", "Service km"), locale.T("状态", "Status")}
 	for i, h := range headers {
 		operationsText(screen, h, x+cols[i], y+198, 13)
 	}
-	ids := operationsVehicleIDs(o)
 	if p.SelectedVehicle >= 0 {
 		ids = []int{p.SelectedVehicle}
 	}
-	rows := max(1, int((height-330)/32))
-	p.Scroll = min(p.Scroll, max(0, len(ids)-rows))
-	row := 0
-	for _, id := range ids[p.Scroll:] {
-		if row >= rows {
-			break
-		}
+	const rowHeight = 32
+	rows := max(1, int((height-330)/rowHeight))
+	p.Scroll = min(p.Scroll, float64(max(0, len(ids)-rows)))
+	top := int(y + 230)
+	list := screen.SubImage(image.Rect(int(x), top, int(x+width), top+rows*rowHeight)).(*ebiten.Image)
+	first := int(p.Scroll)
+	for row := first; row < min(len(ids), first+rows+1); row++ {
+		id := ids[row]
 		v := o.Vehicles[id]
 		if v == nil {
 			v = &sim.VehicleOperations{ID: id}
@@ -343,15 +441,22 @@ func (p *OperationsPanel) drawVehicles(screen *ebiten.Image, o *sim.TransitOpera
 		if value, ok := v.AverageKPH(); ok {
 			speed = fmt.Sprintf("%.1f", value)
 		}
+		topSpeed := "—"
+		if v.MaxSpeedKPH > 0 {
+			topSpeed = fmt.Sprint(v.MaxSpeedKPH)
+		}
 		name := operationsVehicleName(id)
 		if v.LineName != "" {
 			name += " · " + v.LineName
 		}
-		fields := []string{name, fmt.Sprint(v.Revenue), fmt.Sprintf("%d / %d", v.Boarded, v.Alighted), fmt.Sprint(v.CompletedLaps), speed, fmt.Sprintf("%.3f", v.KM)}
-		for i, value := range fields {
-			operationsText(screen, value, x+cols[i], y+236+float64(row)*32, 13)
+		status := locale.T("运营中", "In service")
+		if v.ServiceEnded {
+			status = locale.T("已结束运营", "Service ended")
 		}
-		row++
+		fields := []string{name, fmt.Sprint(v.Revenue), fmt.Sprintf("%d / %d", v.Boarded, v.Alighted), fmt.Sprint(v.CompletedLaps), speed, topSpeed, fmt.Sprintf("%.3f", v.KM), status}
+		for i, value := range fields {
+			operationsText(list, value, x+cols[i], y+236+(float64(row)-p.Scroll)*rowHeight, 13)
+		}
 	}
 	operationsText(screen, locale.T("均速计入等灯、堵车、靠站；暂停时间不计。中途重置打断的圈次不纳入均速。", "Averages include lights, traffic and dwell; pauses and interrupted laps are excluded."), x+24, y+height-86, 12)
 	operationsText(screen, locale.T("换地图或重新规划线路后重新统计；收入仅统计车费，不包含罚款。", "Statistics restart on map or route changes. Revenue is fares, excluding fines."), x+24, y+height-58, 12)

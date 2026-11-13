@@ -192,7 +192,7 @@ func (tm *TrafficManager) resolveDeadlocksOracle(dt float64, bus *sim.Bus, activ
 		car := tm.Cars[i]
 
 		// 1. Moving vehicles are never deadlocked
-		if math.Abs(car.Speed) >= 3.0 {
+		if math.Abs(car.Speed) >= 3.0 || (!car.IsBraking && car.Speed > .5) {
 			car.DeadlockTimer = 0
 			continue
 		}
@@ -249,7 +249,7 @@ func (tm *TrafficManager) resolveDeadlocksOracle(dt float64, bus *sim.Bus, activ
 				}
 				dist := car.Pos.Distance(other.Pos)
 				maxJamDist := (car.Length+other.Length)*0.5 + 35.0
-				if dist < maxJamDist {
+				if dist < maxJamDist && carDeadlockCorridor(car, other) {
 					toOther := other.Pos.Sub(car.Pos)
 					cosH := math.Cos(car.Heading)
 					sinH := math.Sin(car.Heading)

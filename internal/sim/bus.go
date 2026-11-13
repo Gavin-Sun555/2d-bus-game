@@ -75,6 +75,9 @@ const (
 
 // Bus represents our driveable city bus
 type Bus struct {
+	HeadlightsOn            bool                     `json:",omitempty"`
+	CatalogID               string                   `json:",omitempty"`
+	OwnedVehicleID          int                      `json:",omitempty"`
 	RoundaboutAdmissionHold *RoundaboutAdmissionHold `json:",omitempty"`
 	envelopeCache           busEnvelopeCache
 	predictionCache         *busPredictionCache
@@ -114,11 +117,14 @@ type Bus struct {
 	SteerReturnSpd float64 // radians/s
 
 	// State
-	IsBraking     bool
-	IsHandbraking bool
-	IsReversing   bool
-	DoorsOpen     bool
-	DoorProgress  float64 // 0.0 (closed) to 1.0 (open)
+	IsBraking         bool
+	IsHandbraking     bool
+	IsReversing       bool
+	DoorsOpen         bool
+	DoorProgress      float64 // 0.0 (closed) to 1.0 (open)
+	turnSignal        turnSignal
+	turnSignalHeading float64
+	nextLaneSignal    int
 
 	// Passenger capacity
 	PassengerService PassengerService

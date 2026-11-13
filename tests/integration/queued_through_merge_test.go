@@ -93,9 +93,14 @@ func TestQueuedThroughMergeWithActualYieldingTraffic(t *testing.T) {
 								t.Fatalf("contact tick%d bus%v car%v", tick, b.Pos, c.Pos)
 							}
 						}
+						// Merged once the yawed body is inside the through lane, or once it
+						// is centered there and nearly aligned. A bus stopping behind the red
+						// queue may keep a few degrees of yaw; the queue only releases after
+						// this, so a sub-pixel corner overlap must not count as a stall.
 						yaw := sim.NormalizeAngle(b.Heading - h)
 						halfWidth := 48*math.Abs(math.Sin(yaw)) + 18*math.Abs(math.Cos(yaw))
-						if math.Abs(b.Pos.Dot(r)-1.5*lw)+halfWidth <= lw/2-.25 && math.Cos(yaw) > .95 {
+						lateral := math.Abs(b.Pos.Dot(r) - 1.5*lw)
+						if (lateral+halfWidth <= lw/2-.25 && math.Cos(yaw) > .95) || (lateral+18 <= lw/2-.25 && math.Abs(yaw) < .1) {
 							merged = true
 						}
 						if it.Phase == red && b.Pos.Dot(u)+math.Abs(math.Cos(b.Heading-h))*48+math.Abs(math.Sin(b.Heading-h))*18 > -line {

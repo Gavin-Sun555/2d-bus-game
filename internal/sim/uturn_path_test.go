@@ -51,3 +51,19 @@ func TestUTurnPathIsDrivableAndContained(t *testing.T) {
 		}
 	}
 }
+
+func TestWideJunctionUTurnUsesNearHalf(t *testing.T) {
+	const lw = 52
+	g := NewJunctionGeometry(4*lw, 4*lw, lw)
+	for _, offsets := range [][2]float64{{lw / 2, 2.5 * lw}, {3.5 * lw, 3.5 * lw}} {
+		path := UTurnPath(Vec2{}, 0, offsets[0], offsets[1], g)
+		for _, point := range path {
+			if point.X > 1 {
+				t.Fatalf("U-turn %v enters far half: %v", offsets, point)
+			}
+		}
+		if path[49].Y < -3.5*lw+10 || math.Abs(path[len(path)-1].Y+offsets[1]) > .01 {
+			t.Fatalf("U-turn %v misses inner receiving lane or final lane: %v to %v", offsets, path[49], path[len(path)-1])
+		}
+	}
+}

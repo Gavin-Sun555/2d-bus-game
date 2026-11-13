@@ -24,17 +24,21 @@ func DrawBus(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 	drawBusBody(screen, cam, b.Pos.Add(shadowOffset), b.Heading, b.Length, b.Width,
 		sim.RGBA(15, 20, 25, 90), false)
 
-	drawBusTrailer(b, screen, cam, sim.RGBA(14, 165, 233, 255))
+	bodyColor := sim.RGBA(14, 165, 233, 255)
+	if spec, ok := sim.FindVehicleSpec(b.CatalogID); ok {
+		bodyColor = sim.RGBA(spec.Color[0], spec.Color[1], spec.Color[2], 255)
+	}
+	drawBusTrailer(b, screen, cam, bodyColor)
 
 	// 3. Draw Steerable Front Wheels
 	drawBusWheels(b, screen, cam)
 
 	// 4. Draw Main Bus Body
 	// Modern Transit Livery: Teal / Turquoise Metallic Body (#0ea5e9 / #0284c7)
-	bodyColor := sim.RGBA(14, 165, 233, 255)
 	drawBusBody(screen, cam, b.Pos, b.Heading, b.Length, b.Width, bodyColor, true)
 
 	// 5. Draw Roof Details, Windows & Air Conditioner Unit
+	drawCatalogLivery(b, screen, cam)
 	drawBusRoof(b, screen, cam)
 	drawBusModelDetails(b, screen, cam)
 
@@ -87,33 +91,50 @@ func drawBusWheels(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 }
 
 func drawBusRoof(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
-	sinH, cosH := math.Sincos(b.Heading)
-
-	// Dark glass roof panel
-	roofPos := b.Pos.Add(sim.Vec2{X: -cosH * 2, Y: -sinH * 2})
-	drawRotatedBox(screen, cam, roofPos, cosH, sinH, b.Length-24, b.Width-10, sim.RGBA(15, 23, 42, 230))
-
-	// Front Windshield (curved gradient glass look)
-	windshieldPos := b.Pos.Add(sim.Vec2{X: cosH * (b.Length/2 - 12), Y: sinH * (b.Length/2 - 12)})
-	drawRotatedBox(screen, cam, windshieldPos, cosH, sinH, 12, b.Width-8, sim.RGBA(56, 189, 248, 220))
-
-	// AC Unit / Roof Ventilation pods
-	acOffset := -16.0
-	if b.Model == sim.BusArticulated {
-		acOffset = 20
+	drawBusRoofPanel(b, screen, cam, true)
+}
+func drawBusRoofPanel(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera, cab bool) {
+	u := sim.UnitFromAngle(b.Heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	body := sim.RGBA(14, 165, 233, 255)
+	if s, ok := sim.FindVehicleSpec(b.CatalogID); ok {
+		body = sim.RGBA(s.Color[0], s.Color[1], s.Color[2], 255)
 	}
-	acPos := b.Pos.Add(sim.Vec2{X: cosH * acOffset, Y: sinH * acOffset})
-	drawRotatedBox(screen, cam, acPos, cosH, sinH, 24, 18, sim.RGBA(241, 245, 249, 255))
-	// AC vents lines
-	ventColor := sim.RGBA(148, 163, 184, 255)
-	for i := -8; i <= 8; i += 4 {
-		p := acPos.Add(sim.Vec2{X: cosH * float64(i), Y: sinH * float64(i)})
-		drawRotatedBox(screen, cam, p, cosH, sinH, 2, 14, ventColor)
+	// Pale roof, inset window bands and narrow pillars define the passenger cabin.
+	drawRotatedBox(screen, cam, b.Pos.Sub(u.Mul(4)), u.X, u.Y, b.Length*.70, b.Width*.60, tint(body, rgb(230, 237, 240), .82))
+	for _, side := range []float64{-1, 1} {
+		for i := 0; i < 5; i++ {
+			p := b.Pos.Add(u.Mul(-b.Length*.34 + float64(i)*b.Length*.135)).Add(r.Mul(side * (b.Width/2 - 4)))
+			drawRotatedBox(screen, cam, p, u.X, u.Y, b.Length*.115, 4, rgb(25, 49, 65))
+		}
 	}
-
-	// Bus Number/Route display on front forehead
-	destPos := b.Pos.Add(sim.Vec2{X: cosH * (b.Length/2 - 5), Y: sinH * (b.Length/2 - 5)})
-	drawRotatedBox(screen, cam, destPos, cosH, sinH, 4, 20, sim.RGBA(250, 204, 21, 255)) // Glowing Amber LED banner
+	for _, d := range []float64{-.20, .04} {
+		p := b.Pos.Add(u.Mul(d * b.Length))
+		drawRotatedBox(screen, cam, p, u.X, u.Y, 16, 13, rgb(170, 184, 191))
+		drawRotatedBox(screen, cam, p.Add(sim.Vec2{X: -1, Y: -1}), u.X, u.Y, 14, 11, rgb(226, 232, 235))
+		for vent := -4.; vent <= 4; vent += 2 {
+			drawRotatedBox(screen, cam, p.Add(u.Mul(vent)), u.X, u.Y, .7, 8, rgb(105, 124, 135))
+		}
+	}
+	// Rear engine grille and bumper.
+	for i := -2; i <= 2; i++ {
+		p := b.Pos.Sub(u.Mul(b.Length * .41)).Add(r.Mul(float64(i) * 4))
+		drawRotatedBox(screen, cam, p, u.X, u.Y, 5, 1.1, rgb(58, 74, 84))
+	}
+	drawRotatedBox(screen, cam, b.Pos.Sub(u.Mul(b.Length/2-2)), u.X, u.Y, 2, b.Width-9, rgb(45, 59, 68))
+	if cab {
+		windshield := b.Pos.Add(u.Mul(b.Length * .34))
+		drawRotatedBox(screen, cam, windshield, u.X, u.Y, 12, b.Width-8, rgb(19, 39, 53))
+		drawRotatedBox(screen, cam, windshield.Add(u.Mul(2)).Sub(r.Mul(3)), u.X, u.Y, 3, b.Width-16, sim.RGBA(118, 175, 192, 180))
+		// Wipers and front destination display sit within the windshield.
+		for _, side := range []float64{-1, 1} {
+			p := windshield.Add(r.Mul(side * 6))
+			drawRotatedBox(screen, cam, p, u.X, u.Y, 1.1, 8, rgb(10, 20, 29))
+			mirror := b.Pos.Add(u.Mul(b.Length * .28)).Add(r.Mul(side * (b.Width/2 + 2)))
+			drawRotatedBox(screen, cam, mirror, u.X, u.Y, 7, 3, rgb(38, 48, 57))
+		}
+		drawRotatedBox(screen, cam, b.Pos.Add(u.Mul(b.Length*.43)), u.X, u.Y, 3, b.Width*.47, rgb(236, 181, 70))
+	}
 }
 
 func drawBusLights(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
@@ -129,12 +150,18 @@ func drawBusLights(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 	hlPos := sim.Vec2{X: b.Pos.X + cosH*frontDist - perpX*lightOffset, Y: b.Pos.Y + sinH*frontDist - perpY*lightOffset}
 	hrPos := sim.Vec2{X: b.Pos.X + cosH*frontDist + perpX*lightOffset, Y: b.Pos.Y + sinH*frontDist + perpY*lightOffset}
 
-	drawRotatedBox(screen, cam, hlPos, cosH, sinH, 4, 6, sim.RGBA(254, 240, 138, 255))
-	drawRotatedBox(screen, cam, hrPos, cosH, sinH, 4, 6, sim.RGBA(254, 240, 138, 255))
+	lamp := rgb(109, 132, 145)
+	if b.HeadlightsOn {
+		lamp = rgb(246, 247, 225)
+	}
+	drawRotatedBox(screen, cam, hlPos, cosH, sinH, 3, 5, lamp)
+	drawRotatedBox(screen, cam, hrPos, cosH, sinH, 3, 5, lamp)
 
 	// Headlight Beam cone forward
-	drawBusHeadlightBeam(b, screen, cam, hlPos)
-	drawBusHeadlightBeam(b, screen, cam, hrPos)
+	if b.HeadlightsOn {
+		drawBusHeadlightBeam(b, screen, cam, hlPos)
+		drawBusHeadlightBeam(b, screen, cam, hrPos)
+	}
 
 	if b.IsArticulated() {
 		return
@@ -144,7 +171,10 @@ func drawBusLights(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 	tlPos := sim.Vec2{X: b.Pos.X + cosH*rearDist - perpX*lightOffset, Y: b.Pos.Y + sinH*rearDist - perpY*lightOffset}
 	trPos := sim.Vec2{X: b.Pos.X + cosH*rearDist + perpX*lightOffset, Y: b.Pos.Y + sinH*rearDist + perpY*lightOffset}
 
-	tailColor := sim.RGBA(153, 27, 27, 255) // Dim red
+	tailColor := sim.RGBA(82, 22, 28, 255)
+	if b.HeadlightsOn {
+		tailColor = rgb(153, 27, 27)
+	}
 	if b.IsBraking || b.IsHandbraking {
 		tailColor = sim.RGBA(239, 68, 68, 255) // Bright braking red
 	} else if b.IsReversing {
@@ -156,58 +186,47 @@ func drawBusLights(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 }
 
 func drawBusHeadlightBeam(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera, startPos sim.Vec2) {
-	beamLen := 120.0
-	beamSpread := 24.0
-	sinH, cosH := math.Sincos(b.Heading)
-	perpX := -sinH
-	perpY := cosH
+	drawLightCone(screen, cam, startPos, b.Heading, 110, 23, .10)
+}
 
-	p1 := cam.WorldToScreen(startPos)
-	endCenter := startPos.Add(sim.Vec2{X: cosH * beamLen, Y: sinH * beamLen})
-	p2 := cam.WorldToScreen(endCenter.Add(sim.Vec2{X: perpX * beamSpread, Y: perpY * beamSpread}))
-	p3 := cam.WorldToScreen(endCenter.Sub(sim.Vec2{X: perpX * beamSpread, Y: perpY * beamSpread}))
+// Draw the step well from above. The two glass leaves slide into pockets
+// at either end, revealing the entry as the door opens.
+func drawBusDoor(screen *ebiten.Image, cam *sim.Camera, b *sim.Bus, along float64) {
+	u := sim.UnitFromAngle(b.Heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	sill := b.Pos.Add(u.Mul(along * b.Length)).Add(r.Mul(b.Width/2 - 3.5))
+	progress := sim.Clamp(b.DoorProgress, 0, 1)
+	open := progress * progress * (3 - 2*progress)
+	const halfOpening = 7.5
+	drawRotatedBox(screen, cam, sill, u.X, u.Y, 19, 7, rgb(26, 38, 48))
+	drawRotatedBox(screen, cam, sill, u.X, u.Y, 15, 5.5, rgb(75, 88, 97))
+	drawRotatedBox(screen, cam, sill.Add(r.Mul(2.5)), u.X, u.Y, 15, 1.2, rgb(242, 188, 69))
 
-	// Soft semi-transparent light cone
-	beamColor := sim.RGBA(254, 240, 138, 25)
-	filledCircle(screen, float32(p1.X), float32(p1.Y), float32(6*cam.Zoom), sim.RGBA(254, 240, 138, 80), true)
-
-	// Draw lines for beam cone edges
-	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p2.X), float32(p2.Y), float32(1.5*cam.Zoom), beamColor, true)
-	strokeLine(screen, float32(p1.X), float32(p1.Y), float32(p3.X), float32(p3.Y), float32(1.5*cam.Zoom), beamColor, true)
+	leaf := halfOpening * (1 - open)
+	if leaf < .3 {
+		return
+	}
+	for _, side := range []float64{-1, 1} {
+		center := sill.Add(u.Mul(side * (halfOpening - leaf/2)))
+		drawRotatedBox(screen, cam, center, u.X, u.Y, leaf, 6, rgb(17, 31, 43))
+		if leaf > 1.2 {
+			drawRotatedBox(screen, cam, center, u.X, u.Y, leaf-1.1, 4, rgb(87, 139, 159))
+		}
+	}
 }
 
 func drawBusDoors(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
-	// Doors are on the passenger side (Right side: +perp)
-	sinH, cosH := math.Sincos(b.Heading)
-	perpX := -sinH
-	perpY := cosH
-
-	doorOffset := b.Width/2 - 1
-	// Front door & Middle door
-	fDoorPos := sim.Vec2{X: b.Pos.X + cosH*24 + perpX*doorOffset, Y: b.Pos.Y + sinH*24 + perpY*doorOffset}
-	mDoorPos := sim.Vec2{X: b.Pos.X - cosH*10 + perpX*doorOffset, Y: b.Pos.Y - sinH*10 + perpY*doorOffset}
-
-	doorColor := sim.RGBA(15, 23, 42, 255)
-	if b.DoorProgress > 0.1 {
-		// Open door indicator glow
-		doorColor = sim.RGBA(34, 197, 94, uint8(b.DoorProgress*255))
-	}
-
-	drawRotatedBox(screen, cam, fDoorPos, cosH, sinH, 14, 3, doorColor)
-	drawRotatedBox(screen, cam, mDoorPos, cosH, sinH, 14, 3, doorColor)
+	drawBusDoor(screen, cam, b, .26)
+	drawBusDoor(screen, cam, b, -.13)
 }
 
 func drawBusBody(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, heading, length, width float64, c color.RGBA, rounded bool) {
-	sinH, cosH := math.Sincos(heading)
-	drawRotatedBox(screen, cam, center, cosH, sinH, length, width, c)
-
-	if rounded {
-		// Front aerodynamic bumper
-		frontCenter := center.Add(sim.Vec2{X: cosH * (length/2 - 2), Y: sinH * (length/2 - 2)})
-		sc := cam.WorldToScreen(frontCenter)
-		radius := float32((width / 2) * cam.Zoom)
-		filledCircle(screen, float32(sc.X), float32(sc.Y), radius, c, true)
+	if !rounded {
+		u := sim.UnitFromAngle(heading)
+		drawRotatedBox(screen, cam, center, u.X, u.Y, length, width, c)
+		return
 	}
+	drawVehicleShell(screen, cam, center, heading, length, width, c, math.Min(7, width*.22), 3)
 }
 
 func drawRotatedBox(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, cosH, sinH, len, wid float64, c color.RGBA) {
@@ -265,7 +284,7 @@ var (
 )
 
 // Model details share the existing collision envelope. The articulated variant
-// has a visible bellows; independently simulated trailer motion is not enabled.
+// has visible bellows connecting its independently tracked trailer.
 func drawBusModelDetails(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera) {
 	u := sim.UnitFromAngle(b.Heading)
 	r := sim.Vec2{X: -u.Y, Y: u.X}
@@ -308,9 +327,12 @@ func drawBusTrailer(b *sim.Bus, screen *ebiten.Image, cam *sim.Camera, livery co
 		drawRotatedBox(screen, cam, axle.Add(r.Mul(side*(b.Width/2-2))), u.X, u.Y, 18, 7, sim.RGBA(30, 32, 38, 255))
 	}
 	drawBusBody(screen, cam, tail.Center, tail.Heading, b.Length, b.Width, livery, true)
-	drawBusRoof(&copy, screen, cam)
-	drawBusDoors(&copy, screen, cam)
-	brake := sim.RGBA(153, 27, 27, 255)
+	drawBusRoofPanel(&copy, screen, cam, false)
+	drawBusDoor(screen, cam, &copy, -.10)
+	brake := rgb(82, 22, 28)
+	if b.HeadlightsOn {
+		brake = rgb(153, 27, 27)
+	}
 	if b.IsBraking || b.IsHandbraking {
 		brake = sim.RGBA(239, 68, 68, 255)
 	}

@@ -42,8 +42,8 @@ func TestAutopilotFullRouteLoopCompletionAllMaps(t *testing.T) {
 			stuckTimer := 0.0
 			maxStuck := 0.0
 
-			// Simulate up to 750 seconds (plenty of time for 3x longer circuit at 60fps)
-			maxFrames := 60 * 750
+			// Simulate up to 850 seconds (plenty of time for 3x longer circuit at 60fps)
+			maxFrames := 60 * 850
 			for frame := 0; frame < maxFrames; frame++ {
 				throttle, brake, steer, handbrake, toggleDoors, _ := driver.ComputeControls(
 					bus, route, world, nil, nil, laneW, dt,

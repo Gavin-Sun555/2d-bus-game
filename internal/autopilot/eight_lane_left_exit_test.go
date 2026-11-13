@@ -14,10 +14,9 @@ func wideLeftExitWorld(lw, heading float64, reserved bool) (*sim.World, sim.Vec2
 	out := right.Mul(-1)
 	rotate := func(p sim.Vec2) sim.Vec2 { return in.Mul(p.X).Add(right.Mul(p.Y)) }
 	typ := sim.RoadBoulevard8Lane
-	offset := 2.5 * lw
+	offset := 3.5 * lw
 	if reserved {
 		typ = sim.RoadBusBoulevard8Lane
-		offset = 3.5 * lw
 	}
 	w := &sim.World{Roads: []sim.RoadSegment{
 		{P1: rotate(sim.Vec2{X: -3000}), P2: rotate(sim.Vec2{X: 3000}), Lanes: 8, Type: typ},
@@ -158,7 +157,7 @@ func TestEightLaneParallelLeftWithThreeCurbBuses(t *testing.T) {
 						if i == 0 {
 							offset = .5 * lw
 							if choose {
-								offset = 3.5 * lw
+								// Retain an already selected inner lane; do not migrate out of the curb queue.
 								distance = line + 600
 							}
 						}
@@ -362,5 +361,30 @@ func TestCurbRecenteringKeepsActualBlockedBodyStopped(t *testing.T) {
 	}
 	if bus.Pos.Sub(pos).Dot(in) > 12 {
 		t.Fatalf("advanced into blocked merge: %v", bus.Pos)
+	}
+}
+
+func TestOrdinaryEightLaneBusCruisesInCurbLane(t *testing.T) {
+	const lw = 52.
+	w, _, _, _ := wideLeftExitWorld(lw, 0, false)
+	w.Stops[1] = sim.NewBusStop(1, "to", sim.Vec2{X: 2200}, 0, 8, sim.RGBA(0, 0, 0, 255), lw)
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	tls.Intersections[0].Phase = sim.PhaseEWGreen
+	for _, berserk := range []bool{false, true} {
+		b := sim.NewBus(-1200, 3.5*lw, 0)
+		ad := NewAutopilotDriver()
+		ad.BerserkMode = berserk
+		route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+		for tick := 0; tick < 1200 && b.Pos.X < 750; tick++ {
+			th, br, steer, hb, doors, _ := ad.ComputeControls(b, route, w, tls, nil, lw, 1./60)
+			b.Update(1./60, th, br, steer, hb, doors)
+			if math.Abs(b.Pos.Y-3.5*lw) > 5 {
+				t.Fatalf("berserk=%v: bus left curb lane during straight trip: %v", berserk, b.Pos)
+			}
+		}
+		if b.Pos.X < 750 {
+			t.Fatalf("berserk=%v: bus did not cross the junction: %v", berserk, b.Pos)
+		}
 	}
 }

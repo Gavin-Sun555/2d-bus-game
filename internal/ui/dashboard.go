@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strings"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -32,8 +33,9 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	screenH := screen.Bounds().Dy()
 
 	// Bottom-left Speedometer & Telemetry
+	const dashWidth, dashHeight = 350, 108
 	dashX := 24.0
-	dashY := float64(screenH - 100)
+	dashY := float64(screenH - dashHeight - 20)
 
 	// Approaching intersection traffic signal status banner
 	if tls != nil {
@@ -43,7 +45,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		}
 		hasInter, thruSig, leftSig, isMajor, remainingSec, dist := tls.GetApproachingSignalInfo(bus.Pos, bus.Heading, lw)
 		if hasInter && dist < 240.0 {
-			sigBoxW := float32(350.0) // Align cleanly with 350px speedometer dashboard below
+			sigBoxW := float32(dashWidth)
 			sigBoxH := float32(38.0)
 			sigBoxY := dashY - float64(sigBoxH) - 8.0 // 8px breathing space above dashboard
 			sigYF32 := float32(sigBoxY)
@@ -181,8 +183,8 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	}
 
 	// Dark round cluster background
-	vector.DrawFilledRect(screen, float32(dashX), float32(dashY), 350, 80, sim.RGBA(15, 23, 42, 230), true)
-	vector.StrokeRect(screen, float32(dashX), float32(dashY), 350, 80, 1.5, sim.RGBA(51, 65, 85, 255), true)
+	vector.DrawFilledRect(screen, float32(dashX), float32(dashY), dashWidth, dashHeight, sim.RGBA(15, 23, 42, 255), true)
+	vector.StrokeRect(screen, float32(dashX), float32(dashY), dashWidth, dashHeight, 1.5, sim.RGBA(51, 65, 85, 255), true)
 
 	// Speed calculation (convert px/s to intuitive km/h)
 	speedKmh := int(math.Abs(bus.Speed) * 0.18)
@@ -198,11 +200,11 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	} else if barRatio > 0.45 {
 		barColor = sim.RGBA(234, 179, 8, 255)
 	}
-	vector.DrawFilledRect(screen, float32(dashX+14), float32(dashY+48), float32(80*barRatio), 7, barColor, true)
-	vector.StrokeRect(screen, float32(dashX+14), float32(dashY+48), 80, 7, 1, sim.RGBA(100, 116, 139, 200), true)
+	vector.DrawFilledRect(screen, float32(dashX+14), float32(dashY+41), float32(80*barRatio), 7, barColor, true)
+	vector.StrokeRect(screen, float32(dashX+14), float32(dashY+41), 80, 7, 1, sim.RGBA(100, 116, 139, 200), true)
 
 	// Vertical cluster divider
-	vector.StrokeLine(screen, float32(dashX+104), float32(dashY+8), float32(dashX+104), float32(dashY+72), 1, sim.RGBA(51, 65, 85, 200), true)
+	vector.StrokeLine(screen, float32(dashX+104), float32(dashY+8), float32(dashX+104), float32(dashY+51), 1, sim.RGBA(51, 65, 85, 200), true)
 
 	// Interactive Gear Selector Badges: [ R ] [ N ] [ D ]
 	btnW := 24.0
@@ -245,11 +247,14 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		textui.DrawText(screen, "D", h.GearDBounds.X+7, h.GearDBounds.Y+4, 12, sim.RGBA(148, 163, 184, 255))
 	}
 
-	// Status text next to gear buttons
-	statusStr := bus.Gear.Name()
+	// Put driving status on the telemetry row, clear of the autopilot badge.
+	statusStr := locale.T(bus.Gear.Name(), bus.Gear.String())
 	statusCol := sim.RGBA(74, 222, 128, 255)
 	if bus.DoorsOpen {
-		statusStr = locale.T("【开门P】", "[DOOR P]")
+		statusStr = locale.T("[E] 关门", "[E] Close doors")
+		if bus.PassengerServiceRemaining() > 0 {
+			statusStr = locale.T("上下客中", "Boarding")
+		}
 		statusCol = sim.RGBA(250, 204, 21, 255)
 	} else if bus.IsHandbraking {
 		statusStr = locale.T("【!手刹!】", "[!PARK!]")
@@ -262,47 +267,35 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 	} else if bus.Gear == sim.GearNeutral {
 		statusCol = sim.RGBA(250, 204, 21, 255)
 	}
-	textui.DrawText(screen, statusStr, dashX+200, dashY+16, 11, statusCol)
+	drawHUDText(screen, statusStr, sim.Rect{X: dashX + 243, Y: dashY + 35, W: 104, H: 18}, 10, statusCol)
 
-	// Interactive AI Autopilot Badge: [⚡ 狂暴80(P)] / [🤖 AI巡航(P)] / [🤖 手动(P)]
-	apW := 96.0
-	apH := 20.0
-	h.AutopilotBounds = sim.Rect{X: dashX + 246, Y: dashY + 12, W: apW, H: apH}
-	if settings != nil && settings.AutopilotEnabled {
-		if settings.AutopilotBerserk {
-			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), sim.RGBA(234, 88, 12, 240), true)
-			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, sim.RGBA(253, 186, 116, 255), true)
-			if h.cachedBerserkSpeed != settings.AutopilotBerserkMaxSpeed {
-				h.cachedBerserkSpeed = settings.AutopilotBerserkMaxSpeed
-				h.cachedBskText = fmt.Sprintf(locale.T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), h.cachedBerserkSpeed)
-				h.cachedManText = fmt.Sprintf(locale.T("👤 手动%d(P)", "👤 Man%d(P)"), h.cachedBerserkSpeed)
-			}
-			textui.DrawText(screen, h.cachedBskText, h.AutopilotBounds.X+6, h.AutopilotBounds.Y+4, 11, color.White)
-		} else {
-			vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), sim.RGBA(6, 182, 212, 235), true)
-			vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.5, sim.RGBA(165, 243, 252, 255), true)
-			textui.DrawText(screen, locale.T("🤖 AI巡航(P)", "🤖 Autopilot(P)"), h.AutopilotBounds.X+8, h.AutopilotBounds.Y+4, 11, sim.RGBA(15, 23, 42, 255))
+	// The shortcut row explains P. The badge can focus on the current mode.
+	h.AutopilotBounds = sim.Rect{X: dashX + 230, Y: dashY + 12, W: 112, H: 20}
+	apText := locale.T("手动驾驶", "Manual")
+	apBg := sim.RGBA(30, 41, 59, 255)
+	apBorder := sim.RGBA(100, 116, 139, 255)
+	apTextColor := sim.RGBA(226, 232, 240, 255)
+	if settings != nil {
+		limit := strings.TrimSpace(speedToString(settings.AutopilotBerserkMaxSpeed))
+		switch {
+		case settings.AutopilotEnabled && settings.AutopilotBerserk:
+			apText = locale.T("狂暴", "Berserk") + " · " + limit
+			apBg = sim.RGBA(154, 52, 18, 255)
+			apBorder = sim.RGBA(253, 186, 116, 255)
+		case settings.AutopilotEnabled:
+			apText = locale.T("AI 巡航", "AI cruise")
+			apBg = sim.RGBA(21, 94, 117, 255)
+			apBorder = sim.RGBA(165, 243, 252, 255)
+		default:
+			apText += " · " + limit
 		}
-	} else {
-		vector.DrawFilledRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), sim.RGBA(30, 41, 59, 200), true)
-		vector.StrokeRect(screen, float32(h.AutopilotBounds.X), float32(h.AutopilotBounds.Y), float32(apW), float32(apH), 1.0, sim.RGBA(100, 116, 139, 180), true)
-		manText := locale.T("👤 手动(P)", "👤 Manual(P)")
-		if settings != nil {
-			if h.cachedBerserkSpeed != settings.AutopilotBerserkMaxSpeed {
-				h.cachedBerserkSpeed = settings.AutopilotBerserkMaxSpeed
-				h.cachedBskText = fmt.Sprintf(locale.T("⚡ 狂暴%d(P)", "⚡ BSK%d(P)"), h.cachedBerserkSpeed)
-				h.cachedManText = fmt.Sprintf(locale.T("👤 手动%d(P)", "👤 Man%d(P)"), h.cachedBerserkSpeed)
-			}
-			manText = h.cachedManText
-		}
-		textui.DrawText(screen, manText, h.AutopilotBounds.X+8, h.AutopilotBounds.Y+4, 11, sim.RGBA(148, 163, 184, 255))
 	}
+	ap := h.AutopilotBounds
+	vector.DrawFilledRect(screen, float32(ap.X), float32(ap.Y), float32(ap.W), float32(ap.H), apBg, true)
+	vector.StrokeRect(screen, float32(ap.X), float32(ap.Y), float32(ap.W), float32(ap.H), 1.5, apBorder, true)
+	drawHUDText(screen, apText, ap, 11, apTextColor)
 
-	// Gear shortcut prompt row
-	textui.DrawText(screen, locale.T("换挡: [Shift/Ctrl]升降 [R/N/G]切挡 [P]AI [B]狂暴 [Shift+B]切速", "Shift: [Shift/Ctrl] [R/N/G] [P]AI [B]Berserk [Shift+B]Speed"), dashX+70, dashY+38, 10, sim.RGBA(148, 163, 184, 220))
-
-	// Health and Steering info row
-	textui.DrawText(screen, locale.T("[H]长鸣 [F8]静音", "[H]Hold [F8]Mute"), dashX+12, dashY+60, 9, sim.RGBA(148, 163, 184, 220))
+	// Health and steering telemetry.
 	durCol := sim.RGBA(34, 197, 94, 255)
 	if bus.Durability < 35 {
 		durCol = sim.RGBA(239, 68, 68, 255)
@@ -314,21 +307,26 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		h.cachedDurability = durInt
 		h.cachedDurStr = locale.Tf("车况:%d%%", "Health:%d%%", durInt)
 	}
-	textui.DrawText(screen, h.cachedDurStr, dashX+114, dashY+58, 10, durCol)
+	textui.DrawText(screen, h.cachedDurStr, dashX+114, dashY+39, 10, durCol)
 
 	if bus.OnShoulder {
-		vector.DrawFilledRect(screen, float32(dashX+182), float32(dashY+54), 126, 18, sim.RGBA(234, 179, 8, 220), true)
-		textui.DrawText(screen, locale.T("[ 路肩缓冲减速 ]", "[ Shoulder Slow ]"), dashX+190, dashY+57, 10, sim.RGBA(15, 23, 42, 255))
+		textui.DrawText(screen, locale.T("路肩减速", "Shoulder slow"), dashX+181, dashY+39, 10, sim.RGBA(250, 204, 21, 255))
 	} else {
 		steerDeg := int(bus.SteeringAngle * 180 / math.Pi)
 		if steerDeg != h.cachedSteerDeg {
 			h.cachedSteerDeg = steerDeg
 			h.cachedSteerStr = locale.Tf("转向: %d°", "Steer: %d°", steerDeg)
 		}
-		textui.DrawText(screen, h.cachedSteerStr, dashX+182, dashY+58, 10, sim.RGBA(203, 213, 225, 255))
+		textui.DrawText(screen, h.cachedSteerStr, dashX+181, dashY+39, 10, sim.RGBA(203, 213, 225, 255))
 		steerRatio := bus.SteeringAngle / bus.MaxSteerAngle
-		vector.StrokeLine(screen, float32(dashX+240), float32(dashY+63), float32(dashX+240+steerRatio*20), float32(dashY+63), 2.0, sim.RGBA(56, 189, 248, 255), true)
+		vector.StrokeLine(screen, float32(dashX+239), float32(dashY+44), float32(dashX+239+steerRatio*10), float32(dashY+44), 2.0, sim.RGBA(56, 189, 248, 255), true)
 	}
+
+	vector.StrokeLine(screen, float32(dashX+12), float32(dashY+57), float32(dashX+dashWidth-12), float32(dashY+57), 1, sim.RGBA(51, 65, 85, 255), true)
+	drawHUDText(screen, locale.T("[P] AI 驾驶   [B] 狂暴模式   [Shift+B] 切换限速", "[P] Autopilot   [B] Berserk   [Shift+B] Speed limit"),
+		sim.Rect{X: dashX + 4, Y: dashY + 62, W: dashWidth - 8, H: 19}, 11, sim.RGBA(186, 230, 253, 255))
+	drawHUDText(screen, locale.T("[Shift/Ctrl] 升降挡   [R/N/G] 选挡   [H] 鸣笛   [F8] 静音", "[Shift/Ctrl] Shift   [R/N/G] Select   [H] Horn   [F8] Mute"),
+		sim.Rect{X: dashX + 4, Y: dashY + 84, W: dashWidth - 8, H: 17}, 10, sim.RGBA(203, 213, 225, 255))
 
 	// Prompt Banners at Bottom Center
 	if activeStop != nil {
@@ -346,7 +344,7 @@ func (h *HUD) drawDriveDashboard(screen *ebiten.Image, bus *sim.Bus, activeStop 
 		if bus.DoorsOpen {
 			promptText = locale.T("上下客完成! 按 [E] 关门准备发车 >>", "Boarding complete! Press [E] to close doors >>")
 			if remaining := bus.PassengerServiceRemaining(); remaining > 0 {
-			promptText = locale.Tf("上下客中，还需约 %.0f 秒，暂不能关门", "Passenger exchange: %.0f s left; keep doors open", math.Ceil(remaining))
+				promptText = locale.Tf("上下客中，还需约 %.0f 秒，暂不能关门", "Passenger exchange: %.0f s left; keep doors open", math.Ceil(remaining))
 			}
 		}
 		textui.DrawText(screen, promptText, promptX+20, promptY+15, 13, sim.RGBA(250, 204, 21, 255))

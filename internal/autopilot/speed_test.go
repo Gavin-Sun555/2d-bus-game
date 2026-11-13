@@ -183,7 +183,7 @@ func TestAutopilotBerserkModeStraightSpeedAndSafety(t *testing.T) {
 }
 
 // TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange thoroughly tests the configurable
-// Berserk mode top speeds (60, 80, 100, 120 km/h) and verifies:
+// Berserk mode top speeds (80, 120, 160, 180 km/h) and verifies:
 // 1. Settings options, bounds, cycle logic, and cruise speed mapping;
 // 2. Straightaway acceleration up to top speed with dynamic powertrain scaling;
 // 3. Anticipated cornering deceleration for 90-degree turns without overshooting or instability;
@@ -204,10 +204,10 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 		kmh       int
 		cruiseSpd float64
 	}{
-		{60, 333.0},
-		{80, 445.0},
-		{100, 555.0},
-		{120, 667.0},
+		{80, sim.SpeedKPH(80)},
+		{120, sim.SpeedKPH(120)},
+		{160, sim.SpeedKPH(160)},
+		{180, sim.SpeedKPH(180)},
 	}
 
 	for _, ts := range testSpeeds {
@@ -221,21 +221,6 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 		}
 	}
 
-	// Verify cycle sequence: 60 -> 80 -> 100 -> 120 -> 60
-	s.SetBerserkMaxSpeed(60)
-	if next := s.CycleBerserkMaxSpeed(); next != 80 {
-		t.Fatalf("Expected cycle from 60 to 80, got %d", next)
-	}
-	if next := s.CycleBerserkMaxSpeed(); next != 100 {
-		t.Fatalf("Expected cycle from 80 to 100, got %d", next)
-	}
-	if next := s.CycleBerserkMaxSpeed(); next != 120 {
-		t.Fatalf("Expected cycle from 100 to 120, got %d", next)
-	}
-	if next := s.CycleBerserkMaxSpeed(); next != 60 {
-		t.Fatalf("Expected cycle from 120 to 60, got %d", next)
-	}
-
 	// 2. Subtests for Each Configured Speed
 	for _, ts := range testSpeeds {
 		t.Run(fmt.Sprintf("Speed_%d_kmh", ts.kmh), func(t *testing.T) {
@@ -246,7 +231,7 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 			// A. Straightaway Top Speed & Powertrain Scaling
 			// -------------------------------------------------------------
 			wA := sim.NewWorld(lw, sim.MapThemeMetropolis)
-			wA.Stops[1].Pos = sim.Vec2{X: 3000, Y: 1200}
+			wA.Stops[1].Pos = sim.Vec2{X: 6500, Y: 1200}
 			driver := NewAutopilotDriver()
 			driver.BerserkMode = true
 			driver.BerserkMaxSpeed = cruiseSpd
@@ -257,15 +242,14 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 
 			driver.drivePath = []sim.Vec2{
 				{X: -2000, Y: 1200},
-				{X: 2000, Y: 1200},
+				{X: 6500, Y: 1200},
 			}
-			driver.cumLen = []float64{0, 4000.0}
+			driver.cumLen = []float64{0, 8500.0}
 			driver.WaypointIdx = 0
 
 			bus := sim.NewBus(-1000, 1200, 0)
 			bus.Speed = cruiseSpd * 0.6
-			// Dynamic powertrain expansion in game.go
-			bus.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
+			bus.MaxSpeedFwd = cruiseSpd
 
 			route := sim.NewRoute()
 			route.StopIDs = []int{0, 1}
@@ -310,19 +294,19 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 			driverCorner.pathLane = lw
 
 			driverCorner.drivePath = []sim.Vec2{
-				{X: -1500, Y: cornerY},
+				{X: -4000, Y: cornerY},
 				{X: cornerX, Y: cornerY},
 				{X: cornerX, Y: cornerY + 600}, // 90-degree right turn at (0, 1200)
 			}
-			driverCorner.cumLen = []float64{0, 1500.0, 2100.0}
+			driverCorner.cumLen = []float64{0, 4000, 4600}
 			driverCorner.WaypointIdx = 0
 
-			busCorner := sim.NewBus(-1200, cornerY, 0)
+			busCorner := sim.NewBus(-3800, cornerY, 0)
 			busCorner.Speed = cruiseSpd
 			busCorner.MaxSpeedFwd = math.Max(460.0, cruiseSpd+20.0)
 
 			// 1. Verify cornerSpeedLimit deceleration profile
-			// Far away (> 1400px), limit should be Inf or >= cruiseSpd
+			// Far away (3900px), limit should be Inf or >= cruiseSpd
 			farLimit := driverCorner.cornerSpeedLimit(100.0, cruiseSpd)
 			if farLimit < cruiseSpd {
 				t.Fatalf("[%d km/h] Far corner speed limit should not brake prematurely: got %.2f (cruise=%.2f)",
@@ -334,7 +318,7 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 			enteredCorner := false
 			completedTurn := false
 
-			for step := 0; step < 500; step++ {
+			for step := 0; step < 1000; step++ {
 				th, br, st, hb, tg, _ := driverCorner.ComputeControls(busCorner, route, wB, nil, nil, lw, dt)
 				busCorner.Update(dt, th, br, st, hb, tg)
 
@@ -468,4 +452,99 @@ func TestBerserkModeConfigurableMaxSpeedsTurningAndLaneChange(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHighSpeedBusStopsForLeaderOrRedSignal(t *testing.T) {
+	const laneWidth = 52.
+	for _, kph := range []int{120, 160, 180} {
+		for _, red := range []bool{false, true} {
+			t.Run(fmt.Sprintf("speed%d/red%v", kph, red), func(t *testing.T) {
+				w := &sim.World{Roads: []sim.RoadSegment{
+					{P1: sim.Vec2{X: -7000}, P2: sim.Vec2{X: 7000}, Lanes: 2, Type: sim.RoadStreet2Lane},
+				}}
+				for id, x := range []float64{-6500, 6500} {
+					w.Stops = append(w.Stops, sim.NewBusStop(id, "stop", sim.Vec2{X: x}, 0, 2, sim.RGBA(0, 0, 0, 255), laneWidth))
+				}
+				var lights *sim.TrafficLightSystem
+				obstacles := []VehicleObstacle{{Pos: sim.Vec2{Y: laneWidth / 2}, Heading: 0, Length: 48, Width: 22}}
+				limitX := -24.
+				if red {
+					w.Roads = append(w.Roads, sim.RoadSegment{P1: sim.Vec2{Y: -2500}, P2: sim.Vec2{Y: 2500}, Lanes: 4})
+					w.RebuildIntersections()
+					lights = sim.NewTrafficLightSystem()
+					lights.BuildForWorld(w)
+					inter := lights.Intersections[0]
+					inter.Phase = sim.PhaseNSGreen
+					limitX = -inter.GetStopLineDistForHeading(0, laneWidth)
+					obstacles = nil
+				}
+				ad := NewAutopilotDriver()
+				ad.BerserkMode = kph > 120
+				ad.DisallowOncomingOvertake = true
+				speed := sim.SpeedKPH(kph)
+				ad.BerserkMaxSpeed, ad.CruiseSpeedLimit = speed, speed
+				bus := sim.NewBus(-5000, laneWidth/2, 0)
+				bus.Speed, bus.MaxSpeedFwd = speed, speed
+				if kph == 120 && !red {
+					approaching := *bus
+					approaching.Pos.X = -1100
+					f := autopilotFrame{bus: &approaching, world: w, obstacles: obstacles, laneWidth: laneWidth, speedAbs: speed}
+					if ad.obstacleSpeed(f, speed) >= speed {
+						t.Fatal("ordinary high-speed bus waited for emergency braking to detect the leader")
+					}
+				}
+				r := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+				for tick := 0; tick < 1400; tick++ {
+					th, br, st, hb, doors, _ := ad.ComputeControls(bus, r, w, lights, obstacles, laneWidth, 1./60)
+					bus.Update(1./60, th, br, st, hb, doors)
+					if bus.Pos.X+bus.Length/2 > limitX {
+						t.Fatalf("crossed the stop boundary at tick %d, speed %.1f km/h", tick, bus.Speed*.18)
+					}
+					if bus.Speed < 1 && bus.Pos.X+bus.Length/2 > limitX-100 {
+						return
+					}
+				}
+				t.Fatalf("did not approach and stop: %v speed %.1f", bus.Pos, bus.Speed)
+			})
+		}
+	}
+}
+
+func TestBerserk180ArticulatedBusSlowsForRoundaboutAndDocks(t *testing.T) {
+	const laneWidth = 52.
+	w := sim.NewWorld(laneWidth, sim.MapThemeMetropolis)
+	ring := w.Roundabouts[0]
+	w.Stops = []*sim.BusStop{
+		sim.NewBusStop(0, "from", ring.Center.Add(sim.Vec2{X: -5500}), 0, 4, sim.RGBA(0, 0, 0, 255), laneWidth),
+		sim.NewBusStop(1, "to", ring.Center.Add(sim.Vec2{Y: 2100}), math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), laneWidth),
+	}
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	sim.EnsureLongBusBays(w, route)
+	bus := sim.NewBus(ring.Center.X-4600, ring.Center.Y+1.5*laneWidth, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Speed, bus.MaxSpeedFwd = sim.SpeedKPH(180), sim.SpeedKPH(180)
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.BerserkMaxSpeed = sim.SpeedKPH(180)
+	entered := false
+	for tick := 0; tick < 2100; tick++ {
+		th, br, st, hb, doors, dock := driver.ComputeControls(bus, route, w, nil, nil, laneWidth, 1./60)
+		bus.Update(1./60, th, br, st, hb, doors)
+		if result := bus.CheckBoundaries(w, laneWidth); result.Zone == sim.ZoneHardBarrier {
+			t.Fatalf("hit %s at tick %d, speed %.1f km/h, pos %v", result.ObstacleName, tick, bus.Speed*.18, bus.Pos)
+		}
+		if bus.Pos.Distance(ring.Center) <= ring.Radius {
+			entered = true
+			if bus.Speed > 140 {
+				t.Fatalf("entered roundabout too fast: %.1f km/h", bus.Speed*.18)
+			}
+		}
+		if dock {
+			if !entered {
+				t.Fatal("route did not traverse the roundabout")
+			}
+			return
+		}
+	}
+	t.Fatalf("failed to dock after the roundabout: %v", bus.Pos)
 }

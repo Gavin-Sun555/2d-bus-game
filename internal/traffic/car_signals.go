@@ -14,12 +14,22 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 	halfLen := f.car.Length * 0.5
 	sinH, cosH := math.Sincos(f.car.Heading)
 	bumper := sim.Vec2{X: f.car.Pos.X + cosH*halfLen, Y: f.car.Pos.Y + sinH*halfLen}
+	if limit := f.world.RailSpeedLimit(f.tls, bumper, f.car.Heading, f.car.Speed, 220); limit < targetSpd {
+		f.car.IsBraking = true
+		targetSpd = limit
+	}
+	if limit := f.world.StationCrossingSpeedLimit(f.tls, bumper, f.car.Heading, f.car.Speed, f.laneWidth, 220); limit < targetSpd {
+		f.car.IsBraking = true
+		targetSpd = limit
+	}
+	onRailCrossing := f.world.VehicleOnLevelCrossing(bumper, f.car.Heading, f.car.Length)
 	for _, inter := range f.nearbyJunctions() {
 		stopLine := inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth)
+		railPullback := f.world.RailIntersectionPullback(inter, bumper, f.car.Heading, f.laneWidth, f.car.Length)
 		delta := inter.Center.Sub(bumper)
 		forward := delta.X*cosH + delta.Y*sinH
 		lateral := math.Abs(-delta.X*sinH + delta.Y*cosH)
-		if forward <= stopLine || forward >= stopLine+lookAhead || lateral >= math.Max(f.laneWidth*3.6, inter.ApproachRoadHalfWidth(f.car.Heading, f.laneWidth)) {
+		if forward <= stopLine || forward >= stopLine+railPullback+lookAhead || lateral >= math.Max(f.laneWidth*3.6, inter.ApproachRoadHalfWidth(f.car.Heading, f.laneWidth)) {
 			continue
 		}
 		wantLeft, wantRight := carIntersectionTurns(f, inter)
@@ -28,7 +38,38 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		// is authoritative; a lane-position fallback must not select the left
 		// arrow for a path that will actually proceed straight.
 		signal := sim.TrafficLightSystem{Intersections: []*sim.TrafficIntersection{inter}}
-		if stop, distance := signal.CheckStopForVehicleAtSpeed(bumper, f.car.Heading, lookAhead, f.laneWidth, wantLeft, wantRight, false, f.car.Speed, true); stop {
+		checkSpeed := f.car.Speed
+		if onRailCrossing {
+			checkSpeed = math.Max(checkSpeed, 140)
+		}
+		if railPullback > 0 {
+			sig := inter.GetSignalForHeading(f.car.Heading, wantLeft)
+			greenDur := inter.GreenDuration
+			if wantLeft && inter.ApproachHasDedicatedLanesForHeading(f.car.Heading) {
+				greenDur = inter.LeftGreenDuration
+			}
+			distToStopLine := forward - stopLine
+			distToHold := distToStopLine - railPullback
+			if distToHold > 0 {
+				distToClearRail := distToHold + 210.0 + f.car.Length
+				timeNeeded := distToClearRail / math.Max(f.car.Speed, 90.0)
+				if f.car.Speed < 40.0 {
+					timeNeeded = math.Sqrt(2*distToClearRail/70.0) + 0.8
+				}
+				greenRem := greenDur - inter.Timer
+				if sig != sim.SignalGreen || (greenDur > 0 && greenRem < timeNeeded) {
+					if distToHold < lookAhead {
+						f.car.IsBraking = true
+						if distToHold <= 14.0 {
+							return 0
+						}
+						return math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, distToHold-14)))
+					}
+				}
+			}
+		}
+		if stop, distance := signal.CheckStopForVehicleAtSpeed(bumper, f.car.Heading, lookAhead+railPullback, f.laneWidth, wantLeft, wantRight, onRailCrossing, checkSpeed, true); stop {
+			distance, _ = f.world.ClampStopBeforeRailCrossing(bumper, f.car.Heading, distance, f.car.Length, 14)
 			f.car.IsBraking = true
 			if distance <= 14.0 {
 				return 0
@@ -52,7 +93,9 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		}
 		occupied := false
 		for _, bus := range f.buses {
-			if bus != nil && !carClearsBusInJunction(f, bus, inter) && bus.Pos.Distance(inter.Center) < stopLine+20.0 {
+			if bus != nil && (bus.Pos.Distance(inter.Center) < stopLine+20 ||
+				curbLeftBusHasEntryPriority(f, bus, inter, bumper, stopLine, distance) ||
+				waitingUTurnBlocksCar(f, bus, inter)) && !carClearsBusInJunction(f, bus, inter) {
 				occupied = true
 				break
 			}
@@ -70,6 +113,25 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		return math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, distance-14)))
 	}
 	return targetSpd
+}
+
+// Two left turns from the same approach converge. Give the curb bus a
+// slot when its nose is already at the line, while letting admitted cars clear.
+func curbLeftBusHasEntryPriority(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection, bumper sim.Vec2, stopLine, gap float64) bool {
+	c := bus.JunctionCorridor
+	if c == nil || !c.CurbLeft || c.Remaining <= 0 || c.Center.Distance(inter.Center) > 1 ||
+		gap <= 0 || math.Cos(f.car.Heading-c.EntryHeading) < .98 ||
+		inter.GetSignalForHeading(c.EntryHeading, true) != sim.SignalGreen {
+		return false
+	}
+	u := sim.UnitFromAngle(c.EntryHeading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	if bus.Pos.Sub(inter.Center).Dot(r) < f.laneWidth {
+		return false
+	}
+	nose := bus.Pos.Add(sim.UnitFromAngle(bus.Heading).Mul(bus.Length / 2))
+	busGap := inter.Center.Sub(nose).Dot(u) - stopLine
+	return busGap >= -bus.Length && busGap <= 25 && nose.Sub(bumper).Dot(u) >= -8
 }
 
 // A moving bus that has completed its return can lead same-lane straight

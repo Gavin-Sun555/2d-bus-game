@@ -131,9 +131,54 @@ func TestSidecarRecoveryKeepsSafetyGuards(t *testing.T) {
 				f.obstacles = append(f.obstacles, VehicleObstacle{Pos: f.bus.Pos.Add(sim.UnitFromAngle(f.bus.Heading).Mul(200)), Heading: f.bus.Heading, Speed: -10, Length: 46, Width: 22})
 			}
 			desired, _, _, _ := ad.pursuitSteering(f)
-			if _, ok := ad.sidecarEscape(f, desired); ok || ad.sidecarPresteerValid {
+			if _, ok := ad.sidecarEscape(f, desired, 0); ok || ad.sidecarPresteerValid {
 				t.Fatal("sidecar recovery bypassed safety guard")
 			}
 		})
+	}
+}
+
+func TestStationEntryUnwindsTrailerBesideStoppedCar(t *testing.T) {
+	const lw = 52.
+	stop := sim.NewBusStop(0, "test", sim.Vec2{}, 0, 4, sim.RGBA(0, 0, 0, 255), lw)
+	world := &sim.World{Stops: []*sim.BusStop{stop}, Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -800}, P2: sim.Vec2{X: 800}, Lanes: 4},
+	}}
+	bus := sim.NewBus(-136.512, 108.923, .02432)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = .120996
+	bus.SteeringAngle = bus.MaxSteerAngle
+	f := autopilotFrame{bus: bus, world: world, laneWidth: lw, targetStop: stop, obstacles: []VehicleObstacle{
+		{Pos: sim.Vec2{X: -152.827, Y: 78}, Length: 46, Width: 22},
+		{Pos: sim.Vec2{X: -24.794, Y: 78}, Length: 46, Width: 22},
+	}}
+	ad := NewAutopilotDriver()
+	ad.stationDock = &stationDockPlan{stopID: stop.ID, target: stop.RearBerthPosition()}
+	steer, clear := ad.sidecarEscape(f, -.08, 0)
+	if !clear || steer >= 0 {
+		t.Fatalf("could not safely unwind trailer beside the car, steer %.2f", steer)
+	}
+}
+
+func TestSidecarRecoveryClearsCarBesideTrailerOnly(t *testing.T) {
+	world := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -1000}, P2: sim.Vec2{X: 1000}, Lanes: 6},
+	}}
+	bus := sim.NewBus(0, 76.45995975138, -.3934477430911048)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = -.2883313801222955
+	bus.SteeringAngle = .028923473483543922
+	car := VehicleObstacle{Pos: sim.Vec2{X: -111.087579397412, Y: 78}, Length: 46, Width: 22}
+	f := autopilotFrame{bus: bus, world: world, laneWidth: 52, obstacles: []VehicleObstacle{car}}
+	ad := NewAutopilotDriver()
+	if _, clear := ad.sidecarEscape(f, .054, 0); !clear && !ad.sidecarPresteerValid {
+		t.Fatal("no safe crawl found for a car alongside the trailer")
+	}
+
+	car.Pos = bus.TrailerBody().Center
+	f.obstacles[0] = car
+	ad = NewAutopilotDriver()
+	if _, clear := ad.sidecarEscape(f, .054, 0); clear || ad.sidecarPresteerValid {
+		t.Fatal("crawl allowed an overlapping vehicle")
 	}
 }

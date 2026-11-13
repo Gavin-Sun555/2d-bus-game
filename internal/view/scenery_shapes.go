@@ -20,6 +20,35 @@ func worldCircle(screen *ebiten.Image, cam *sim.Camera, center sim.Vec2, radius 
 	filledCircle(screen, float32(s.X), float32(s.Y), float32(radius*cam.Zoom), c, true)
 }
 
+// drawScenicEllipse batches the overview ellipse with the other world meshes.
+func drawScenicEllipse(screen *ebiten.Image, cam *sim.Camera, center, axisX, axisY sim.Vec2, radiusX, radiusY float64, c color.RGBA) {
+	if radiusX <= 0 || radiusY <= 0 || c.A == 0 || !cam.IsPointVisible(center, max(radiusX, radiusY)) {
+		return
+	}
+	const steps = 24
+	template := circleTemplateFor(steps)
+	origin := cam.WorldToScreen(center)
+	xAxis := cam.WorldToScreen(center.Add(axisX)).Sub(origin).Mul(1 / cam.Zoom)
+	yAxis := cam.WorldToScreen(center.Add(axisY)).Sub(origin).Mul(1 / cam.Zoom)
+	rx, ry := radiusX*cam.Zoom, radiusY*cam.Zoom
+	feather := min(.5, min(rx, ry)/2)
+	r, g, b := float32(c.R)/float32(c.A), float32(c.G)/float32(c.A), float32(c.B)/float32(c.A)
+	alpha := float32(c.A) / 255
+	vertices := circleVertices[:1+2*steps]
+	vertex := func(p sim.Vec2, a float32) ebiten.Vertex {
+		return ebiten.Vertex{DstX: float32(p.X), DstY: float32(p.Y), SrcX: 1, SrcY: 1, ColorR: r, ColorG: g, ColorB: b, ColorA: a}
+	}
+	vertices[0] = vertex(origin, alpha)
+	for i, d := range template.directions {
+		x, y := float64(d.x), float64(d.y)
+		point := origin.Add(xAxis.Mul(rx * x)).Add(yAxis.Mul(ry * y))
+		normal := xAxis.Mul(ry * x).Add(yAxis.Mul(rx * y)).Normalize().Mul(feather)
+		vertices[1+i] = vertex(point.Sub(normal), alpha)
+		vertices[1+steps+i] = vertex(point.Add(normal), 0)
+	}
+	screen.DrawTriangles(vertices, template.filledIndices(steps), getWhiteSubImage(), nil)
+}
+
 func worldTriangle(screen *ebiten.Image, cam *sim.Camera, p0, p1, p2 sim.Vec2, c color.RGBA) {
 	minX := min(p0.X, p1.X, p2.X)
 	maxX := max(p0.X, p1.X, p2.X)

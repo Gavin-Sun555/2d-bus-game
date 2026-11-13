@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/Gavin-Sun555/2d-bus-game/game"
@@ -333,12 +334,13 @@ func TestIntersectionTurnHasNoFastRemoval(t *testing.T) {
 		g.Bus.Speed = 0.0
 		car.Speed = 0.0
 		_ = g.Update()
-		if len(g.TrafficMgr.Cars) > 0 && g.TrafficMgr.Cars[0].Pos.Distance(carPos) > 10.0 {
+		if car.Pos.Distance(carPos) > 10.0 {
 			break
 		}
 	}
 
-	if len(g.TrafficMgr.Cars) != 1 || g.TrafficMgr.Cars[0] != car {
+	// Ambient traffic may refill around the car; only this vehicle must survive.
+	if !slices.Contains(g.TrafficMgr.Cars, car) {
 		t.Fatal("Intersection car removed before one and a half signal cycles")
 	}
 }

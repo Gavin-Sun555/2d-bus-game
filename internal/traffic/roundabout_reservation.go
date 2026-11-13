@@ -6,10 +6,11 @@ import (
 )
 
 type roundaboutReservation struct {
-	center  sim.Vec2
-	owner   *sim.Bus
-	entered bool
-	holds   [1 + 6*MaxBusesPerLine]sim.RoundaboutAdmissionHold
+	center       sim.Vec2
+	owner        *sim.Bus
+	entered      bool
+	lastApproach sim.Vec2
+	holds        [1 + MaxFleetBuses]sim.RoundaboutAdmissionHold
 }
 
 // Long vehicles need the complete ring width while their trailer turns.
@@ -17,7 +18,7 @@ type roundaboutReservation struct {
 // until the last section is clear. Short buses may use a separated entrance
 // once the owner begins leaving. All motion and collision rules still run.
 func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.World, count int, laneWidth float64) {
-	var storage [1 + 6*MaxBusesPerLine]*sim.Bus
+	var storage [1 + MaxFleetBuses]*sim.Bus
 	buses := storage[:0]
 	if player != nil {
 		buses = append(buses, player)
@@ -71,8 +72,11 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 			r.entered = false
 		}
 		if r.owner != nil {
-			if inside(r.owner) {
+			if !r.entered && inside(r.owner) {
 				r.entered = true
+				if intent := r.owner.RoundaboutEntry; intent != nil && intent.Center == rb.Center {
+					r.lastApproach = intent.Forward
+				}
 			}
 			occupied := false
 			for _, part := range r.owner.BodyParts() {
@@ -124,6 +128,7 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 				// entrance queue. A short leader must not wait for a long bus
 				// trapped behind it in that same lane.
 				best := math.Inf(1)
+				bestApproach := math.Inf(1)
 				for _, b := range buses {
 					if inside(b) {
 						r.owner = b
@@ -135,8 +140,16 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 						continue
 					}
 					along := rb.Center.Sub(b.Pos).Dot(intent.Forward)
-					if along > 0 && roundaboutEntryPrecedes(b, r.owner, rb.Center, along, best) {
+					if along <= 0 {
+						continue
+					}
+					// Rotate between approaches with waiting buses. Choosing
+					// solely by distance favors the closest yield line forever
+					// when another approach has a car ahead of its first bus.
+					approach := roundaboutApproachOrder(r.lastApproach, intent.Forward)
+					if approach < bestApproach || (approach == bestApproach && roundaboutEntryPrecedes(b, r.owner, rb.Center, along, best)) {
 						best = along
+						bestApproach = approach
 						r.owner = b
 						r.entered = false
 					}
@@ -178,12 +191,44 @@ func (tm *TrafficManager) updateRoundaboutReservations(player *sim.Bus, w *sim.W
 	}
 }
 
+func roundaboutApproachOrder(previous, next sim.Vec2) float64 {
+	if previous == (sim.Vec2{}) {
+		return 0
+	}
+	angle := math.Atan2(previous.X*next.Y-previous.Y*next.X, previous.Dot(next))
+	quarterTurns := math.Round(angle / (math.Pi / 2))
+	if quarterTurns <= 0 {
+		quarterTurns += 4
+	}
+	return quarterTurns
+}
+
 func (tm *TrafficManager) roundaboutReserved(center sim.Vec2) bool {
 	for i := range tm.roundaboutReservations {
 		r := &tm.roundaboutReservations[i]
 		if r.center == center && r.owner != nil {
 			return true
 		}
+	}
+	return false
+}
+
+// A reservation can't let its owner pass a car already queued in front of
+// it. Let that car use the ordinary yield rules, then drain it from the ring
+// before admitting the reserving bus.
+func (tm *TrafficManager) roundaboutReservedForCar(rb sim.Roundabout, car *sim.TrafficCar, forward sim.Vec2, laneWidth float64) bool {
+	for i := range tm.roundaboutReservations {
+		r := &tm.roundaboutReservations[i]
+		if r.center != rb.Center || r.owner == nil {
+			continue
+		}
+		intent := r.owner.RoundaboutEntry
+		if r.entered || intent == nil || intent.Center != rb.Center || intent.Forward.Dot(forward) < .99 {
+			return true
+		}
+		delta := car.Pos.Sub(r.owner.Pos)
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		return math.Abs(delta.Dot(right)) >= laneWidth/2 || !roundaboutBusFollowing(car, r.owner)
 	}
 	return false
 }

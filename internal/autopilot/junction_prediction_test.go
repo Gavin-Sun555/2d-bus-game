@@ -23,7 +23,8 @@ func TestJunctionPredictionMatchesFrozenOracle(t *testing.T) {
 	rng := rand.New(rand.NewSource(20261029))
 	finite := 0
 	for scenario := 0; scenario < 120; scenario++ {
-		ad, f := highSpeedSweepFrame([]int{30, 80, 100, 110, 120, 160}[scenario%6])
+		speeds := [...]int{30, 80, 100, 110, 120, 150, 160, 180}
+		ad, f := highSpeedSweepFrame(speeds[scenario%len(speeds)])
 		if scenario%4 == 0 {
 			f.bus.SetModel(sim.BusStandard)
 		}
@@ -67,12 +68,12 @@ func TestJunctionPredictionMatchesFrozenOracle(t *testing.T) {
 	}
 }
 func TestJunctionPoseStorageReuseAndReset(t *testing.T) {
-	var storage [][2]sim.OBB
+	var storage []sweepSample
 	c := sweepPoseCache{overflow: junctionPoseStorage(&storage, 1275, 4)}
 	for i := 0; i < 319; i++ {
-		b := [2]sim.OBB{{Center: sim.Vec2{X: float64(i)}}}
+		b := sweepSample{front: sim.OBB{Center: sim.Vec2{X: float64(i)}}}
 		c.store(i, b)
-		if v, ok := c.load(i); !ok || v != b {
+		if v := c.load(i); v == nil || *v != b {
 			t.Fatal(i)
 		}
 	}
@@ -82,7 +83,7 @@ func TestJunctionPoseStorageReuseAndReset(t *testing.T) {
 		t.Fatal("reallocated reusable storage")
 	}
 	for i := 0; i < 251; i++ {
-		if _, ok := c.load(i); ok {
+		if c.load(i) != nil {
 			t.Fatal("old pose reused across ticks")
 		}
 	}
@@ -103,7 +104,7 @@ func TestJunctionActualCacheAndWarmAllocations(t *testing.T) {
 	if got := ad.junctionSweptSpeed(f); got != want {
 		t.Fatal(got, want)
 	}
-	if ad.temporaryGeometry == nil || len(ad.temporaryGeometry.junctionActual) < 191 || len(ad.temporaryGeometry.junctionMargin) < 85 {
+	if ad.temporaryGeometry == nil || len(ad.temporaryGeometry.junctionActual) < 191 {
 		t.Fatal("high-speed actual branch not cached")
 	}
 	if n := testing.AllocsPerRun(5, func() { ad.junctionSweptSpeed(f) }); n != 0 {
@@ -112,9 +113,9 @@ func TestJunctionActualCacheAndWarmAllocations(t *testing.T) {
 }
 
 func TestJunctionPoseStorageGrowsGeometrically(t *testing.T) {
-	var storage [][2]sim.OBB
+	var storage []sweepSample
 	moves := 0
-	var previous *[2]sim.OBB
+	var previous *sweepSample
 	for samples := 129; samples <= 319; samples++ {
 		junctionPoseStorage(&storage, float64(samples-1)*4, 4)
 		if &storage[0] != previous {

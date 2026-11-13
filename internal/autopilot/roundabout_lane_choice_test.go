@@ -8,43 +8,54 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+// An empty roundabout approach keeps the outer lane and the bus stays on the
+// outer ring through every exit; articulated buses also keep the tail clear.
 func TestBerserkEmptyRoundaboutKeepsOuterApproachLane(t *testing.T) {
-	for _, lw := range []float64{42, 52, 78} {
-		for _, heading := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
-			for _, turn := range []float64{-math.Pi / 2, 0, math.Pi / 2} {
-				t.Run(fmt.Sprintf("width%.0f/heading%.2f/turn%.2f", lw, heading, turn), func(t *testing.T) {
-					w := sim.NewWorld(lw, sim.MapThemeMetropolis)
-					rb := w.Roundabouts[0]
-					forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
-					right := sim.Vec2{X: -forward.Y, Y: forward.X}
-					out := sim.Vec2{X: math.Cos(heading + turn), Y: math.Sin(heading + turn)}
-					w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", rb.Center.Sub(forward.Mul(900)), heading, 4, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", rb.Center.Add(out.Mul(900)), heading+turn, 4, sim.RGBA(0, 0, 0, 255), lw)}
-					route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
-					pos := rb.Center.Sub(forward.Mul(550)).Add(right.Mul(1.5 * lw))
-					bus := sim.NewBus(pos.X, pos.Y, heading)
-					bus.Speed = 90
-					ad := NewAutopilotDriver()
-					ad.BerserkMode = true
-					entered := false
-					for step := 0; step < 2400; step++ {
-						th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, w, nil, nil, lw, 1.0/60)
-						bus.Update(1.0/60, th, br, st, hb, doors)
-						if math.Abs(ad.LaneOffset) > .01 || math.Abs(ad.TargetLaneOffset) > .01 {
-							t.Fatalf("empty approach changed lanes at step%d: %.2f/%.2f pos%v", step, ad.LaneOffset, ad.TargetLaneOffset, bus.Pos)
+	for _, model := range []sim.BusModel{sim.BusStandard, sim.BusArticulated} {
+		for _, lw := range []float64{42, 52, 78} {
+			for _, heading := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+				for _, turn := range []float64{-math.Pi / 2, 0, math.Pi / 2} {
+					t.Run(fmt.Sprintf("model%d/width%.0f/heading%.2f/turn%.2f", model, lw, heading, turn), func(t *testing.T) {
+						w := sim.NewWorld(lw, sim.MapThemeMetropolis)
+						rb := w.Roundabouts[0]
+						forward := sim.Vec2{X: math.Cos(heading), Y: math.Sin(heading)}
+						right := sim.Vec2{X: -forward.Y, Y: forward.X}
+						out := sim.Vec2{X: math.Cos(heading + turn), Y: math.Sin(heading + turn)}
+						w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", rb.Center.Sub(forward.Mul(900)), heading, 4, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", rb.Center.Add(out.Mul(900)), heading+turn, 4, sim.RGBA(0, 0, 0, 255), lw)}
+						route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+						pos := rb.Center.Sub(forward.Mul(550)).Add(right.Mul(1.5 * lw))
+						bus := sim.NewBus(pos.X, pos.Y, heading)
+						bus.SetModel(model)
+						if bus.IsArticulated() {
+							sim.EnsureLongBusBays(w, route)
 						}
-						radius := bus.Pos.Distance(rb.Center)
-						if radius <= rb.Radius+15 {
-							entered = true
-							if radius < (rb.InnerRadius+16+rb.Radius)/2 {
-								t.Fatalf("moved into inner ring: radius%.1f", radius)
+						bus.Speed = 90
+						ad := NewAutopilotDriver()
+						ad.BerserkMode = true
+						entered := false
+						for step := 0; step < 2400; step++ {
+							th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, w, nil, nil, lw, 1.0/60)
+							bus.Update(1.0/60, th, br, st, hb, doors)
+							if bus.CheckBoundaries(w, lw).Zone == sim.ZoneHardBarrier {
+								t.Fatalf("tail hit roundabout boundary step%d pos%v tail%+v", step, bus.Pos, bus.TrailerBody())
+							}
+							if math.Abs(ad.LaneOffset) > .01 || math.Abs(ad.TargetLaneOffset) > .01 {
+								t.Fatalf("empty approach changed lanes at step%d: %.2f/%.2f pos%v", step, ad.LaneOffset, ad.TargetLaneOffset, bus.Pos)
+							}
+							radius := bus.Pos.Distance(rb.Center)
+							if radius <= rb.Radius+15 {
+								entered = true
+								if radius < (rb.InnerRadius+16+rb.Radius)/2 {
+									t.Fatalf("moved into inner ring: radius%.1f", radius)
+								}
+							}
+							if entered && bus.Pos.Sub(rb.Center).Dot(out) > rb.Radius+220 {
+								return
 							}
 						}
-						if entered && bus.Pos.Sub(rb.Center).Dot(out) > rb.Radius+220 {
-							return
-						}
-					}
-					t.Fatalf("failed to pass roundabout pos%v entered%v", bus.Pos, entered)
-				})
+						t.Fatalf("failed to pass roundabout pos%v entered%v", bus.Pos, entered)
+					})
+				}
 			}
 		}
 	}

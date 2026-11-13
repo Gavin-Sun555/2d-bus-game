@@ -11,9 +11,24 @@ type JunctionCorridor struct {
 	CacheTurn     *CarJunctionTurn
 	EntryHeading  float64
 	Entered       bool
+	UTurnReady    bool `json:",omitempty"`
+	CurbLeft      bool `json:",omitempty"`
 	Bodies        []OBB
 	Min, Max      Vec2
 	Remaining     float64
+	segments      []junctionCorridorSegment
+	segmentsReady bool
+	bodySource    *OBB
+	bodyCount     int
+	groups        []corridorBodyGroup
+	groupsReady   bool
+}
+
+type junctionCorridorSegment struct {
+	delta        Vec2
+	length       float64
+	heading      float64
+	headingReady bool
 }
 
 // AppendPathBodies samples the full vehicle, including its corners, rather than
@@ -49,31 +64,38 @@ func CorridorsSeparated(a, b []OBB) bool {
 }
 
 func separatedBodies(a, b []OBB) bool {
-	if len(a) < 8 || len(b) < 16 || len(b) > 512 {
+	if len(a) < 8 || len(b) < 16 || len(a) > 512 || len(b) > 512 {
 		return separatedBodiesScan(a, b)
 	}
-	var storage [64]corridorBodyGroup
-	groups, ok := groupCorridorBodies(b, storage[:])
-	if !ok {
+	var storageA, storageB [64]corridorBodyGroup
+	groupsA, okA := groupCorridorBodies(a, storageA[:])
+	groupsB, okB := groupCorridorBodies(b, storageB[:])
+	if !okA || !okB {
 		return separatedBodiesScan(a, b)
 	}
-	for _, x := range a {
-		lo, hi, valid := looseBodyBounds(x)
-		if !valid {
-			return separatedBodiesScan(a, b)
-		}
-		for _, g := range groups {
-			if hi.X < g.lo.X || g.hi.X < lo.X || hi.Y < g.lo.Y || g.hi.Y < lo.Y {
+	return separatedBodyGroups(a, b, groupsA, groupsB)
+}
+
+func separatedBodyGroups(a, b []OBB, groupsA, groupsB []corridorBodyGroup) bool {
+	for _, ga := range groupsA {
+		for _, gb := range groupsB {
+			if ga.hi.X < gb.lo.X || gb.hi.X < ga.lo.X || ga.hi.Y < gb.lo.Y || gb.hi.Y < ga.lo.Y {
 				continue
 			}
-			for _, y := range b[g.begin:g.end] {
-				r := x.HalfLen + x.HalfWid + y.HalfLen + y.HalfWid
-				d := x.Center.Sub(y.Center)
-				if d.Dot(d) > r*r {
+			for _, x := range a[ga.begin:ga.end] {
+				lo, hi, _ := looseBodyBounds(x)
+				if hi.X < gb.lo.X || gb.hi.X < lo.X || hi.Y < gb.lo.Y || gb.hi.Y < lo.Y {
 					continue
 				}
-				if hit, _, _ := CheckOBBCollision(x, y); hit {
-					return false
+				for _, y := range b[gb.begin:gb.end] {
+					r := x.HalfLen + x.HalfWid + y.HalfLen + y.HalfWid
+					d := x.Center.Sub(y.Center)
+					if math.Abs(d.X) > r || math.Abs(d.Y) > r || d.Dot(d) > r*r {
+						continue
+					}
+					if hit, _, _ := CheckOBBCollision(x, y); hit {
+						return false
+					}
 				}
 			}
 		}
@@ -97,24 +119,45 @@ func separatedBodiesScan(a, b []OBB) bool {
 	return true
 }
 
+// JunctionExitQueue holds the fixed exit geometry for one admission check.
+type JunctionExitQueue struct {
+	exit                   OBB
+	center, forward, right Vec2
+	half, length, width    float64
+	valid                  bool
+}
+
+func PrepareJunctionExitQueue(bodies []OBB, center Vec2, g JunctionGeometry, length, width float64) JunctionExitQueue {
+	if len(bodies) < 2 {
+		return JunctionExitQueue{}
+	}
+	exit := bodies[len(bodies)-1]
+	forward := UnitFromAngle(exit.Heading)
+	return JunctionExitQueue{
+		exit: exit, center: center, forward: forward, right: Vec2{X: -forward.Y, Y: forward.X},
+		half:   math.Abs(forward.X)*g.HalfX + math.Abs(forward.Y)*g.HalfY,
+		length: length, width: width, valid: true,
+	}
+}
+
+func (queue JunctionExitQueue) Blocks(other OBB) bool {
+	if !queue.valid || math.Cos(other.Heading-queue.exit.Heading) < .9 {
+		return false
+	}
+	along := other.Center.Sub(queue.center).Dot(queue.forward)
+	if along+other.HalfLen < queue.half || along-other.HalfLen > queue.half+queue.length+25 {
+		return false
+	}
+	return math.Abs(other.Center.Sub(queue.exit.Center).Dot(queue.right)) < queue.width/2+other.HalfWid+4
+}
+
 // ExitQueueBlocksEntry reserves a vehicle-length beyond the box. A stopped
 // queue on that outgoing lane must not be joined from inside the junction.
 func ExitQueueBlocksEntry(bodies []OBB, center Vec2, g JunctionGeometry, length, width float64, other OBB, speed float64) bool {
-	if len(bodies) < 2 || math.Abs(speed) > 5 {
+	if math.Abs(speed) > 5 {
 		return false
 	}
-	exit := bodies[len(bodies)-1]
-	if math.Cos(other.Heading-exit.Heading) < .9 {
-		return false
-	}
-	u := UnitFromAngle(exit.Heading)
-	right := Vec2{X: -u.Y, Y: u.X}
-	half := math.Abs(u.X)*g.HalfX + math.Abs(u.Y)*g.HalfY
-	along := other.Center.Sub(center).Dot(u)
-	if along+other.HalfLen < half || along-other.HalfLen > half+length+25 {
-		return false
-	}
-	return math.Abs(other.Center.Sub(exit.Center).Dot(right)) < width/2+other.HalfWid+4
+	return PrepareJunctionExitQueue(bodies, center, g, length, width).Blocks(other)
 }
 
 func corridorBounds(bodies []OBB) (Vec2, Vec2) {
@@ -144,7 +187,65 @@ func corridorBounds(bodies []OBB) (Vec2, Vec2) {
 	return lo, hi
 }
 
-func (c *JunctionCorridor) RebuildBounds() { c.Min, c.Max = corridorBounds(c.Bodies) }
+// RebuildBounds publishes new bodies and invalidates their derived geometry.
+func (c *JunctionCorridor) RebuildBounds() {
+	c.Min, c.Max = corridorBounds(c.Bodies)
+	var source *OBB
+	if len(c.Bodies) != 0 {
+		source = &c.Bodies[0]
+	}
+	if c.bodySource != source {
+		// A value copy may still refer to the original corridor's scratch.
+		c.segments, c.groups = nil, nil
+	}
+	c.bodySource, c.bodyCount = source, len(c.Bodies)
+	c.segmentsReady, c.groupsReady = false, false
+}
+
+func (c *JunctionCorridor) geometryPublished() bool {
+	return len(c.Bodies) > 0 && c.bodyCount == len(c.Bodies) && c.bodySource == &c.Bodies[0]
+}
+
+// Publishing is frequent. Build lengths only if a consumer actually queries
+// this path. Unpublished corridors (including old saves) use live bodies.
+func (c *JunctionCorridor) pathSegments() []junctionCorridorSegment {
+	if !c.geometryPublished() {
+		return nil
+	}
+	if !c.segmentsReady {
+		count := len(c.Bodies) - 1
+		if cap(c.segments) < count {
+			c.segments = make([]junctionCorridorSegment, count)
+		} else {
+			c.segments = c.segments[:count]
+		}
+		for i := range c.segments {
+			delta := c.Bodies[i+1].Center.Sub(c.Bodies[i].Center)
+			c.segments[i] = junctionCorridorSegment{delta: delta, length: delta.Length()}
+		}
+		c.segmentsReady = true
+	}
+	return c.segments
+}
+
+func (c *JunctionCorridor) bodyGroups() ([]corridorBodyGroup, bool) {
+	if !c.groupsReady {
+		count := (len(c.Bodies) + 7) / 8
+		if cap(c.groups) < count {
+			c.groups = make([]corridorBodyGroup, count)
+		} else {
+			c.groups = c.groups[:count]
+		}
+		groups, ok := groupCorridorBodies(c.Bodies, c.groups)
+		if !ok {
+			c.groups = c.groups[:0]
+		} else {
+			c.groups = groups
+		}
+		c.groupsReady = true
+	}
+	return c.groups, len(c.groups) > 0
+}
 
 func SeparatedJunctionCorridors(a, b *JunctionCorridor) bool {
 	if a == nil || b == nil || len(a.Bodies) == 0 || len(b.Bodies) == 0 {
@@ -152,6 +253,15 @@ func SeparatedJunctionCorridors(a, b *JunctionCorridor) bool {
 	}
 	if a.Max.X < b.Min.X || b.Max.X < a.Min.X || a.Max.Y < b.Min.Y || b.Max.Y < a.Min.Y {
 		return true
+	}
+	if len(a.Bodies) >= 8 && len(a.Bodies) <= 512 && len(b.Bodies) >= 16 && len(b.Bodies) <= 512 &&
+		a.geometryPublished() && b.geometryPublished() {
+		groupsA, okA := a.bodyGroups()
+		groupsB, okB := b.bodyGroups()
+		if okA && okB {
+			return separatedBodyGroups(a.Bodies, b.Bodies, groupsA, groupsB)
+		}
+		return separatedBodiesScan(a.Bodies, b.Bodies)
 	}
 	return separatedBodies(a.Bodies, b.Bodies)
 }
@@ -171,24 +281,37 @@ func JunctionLeaderGap(ours, theirs *JunctionCorridor, leader OBB, ownLength, ow
 	if math.Abs(end.Center.Sub(otherEnd.Center).Dot(normal)) > 12 {
 		return 0, false
 	}
+	distanceLimit := math.Max(12, ownWidth*.35)
 	best, along, traveled := math.Inf(1), 0., 0.
+	segments := ours.pathSegments()
 	for i := 1; i < len(ours.Bodies); i++ {
 		a, b := ours.Bodies[i-1].Center, ours.Bodies[i].Center
-		segment := b.Sub(a)
-		length := segment.Length()
+		var segment Vec2
+		var length float64
+		if segments != nil {
+			segment, length = segments[i-1].delta, segments[i-1].length
+		} else {
+			segment = b.Sub(a)
+			length = segment.Length()
+		}
 		if length < .01 {
 			continue
 		}
 		u := segment.Mul(1 / length)
 		d := Clamp(leader.Center.Sub(a).Dot(u), 0, length)
 		point := a.Add(u.Mul(d))
-		dist := point.Distance(leader.Center)
-		if dist < best && math.Cos(math.Atan2(u.Y, u.X)-leader.Heading) > .94 {
+		dx, dy := point.X-leader.Center.X, point.Y-leader.Center.Y
+		if math.Abs(dx) > distanceLimit || math.Abs(dy) > distanceLimit {
+			traveled += length
+			continue
+		}
+		dist := math.Hypot(dx, dy)
+		if dist <= distanceLimit && dist < best && math.Cos(math.Atan2(u.Y, u.X)-leader.Heading) > .94 {
 			best, along = dist, traveled+d
 		}
 		traveled += length
 	}
-	if best > math.Max(12, ownWidth*.35) || along <= 0 {
+	if best > distanceLimit || along <= 0 {
 		return 0, false
 	}
 	return along - ownLength/2 - leader.HalfLen, true
@@ -212,21 +335,52 @@ func PredictJunctionBody(c *JunctionCorridor, distance float64) (OBB, bool) {
 		return OBB{}, false
 	}
 	remaining := math.Max(0, distance)
+	segments := c.pathSegments()
 	for i := 1; i < len(c.Bodies); i++ {
-		a, b := c.Bodies[i-1], c.Bodies[i]
-		segment := b.Center.Sub(a.Center)
-		length := segment.Length()
+		var delta Vec2
+		var length float64
+		if segments != nil {
+			delta, length = segments[i-1].delta, segments[i-1].length
+		} else {
+			delta = c.Bodies[i].Center.Sub(c.Bodies[i-1].Center)
+			length = delta.Length()
+		}
 		if length < .01 {
 			continue
 		}
 		if remaining <= length {
-			a.Center = a.Center.Add(segment.Mul(remaining / length))
-			a.Heading = math.Atan2(segment.Y, segment.X)
-			return a, true
+			body := c.Bodies[i-1]
+			body.Center = body.Center.Add(delta.Mul(remaining / length))
+			if segments == nil {
+				body.Heading = math.Atan2(delta.Y, delta.X)
+			} else {
+				segment := &segments[i-1]
+				if !segment.headingReady {
+					segment.heading = math.Atan2(delta.Y, delta.X)
+					segment.headingReady = true
+				}
+				body.Heading = segment.heading
+			}
+			return body, true
 		}
 		remaining -= length
 	}
 	last := c.Bodies[len(c.Bodies)-1]
 	last.Center = last.Center.Add(UnitFromAngle(last.Heading).Mul(remaining))
 	return last, true
+}
+
+// UTurnPrecedesEntry gives a waiting U-turn one opportunity against incoming
+// movements with the same green. Vehicles already in the box keep priority.
+func UTurnPrecedesEntry(turn, approach *JunctionCorridor, inter *TrafficIntersection) bool {
+	if !inter.WaitingUTurnHasPriority() || turn == nil || !turn.UTurnReady || turn.Entered || turn.Remaining <= 0 || len(turn.Bodies) < 2 ||
+		approach == nil || approach.Entered || approach.Center.Distance(turn.Center) > 1 ||
+		inter.GetSignalForHeading(turn.EntryHeading, true) != SignalGreen {
+		return false
+	}
+	if approach.UTurnReady {
+		return math.Cos(turn.EntryHeading-approach.EntryHeading) < -.98 &&
+			UnitFromAngle(turn.EntryHeading).Dot(Vec2{X: 1, Y: 1}) > 0
+	}
+	return true
 }

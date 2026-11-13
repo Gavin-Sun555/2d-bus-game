@@ -42,6 +42,7 @@ func TestMedianRightChoiceLocksAndPersists(t *testing.T) {
 			if blocked {
 				f.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: -1200, Y: 1.5 * lw}, Heading: 0, Length: 46, Width: 22}}
 			}
+			f.obstacles = append(f.obstacles, VehicleObstacle{Pos: sim.Vec2{X: -700, Y: .5 * lw}, Heading: 0, Length: 96, Width: 36}, VehicleObstacle{Pos: sim.Vec2{X: -450, Y: .5 * lw}, Heading: 0, Length: 96, Width: 36})
 			ad.selectMedianRightTurn(f)
 			if ad.medianRightChoice == nil || ad.curbBusRight == blocked {
 				t.Fatalf("wrong corridor choice: center%v curb%v", ad.medianRightChoice, ad.curbBusRight)

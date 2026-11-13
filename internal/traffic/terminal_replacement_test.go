@@ -26,25 +26,34 @@ func serveFleetStop(m *AIBusManager, b *AIBus, w *sim.World, index, waiting int)
 func TestFleetReplacesOnlyOnTerminalArrivalAndBoardsNewCapacity(t *testing.T) {
 	w := sim.NewWorld(52)
 	r := &sim.Route{Name: "test", StopIDs: []int{0, 2, 10, 0}}
-	c := LineFleetSettings{BusCount: 1, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 40}}
+	c := LineFleetSettings{BusCount: 1, SpeedRange: sim.SpeedRange{MinKPH: 40, MaxKPH: 100}}
 	m := NewAIBusManager()
+	m.Operations = sim.NewTransitOperations(w, r, 52, sim.DefaultFarePolicy())
 	plans := []LineFleetPlan{{r, c}}
 	m.ConfigureLineFleets(plans, w, 52, nil, false)
 	b := m.Buses[0]
+	originalSpeed := c.SpeedRange.MinKPH
+	b.assignLineSpeed(c.SpeedRange, originalSpeed)
 	b.Bus.Durability = 60
 	c.Model = sim.BusDoubleDecker
 	plans[0].Settings = c
 	m.ConfigureLineFleets(plans, w, 52, nil, false)
-	if b.Bus.Model != sim.BusStandard || b.Bus.PendingModel == nil {
+	if b.Bus.Model != sim.BusStandard || b.Bus.PendingModel == nil || b.MaxSpeedKPH != originalSpeed {
 		t.Fatal("upgraded mid-route")
 	}
 	serveFleetStop(m, b, w, 1, 0)
-	if b.Bus.Model != sim.BusStandard || b.Bus.Durability != 60 {
+	if b.Bus.Model != sim.BusStandard || b.Bus.Durability != 60 || b.MaxSpeedKPH != originalSpeed {
 		t.Fatal("empty intermediate stop replaced vehicle")
 	}
+	sim.SeedSimulation(87) // This terminal arrival draws a different speed tier.
 	serveFleetStop(m, b, w, 3, 100)
 	if len(m.Buses) != 1 || m.Buses[0] != b || b.Bus.Model != sim.BusDoubleDecker || b.Bus.PendingModel != nil || b.Bus.PassengerCount != 80 || b.Bus.Durability != 100 || w.Stops[0].WaitingPassengers != 20 {
 		t.Fatalf("terminal replacement model%d passengers%d", b.Bus.Model, b.Bus.PassengerCount)
+	}
+	speed := b.MaxSpeedKPH
+	if speed == originalSpeed || speed < c.SpeedRange.MinKPH || speed > c.SpeedRange.MaxKPH || speed%10 != 0 ||
+		b.Driver.CruiseSpeedLimit != sim.SpeedKPH(speed) || m.Operations.Vehicle(b.ID).MaxSpeedKPH != speed {
+		t.Fatalf("terminal replacement did not assign and record a new speed tier, got %d", speed)
 	}
 }
 
@@ -107,7 +116,13 @@ func TestRetirementRecordsCompletedLapBeforeRemovingVehicle(t *testing.T) {
 	m.ConfigureLineFleets(plans, w, 52, nil, false)
 	serveFleetStop(m, b, w, 3, 0)
 	v := m.Operations.Vehicle(b.ID)
-	if len(m.Buses) != 0 || v.CompletedLaps != 1 || v.Revenue != 40 || m.Operations.Revenue != 40 {
+	if len(m.Buses) != 0 || !v.ServiceEnded || v.CompletedLaps != 1 || v.Revenue != 40 || m.Operations.Revenue != 40 || v.MaxSpeedKPH != 40 {
 		t.Fatalf("retirement lost completed service: laps%d revenue%d", v.CompletedLaps, v.Revenue)
+	}
+	km, elapsed := v.KM, v.Seconds
+	b.Bus.Speed = 100
+	m.Operations.Track(b.ID, b.Bus, b.Route, 1)
+	if v.KM != km || v.Seconds != elapsed || m.Operations.LineSummary(r).Vehicles != 0 {
+		t.Fatal("retired service still contributes to active statistics")
 	}
 }

@@ -11,6 +11,9 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 	if !cam.IsPointVisible(t.Pos, t.Radius*2+16) {
 		return
 	}
+	if drawCachedTree(screen, cam, t, theme) {
+		return
+	}
 	p := sceneColors(theme)
 	if theme == sim.MapThemeCustom {
 		p.foliage = t.Color
@@ -19,9 +22,6 @@ func drawTree(screen *ebiten.Image, cam *sim.Camera, t sim.Tree, plan bool, them
 	radius := t.Radius * 1.2
 	if plan || cam.Zoom < 0.3 {
 		worldCircle(screen, cam, t.Pos, radius, p.foliage)
-		return
-	}
-	if drawCachedTree(screen, cam, t, theme) {
 		return
 	}
 	worldCircle(screen, cam, t.Pos.Add(sim.Vec2{X: 9, Y: 11}), radius, sim.RGBA(8, 25, 25, 65))

@@ -11,7 +11,7 @@ func MedianBusRightPhase(heading float64) LightPhase {
 	return PhaseEWLeftGreen
 }
 func (inter *TrafficIntersection) GetMedianBusRightSignal(heading float64) LightSignal {
-	if !inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(heading)] {
+	if inter.uTurnClearance || !inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(heading)] {
 		return SignalRed
 	}
 	phase := MedianBusRightPhase(heading)

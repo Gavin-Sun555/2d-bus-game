@@ -42,6 +42,13 @@ func (ad *AutopilotDriver) trackJunctionTurnLane(f autopilotFrame, dt float64) b
 		if !known || turn == routeTurnStraight {
 			continue
 		}
+		if ad.exitCruise == nil || ad.exitCruise.Junction.Distance(center) > 1 {
+			out := sim.Vec2{X: u.Y, Y: -u.X}
+			if turn == routeTurnRight {
+				out = out.Mul(-1)
+			}
+			ad.exitCruise = &sim.BusLaneMergeRequest{Junction: center, Heading: math.Atan2(out.Y, out.X)}
+		}
 		// Unwind an existing passing offset along the route rather than
 		// selecting another lane around a slow vehicle while rotating.
 		ad.TargetLaneOffset = 0

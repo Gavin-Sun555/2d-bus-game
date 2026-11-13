@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
@@ -64,7 +65,12 @@ func (g *Game) updateDriverMode(dt float64) {
 	if g.vehicleAudio != nil {
 		g.vehicleAudio.throttle = throttle
 	}
+	before := g.Bus.Pos
 	g.Bus.Update(dt, throttle, brake, steer, handbrake, toggleDoors)
+	if g.World.ProtectBusAtRail(g.TrafficLights, g.Bus, before) {
+		g.Bus.Durability = math.Max(0, g.Bus.Durability-20)
+		g.HUD.AddWarningToast(locale.T("铁路道口碰撞 · 车况下降", "Rail crossing collision · bus damaged"))
+	}
 	if g.skipCooldown > 0 {
 		g.skipCooldown -= dt
 	}

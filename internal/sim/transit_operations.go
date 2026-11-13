@@ -4,12 +4,18 @@ import (
 	"math"
 )
 
-type StationActivity struct{ Boarded, Alighted, Revenue int }
+type StationActivity struct {
+	Boarded, Alighted, Revenue int
+	WaitSamples                int     `json:",omitempty"`
+	WaitSeconds                float64 `json:",omitempty"`
+}
 type VehicleOperations struct {
 	Route                                      *Route
 	ID                                         int
 	LineName                                   string
+	ServiceEnded                               bool `json:",omitempty"`
 	Revenue, Boarded, Alighted, CompletedLaps  int
+	MaxSpeedKPH                                int `json:",omitempty"`
 	KM, Seconds, CompletedKM, CompletedSeconds float64
 	Stations                                   map[int]*StationActivity
 	bus                                        *Bus
@@ -34,6 +40,7 @@ type TransitOperations struct {
 	Distances      RouteDistances
 	Vehicles       map[int]*VehicleOperations // 0 = player; positive IDs = fleet buses
 	Stations       map[int]*StationActivity
+	LineStations   map[string]map[int]*StationActivity
 	Revenue        int
 }
 
@@ -56,6 +63,34 @@ func stationActivity(m map[int]*StationActivity, id int) *StationActivity {
 	}
 	return s
 }
+func (o *TransitOperations) lineStationActivity(line string, stop int) *StationActivity {
+	if o.LineStations == nil {
+		o.LineStations = make(map[string]map[int]*StationActivity)
+	}
+	if o.LineStations[line] == nil {
+		o.LineStations[line] = make(map[int]*StationActivity)
+	}
+	return stationActivity(o.LineStations[line], stop)
+}
+
+func (o *TransitOperations) recordBoarding(id int, route *Route, stop, boarded, revenue int) {
+	if o == nil || boarded == 0 {
+		return
+	}
+	v := o.Vehicle(id)
+	v.Boarded += boarded
+	v.Revenue += revenue
+	o.Revenue += revenue
+	activities := []*StationActivity{stationActivity(o.Stations, stop), stationActivity(v.Stations, stop)}
+	if route != nil {
+		activities = append(activities, o.lineStationActivity(route.Name, stop))
+	}
+	for _, activity := range activities {
+		activity.Boarded += boarded
+		activity.Revenue += revenue
+	}
+}
+
 func (o *TransitOperations) BoardWithDestinations(id int, b *Bus, r *Route, stop int, destinations []int) (int, int) {
 	before := len(b.Passengers)
 	boarded := b.BoardPassengersWithDestinations(destinations)
@@ -73,16 +108,7 @@ func (o *TransitOperations) BoardWithDestinations(id int, b *Bus, r *Route, stop
 		b.Passengers[i].PaidFare = fare
 		revenue += fare
 	}
-	if o != nil && boarded > 0 {
-		v := o.Vehicle(id)
-		v.Boarded += boarded
-		v.Revenue += revenue
-		o.Revenue += revenue
-		for _, s := range []*StationActivity{stationActivity(o.Stations, stop), stationActivity(v.Stations, stop)} {
-			s.Boarded += boarded
-			s.Revenue += revenue
-		}
-	}
+	o.recordBoarding(id, r, stop, boarded, revenue)
 	return boarded, revenue
 }
 
@@ -103,16 +129,7 @@ func (o *TransitOperations) Board(id int, b *Bus, r *Route, stop, count int, can
 		b.Passengers[i].PaidFare = fare
 		revenue += fare
 	}
-	if o != nil && boarded > 0 {
-		v := o.Vehicle(id)
-		v.Boarded += boarded
-		v.Revenue += revenue
-		o.Revenue += revenue
-		for _, s := range []*StationActivity{stationActivity(o.Stations, stop), stationActivity(v.Stations, stop)} {
-			s.Boarded += boarded
-			s.Revenue += revenue
-		}
-	}
+	o.recordBoarding(id, r, stop, boarded, revenue)
 	return boarded, revenue
 }
 func (o *TransitOperations) Alight(id, stop, count int) {
@@ -133,8 +150,12 @@ func (o *TransitOperations) Track(id int, b *Bus, r *Route, dt float64) {
 		return
 	}
 	v := o.Vehicle(id)
+	if v.ServiceEnded {
+		return
+	}
 	v.LineName = r.Name
 	v.Route = r
+	v.MaxSpeedKPH = int(math.Round(b.MaxSpeedFwd * MetersPerPixel * 3.6))
 	if v.bus != b {
 		v.bus = b
 		v.lastPos = b.Pos
@@ -191,5 +212,19 @@ func (o *TransitOperations) InterruptJourney(id int) {
 	}
 	if v := o.Vehicles[id]; v != nil {
 		v.bus = nil
+	}
+}
+
+// EndVehicleService freezes the final record for the history list.
+func (o *TransitOperations) EndVehicleService(id int) {
+	if o == nil {
+		return
+	}
+	if v := o.Vehicles[id]; v != nil {
+		v.ServiceEnded = true
+		v.bus = nil
+		v.validLoop = false
+		v.loopKM, v.loopSeconds = 0, 0
+		delete(o.routeDistances, v.Route)
 	}
 }

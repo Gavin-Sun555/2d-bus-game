@@ -78,7 +78,7 @@ func testRightTurnRedQueue(t *testing.T, lw float64, berserk bool) {
 	ad.PrepareLeg(w, w.Stops[10], w.Stops[5], lw)
 	ad.trackPath(bus.Pos)
 	f := autopilotFrame{bus: bus, world: w, tls: tls, laneWidth: lw, s: ad.LastPathS}
-	ad.publishJunctionCorridor(f)
+	ad.publishJunctionCorridor(f, 0)
 	p := sim.Vec2{X: -line - 24 + 2, Y: center.Y + .5*lw}
 	other := &sim.JunctionCorridor{Center: center, EntryHeading: 0, Entered: true, Remaining: .25}
 	points := append([]sim.Vec2{p}, sim.QuarterTurnPath(center, sim.Vec2{X: 1}, sim.Vec2{Y: -1}, .5*lw, 1.5*lw, w.JunctionAt(center, lw).TurnRadius)...)

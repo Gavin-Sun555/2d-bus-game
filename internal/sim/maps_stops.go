@@ -5,6 +5,32 @@ import (
 	"math"
 )
 
+const metropolisHighSpeedStopName = "高铁站 (High-Speed Railway Station)"
+const metropolisConventionalStopName = "火车站站 (Railway Station Stop)"
+const metropolisConventionalStopX = 4550.
+
+func (w *World) isMetropolisConventionalStop(stop *BusStop) bool {
+	return math.Abs(stop.RoadCenter.X-metropolisConventionalStopX*w.GridScale()) < 1 &&
+		math.Abs(stop.RoadCenter.Y) < 1 && math.Abs(math.Cos(stop.Heading)) > .99
+}
+
+func (w *World) refreshMetropolisRailStopNames() {
+	if w.Theme != MapThemeMetropolis {
+		return
+	}
+	for _, stop := range w.Stops {
+		switch {
+		case StripStopDirection(stop.Name) == "高铁北站 (North Railway Hub)":
+			stop.Name = WithStopDirection(metropolisHighSpeedStopName, stop.Heading)
+		case w.isMetropolisConventionalStop(stop):
+			stop.Name = WithStopDirection(metropolisConventionalStopName, stop.Heading)
+		default:
+			continue
+		}
+		stop.cachedInfoText = ""
+	}
+}
+
 func (w *World) buildMetropolisStops(laneWidth float64) {
 	names := [12]string{
 		"中央枢纽 (Central Terminal)",
@@ -12,7 +38,7 @@ func (w *World) buildMetropolisStops(laneWidth float64) {
 		"市民环岛广场 (Civic Plaza)",
 		"科技创新园区 (Tech Campus)",
 		"奥体中心 (Olympic Stadium)",
-		"高铁北站 (North Railway Hub)",
+		metropolisHighSpeedStopName,
 		"西运河客运港 (Canal Port)",
 		"大学城园区 (University Park)",
 		"市立第一医院 (City Hospital)",

@@ -4,17 +4,65 @@ import (
 	"math"
 )
 
+func (tls *TrafficLightSystem) ClearUTurnOccupants() {
+	clear(tls.uTurnOccupants)
+}
+
+func (tls *TrafficLightSystem) ObserveUTurnOccupant(center Vec2) {
+	if tls.uTurnOccupants == nil {
+		tls.uTurnOccupants = make(map[Vec2]bool)
+	}
+	tls.uTurnOccupants[center] = true
+}
+
+// WaitingUTurnHasPriority applies only to pre-entry reservations.
+func (inter *TrafficIntersection) WaitingUTurnHasPriority() bool {
+	return !inter.UTurnYieldOnGreen
+}
+
+func (inter *TrafficIntersection) HoldingUTurnClearance() bool {
+	return inter.uTurnClearance
+}
+
 func (tls *TrafficLightSystem) Update(dt float64) {
+	tls.StationCrossingElapsed = math.Mod(tls.StationCrossingElapsed+dt, stationSignalCycle)
+	tls.RailElapsed += dt
+	tls.updateStationCrossingSignals(dt)
 	for _, inter := range tls.Intersections {
 		inter.Timer += dt
+		inter.updatePriorityPhaseWait(dt)
 		if inter.Cooldown > 0 {
 			inter.Cooldown -= dt
 		}
 
-		if !tls.BusPriorityEnabled || !inter.advanceBusPriority() {
+		inter.uTurnClearance = false
+		phase := inter.Phase
+		occupied := tls.uTurnOccupants[inter.Center]
+		// A green that served a U-turn gives ordinary conflicting movements
+		// first admission on its next occurrence. The yellow belongs to
+		// the same movement, including when a turn enters late.
+		if occupied && phase >= PhaseEWGreen && phase <= PhaseNSLeftYellow {
+			inter.UTurnServedPhases |= 1 << (phase / 2)
+		}
+		switch inter.Phase {
+		case PhaseEWYellow, PhaseEWLeftYellow, PhaseNSYellow, PhaseNSLeftYellow:
+			if occupied && inter.Timer >= inter.YellowDuration {
+				// Keep the outgoing phase to resume its normal transition, but
+				// display all red until the last turning bus clears the box.
+				inter.uTurnClearance = true
+				continue
+			}
+		}
+		if tls.BusPriorityEnabled && inter.PriorityResumePhase == nil && inter.shouldResumeLeftAfterUTurn() {
+			inter.Phase, inter.Timer = phase-1, 0
+		} else if !tls.BusPriorityEnabled || !inter.advanceBusPriority() {
 			inter.advancePhase()
 		}
-
+		if inter.Phase != phase && inter.Phase%2 == 0 {
+			mask := uint8(1 << (inter.Phase / 2))
+			inter.UTurnYieldOnGreen = inter.UTurnServedPhases&mask != 0
+			inter.UTurnServedPhases &^= mask
+		}
 	}
 
 	for _, cam := range tls.RoadCameras {
@@ -25,6 +73,26 @@ func (tls *TrafficLightSystem) Update(dt float64) {
 			cam.FlashTimer -= dt
 		}
 	}
+}
+
+// Give the front of the ordinary left-turn queue one window when a U-turn
+// took its previous green. Limit the retry to protect the other directions.
+func (inter *TrafficIntersection) shouldResumeLeftAfterUTurn() bool {
+	if inter.UTurnYieldOnGreen || inter.Timer < inter.YellowDuration ||
+		(inter.Phase != PhaseEWLeftYellow && inter.Phase != PhaseNSLeftYellow) {
+		return false
+	}
+	mask := uint8(1 << (inter.Phase / 2))
+	if inter.UTurnServedPhases&inter.waitingRegularLeft&mask == 0 {
+		return false
+	}
+	maxWait := 1.5 * inter.CycleDuration()
+	for _, wait := range inter.PriorityPhaseWait {
+		if wait >= maxWait {
+			return false
+		}
+	}
+	return true
 }
 
 // advancePhase advances at most one phase per tick, discarding elapsed
@@ -79,6 +147,9 @@ func (inter *TrafficIntersection) phaseTransition() (float64, LightPhase, bool) 
 
 // GetDetailedSignals returns: (ewThrough, ewLeft, nsThrough, nsLeft)
 func (inter *TrafficIntersection) GetDetailedSignals() (ewThrough, ewLeft, nsThrough, nsLeft LightSignal) {
+	if inter.uTurnClearance {
+		return SignalRed, SignalRed, SignalRed, SignalRed
+	}
 	if !inter.IsMajor {
 		// Minor intersection: permissive left turn (shares through light)
 		switch inter.Phase {
@@ -150,4 +221,44 @@ func (inter *TrafficIntersection) GetSignalForHeading(heading float64, isLeft ..
 		return l
 	}
 	return thru
+}
+
+func (tls *TrafficLightSystem) updateStationCrossingSignals(dt float64) {
+	for _, st := range tls.StationCrossingStates {
+		st.Timer += dt
+		if !tls.BusPriorityEnabled || !st.Priority {
+			switch st.Phase {
+			case StationSignalGreen:
+				if st.Timer >= 24.0 {
+					st.Phase, st.Timer, st.Extension = StationSignalYellow, 0, 0
+				}
+			case StationSignalYellow:
+				if st.Timer >= 4.0 {
+					st.Phase, st.Timer, st.Extension = StationSignalRed, 0, 0
+				}
+			case StationSignalRed:
+				if st.Timer >= 8.0 {
+					st.Phase, st.Timer, st.Extension = StationSignalGreen, 0, 0
+				}
+			}
+		} else {
+			switch st.Phase {
+			case StationSignalGreen:
+				if st.Timer >= 24.0 {
+					st.Extension += dt
+					if st.Extension >= BusPriorityMaxExtension {
+						st.Phase, st.Timer, st.Extension = StationSignalYellow, 0, 0
+					}
+				}
+			case StationSignalYellow:
+				if st.Timer >= 4.0 {
+					st.Phase, st.Timer, st.Extension = StationSignalRed, 0, 0
+				}
+			case StationSignalRed:
+				if st.Timer >= busPriorityMinGreen {
+					st.Phase, st.Timer, st.Extension = StationSignalGreen, 0, 0
+				}
+			}
+		}
+	}
 }

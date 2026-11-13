@@ -281,8 +281,10 @@ func TestAIVehicleLaneComplianceAndTurnExecution(t *testing.T) {
 	if math.Abs(sim.NormalizeAngle(car.Heading-(-math.Pi/2))) > 0.1 {
 		t.Fatalf("AI Car must turn left towards North (-Pi/2), got heading: %f", car.Heading)
 	}
-	if car.LaneIndex != 1 {
-		t.Fatalf("AI Car must join through lane (LaneIndex=1) on the new road, got %d", car.LaneIndex)
+	// An inner-lane left turn keeps the inner receiving lane so a bus can turn
+	// beside it into the outer one (see docs/left-turn-validation-2026-10-23.md).
+	if car.LaneIndex != 0 {
+		t.Fatalf("AI Car must join the inner through lane (LaneIndex=0) on the new road, got %d", car.LaneIndex)
 	}
 }
 

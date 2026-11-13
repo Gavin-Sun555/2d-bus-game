@@ -14,7 +14,7 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 	forward := sim.UnitFromAngle(f.bus.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	for _, obs := range f.obstacles {
-		if ad.clearsSkippedStopBay(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) {
+		if ad.clearsTurnExitQueue(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) {
 			continue
 		}
 		// The short ordinary-mode obstacle ray is measured to the leader's
@@ -55,6 +55,9 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 				continue
 			}
 		}
+		if ad.throughStationBus(f, obs) && ad.clearsStoppedParallelBus(f, obs) {
+			continue
+		}
 		gap := along - f.bus.Length/2 - halfLength
 		if gap > 80 && len(ad.drivePath) >= 2 {
 			tracked := ad.basePathPosition(obs.Pos, f.world, f.bus.Heading, f.laneWidth)
@@ -63,6 +66,16 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 			}
 		}
 		lead := math.Max(0, obs.Speed*math.Cos(angle))
+		if lead < 15 && f.world != nil {
+			bumperPos := f.bus.Pos.Add(forward.Mul(f.bus.Length * .5))
+			if railDist, clamped := f.world.ClampStopBeforeRailCrossing(bumperPos, f.bus.Heading, gap-24, f.bus.OverallLength(), 14); clamped {
+				if railDist <= 14 {
+					return 0
+				}
+				limit = math.Min(limit, math.Sqrt(2*135*math.Max(0, railDist-14)))
+				continue
+			}
+		}
 		// Match a moving leader continuously rather than repeatedly accelerating
 		// into a stop threshold. Reserve space for reaction and leader braking.
 		desired := 30 + .35*f.speedAbs

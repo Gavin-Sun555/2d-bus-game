@@ -113,6 +113,8 @@ func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, 
 		stopIDs = cache.stopTree.candidates(pos, 0, stopStorage[:0])
 		stopCount = len(stopIDs)
 	}
+	// 1. Check all candidate stop shelters and central BRT platform islands FIRST
+	// so an opposite-direction stop's corridor envelope never masks a platform barrier.
 	for i := 0; i < stopCount; i++ {
 		id := i
 		if cache != nil {
@@ -127,14 +129,26 @@ func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, 
 		}
 		dx := pos.X - st.Pos.X
 		dy := pos.Y - st.Pos.Y
-
-		// Longitudinal offset along direction of travel
 		dLong := dx*cosH + dy*sinH
-		// Lateral offset perpendicular to travel (positive towards sidewalk/shelter, negative towards road)
 		dLat := -dx*sinH + dy*cosH
 
-		// 1. Shelter physical structure collision check (located on sidewalk at dLat = 36.0, length 68, width 18)
-		if dLat > st.Width*0.5 {
+		if st.CenterBRT {
+			platLat := BRTPlatformOffset(laneWidth) - laneWidth*0.5
+			platBarrierHalfW := (BRTPlatformWidth - 2.0) * 0.5
+			shelterHW := BRTPlatformHalfLength
+			if math.Abs(dLong) < shelterHW && math.Abs(dLat-platLat) <= platBarrierHalfW {
+				pushDir := -1.0
+				if dLat > platLat {
+					pushDir = 1.0
+				}
+				return BoundaryCheckResult{
+					Zone:         ZoneHardBarrier,
+					Pushback:     Vec2{X: -sinH * pushDir, Y: cosH * pushDir},
+					Penetration:  platBarrierHalfW - math.Abs(dLat-platLat) + 1.0,
+					ObstacleName: "BRT中央站台安全岛",
+				}
+			}
+		} else if dLat > st.Width*0.5 {
 			shelterHW := 34.0 + 8.0 // half-length 34 + buffer
 			if math.Abs(dLong) < shelterHW && dLat >= 24.0 && dLat <= 48.0 {
 				pushX := sinH
@@ -147,8 +161,31 @@ func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, 
 				}
 			}
 		}
+	}
 
-		// 2. Bus Bay & Transit Corridor Envelope:
+	// 2. Bus Bay & Transit Corridor Envelope:
+	for i := 0; i < stopCount; i++ {
+		id := i
+		if cache != nil {
+			id = stopIDs[i]
+		}
+		st := w.Stops[id]
+		if st.CenterBRT {
+			continue
+		}
+		var cosH, sinH float64
+		if cache != nil {
+			cosH, sinH = cache.stops[id].cos, cache.stops[id].sin
+		} else {
+			sinH, cosH = math.Sincos(st.Heading)
+		}
+		dx := pos.X - st.Pos.X
+		dy := pos.Y - st.Pos.Y
+
+		// Longitudinal offset along direction of travel
+		dLong := dx*cosH + dy*sinH
+		// Lateral offset perpendicular to travel (positive towards sidewalk/shelter, negative towards road)
+		dLat := -dx*sinH + dy*cosH
 		// Bay box length is st.Length (140 px, dLong in [-70, +70]).
 		// Approach queue corridor: dLong in [-1200, -70] (safely accommodates multi-bus fleet departure queue up to 8 buses).
 		// Departure taper: dLong in [+70, +180] (110 px smooth exit corridor).
@@ -192,10 +229,16 @@ func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, 
 	if cache != nil && len(cache.roadTree.nodes) > 0 {
 		bestID := len(w.Roads)
 		cache.nearestRoad(0, pos, &minDistBeyondCurb, &bestID, &closestPush)
+		if bestID < len(w.Roads) && w.Roads[bestID].HasMedianBusLane() {
+			minDistBeyondCurb -= w.BRTStationFlareAt(pos, laneWidth)
+		}
 	} else {
 		for _, r := range w.Roads {
 			roadW := r.GetWidth(laneWidth)
 			roadHW := roadW / 2
+			if r.HasMedianBusLane() {
+				roadHW += w.BRTStationFlareAt(pos, laneWidth)
+			}
 
 			d, push := DistToSegment(pos, r.P1, r.P2)
 			dBeyond := d - roadHW
@@ -204,7 +247,6 @@ func (w *World) checkBoundaries(pos Vec2, busRadius float64, laneWidth float64, 
 				closestPush = push
 			}
 		}
-
 	}
 	// Decision based on minimum distance beyond curb
 	if minDistBeyondCurb <= 0 {

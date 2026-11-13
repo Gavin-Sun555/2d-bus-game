@@ -130,6 +130,7 @@ func (b *Bus) SetNextAccelerationScale(scale float64) {
 
 // Update handles vehicle kinematics per frame (dt is seconds)
 func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64, handbrake bool, toggleDoors bool) {
+	b.ApplyCatalogLimits()
 	if b.IsArticulated() && !b.TrailerInitialized {
 		b.ResetArticulation()
 	}
@@ -185,6 +186,8 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 	}
 
 	if b.DoorsOpen {
+		b.turnSignal = turnSignal{}
+		b.nextLaneSignal = 0
 		b.DoorProgress = math.Min(1.0, b.DoorProgress+dt*3.0)
 		// Cannot move while doors are open
 		b.Speed = 0
@@ -291,6 +294,8 @@ func (b *Bus) Update(dt float64, throttle float64, brake float64, steer float64,
 		b.Pos.X += b.Speed * math.Cos(b.Heading) * dt
 		b.Pos.Y += b.Speed * math.Sin(b.Heading) * dt
 	}
+
+	b.updateTurnSignal(dt, oldHeading)
 
 	// 5. Update tire tracks
 	b.updateTireTracks(dt)

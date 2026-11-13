@@ -16,7 +16,15 @@ func (g *Game) checkBusCarCollisions() {
 		return
 	}
 
+	// Bound both sections from the powered section's center, including a
+	// yawed trailer. Only nearby cars need the full oriented-body test.
+	busReach := g.Bus.OverallLength() - g.Bus.Length/2 + g.Bus.Width/2
 	for _, car := range activeCars {
+		reach := busReach + car.Length/2 + car.Width/2 + 1
+		delta := car.Pos.Sub(g.Bus.Pos)
+		if math.Abs(delta.X) > reach || math.Abs(delta.Y) > reach {
+			continue
+		}
 		carOBB := sim.OBB{
 			Center:  car.Pos,
 			HalfLen: car.Length / 2, // 23.0 ~ 25.0
@@ -54,8 +62,6 @@ func (g *Game) checkBusCarCollisions() {
 				g.Bus.Pos = g.Bus.Pos.Add(normal.Mul(sepDepth * 0.7))
 				car.Pos = car.Pos.Sub(normal.Mul(sepDepth * 0.3))
 			}
-
-			// Update busOBB center for subsequent car checks
 
 			// 2. Velocity & Momentum Resolution:
 			// Relative velocity along collision normal
@@ -165,8 +171,9 @@ func (g *Game) checkBusCarCollisions() {
 
 					if g.Bus.Durability <= 0 {
 						g.Bus.Durability = 50.0
-						g.Cash -= 200
-						g.HUD.AddWarningToast("[严重损毁] 车况归零！已紧急呼叫拖车抢修至 50% (维修费 -$200)")
+						repairCost := g.emergencyRepairCost()
+						g.Cash -= repairCost
+						g.HUD.AddWarningToast(fmt.Sprintf("[严重损毁] 拖车抢修至 50%% / Emergency repair: -$%d", repairCost))
 					}
 				}
 			} else {

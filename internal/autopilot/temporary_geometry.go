@@ -8,11 +8,13 @@ const maxTemporaryObstacles = 2048
 // Per-driver, simulation-thread-only scratch. Never publish these arrays as a
 // vehicle corridor. Large custom inputs retain the original allocating fallback.
 type temporaryGeometry struct {
-	junctionMargin [][2]sim.OBB
-	junctionActual [][2]sim.OBB
-	admission      []sim.OBB
-	ringBodies     []sim.OBB
-	ringIndices    []int
+	sidecarTraffic          [][2]sim.OBB
+	forwardEscapeBoundaries *forwardEscapeBoundaries
+	junctionCandidates      []int
+	junctionActual          []sweepSample
+	admission               []sim.OBB
+	ringBodies              []sim.OBB
+	ringIndices             []int
 }
 
 func (ad *AutopilotDriver) geometryScratch() *temporaryGeometry {

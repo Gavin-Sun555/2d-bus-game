@@ -97,6 +97,17 @@ func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *sim.Route, w
 	undoBtnY := currY - 3.0
 	h.PlanUndoBtnBounds = sim.Rect{X: undoBtnX, Y: undoBtnY, W: undoBtnW, H: undoBtnH}
 
+	searchW := 132.
+	searchX := undoBtnX - 10 - searchW
+	h.PlanSearchBtnBounds = sim.Rect{X: searchX, Y: undoBtnY, W: searchW, H: undoBtnH}
+	searchFill := sim.RGBA(30, 41, 59, 230)
+	if h.PlanSearchBtnBounds.Contains(mousePos) {
+		searchFill = sim.RGBA(22, 78, 99, 245)
+	}
+	vector.DrawFilledRect(screen, float32(searchX), float32(undoBtnY), float32(searchW), float32(undoBtnH), searchFill, true)
+	vector.StrokeRect(screen, float32(searchX), float32(undoBtnY), float32(searchW), float32(undoBtnH), 1.5, sim.RGBA(56, 189, 248, 220), true)
+	textui.DrawText(screen, locale.T("搜索站名", "Search Stations"), searchX+12, undoBtnY+5, 11.5, sim.RGBA(186, 230, 253, 255))
+
 	hasStops := len(route.StopIDs) > 0
 
 	// Draw Undo Button (Z / Backspace)
@@ -138,7 +149,7 @@ func (h *HUD) drawPlanningInstructions(screen *ebiten.Image, route *sim.Route, w
 	// Shortcut action keys on the left
 	shortcuts := locale.T("[Z/退格] 撤销上一站  |  [C] 清空  |  [TAB] 返回驾驶执行路线  |  [P] AI自动驾驶  |  [B] 狂暴模式",
 		"[Z/Backspace] Undo Stop  |  [C] Clear  |  [TAB] Resume Driving  |  [P] Autopilot  |  [B] Berserk")
-	if undoBtnX-(panelX+20.0) < 480.0 {
+	if searchX-(panelX+20.0) < 640.0 {
 		shortcuts = locale.T("[Z/退格] 撤销上一站  |  [C] 清空路线  |  [TAB] 返回驾驶",
 			"[Z/Backspace] Undo Stop  |  [C] Clear  |  [TAB] Resume Driving")
 	}

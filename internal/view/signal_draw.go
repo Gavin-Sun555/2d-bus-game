@@ -4,33 +4,41 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
 )
 
-// Draw renders traffic lights and stop lines in the world with dynamic lane width
-func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim.Camera, laneWidth float64) {
+// DrawIntersectionStopLines paints road markings before vehicle bodies.
+func DrawIntersectionStopLines(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim.Camera, laneWidth float64) {
 	for _, inter := range tls.Intersections {
-		// Include the outermost stop line, curb posts and signal heads. Distant
-		// circles must be culled before vector tessellation at large coordinates.
-		ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
-		halfRoad := laneWidth + 12
-		for _, lanes := range inter.ApproachLanes {
-			halfRoad = math.Max(halfRoad, float64(lanes)*laneWidth/2+12)
+		if intersectionSignalsVisible(inter, cam, laneWidth) {
+			drawIntersectionStopLines(screen, cam, inter, laneWidth)
 		}
-		radius := math.Hypot(math.Max(ewStop, nsStop), halfRoad) + 40/cam.Zoom
-		if !cam.IsPointVisible(inter.Center, radius) {
+	}
+}
+
+func intersectionSignalsVisible(inter *sim.TrafficIntersection, cam *sim.Camera, laneWidth float64) bool {
+	ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
+	halfRoad := laneWidth + 12
+	for _, lanes := range inter.ApproachLanes {
+		halfRoad = math.Max(halfRoad, float64(lanes)*laneWidth/2+12)
+	}
+	radius := math.Hypot(math.Max(ewStop, nsStop), halfRoad) + 40/cam.Zoom
+	return cam.IsPointVisible(inter.Center, radius)
+}
+
+// DrawTrafficLights renders elevated fixtures after vehicle bodies.
+func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *sim.Camera, laneWidth float64, railways []*sim.Railway) {
+	for _, inter := range tls.Intersections {
+		if !intersectionSignalsVisible(inter, cam, laneWidth) {
 			continue
 		}
 
-		// 1. Draw Stop Lines on valid approaches scaled to current lane width
-		drawIntersectionStopLines(screen, cam, inter, laneWidth)
-
 		ewThru, ewLeft, nsThru, nsLeft := inter.GetDetailedSignals()
 		_, ewCross, _, nsCross := inter.GetApproachDimensions(laneWidth)
+		northCross, southCross := viaductSignalOffsets(railways, inter.Center, nsCross)
 
 		// 2. Draw traffic lights directly mounted at each connected approach zebra crossing:
 		// West Approach (0, Eastbound traffic):
@@ -43,7 +51,7 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 					lanes = 2
 				}
 			}
-			drawApproachSignal(screen, cam, inter.Center, 0, ewThru, ewLeft, lanes, laneWidth, ewCross)
+			drawApproachSignal(screen, cam, inter.Center, 0, ewThru, ewLeft, lanes, laneWidth, ewCross, inter.ApproachMedianBusLane[0])
 		}
 
 		// East Approach (1, Westbound traffic):
@@ -56,7 +64,7 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 					lanes = 2
 				}
 			}
-			drawApproachSignal(screen, cam, inter.Center, 1, ewThru, ewLeft, lanes, laneWidth, ewCross)
+			drawApproachSignal(screen, cam, inter.Center, 1, ewThru, ewLeft, lanes, laneWidth, ewCross, inter.ApproachMedianBusLane[1])
 		}
 
 		// North Approach (2, Southbound traffic):
@@ -69,7 +77,7 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 					lanes = 2
 				}
 			}
-			drawApproachSignal(screen, cam, inter.Center, 2, nsThru, nsLeft, lanes, laneWidth, nsCross)
+			drawApproachSignal(screen, cam, inter.Center, 2, nsThru, nsLeft, lanes, laneWidth, northCross, inter.ApproachMedianBusLane[2])
 		}
 
 		// South Approach (3, Northbound traffic):
@@ -82,40 +90,87 @@ func DrawTrafficLights(tls *sim.TrafficLightSystem, screen *ebiten.Image, cam *s
 					lanes = 2
 				}
 			}
-			drawApproachSignal(screen, cam, inter.Center, 3, nsThru, nsLeft, lanes, laneWidth, nsCross)
+			drawApproachSignal(screen, cam, inter.Center, 3, nsThru, nsLeft, lanes, laneWidth, southCross, inter.ApproachMedianBusLane[3])
 		}
+		signalOffsets := [4]float64{ewCross, ewCross, northCross, southCross}
 		for approach, reserved := range inter.ApproachBusLane {
-			if !reserved {
+			lanes := inter.ApproachLanes[approach]
+			if !reserved && lanes < 6 {
 				continue
 			}
 			heading := [4]float64{0, math.Pi, math.Pi / 2, -math.Pi / 2}[approach]
 			fwd := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -fwd.Y, Y: fwd.X}
-			cross := ewCross
-			if approach >= 2 {
-				cross = nsCross
-			}
 			thru, left := inter.GetSignalForApproach(heading)
-			base := inter.Center.Sub(fwd.Mul(cross))
-			lane := 3.0
+			base := inter.Center.Sub(fwd.Mul(signalOffsets[approach]))
 			if inter.ApproachMedianBusLane[approach] {
-				lane = 0
+				drawMedianBRTSignals(screen, cam, base.Add(right.Mul(.5*laneWidth)), fwd, right, laneWidth,
+					[3]sim.LightSignal{left, thru, inter.GetMedianBusRightSignal(heading)})
 			}
-			drawSignalHead(screen, cam, base.Add(right.Mul((lane+.25)*laneWidth)), left, true, approach < 2)
-			drawSignalHead(screen, cam, base.Add(right.Mul((lane+.75)*laneWidth)), thru, false, approach < 2)
-			if inter.ApproachMedianBusLane[approach] {
-				pos := base.Sub(fwd.Mul(28)).Add(right.Mul(.5 * laneWidth))
-				drawSignalHead(screen, cam, pos, inter.GetMedianBusRightSignal(heading), false, approach < 2)
-				if cam.Zoom >= .35 && cam.IsPointVisible(pos, 80) {
-					sp := cam.WorldToScreen(pos)
-					textui.DrawText(screen, locale.T("BRT 右转", "BRT RIGHT"), sp.X+12, sp.Y-5, 10, sim.RGBA(94, 234, 212, 255))
-				}
-			}
+			curb := float64(lanes/2) - 1
+			drawSignalHead(screen, cam, base.Add(right.Mul((curb+.25)*laneWidth)), left, signalLeft, approach < 2)
+			drawSignalHead(screen, cam, base.Add(right.Mul((curb+.75)*laneWidth)), thru, signalThrough, approach < 2)
 		}
 	}
 
 	// 3. Draw straight road surveillance camera gantries
 	DrawRoadCameras(tls, screen, cam, laneWidth)
+}
+
+// Mount road signal heads clear of the bridge where it covers the crosswalk.
+// The stop line and traffic phases still belong to the original junction.
+func viaductSignalOffsets(railways []*sim.Railway, center sim.Vec2, offset float64) (north, south float64) {
+	north, south = offset, offset
+	for _, railway := range railways {
+		for _, crossing := range railway.Crossings {
+			if crossing.Level || math.Abs(crossing.Center.X-center.X) >= 1 {
+				continue
+			}
+			top := railway.Y - railway.HalfWidth - 14
+			bottom := railway.Y + railway.HalfWidth + 32
+			if y := center.Y - north; y >= top && y <= bottom {
+				north = center.Y - top + 10
+			}
+			if y := center.Y + south; y >= top && y <= bottom {
+				south = bottom - center.Y + 10
+			}
+			break
+		}
+	}
+	return north, south
+}
+
+// One aspect per movement keeps the three arrows legible as a single row.
+// Positions and arrow directions follow the approach, including rotated cameras.
+func drawMedianBRTSignals(screen *ebiten.Image, cam *sim.Camera, center, forward, right sim.Vec2, lw float64, signals [3]sim.LightSignal) {
+	if cam.Zoom < .22 || !cam.IsPointVisible(center, lw) {
+		return
+	}
+	drawRotatedBox(screen, cam, center, forward.X, forward.Y, .36*lw, .98*lw, rgb(44, 63, 77))
+	stroke := math.Max(.95/cam.Zoom, .032*lw)
+	for i, signal := range signals {
+		pos := center.Add(right.Mul(float64(i-1) * .32 * lw))
+		drawRotatedBox(screen, cam, pos, forward.X, forward.Y, .31*lw, .285*lw, rgb(12, 21, 32))
+		col := rgb(255, 74, 83)
+		if signal == sim.SignalGreen {
+			col = rgb(72, 244, 139)
+		} else if signal == sim.SignalYellow {
+			col = rgb(255, 203, 71)
+		}
+		start := pos.Sub(forward.Mul(.105 * lw))
+		dir := forward
+		if i != 1 {
+			dir = right.Mul(float64(i - 1))
+			worldLine(screen, cam, start, pos, stroke, col)
+			start = pos
+		}
+		tip := pos.Add(dir.Mul(.095 * lw))
+		back := tip.Sub(dir.Mul(.065 * lw))
+		side := sim.Vec2{X: -dir.Y, Y: dir.X}.Mul(.047 * lw)
+		worldLine(screen, cam, start, tip, stroke, col)
+		worldLine(screen, cam, tip, back.Add(side), stroke, col)
+		worldLine(screen, cam, tip, back.Sub(side), stroke, col)
+	}
 }
 
 // DrawRoadCameras renders surveillance gantries, cameras, pulsing LEDs, and violation flash effects
@@ -286,7 +341,7 @@ func drawIntersectionStopLines(screen *ebiten.Image, cam *sim.Camera, inter *sim
 	}
 }
 
-func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, approach int, thruSig, leftSig sim.LightSignal, approachLanes int, laneWidth float64, crosswalkDist float64) {
+func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, approach int, thruSig, leftSig sim.LightSignal, approachLanes int, laneWidth float64, crosswalkDist float64, medianBRT bool) {
 	scale := cam.Zoom
 	if scale < 0.20 {
 		return
@@ -398,23 +453,31 @@ func drawApproachSignal(screen *ebiten.Image, cam *sim.Camera, c sim.Vec2, appro
 		strokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw, sim.RGBA(51, 65, 85, 240), true)
 		strokeLine(screen, float32(spCurb.X), float32(spCurb.Y), float32(spEnd.X), float32(spEnd.Y), armLw*0.35, sim.RGBA(148, 163, 184, 200), true)
 
-		// 3. Mount Left-Turn Signal Head over Inner Lane 0
-		drawSignalHead(screen, cam, leftPos, leftSig, true, isHorizontalHead)
-
-		// 4. Mount Through Signal Head over Lane 1
-		drawSignalHead(screen, cam, thruPos, thruSig, false, isHorizontalHead)
-
-		// 5. If 6-lane road, mount Through/Right Signal Head over Outer Lane 2
+		// The median bus lane has its own heads. General traffic turns left
+		// from the next lane out, so replace that lane's usual through head.
+		if medianBRT {
+			leftPos = thruPos
+		} else {
+			drawSignalHead(screen, cam, thruPos, thruSig, signalThrough, isHorizontalHead)
+		}
+		drawSignalHead(screen, cam, leftPos, leftSig, signalLeft, isHorizontalHead)
 		if is6Lane {
-			drawSignalHead(screen, cam, thruPos2, thruSig, false, isHorizontalHead)
+			drawSignalHead(screen, cam, thruPos2, thruSig, signalThrough, isHorizontalHead)
 		}
 	} else {
 		// Minor 2-lane street: Signal head mounted directly at the curb post at the zebra crossing
-		drawSignalHead(screen, cam, curbPos, thruSig, false, isHorizontalHead)
+		drawSignalHead(screen, cam, curbPos, thruSig, signalThrough, isHorizontalHead)
 	}
 }
 
-func drawSignalHead(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, currentSig sim.LightSignal, isLeftArrow bool, isHorizontal bool) {
+type signalArrow int
+
+const (
+	signalThrough signalArrow = iota
+	signalLeft
+)
+
+func drawSignalHead(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, currentSig sim.LightSignal, arrow signalArrow, isHorizontal bool) {
 	if !cam.IsPointVisible(pos, 30/cam.Zoom) {
 		return
 	}
@@ -449,18 +512,18 @@ func drawSignalHead(screen *ebiten.Image, cam *sim.Camera, pos sim.Vec2, current
 
 	if isHorizontal {
 		cy := boxY + boxH/2
-		drawSignalLamp(screen, boxX+boxW*0.20, cy, lampR, sim.SignalRed, currentSig, isLeftArrow, scale)
-		drawSignalLamp(screen, boxX+boxW*0.50, cy, lampR, sim.SignalYellow, currentSig, isLeftArrow, scale)
-		drawSignalLamp(screen, boxX+boxW*0.80, cy, lampR, sim.SignalGreen, currentSig, isLeftArrow, scale)
+		drawSignalLamp(screen, boxX+boxW*0.20, cy, lampR, sim.SignalRed, currentSig, arrow, scale)
+		drawSignalLamp(screen, boxX+boxW*0.50, cy, lampR, sim.SignalYellow, currentSig, arrow, scale)
+		drawSignalLamp(screen, boxX+boxW*0.80, cy, lampR, sim.SignalGreen, currentSig, arrow, scale)
 	} else {
 		cx := boxX + boxW/2
-		drawSignalLamp(screen, cx, boxY+boxH*0.20, lampR, sim.SignalRed, currentSig, isLeftArrow, scale)
-		drawSignalLamp(screen, cx, boxY+boxH*0.50, lampR, sim.SignalYellow, currentSig, isLeftArrow, scale)
-		drawSignalLamp(screen, cx, boxY+boxH*0.80, lampR, sim.SignalGreen, currentSig, isLeftArrow, scale)
+		drawSignalLamp(screen, cx, boxY+boxH*0.20, lampR, sim.SignalRed, currentSig, arrow, scale)
+		drawSignalLamp(screen, cx, boxY+boxH*0.50, lampR, sim.SignalYellow, currentSig, arrow, scale)
+		drawSignalLamp(screen, cx, boxY+boxH*0.80, lampR, sim.SignalGreen, currentSig, arrow, scale)
 	}
 }
 
-func drawSignalLamp(screen *ebiten.Image, cx, cy, radius float32, lampKind sim.LightSignal, currentSig sim.LightSignal, isLeftArrow bool, scale float64) {
+func drawSignalLamp(screen *ebiten.Image, cx, cy, radius float32, lampKind sim.LightSignal, currentSig sim.LightSignal, arrow signalArrow, scale float64) {
 	isActive := (lampKind == currentSig)
 
 	var lampColor, glowColor color.RGBA
@@ -507,11 +570,12 @@ func drawSignalLamp(screen *ebiten.Image, cx, cy, radius float32, lampKind sim.L
 			aLw = 1.0
 		}
 
-		if isLeftArrow {
-			// Left arrow (⇦) inside lamp
-			strokeLine(screen, cx+radius*0.4, cy, cx-radius*0.4, cy, aLw, arrowCol, true)
-			strokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy-radius*0.4, aLw, arrowCol, true)
-			strokeLine(screen, cx-radius*0.4, cy, cx-radius*0.1, cy+radius*0.4, aLw, arrowCol, true)
+		if arrow == signalLeft {
+			tip := cx - radius*.4
+			back := cx - radius*.1
+			strokeLine(screen, cx+radius*.4, cy, tip, cy, aLw, arrowCol, true)
+			strokeLine(screen, tip, cy, back, cy-radius*.4, aLw, arrowCol, true)
+			strokeLine(screen, tip, cy, back, cy+radius*.4, aLw, arrowCol, true)
 		} else if isActive && lampKind == sim.SignalGreen {
 			// Straight arrow (⬆) inside green lamp
 			strokeLine(screen, cx, cy+radius*0.4, cx, cy-radius*0.4, aLw, arrowCol, true)

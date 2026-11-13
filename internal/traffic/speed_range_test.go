@@ -9,18 +9,18 @@ import (
 func TestSpawnSpeedRangesAndStableAssignments(t *testing.T) {
 	sim.SeedSimulation(87)
 	w := sim.NewWorld(52, sim.MapThemeMetropolis)
-	tm := &TrafficManager{CarSpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 100}}
+	tm := &TrafficManager{CarSpeedRange: sim.SpeedRange{MinKPH: 30, MaxKPH: 120}}
 	tm.BuildForWorld(w, 288, 52)
 	seen := map[int]bool{}
 	original := make(map[*sim.TrafficCar]int)
 	for _, c := range tm.Cars {
-		if c.MaxSpeedKPH < 30 || c.MaxSpeedKPH > 100 || c.MaxSpeedKPH%10 != 0 || c.CanOvertake != (c.MaxSpeedKPH > 30) || c.TargetSpeed != sim.SpeedKPH(c.MaxSpeedKPH) {
+		if c.MaxSpeedKPH < 30 || c.MaxSpeedKPH > 120 || c.MaxSpeedKPH%10 != 0 || c.CanOvertake != (c.MaxSpeedKPH > 30) || c.TargetSpeed != sim.SpeedKPH(c.MaxSpeedKPH) {
 			t.Fatalf("bad spawn speed: %+v", c)
 		}
 		seen[c.MaxSpeedKPH] = true
 		original[c] = c.MaxSpeedKPH
 	}
-	if len(seen) != 8 {
+	if len(seen) != 10 {
 		t.Fatalf("missing speed bins: %v", seen)
 	}
 	tm.CarSpeedRange = sim.SpeedRange{MinKPH: 70, MaxKPH: 80}
@@ -41,7 +41,7 @@ func TestSpawnSpeedRangesAndStableAssignments(t *testing.T) {
 	if replacement.MaxSpeedKPH != 70 && replacement.MaxSpeedKPH != 80 {
 		t.Fatal("replacement ignored new range")
 	}
-	for _, rangeKPH := range []sim.SpeedRange{{MinKPH: 30, MaxKPH: 50}, {MinKPH: 60, MaxKPH: 80}, {MinKPH: 40, MaxKPH: 40}} {
+	for _, rangeKPH := range []sim.SpeedRange{{MinKPH: 30, MaxKPH: 50}, {MinKPH: 120, MaxKPH: 120}, {MinKPH: 40, MaxKPH: 40}} {
 		fleet := NewAIBusManager()
 		fleet.BusSpeedRange = rangeKPH
 		fleet.BuildFleet(w, 8, 52)

@@ -12,14 +12,67 @@ type skippedStopDeparture struct {
 	served   bool
 }
 
+// throughStationBus identifies a stationary bus serving a stop this driver
+// can pass. The route's own docking queue keeps its normal headway.
+func (ad *AutopilotDriver) throughStationBus(f autopilotFrame, ob VehicleObstacle) bool {
+	if !ad.DisallowOncomingOvertake || f.world == nil || ob.Bus == nil || math.Abs(ob.Speed) >= 3 {
+		return false
+	}
+	canPass := func(stopID int) bool {
+		return ad.CanSkipTargetStop || f.targetStop == nil || stopID != f.targetStop.ID
+	}
+	service := ob.Bus.PassengerService
+	if service.Active {
+		return canPass(service.StopID)
+	}
+	if request := ob.Bus.StationMergeRequest; request != nil {
+		return canPass(request.StopID)
+	}
+	if ob.Bus.DoorsOpen {
+		for _, stop := range f.world.Stops {
+			if stop.ContainsBus(ob.Bus) || stop.ContainsBusInOuterLane(ob.Bus, f.laneWidth) {
+				return canPass(stop.ID)
+			}
+		}
+	}
+	return false
+}
+
+// A parked articulated bus can have a wider bounding box than either body
+// section. Test its actual sections against the reserved lane's travel path.
+func (ad *AutopilotDriver) stationBusLaneGap(f autopilotFrame, forward, right sim.Vec2, busLane sim.Vec2) float64 {
+	runway := math.Max(450, f.speedAbs*2.4+160)
+	nose := f.bus.Length / 2
+	gap := math.Inf(1)
+	corridor := sim.OBB{
+		Center:  busLane.Add(forward.Mul(nose + runway/2)),
+		Heading: math.Atan2(forward.Y, forward.X),
+		HalfLen: runway / 2, HalfWid: f.bus.Width/2 + 2,
+	}
+	for _, ob := range f.obstacles {
+		delta := ob.Pos.Sub(busLane)
+		if math.Abs(delta.Dot(right)) > f.laneWidth*1.5 || delta.Dot(forward) < -ob.Length/2 ||
+			delta.Dot(forward) > nose+runway+ob.Length/2 || !ad.throughStationBus(f, ob) {
+			continue
+		}
+		for _, part := range ob.Bus.BodyParts() {
+			if part.HalfLen > 0 {
+				if hit, _, _ := sim.CheckOBBCollision(corridor, part); hit {
+					yaw := part.Heading - corridor.Heading
+					rear := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
+					gap = math.Min(gap, part.Center.Sub(busLane).Dot(forward)-rear-nose)
+				}
+			}
+		}
+	}
+	return gap
+}
+
 func stopRoadPoint(stop *sim.BusStop, lw float64, worlds ...*sim.World) sim.Vec2 {
 	forward := sim.UnitFromAngle(stop.Heading)
 
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	lane := float64(max(2, stop.RoadLanes))/2 - .5
-	if stop.RoadLanes == 8 {
-		lane = 2.5
-	}
 	if len(worlds) > 0 && worlds[0] != nil {
 		coord := stop.RoadCenter.Y
 		ew := math.Abs(forward.X) > .5
@@ -100,12 +153,19 @@ func (ad *AutopilotDriver) holdSkippedDepartureLane(bus *sim.Bus, world *sim.Wor
 		return false
 	}
 	forward := sim.UnitFromAngle(passage.stop.Heading)
+	// Departure holding belongs only to the stop's own road arm. A later
+	// parallel arm can share its heading and still be "behind" the old stop
+	// longitudinally, long after the departure maneuver has finished.
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	roadReach := float64(max(2, passage.stop.RoadLanes))*lw/2 + sim.ShoulderWidth + bus.Width
+	if math.Abs(bus.Pos.Sub(passage.stop.RoadCenter).Dot(right)) > roadReach {
+		return false
+	}
 	if bus.Pos.Sub(passage.stop.RoadCenter).Dot(forward) > bus.Length/2+80 || math.Cos(bus.Heading-passage.stop.Heading) < .85 || world.InsideJunction(bus.Pos, lw, 0) {
 		return false
 	}
 	// Reconcile restored road-only legs with their real path origin. A saved
 	// fallback lane reference must not push the held passage into the shoulder.
-	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	desired := passage.position.Sub(ad.drivePath[0]).Dot(right)
 	if math.Abs(ad.LaneOffset-desired) > 1e-6 {
 		ad.holdLaneOffset(desired)
@@ -117,19 +177,35 @@ func (ad *AutopilotDriver) holdSkippedDepartureLane(bus *sim.Bus, world *sim.Wor
 
 // Once on the final straight approach, continue the existing road lane through
 // an eligible stop. This removes both the bay turn and its corner-speed limit.
-func (ad *AutopilotDriver) prepareSkippedStopLane(bus *sim.Bus, stop *sim.BusStop, world *sim.World, lw, remaining float64) bool {
+func (ad *AutopilotDriver) prepareSkippedStopLane(bus *sim.Bus, stop *sim.BusStop, world *sim.World, obstacles []VehicleObstacle, lw, remaining float64) bool {
 	if !ad.CanSkipTargetStop {
 		return false
 	}
 	ad.stationDock = nil
-	if ad.bypassStopID == stop.ID || ad.State == AutopilotStateDeparting {
+	if ad.State == AutopilotStateDeparting || math.Abs(ad.LaneOffset-ad.TargetLaneOffset) > 1 {
 		return false
 	}
 	forward := sim.UnitFromAngle(stop.Heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	repair := ad.bypassStopID == stop.ID
+	if repair {
+		if len(ad.drivePath) != 2 || math.Abs(ad.LaneOffset) > 1 {
+			return false
+		}
+		// Old saves may already contain a straight bypass along a lane line.
+		// Leave valid shortcuts and their lane offsets alone.
+		end := ad.drivePath[1].Sub(stop.RoadCenter)
+		if math.Abs(end.Dot(forward)) > 1 || math.Abs(ad.drivePath[1].Sub(ad.drivePath[0]).Dot(right)) > 1 {
+			return false
+		}
+		pathLateral := end.Dot(right)
+		if math.Abs(pathLateral-(math.Floor(pathLateral/lw)+.5)*lw) < 1 {
+			return false
+		}
+	}
 	along := stop.RoadCenter.Sub(bus.Pos).Dot(forward)
 	lateral := bus.Pos.Sub(stop.RoadCenter).Dot(right)
-	if along < 0 || remaining > along+100 || math.Cos(bus.Heading-stop.Heading) < .995 || world.InsideJunction(bus.Pos, lw, 0) {
+	if along <= 3 || remaining > along+100 || math.Cos(bus.Heading-stop.Heading) < .995 || world.InsideJunction(bus.Pos, lw, 0) {
 		return false
 	}
 	center, ew, _, _ := sim.CurrentRoadInfo(world, bus.Pos, bus.Heading, lw)
@@ -140,18 +216,30 @@ func (ad *AutopilotDriver) prepareSkippedStopLane(bus *sim.Bus, stop *sim.BusSto
 	if ew != (math.Abs(forward.X) > .5) || math.Abs(center-stopCenter) > lw*.2 {
 		return false
 	}
-	if lateral < -lw*.5-2 || math.Abs(lateral) > float64(max(2, stop.RoadLanes))/2*lw-bus.Width/2+5 {
+	road, ok := world.RoadAt(center, ew, bus.Pos)
+	if !ok || lateral < 0 || lateral > float64(road.LaneCount()/2)*lw-bus.Width/2+5 {
 		return false
 	}
 	// Do not shortcut a real junction, roundabout or return loop that happens
 	// to finish on the same road: every remaining waypoint must be straight.
-	roadLateral := stopRoadPoint(stop, lw, ad.pathWorld).Sub(stop.RoadCenter).Dot(right)
-	for i := ad.WaypointIdx + 1; i < len(ad.drivePath); i++ {
-		if math.Abs(ad.drivePath[i].Sub(stop.RoadCenter).Dot(right)-roadLateral) > 1 {
-			return false
+	if !repair {
+		roadLateral := stopRoadPoint(stop, lw, world).Sub(stop.RoadCenter).Dot(right)
+		for i := ad.WaypointIdx + 1; i < len(ad.drivePath); i++ {
+			if math.Abs(ad.drivePath[i].Sub(stop.RoadCenter).Dot(right)-roadLateral) > 1 {
+				return false
+			}
 		}
 	}
-	ad.drivePath = []sim.Vec2{bus.Pos, stop.RoadCenter.Add(right.Mul(lateral))}
+	// The current position may be partway through a merge. Use its lane
+	// center as the new path reference only when the bus can safely join it.
+	laneCenter := (math.Floor(lateral/lw) + .5) * lw
+	f := autopilotFrame{bus: bus, world: world, obstacles: obstacles, targetStop: stop, laneWidth: lw, speedAbs: math.Abs(bus.Speed)}
+	if (road.HasMedianBusLane() && brtPlatformBlocksDividerCross(world, bus, stop.Heading, lw, lateral, laneCenter)) ||
+		!requiredMergeLaneClear(f, stop.Heading, lateral, laneCenter) {
+		return false
+	}
+	start := bus.Pos.Add(right.Mul(laneCenter - lateral))
+	ad.drivePath = []sim.Vec2{start, stop.RoadCenter.Add(right.Mul(laneCenter))}
 	ad.cumLen = []float64{0, along}
 	ad.WaypointIdx = 0
 	ad.LastPathS = 0

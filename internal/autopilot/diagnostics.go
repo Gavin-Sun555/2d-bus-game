@@ -44,6 +44,7 @@ func (ad *AutopilotDriver) DiagnoseStop(bus *sim.Bus, route *sim.Route, world *s
 		frame.bus = &busCopy
 		steer, _, _, _ := probe.pursuitSteering(frame)
 		m := map[string]float64{"signal": probe.trafficLightSpeed(frame, 150), "obstacles": probe.obstacleSpeed(frame, 150), "junction_admission": probe.junctionAdmissionSpeed(frame), "junction_sweep": probe.junctionSweptSpeed(frame)}
+		m["exit_settling"] = probe.exitCruiseSpeed(frame)
 		m["roundabout_entry"] = probe.roundaboutEntryObstacleSpeed(frame)
 		m["station_departure"] = probe.stationDepartureTrafficSpeed(frame, 150)
 		m["following"] = probe.followingSpeed(frame)
@@ -65,9 +66,9 @@ func (ad *AutopilotDriver) DiagnoseStop(bus *sim.Bus, route *sim.Route, world *s
 		}
 		m["turn_merge"] = math.Inf(1)
 		m["turn_lane_clearance"] = math.Inf(1)
-		if probe.busLaneJunction != nil && !probe.busJunctionEntered {
+		if probe.busLaneApproachActive(frame) {
 			heading := approachRoadHeading(frame.bus.Heading)
-			request := &sim.BusLaneMergeRequest{Target: probe.pointAt(frame.s), Heading: heading, LeftTurn: true}
+			request := &sim.BusLaneMergeRequest{Target: probe.pointAt(frame.s), Heading: heading, LeftTurn: true, Junction: *probe.busLaneJunction}
 			u := sim.UnitFromAngle(heading)
 			right := sim.Vec2{X: -u.Y, Y: u.X}
 			actual := frame.bus.Pos.Sub(request.Target).Dot(right)
@@ -80,7 +81,7 @@ func (ad *AutopilotDriver) DiagnoseStop(bus *sim.Bus, route *sim.Route, world *s
 				}
 				one := frame
 				one.obstacles = []VehicleObstacle{ob}
-				m["turn_merge"] = math.Min(m["turn_merge"], mergeTrafficSpeed(one, request))
+				m["turn_merge"] = math.Min(m["turn_merge"], mergeTrafficSpeed(one, probe.approachTrafficRequest(frame, request)))
 			}
 		}
 		for k, v := range m {

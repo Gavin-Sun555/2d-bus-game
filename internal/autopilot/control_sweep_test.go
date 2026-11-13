@@ -2,9 +2,11 @@ package autopilot
 
 import (
 	"fmt"
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
+	"math/rand"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 func TestControlSweepProtectsYawedBodyOutsideJunction(t *testing.T) {
@@ -38,6 +40,34 @@ func TestControlSweepProtectsYawedBodyOutsideJunction(t *testing.T) {
 					t.Fatalf("rear follower blocked: %v", limit)
 				}
 			})
+		}
+	}
+}
+
+func TestControlSweepLazyTrailerMatchesFullCollision(t *testing.T) {
+	rng := rand.New(rand.NewSource(720))
+	bus := sim.NewBus(1000, -900, .25)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = -.22
+	for i := range 100 {
+		front := sim.OBB{
+			Center:  bus.Pos.Add(sim.Vec2{X: rng.Float64()*450 - 100, Y: rng.Float64()*160 - 80}),
+			Heading: rng.Float64()*2 - 1,
+			HalfLen: bus.Length/2 + 1, HalfWid: bus.Width/2 + 1,
+		}
+		sample := sweepSample{front: front}
+		bodies := sweepBodies(bus, front)
+		for j := range 12 {
+			// Sample near the source, the target, and the intervening lane.
+			pos := bus.Pos.Add(front.Center.Sub(bus.Pos).Mul(float64(j%3) / 2))
+			obstacle := VehicleObstacle{
+				Pos:     pos.Add(sim.Vec2{X: rng.Float64()*450 - 225, Y: rng.Float64()*240 - 120}),
+				Heading: rng.Float64() * math.Pi, Length: 46, Width: 24,
+			}
+			distance := rng.Float64() * 60
+			if got, want := sample.collides(bus, obstacle, distance, 1, 1), sweepBodiesCollision(bodies, obstacle, distance, 1, 1); got != want {
+				t.Fatalf("sample %d obstacle %d: collision = %t, full sweep = %t", i, j, got, want)
+			}
 		}
 	}
 }

@@ -8,6 +8,30 @@ type LineOperations struct {
 	TotalKM, AverageSpacingKM, CompletedKM, CompletedSeconds float64
 }
 
+// ResetLine discards one service's statistics before its vehicles are dispatched
+// on a new itinerary. The player record is shared with the currently driven line.
+func (o *TransitOperations) ResetLine(route *Route, player bool) {
+	for id, v := range o.Vehicles {
+		if (id == 0 && player) || (id != 0 && v.LineName == route.Name) {
+			delete(o.routeDistances, v.Route)
+			delete(o.Vehicles, id)
+		}
+	}
+	for stopID, activity := range o.LineStations[route.Name] {
+		if activity == nil {
+			continue
+		}
+		o.Revenue = max(0, o.Revenue-activity.Revenue)
+		if total := o.Stations[stopID]; total != nil {
+			total.Boarded = max(0, total.Boarded-activity.Boarded)
+			total.Alighted = max(0, total.Alighted-activity.Alighted)
+			total.Revenue = max(0, total.Revenue-activity.Revenue)
+		}
+	}
+	delete(o.LineStations, route.Name)
+	delete(o.routeDistances, route)
+}
+
 func (l LineOperations) AverageKPH() (float64, bool) {
 	if l.CompletedLaps == 0 || l.CompletedSeconds <= 0 {
 		return 0, false
@@ -35,7 +59,7 @@ func (o *TransitOperations) LineSummary(route *Route) LineOperations {
 		l.AverageSpacingKM /= float64(l.Legs)
 	}
 	for _, v := range o.Vehicles {
-		if v.Route == nil || v.LineName != route.Name || !slices.Equal(v.Route.StopIDs, route.StopIDs) {
+		if !v.ServesLine(route) || v.ServiceEnded {
 			continue
 		}
 		l.Vehicles++
@@ -44,4 +68,9 @@ func (o *TransitOperations) LineSummary(route *Route) LineOperations {
 		l.CompletedSeconds += v.CompletedSeconds
 	}
 	return l
+}
+
+// ServesLine matches a vehicle's itinerary to the selected service.
+func (v *VehicleOperations) ServesLine(route *Route) bool {
+	return v != nil && v.Route != nil && route != nil && v.LineName == route.Name && slices.Equal(v.Route.StopIDs, route.StopIDs)
 }

@@ -121,6 +121,50 @@ func TestSkipPermissionChangeRebuildsStationApproach(t *testing.T) {
 	}
 }
 
+func TestSkippedStopBypassRecentersBetweenLanes(t *testing.T) {
+	const lw = 52.
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -2000}, P2: sim.Vec2{X: 2000}, Lanes: 8, Type: sim.RoadBusBoulevard8Lane},
+	}}
+	for i, x := range []float64{-1200, 1000} {
+		w.Stops = append(w.Stops, sim.NewBusStop(i, "test", sim.Vec2{X: x}, 0, 8, sim.RGBA(0, 0, 0, 255), lw))
+	}
+	for _, restored := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restored=%v", restored), func(t *testing.T) {
+			const stripe = 3*lw - 1
+			bus := sim.NewBus(-700, stripe, 0)
+			bus.Speed = 70
+			ad := NewAutopilotDriver()
+			ad.CanSkipTargetStop = true
+			ad.PrepareLeg(w, w.Stops[0], w.Stops[1], lw)
+			if restored {
+				s := ad.Snapshot()
+				s.DrivePath = []sim.Vec2{{X: -900, Y: stripe}, {X: 1000, Y: stripe}}
+				s.BypassStopID = 1
+				var err error
+				ad, err = s.Restore(w)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			stop := w.Stops[1]
+			const laneCenter = 2.5 * lw
+			alongside := VehicleObstacle{Pos: sim.Vec2{X: bus.Pos.X, Y: laneCenter}, Speed: bus.Speed, Length: 48, Width: 22}
+			if ad.prepareSkippedStopLane(bus, stop, w, []VehicleObstacle{alongside}, lw, 1700) {
+				t.Fatal("bypass aimed into the occupied lane")
+			}
+			route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+			for range 180 {
+				th, br, steer, hb, doors, _ := ad.ComputeControls(bus, route, w, nil, nil, lw, 1./60)
+				bus.Update(1./60, th, br, steer, hb, doors)
+			}
+			if math.Abs(bus.Pos.Y-laneCenter) > 2 || ad.bypassStopID != 1 {
+				t.Fatalf("bus stayed off center after passing gap opened: position %v path %v", bus.Pos, ad.drivePath)
+			}
+		})
+	}
+}
+
 func TestSkipStopStillRespectsSignalAndRoadObstacle(t *testing.T) {
 	for _, berserk := range []bool{false, true} {
 		for _, signal := range []bool{false, true} {

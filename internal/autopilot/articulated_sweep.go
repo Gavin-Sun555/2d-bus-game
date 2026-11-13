@@ -48,16 +48,27 @@ func (ad *AutopilotDriver) articulatedSweptSpeed(f autopilotFrame, steer float64
 			if delta.Dot(delta) > reach*reach {
 				continue
 			}
+			if !ownReady {
+				ownBodies, ownReady = copy.BodyParts(), true
+			}
+			distance := math.Max(0, ob.Speed) * elapsed
+			var parts [2]sim.OBB
+			if ob.Bus != nil && distance > 0 {
+				position, heading := predictedObstacleBusPose(ob, distance)
+				if predictedBusSeparated(ownBodies, ob.Bus, position, heading, 1, 1) {
+					continue
+				}
+				parts = ob.Bus.BodyPartsAtPose(position, heading)
+			} else {
+				parts = predictedObstacleBodies(ob, distance)
+			}
 			hit := false
-			for _, body := range predictedObstacleBodies(ob, math.Max(0, ob.Speed)*elapsed) {
+			for _, body := range parts {
 				if body.HalfLen <= 0 {
 					continue
 				}
 				body.HalfLen += 1
 				body.HalfWid += 1
-				if !ownReady {
-					ownBodies, ownReady = copy.BodyParts(), true
-				}
 				for _, own := range ownBodies {
 					if own.HalfLen <= 0 {
 						continue
@@ -95,14 +106,20 @@ func isRearFollowerContact(f autopilotFrame, own sim.OBB, ob VehicleObstacle, pa
 	if delta.Dot(forward) >= 0 || math.Cos(ob.Heading-f.bus.Heading) < 0.5 {
 		return false
 	}
+	// The follower's envelope spans empty space beside a bent trailer.
+	// Check actual bodies before deciding that the vehicles already touch.
+	followerBodies := predictedObstacleBodies(ob, 0)
 	for _, part := range f.bus.BodyParts() {
 		if part.HalfLen <= 0 {
 			continue
 		}
-		if touching, _, depth := sim.CheckOBBCollision(part, sim.OBB{
-			Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length / 2, HalfWid: ob.Width / 2,
-		}); touching && depth > 0 {
-			return false
+		for _, follower := range followerBodies {
+			if follower.HalfLen <= 0 {
+				continue
+			}
+			if touching, _, depth := sim.CheckOBBCollision(part, follower); touching && depth > 0 {
+				return false
+			}
 		}
 	}
 	unpadded := sim.OBB{Center: paddedBody.Center, Heading: paddedBody.Heading, HalfLen: paddedBody.HalfLen - 1, HalfWid: paddedBody.HalfWid - 1}

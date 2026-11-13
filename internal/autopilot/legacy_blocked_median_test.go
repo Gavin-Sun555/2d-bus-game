@@ -12,6 +12,43 @@ import (
 //go:embed testdata/legacy-blocked-median.json
 var legacyBlockedMedianFixture []byte
 
+func TestStrandedFleetMedianApproachWaitsForClearLane(t *testing.T) {
+	const lw = 52.
+	junction := sim.Vec2{X: 1600}
+	world := &sim.World{
+		Roads:         []sim.RoadSegment{{P1: sim.Vec2{X: -2000}, P2: sim.Vec2{X: 2000}, Type: sim.RoadBusBoulevard8Lane, Lanes: 8}},
+		Intersections: []sim.Vec2{junction},
+	}
+	bus := sim.NewBus(0, -130, math.Pi/2)
+	bus.SetModel(sim.BusArticulated)
+	bus.BoardPassengers(1, []int{2})
+	origin := bus.Pos
+	ad := NewAutopilotDriver()
+	ad.ordinaryBusLeft = true
+	ad.busLaneJunction = &junction
+	ad.drivePath = []sim.Vec2{{X: -300, Y: 26}, {X: 1300, Y: 26}}
+	ad.cumLen = []float64{0, 1600}
+	ad.LastPathS = 300
+	for tick := 0; tick < 10; tick++ {
+		if ad.RecoverStrandedMedianApproach(bus, world, nil, lw, .9) {
+			t.Fatal("recovered before verifying a sustained stop")
+		}
+	}
+	var occupied []VehicleObstacle
+	for lane := 0; lane < 4; lane++ {
+		occupied = append(occupied, VehicleObstacle{Pos: sim.Vec2{Y: (float64(lane) + .5) * lw}, Length: 48, Width: 24})
+	}
+	if ad.RecoverStrandedMedianApproach(bus, world, occupied, lw, 1) || bus.Pos != origin {
+		t.Fatal("recovered into an occupied lane")
+	}
+	if !ad.RecoverStrandedMedianApproach(bus, world, occupied[1:], lw, 1) {
+		t.Fatal("clear legal lane did not release stranded bus")
+	}
+	if bus.Pos != (sim.Vec2{Y: 26}) || bus.Heading != 0 || bus.TailHeading() != 0 || bus.PassengerCount != 1 {
+		t.Fatalf("incorrect recovered state: position %v, heading %.2f, passengers %d", bus.Pos, bus.Heading, bus.PassengerCount)
+	}
+}
+
 // Reduced from the old save that remained stationary through multiple green
 // phases: a +68px frozen path offset, two nearby cars and the following fleet.
 func TestLegacyBlockedMedianResumesCurbLeftWithoutContact(t *testing.T) {

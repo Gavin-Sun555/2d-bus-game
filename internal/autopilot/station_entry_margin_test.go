@@ -3,9 +3,10 @@ package autopilot
 import (
 	_ "embed"
 	"encoding/json"
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 //go:embed testdata/station-entry-braking-margin-2026-10-29.json
@@ -119,5 +120,47 @@ func TestEntryMarginRecoveryWaitsForRealFrontObstruction(t *testing.T) {
 		if math.Abs(s.Bus.Pos.Sub(start).Dot(u)) > 2 {
 			t.Fatal("entry recovery ignored frontal traffic")
 		}
+	}
+}
+
+func TestStationDockRecoveryDoesNotReplanWithinTick(t *testing.T) {
+	const laneWidth = 52.
+	const heading = -math.Pi / 2
+	stop := sim.NewBusStop(0, "test", sim.Vec2{}, heading, 8, sim.RGBA(0, 0, 0, 255), laneWidth, 10)
+	world := &sim.World{Stops: []*sim.BusStop{stop}, Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{Y: -1000}, P2: sim.Vec2{Y: 1000}, Lanes: 8, Type: sim.RoadBusBoulevard8Lane},
+	}}
+	bus := sim.NewBus(220.783445, 310.958255, -1.2779578)
+	bus.Speed = 7.829013
+	bus.SteeringAngle = -.0368402
+	obstacles := []VehicleObstacle{
+		{Pos: sim.Vec2{X: 217.842589, Y: -50.902967}, Heading: -1.8010245, Speed: 47.840255, Length: 96, Width: 36},
+		{Pos: sim.Vec2{X: 182.001662, Y: -887.739242}, Heading: -1.5709088, Speed: 443.852778, Length: 96, Width: 36},
+	}
+	driver := NewAutopilotDriver()
+	driver.DisallowOncomingOvertake = true
+	rear := sim.Vec2{X: stop.Pos.X, Y: 71.938116}
+	driver.stationDock = &stationDockPlan{stopID: stop.ID, target: rear, points: stationDockCurve(bus, rear, sim.UnitFromAngle(heading))}
+	// The signal holds the bus even though the alignment curve is clear.
+	signal := &sim.TrafficIntersection{Phase: sim.PhaseEWGreen, ApproachLanes: [4]int{4, 4, 8, 8}}
+	bumper := bus.Pos.Add(sim.UnitFromAngle(bus.Heading).Mul(bus.Length / 2))
+	signal.Center = sim.Vec2{X: 40, Y: bumper.Y - signal.GetStopLineDistForHeading(heading, laneWidth) - 5}
+	lights := &sim.TrafficLightSystem{Intersections: []*sim.TrafficIntersection{signal}}
+	frame := autopilotFrame{bus: bus, world: world, tls: lights, targetStop: stop, fromStop: stop, obstacles: obstacles, laneWidth: laneWidth, speedAbs: bus.Speed, remaining: 238.37}
+	inputs, active := driver.stationDockControls(frame)
+	if !active || driver.stationDock == nil || !driver.stationDock.alignmentRecovery || inputs.brake != 1 || inputs.toggleDoors || inputs.isDocked {
+		t.Fatalf("expected an alignment plan while stopped at red, got %+v", inputs)
+	}
+	plan := driver.stationDock
+	for tick := 0; tick < 120; tick++ {
+		inputs, active = driver.stationDockControls(frame)
+		if !active || driver.stationDock != plan || inputs.brake != 1 || inputs.toggleDoors || inputs.isDocked {
+			t.Fatal("red light discarded the checked recovery plan")
+		}
+	}
+	signal.Phase = sim.PhaseNSGreen
+	inputs, active = driver.stationDockControls(frame)
+	if !active || driver.stationDock != plan || inputs.throttle <= 0 {
+		t.Fatal("bus did not continue on its checked recovery plan after green")
 	}
 }

@@ -12,11 +12,7 @@ func TestBusSignalPrioritySavedTrafficReplay(t *testing.T) {
 	if path == "" {
 		t.Skip("copied local traffic save required")
 	}
-	g := NewGame(1280, 720)
-	g.savePathOverride = path
-	if err := g.LoadGame(); err != nil {
-		t.Fatal(err)
-	}
+	g := loadSaveForTest(t, path, 1280, 720)
 	sim.SeedSimulation(5)
 	g.Settings.BusSignalPriority = true
 	health := g.Bus.Durability
@@ -77,7 +73,7 @@ func TestBusSignalPriorityGameWiringAndSave(t *testing.T) {
 	g.Settings.BusSignalPriority = true
 	fleet := g.AIBusMgr
 	g.AIBusMgr = nil // A city without AI fleet must still support the player.
-	g.updateBusSignalPriority()
+	g.updateBusSignalPriority(1. / 60)
 	if !g.TrafficLights.BusPriorityEnabled || len(chosen.BusPriorityQueue) != 1 || chosen.BusPriorityQueue[0].BusID != 0 {
 		t.Fatal("player did not request priority")
 	}
@@ -102,7 +98,7 @@ func TestBusSignalPriorityGameWiringAndSave(t *testing.T) {
 		t.Fatal("save lost FIFO priority state")
 	}
 	g.Settings.BusSignalPriority = false
-	g.updateBusSignalPriority()
+	g.updateBusSignalPriority(1. / 60)
 	for _, i := range g.TrafficLights.Intersections {
 		if len(i.BusPriorityQueue) != 0 {
 			t.Fatal("disabled feature left a live request")

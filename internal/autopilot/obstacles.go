@@ -14,10 +14,11 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 	rearCars := ad.departureRearCars(f)
 	// E. Forward Vehicle Obstacle Avoidance
 	sinH, cosH := math.Sincos(f.bus.Heading)
-	fwdLimit := 140.0
-	if ad.BerserkMode {
-		fwdLimit = math.Max(140.0, f.speedAbs*f.speedAbs/(2*130.0)+80.0)
-	}
+	// Fixed-speed fleet buses can also be travelling at highway speeds.
+	// Brake for the lead vehicle before the short physical sweep takes over.
+	fwdLimit := math.Max(140.0, f.speedAbs*f.speedAbs/(2*130.0)+80.0)
+	bumperPos := f.bus.Pos.Add(sim.Vec2{X: cosH * f.bus.Length * 0.5, Y: sinH * f.bus.Length * 0.5})
+	fwdLimit += f.world.RailCrossingLookahead(bumperPos, f.bus.Heading, f.bus.OverallLength())
 	// These inputs remain constant for the entire obstacle scan.
 	roadEW, roadMulti, roadSix := false, false, false
 	if f.world != nil {
@@ -53,7 +54,7 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			continue
 		}
 
-		if ad.clearsStationYieldNeighbor(f, obs) || ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		if ad.clearsTurnExitQueue(f, obs) || ad.clearsStationYieldNeighbor(f, obs) || ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
 			continue
 		}
 
@@ -184,6 +185,19 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			}
 
 			if inAdjacentCorridor {
+				// Lane classification tolerates small position errors. A car near
+				// that boundary can still overlap the bus's forward corridor, so
+				// use bumper headway before allowing the adjacent-lane speed floor.
+				if obs.Bus == nil && cosHeadDiff > .98 {
+					sinDiff := math.Abs(math.Sin(obs.Heading - f.bus.Heading))
+					carHalfWidth := (obs.Width*cosHeadDiff + obs.Length*sinDiff) / 2
+					if latDist < f.bus.Width/2+carHalfWidth {
+						carHalfLength := (obs.Length*cosHeadDiff + obs.Width*sinDiff) / 2
+						gap := fwdDist - f.bus.Length/2 - carHalfLength
+						targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, obs.Speed*cosHeadDiff, f.speedAbs, 135))
+						continue
+					}
+				}
 				// Obstacle is in adjacent lane corridor.
 				minClearLat := f.bus.Width/2 + obs.Width/2 + 6.0
 				actualLat := roadLatDist
@@ -222,18 +236,28 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			if ad.BerserkMode && ad.OvertakeState == OvertakeChangingLane {
 				safeStopDist = f.bus.Length/2 + obs.Length/2 + 25.0
 			}
-			if fwdDist < safeStopDist {
+			leadSpd := math.Max(0.0, obs.Speed*cosHeadDiff)
+			stopGap := fwdDist - safeStopDist
+			if leadSpd < 15.0 && f.world != nil && cosHeadDiff > 0.8 {
+				if railDist, clamped := f.world.ClampStopBeforeRailCrossing(bumperPos, f.bus.Heading, stopGap+14.0, f.bus.OverallLength(), 14.0); clamped {
+					stopGap = railDist - 14.0
+					if stopGap < 4.0 {
+						stopGap = -1.0
+					}
+					leadSpd = 0.0
+				}
+			}
+			if stopGap < 0 {
 				targetSpd = 0.0
 			} else {
-				leadSpd := math.Max(0.0, obs.Speed*cosHeadDiff)
 				decelRate := 135.0
 				if ad.BerserkMode {
 					decelRate = 180.0
 				}
-				decelSpd := leadSpd + math.Sqrt(2*decelRate*math.Max(0, fwdDist-safeStopDist))
+				decelSpd := leadSpd + math.Sqrt(2*decelRate*math.Max(0, stopGap))
 				// If closing in at close quarters while still overlapping laterally:
 				// Clamp closing rate so bus cannot close faster than available buffer distance
-				gap := fwdDist - safeStopDist
+				gap := stopGap
 				if gap < 50.0 {
 					maxClosing := math.Max(0.0, gap*0.75)
 					decelSpd = math.Min(decelSpd, leadSpd+maxClosing)

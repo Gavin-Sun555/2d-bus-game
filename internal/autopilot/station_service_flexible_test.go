@@ -18,6 +18,48 @@ func serviceTestWorld(h, lw float64) (*sim.World, sim.Vec2, sim.Vec2) {
 	return w, u, r
 }
 
+func TestBerserkArticulatedBusDocksParallelWhileBothBerthsStayOccupied(t *testing.T) {
+	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+		t.Run(fmt.Sprint(h), func(t *testing.T) {
+			const lw = 52.
+			w, u, r := serviceTestWorld(h, lw)
+			stop := w.Stops[1]
+			p := u.Mul(-248.3).Add(r.Mul(182.26))
+			bus := sim.NewBus(p.X, p.Y, h-.204)
+			bus.SetModel(sim.BusArticulated)
+			bus.TrailerHeading = h - .001
+			p = u.Mul(-150.3).Add(r.Mul(228.69))
+			rear := sim.NewBus(p.X, p.Y, h+.015)
+			p = u.Mul(-23.6).Add(r.Mul(229.04))
+			front := sim.NewBus(p.X, p.Y, h+.006)
+			rear.DoorsOpen, front.DoorsOpen = true, true
+			obstacles := []VehicleObstacle{ObserveBus(rear), ObserveBus(front)}
+			route := &sim.Route{StopIDs: []int{0, 1, 2}, CurrentIndex: 1}
+			ad := NewAutopilotDriver()
+			ad.BerserkMode = true
+			for tick := 0; tick < 360; tick++ {
+				th, br, st, hb, doors, dock := ad.ComputeControls(bus, route, w, nil, obstacles, lw, 1./60)
+				bus.Update(1./60, th, br, st, hb, doors)
+				for _, other := range []*sim.Bus{rear, front} {
+					if hit, _, _ := sim.CheckBusesCollision(bus, other); hit {
+						t.Fatalf("parallel arrival hit a parked bus at %v", bus.Pos)
+					}
+				}
+				if bus.CheckBoundaries(w, lw).Zone == sim.ZoneHardBarrier {
+					t.Fatalf("parallel arrival hit a boundary at %v", bus.Pos)
+				}
+				if dock && bus.DoorsOpen {
+					if bus.Pos.Sub(front.Pos).Dot(u) <= 0 || stop.ContainsBus(bus) || !stop.ContainsBusInOuterLane(bus, lw) {
+						t.Fatalf("did not board from a forward parallel berth: %v", bus.Pos)
+					}
+					return
+				}
+			}
+			t.Fatalf("waited instead of docking parallel: %v", bus.Pos)
+		})
+	}
+}
+
 func TestBerserkAngledBayArrivalServesAndLeaves(t *testing.T) {
 	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
 		for _, lw := range []float64{42, 52, 78} {

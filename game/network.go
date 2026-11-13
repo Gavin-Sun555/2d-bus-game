@@ -26,6 +26,26 @@ func (g *Game) activeLines() []*sim.Route {
 	}
 	return g.Lines[:n]
 }
+
+// Fleet and passenger updates use the committed itinerary during planning.
+func (g *Game) operatingLines() []*sim.Route {
+	lines := g.activeLines()
+	if g.IsPlanMode && g.planModeInitialStops != nil {
+		draft := g.planningRoute()
+		for i, route := range lines {
+			if route == draft && !intSlicesEqual(route.StopIDs, g.planModeInitialStops) {
+				committed := *route
+				committed.StopIDs = g.planModeInitialStops
+				committed.CurrentIndex = g.planModeInitialIndex
+				lines = append([]*sim.Route(nil), lines...)
+				lines[i] = &committed
+				break
+			}
+		}
+	}
+	return lines
+}
+
 func (g *Game) SetTransitLineCount(n int) {
 	if n < 1 {
 		n = 1
@@ -40,10 +60,12 @@ func (g *Game) SetTransitLineCount(n int) {
 	if g.IsPlanMode && !g.finishPlannedRoute() {
 		return
 	}
+	previousCount := g.LineCount
 	if g.IsPlanMode && g.planRoute != nil {
 		for i, route := range g.Lines {
 			if route == g.planRoute && i >= n {
 				g.planRoute = nil
+				g.rememberPlannedRoute(g.Route)
 			}
 		}
 	}
@@ -57,9 +79,13 @@ func (g *Game) SetTransitLineCount(n int) {
 		g.syncCurrentLineSettings()
 		g.buildLineFleets(false)
 	}
-	g.SyncStopsWithRoute()
+	if n > previousCount {
+		g.SyncStopsWithRoute()
+	} else if n < previousCount && g.World != nil {
+		g.World.ReconcileWaitingPassengers(g.activeLines()...)
+	}
 	if g.IsPlanMode {
-		g.planModeInitialStops = append([]int(nil), g.planningRoute().StopIDs...)
+		g.rememberPlannedRoute(g.planningRoute())
 	}
 }
 
@@ -85,10 +111,13 @@ func (g *Game) SelectPlayerLine(index int) bool {
 	g.PlayerLine = index
 	g.Route = g.Lines[index]
 	g.showPlayerLineSettings()
-	fleet := g.AIBusMgr.Buses
 	operations := g.Operations
-	g.resetBusesToRouteStart(false)
+	g.resetPlayerToRouteStart(true)
+	g.rollAlightingForNextStop()
+	g.AIBusMgr.ActiveRoute = g.Route
+	g.AIBusMgr.Routes = g.activeLines()
 	g.Bus.SetModel(g.LineFleets[index].PlayerModel)
+	g.applyPlayerPassengerCapacity()
 	if g.Bus.Model == sim.BusArticulated {
 		sim.EnsureLongBusBays(g.World, g.Route)
 		g.Bus.ResetArticulation()
@@ -96,19 +125,16 @@ func (g *Game) SelectPlayerLine(index int) bool {
 	if g.Settings != nil {
 		g.Settings.PlayerModel = g.LineFleets[index].PlayerModel
 	}
-	g.AIBusMgr.Buses = fleet
-
+	g.queuePlayerAtStop(g.World.Stops[g.Route.GetCurrentTargetStopID()])
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
-	g.Operations = operations
 	if operations != nil {
 		operations.InterruptJourney(0)
 		operations.Distances = operations.DistancesFor(g.Route)
 	}
 	g.operationsRoute = append([]int(nil), g.Route.StopIDs...)
 	g.AIBusMgr.Operations = g.Operations
-	g.planModeInitialStops = append([]int(nil), g.planningRoute().StopIDs...)
-	g.planModeRouteModified = false
+	g.rememberPlannedRoute(g.planningRoute())
 	if g.IsPlanMode {
 		g.Camera.Zoom = .04
 		g.Camera.TargetZoom = .04
@@ -191,7 +217,7 @@ func (g *Game) handleNetworkAction(i int) {
 		c.SpeedRange.MaxKPH = max(c.SpeedRange.MinKPH, c.SpeedRange.MaxKPH-10)
 		g.SetLineFleet(g.NetworkSelected, c)
 	case 14:
-		c.SpeedRange.MaxKPH = min(80, c.SpeedRange.MaxKPH+10)
+		c.SpeedRange.MaxKPH = min(sim.TrafficMaxSpeedKPH, c.SpeedRange.MaxKPH+10)
 		g.SetLineFleet(g.NetworkSelected, c)
 	case 17, 18, 19, 20, 21, 22:
 		delta := -1
@@ -219,8 +245,12 @@ func (g *Game) handleNetworkAction(i int) {
 }
 func (g *Game) drawNetworkPanel(screen *ebiten.Image) {
 	if !g.NetworkOpen {
-		if !g.Settings.IsOpen && !g.OperationsPanel.IsOpen {
-			textui.DrawText(screen, fmt.Sprintf("%s · [T] %s", g.Route.Name, locale.T("线路管理", "Transit lines")), float64(screen.Bounds().Dx())-250, float64(screen.Bounds().Dy())-24, 12, sim.RGBA(125, 211, 252, 255))
+		if !g.IsPlanMode && !g.Settings.IsOpen && !g.OperationsPanel.IsOpen {
+			bottomMargin := 20.0
+			if g.isCareer() {
+				bottomMargin = 73 // Leave room for the garage shortcut.
+			}
+			g.HUD.DrawDriveRouteShortcuts(screen, g.Route.Name, bottomMargin)
 		}
 		return
 	}
@@ -270,7 +300,7 @@ func (g *Game) drawNetworkPanel(screen *ebiten.Image) {
 		}
 	}
 	c := g.LineFleets[g.NetworkSelected].Normalize()
-	txt(locale.Tf("Line %d 车型配置 · AI 总数 %d / 8", "Line %d models · AI total %d / 8", g.NetworkSelected+1, c.BusCount), 24, 316, 16)
+	txt(locale.Tf("Line %d 车型配置 · AI 总数 %d / %d", "Line %d models · AI total %d / %d", g.NetworkSelected+1, c.BusCount, sim.MaxBusesPerLine), 24, 316, 16)
 	row := func(title string, value, minus int, dy float64) {
 		txt(title, 24, dy+10, 14)
 		button(minus, sim.Rect{X: x + 520, Y: y + dy, W: 44, H: 34}, "-", false)
@@ -279,7 +309,7 @@ func (g *Game) drawNetworkPanel(screen *ebiten.Image) {
 	}
 	counts := c.Counts()
 	for model := sim.BusStandard; model < sim.BusModelCount; model++ {
-		row(locale.Tf("%s · %d 人", "%s · %d passengers", locale.T(model.Name(), model.EnglishName()), model.Capacity()), counts[model], 17+int(model)*2, 348+float64(model)*40)
+		row(locale.Tf("%s · %d 人", "%s · %d passengers", locale.T(model.Name(), model.EnglishName()), g.Settings.ModelPassengerCapacity(model)), counts[model], 17+int(model)*2, 348+float64(model)*40)
 	}
 	row(locale.T("每车最高车速下限（km/h）", "Minimum top speed (km/h)"), c.SpeedRange.MinKPH, 11, 474)
 	row(locale.T("每车最高车速上限（km/h）", "Maximum top speed (km/h)"), c.SpeedRange.MaxKPH, 13, 514)

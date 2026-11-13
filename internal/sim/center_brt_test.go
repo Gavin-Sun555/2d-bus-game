@@ -46,8 +46,8 @@ func TestCenterBRTMapGeometry(t *testing.T) {
 					if math.Abs(s.Pos.Sub(s.RoadCenter).Dot(right)-lw*.5) > 1e-7 {
 						t.Fatal("BRT bay outside central lane")
 					}
-					if math.Abs(s.ShelterPos.Sub(s.RoadCenter).Dot(right)) > 1e-7 {
-						t.Fatal("platform not on median")
+					if math.Abs(s.ShelterPos.Sub(s.RoadCenter).Dot(right)-BRTPlatformOffset(lw)) > 1e-7 {
+						t.Fatal("platform not on right side of BRT lane")
 					}
 					if w.InsideJunction(s.Pos, lw, s.Length/2+30) {
 						t.Fatalf("stop %d overlaps junction", s.ID)

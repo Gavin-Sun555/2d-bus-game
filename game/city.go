@@ -8,14 +8,43 @@ import (
 )
 
 func (g *Game) EnterCity(theme sim.MapTheme) {
+	if !g.careerMapAllowed(theme) {
+		g.saveMessage = "城市尚未解锁：扩充车队后再来 / Expand your fleet to unlock this city"
+		return
+	}
+	if g.isCareer() {
+		if g.sessionStarted && g.World != nil {
+			g.leaveCurrentCareerCity()
+		}
+		wantLarge := theme != sim.MapThemeCustom && g.Settings.IsLargeRoadNetwork(theme)
+		wantBRT := g.Settings.IsCenterBRT(theme)
+		if saved, ok := g.careerCities[theme]; ok && saved.World != nil && saved.World.LargeGrid == wantLarge && saved.World.CenterBRT == wantBRT {
+			if err := g.restoreCareerCity(saved); err == nil {
+				g.State = StatePlaying
+				g.sessionStarted = true
+				g.IsPlanMode = false
+				g.Camera.RestoreDrivingZoom()
+				g.saveCurrentCareerCity()
+				return
+			}
+		}
+	}
 	g.Settings.LargeRoadNetwork = g.Settings.IsLargeRoadNetwork(theme)
 	g.SetMapTheme(theme)
 	g.State = StatePlaying
+	g.sessionStarted = true
 	g.IsPlanMode = false
 	g.Camera.RestoreDrivingZoom()
+	if g.isCareer() {
+		g.saveCurrentCareerCity()
+	}
 }
 
 func (g *Game) SetMapTheme(theme sim.MapTheme) {
+	if !g.careerMapAllowed(theme) {
+		return
+	}
+	g.syncCareerCondition()
 	g.resetAnnouncements()
 	centerBRT := g.Settings.IsCenterBRT(theme)
 	g.Settings.SetCenterBRT(theme, centerBRT)
@@ -27,12 +56,20 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	}
 	isLarge := g.Settings.IsLargeRoadNetwork(theme)
 	g.Settings.LargeRoadNetwork = isLarge
+	currentLaneW := g.Settings.GetLaneWidth()
+	if g.isCareer() && g.World != nil {
+		customMap := g.World.CustomMap
+		g.World = sim.NewWorld(currentLaneW)
+		g.World.CustomMap = customMap
+		g.World.PassengerSpawnRate = g.Settings.PassengerSpawnRate
+		g.TrafficLights = sim.NewTrafficLightSystem()
+	}
 	g.World.LargeGrid = (theme != sim.MapThemeCustom && isLarge)
 	g.World.CenterBRT = centerBRT
-	currentLaneW := g.Settings.GetLaneWidth()
 	g.World.BuildMap(theme, currentLaneW)
 	g.Settings.CenterBRT = g.World.CenterBRT
 	g.closeStopNameEditor()
+	g.closeStationSearch()
 	g.applyStopNames()
 
 	// Rebuild traffic lights and AI civilian vehicles for active map
@@ -52,6 +89,14 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.PlayerLine = 0
 	g.NetworkSelected = 0
 	g.initializeLineFleets()
+	if g.isCareer() {
+		for _, v := range g.Career.Vehicles {
+			if v.ID != g.Career.PlayerVehicleID && v.Line >= 0 {
+				g.LineCount = max(g.LineCount, v.Line+1)
+			}
+		}
+		g.configureCareerPlans()
+	}
 	g.Route = g.Lines[0]
 	g.NetworkOpen = false
 	g.planRoute = nil
@@ -77,11 +122,13 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.Bus.ClearPassengers()
 	g.Bus.PassengerService = sim.PassengerService{}
 	g.Bus.SetModel(g.LineFleets[g.PlayerLine].PlayerModel)
+	g.applyPlayerPassengerCapacity()
 	if g.Bus.Model == sim.BusArticulated {
 		sim.EnsureLongBusBays(g.World, g.Route)
 		g.Bus.ResetArticulation()
 	}
 
+	g.queuePlayerAtStop(firstStop)
 	if g.AIBusMgr != nil {
 		g.AIBusMgr.ActiveRoute = g.Route
 		g.AIBusMgr.Routes = g.activeLines()
@@ -92,7 +139,12 @@ func (g *Game) SetMapTheme(theme sim.MapTheme) {
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
 
+	g.World.Clock.Rate = g.Settings.ClockRate
+	g.Bus.HeadlightsOn = false
+	g.syncAutoHeadlights()
 	g.resetOperations()
+	g.careerRevenueMark = 0
+	g.bindCareerVehicles()
 	g.SyncStopsWithRoute()
 	g.rollAlightingForNextStop()
 	if g.World.CenterBRT {
@@ -121,4 +173,8 @@ func (g *Game) ReloadCustomMap() error {
 		g.HUD.AddToast(fmt.Sprintf("已成功校验自定义地图: 【%s】(可按[5]或[C]切换)", customMap.Name), true)
 	}
 	return nil
+}
+
+func (g *Game) centerBRTAvailable(theme sim.MapTheme) bool {
+	return sim.BuiltinMapSupportsCenterBRT(theme)
 }

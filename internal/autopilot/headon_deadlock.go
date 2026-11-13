@@ -14,6 +14,9 @@ type HeadonDeadlockRecovery struct {
 	TargetDistance     float64
 	YieldHoldRemaining float64
 	ReversingDone      bool
+	JunctionRetreat    bool
+	ParallelRetreat    bool
+	StationRetreat     bool
 }
 
 // HeadonDeadlockTimer returns the current accumulated headon deadlock duration.
@@ -149,6 +152,9 @@ func isObstacleTurning(ob VehicleObstacle) bool {
 func (ad *AutopilotDriver) headonRearClear(f autopilotFrame, reverseDist float64) bool {
 	if f.bus == nil || f.world == nil {
 		return false
+	}
+	if ad.straightLaneRetreatActive() {
+		return ad.laneRetreatReverseClear(f, reverseDist, 0)
 	}
 	uEgo := sim.UnitFromAngle(f.bus.Heading)
 	roadH := approachRoadHeading(f.bus.Heading)
@@ -368,6 +374,11 @@ func (ad *AutopilotDriver) checkDeadlockConflict(f autopilotFrame) (hasConflict 
 		return true, yielding, 65.0
 	}
 	if conflict, yielding := ad.checkMergeConflict(f); conflict {
+		if ad.straightLaneRetreatActive() {
+			// Clear the adjacent car with the powered section before retrying
+			// a lane retreat. A 22px reverse leaves this same pinch alongside.
+			return true, yielding, f.bus.Length + 40
+		}
 		return true, yielding, 22.0
 	}
 	if conflict, yielding := ad.checkStationaryBlockConflict(f); conflict {
@@ -379,7 +390,18 @@ func (ad *AutopilotDriver) checkDeadlockConflict(f autopilotFrame) (hasConflict 
 // tryHeadonDeadlockRecovery evaluates deadlock conditions and initiates reverse recovery
 // when stuck head-to-head or in a merging wedge for over 8-10 seconds with clear space behind.
 func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float64) bool {
+	junctionRetreat := f.speedAbs < 1 && junctionRetreatNeeded(f) && ad.junctionSweptSpeed(f) <= .5
+	parallelDistance := ad.parallelMergeRetreatDistance(f)
+	if parallelDistance == 0 {
+		parallelDistance = ad.turnFollowerRetreatDistance(f)
+	}
 	hasConflict, isEgoYielding, targetDist := ad.checkDeadlockConflict(f)
+	if parallelDistance > 0 {
+		hasConflict, isEgoYielding, targetDist = true, true, parallelDistance
+	}
+	if junctionRetreat {
+		hasConflict, isEgoYielding, targetDist = true, true, 155
+	}
 	if !hasConflict {
 		ad.headonDeadlockTimer = math.Max(0, ad.headonDeadlockTimer-dt*2)
 		return false
@@ -388,6 +410,9 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 	ad.headonDeadlockTimer += dt
 
 	threshold := 10.0
+	if junctionRetreat || parallelDistance > 0 {
+		threshold = 2
+	}
 	if !isEgoYielding {
 		threshold = 13.5
 	}
@@ -397,7 +422,8 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 	}
 
 	// Check rear clearance ("并非拥堵")
-	if !ad.headonRearClear(f, targetDist) {
+	if (junctionRetreat && !junctionReverseClear(f, 60)) || (!junctionRetreat && parallelDistance == 0 && !ad.headonRearClear(f, targetDist)) ||
+		(!junctionRetreat && parallelDistance > 0 && !ad.laneRetreatReverseClear(f, targetDist, 0)) {
 		return false
 	}
 
@@ -407,6 +433,8 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 			TargetDistance:     targetDist,
 			YieldHoldRemaining: 4.0,
 			ReversingDone:      false,
+			JunctionRetreat:    junctionRetreat,
+			ParallelRetreat:    parallelDistance > 0 && !junctionRetreat,
 		}
 	}
 	return true
@@ -430,8 +458,30 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 		distMoved := f.bus.Pos.Distance(r.StartPos)
 		remaining := r.TargetDistance - distMoved
 
+		if r.JunctionRetreat {
+			if remaining <= 1 || !junctionReverseClear(f, 30) {
+				r.ReversingDone = true
+				f.bus.ShiftTo(sim.GearDrive)
+				return 0, 1, 0, false
+			}
+			f.bus.ShiftTo(sim.GearReverse)
+			ad.LastTargetSpeed = 16
+			th, br, st := junctionReverseControls(f.bus)
+			return th, br, st, false
+		}
+
 		// Safety check: is rear still clear?
-		if !ad.headonRearClear(f, math.Max(10.0, remaining)) {
+		steering := 0.
+		if r.StationRetreat {
+			steering = 1
+		}
+		sweptRetreat := r.ParallelRetreat || r.StationRetreat
+		checkDistance := math.Max(10, remaining)
+		if r.StationRetreat {
+			checkDistance = math.Max(0, remaining)
+		}
+		if (sweptRetreat && !ad.laneRetreatReverseClear(f, checkDistance, steering)) ||
+			(!sweptRetreat && !ad.headonRearClear(f, math.Max(10, remaining))) {
 			// Rear suddenly blocked; abort reverse and transition to yield hold
 			r.ReversingDone = true
 			r.YieldHoldRemaining = 4.0
@@ -446,7 +496,7 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 			along := delta.Dot(uEgo)
 			if along < -5.0 {
 				lat := math.Abs(-delta.X*uEgo.Y + delta.Y*uEgo.X)
-				if lat < (f.bus.Width+ob.Width)/2+2.0 && -along < (f.bus.Length+ob.Length)/2+8.0 {
+				if lat < (f.bus.Width+ob.Width)/2+2.0 && -along < (f.bus.Length+ob.Length)/2+8.0 && !ad.straightLaneRetreatActive() && !sweptRetreat {
 					r.ReversingDone = true
 					r.YieldHoldRemaining = 4.0
 					f.bus.ShiftTo(sim.GearDrive)
@@ -469,15 +519,23 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 		ad.LastTargetSpeed = targetRevSpeed
 
 		if speed > targetRevSpeed {
-			return 0, 0.3, 0, false
+			return 0, 0.3, steering, false
 		}
 		th := sim.Clamp((targetRevSpeed-speed)/15.0, 0.05, 0.35)
-		return th, 0, 0, false
+		return th, 0, steering, false
 	}
 
 	// Phase 2: Yield hold in GearDrive to let the opposing/crossing traffic pass
 	f.bus.ShiftTo(sim.GearDrive)
 	r.YieldHoldRemaining -= dt
+	if r.StationRetreat {
+		if math.Abs(f.bus.Speed) >= 1 || f.bus.SteeringAngle > -f.bus.MaxSteerAngle+.03 {
+			return 0, 1, -1, false
+		}
+		ad.headonRecovery = nil
+		ad.headonDeadlockTimer = 0
+		return 0, 1, 0, true
+	}
 	ad.LastTargetSpeed = 0
 
 	hasConflict, _, _ := ad.checkDeadlockConflict(f)

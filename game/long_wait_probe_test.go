@@ -84,11 +84,7 @@ func TestLongWaitIsolateLeader(t *testing.T) {
 	if path == "" {
 		t.Skip("set BUS_LONG_WAIT_STATE")
 	}
-	g := NewGame(1280, 720)
-	g.savePathOverride = path
-	if err := g.LoadGame(); err != nil {
-		t.Fatal(err)
-	}
+	g := loadSaveForTest(t, path, 1280, 720)
 	for _, ab := range g.AIBusMgr.Buses {
 		if ab.ID != 8 {
 			continue
@@ -124,11 +120,7 @@ func TestLongWaitRecoveryReplay(t *testing.T) {
 		t.Skip("set BUS_LONG_WAIT_STATE")
 	}
 	sim.SeedSimulation(5)
-	g := NewGame(1280, 720)
-	g.savePathOverride = path
-	if err := g.LoadGame(); err != nil {
-		t.Fatal(err)
-	}
+	g := loadSaveForTest(t, path, 1280, 720)
 	sim.SeedSimulation(5)
 	initialTarget := g.Route.GetCurrentTargetStopID()
 	openedTarget, servedTarget := false, false

@@ -14,11 +14,7 @@ func TestCurrentHarborStationRecovery(t *testing.T) {
 		t.Skip("set BUS_HARBOR_JAM_SAVE")
 	}
 	sim.SeedSimulation(5)
-	g := NewGame(1280, 720)
-	g.savePathOverride = path
-	if err := g.LoadGame(); err != nil {
-		t.Fatal(err)
-	}
+	g := loadSaveForTest(t, path, 1280, 720)
 	sim.SeedSimulation(5)
 	stopID := g.Route.GetCurrentTargetStopID()
 	initial := g.Bus.Durability

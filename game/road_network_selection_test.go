@@ -55,11 +55,7 @@ func TestSavedSlot2DisplaysSmallRoadNetwork(t *testing.T) {
 		t.Skip("slot2 snapshot not found; skipping")
 	}
 
-	g := NewGame(1440, 900)
-	g.savePathOverride = savePath
-	if err := g.LoadGame(); err != nil {
-		t.Fatalf("LoadGame failed: %v", err)
-	}
+	g := loadSaveForTest(t, savePath, 1440, 900)
 
 	if g.World.LargeGrid {
 		t.Fatalf("Expected slot2 snapshot World.LargeGrid to be false")

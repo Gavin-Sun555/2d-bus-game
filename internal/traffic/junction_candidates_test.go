@@ -13,7 +13,7 @@ func TestJunctionCandidatesRetainApproachesExitsAndCommittedTurns(t *testing.T) 
 	rng := rand.New(rand.NewSource(84241))
 	for _, width := range []float64{20, 42, 52, 78, 100} {
 		inter := &sim.TrafficIntersection{Center: sim.Vec2{X: 321, Y: -654}, ApproachLanes: [4]int{2, 4, 8, 6}, ApproachHasRoad: [4]bool{true, true, true, true}}
-		tm := &TrafficManager{spatialActive: true}
+		tm := &TrafficManager{spatialActive: true, junctionCandidateSets: make([]junctionCandidateSet, 1)}
 		for i := 0; i < 864; i++ {
 			car := &sim.TrafficCar{ID: i, Pos: sim.Vec2{X: rng.Float64()*30000 - 15000, Y: rng.Float64()*30000 - 15000}, Heading: rng.Float64() * math.Pi * 2, Length: 30 + rng.Float64()*200, Width: 22, Speed: rng.Float64() * 700}
 			if i%17 == 0 {

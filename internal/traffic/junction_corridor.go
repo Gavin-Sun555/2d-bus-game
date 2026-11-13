@@ -58,6 +58,7 @@ func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 			}
 		}
 	}
+	pathEnd := len(points)
 	heading := car.Heading
 	if turn != nil {
 		heading = turn.ExitHeading
@@ -74,12 +75,21 @@ func carJunctionBodies(f carFrame, inter *sim.TrafficIntersection) []sim.OBB {
 		scratch.points = points
 	}
 	if scratch != nil {
-		cache.Bodies = scratch.appendBodies(cache.Bodies[:0], points, turn, car.Length, car.Width)
+		cache.Bodies = scratch.appendBodies(cache.Bodies[:0], points, pathEnd, turn, car.Length, car.Width)
 	} else {
 		cache.Bodies = sim.AppendPathBodies(cache.Bodies[:0], points, car.Length, car.Width)
 	}
 	cache.RebuildBounds()
 	return cache.Bodies
+}
+
+func waitingUTurnBlocksCar(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection) bool {
+	c := bus.JunctionCorridor
+	if f.world == nil || c == nil || !c.UTurnReady || c.Center.Distance(inter.Center) > 1 {
+		return false
+	}
+	carJunctionBodies(f, inter)
+	return sim.UTurnPrecedesEntry(c, f.car.JunctionCorridor, inter)
 }
 
 func carClearsBusInJunction(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection) bool {
@@ -123,21 +133,25 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 		return target
 	}
 	u := sim.UnitFromAngle(f.car.Heading)
+	horizon := math.Max(180, f.car.Speed*f.car.Speed/(2*220)+60)
 	for _, inter := range f.nearbyJunctions() {
 		if f.world.IsAtRoundabout(inter.Center) {
 			continue
 		}
 		delta := inter.Center.Sub(f.car.Pos)
-		gap := delta.Dot(u) - inter.GetStopLineDistForHeading(f.car.Heading, f.laneWidth) - f.car.Length/2
-		horizon := math.Max(180, f.car.Speed*f.car.Speed/(2*220)+60)
-		if gap <= 0 || gap > horizon || math.Abs(delta.X*u.Y-delta.Y*u.X) > inter.ApproachRoadHalfWidth(f.car.Heading, f.laneWidth) {
+		stopLine, halfWidth := inter.ApproachGeometry(u, f.laneWidth)
+		gap := delta.Dot(u) - stopLine - f.car.Length/2
+		if gap <= 0 || gap > horizon || math.Abs(delta.X*u.Y-delta.Y*u.X) > halfWidth {
 			continue
 		}
 		g := f.world.JunctionAt(inter.Center, f.laneWidth)
 		var bodies []sim.OBB
 		occupied := false
+		exitCandidates := tm.junctionExitCandidates[:0]
 		approachReach := junctionApproachReach(inter, f.laneWidth)
-		ids, indexed := tm.junctionScanCandidates(f, inter, approachReach, 2*(g.HalfX+g.HalfY)+200)
+		exitReach := 2*(g.HalfX+g.HalfY) + 200
+		ids, indexed := tm.junctionScanCandidates(f, inter, approachReach, exitReach)
+		exitReachSquared := exitReach * exitReach
 		count := len(tm.Cars)
 		if indexed {
 			count = len(ids)
@@ -148,25 +162,31 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 				i = ids[candidate]
 			}
 			other := tm.Cars[i]
-			if i == f.index || i >= f.activeCount || other.InRoundabout {
+			if i == f.index || i >= f.activeCount {
+				continue
+			}
+			if nearExitQueue(inter.Center, other.Pos, other.Speed, exitReachSquared) {
+				exitCandidates = append(exitCandidates, i)
+			}
+			if other.InRoundabout {
 				continue
 			}
 			if !tm.disableJunctionBroadPhase && !carCanReachJunction(other, inter.Center, approachReach) {
 				continue
 			}
-			if !otherHasJunctionPriority(f, inter, other, i, gap) {
+			delta := other.Pos.Sub(f.car.Pos)
+			if delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.75 && math.Cos(other.Heading-f.car.Heading) > .85 {
 				continue
 			}
-			delta := other.Pos.Sub(f.car.Pos)
-			if math.Cos(other.Heading-f.car.Heading) > .85 && delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.75 {
+			otherFrame := f
+			otherFrame.car = other
+			otherFrame.scratch = tm.scratchForCar(other, i)
+			if !otherHasJunctionPriority(f, inter, other, i, gap, otherFrame.scratch) {
 				continue
 			}
 			if bodies == nil {
 				bodies = carJunctionBodies(f, inter)
 			}
-			otherFrame := f
-			otherFrame.car = other
-			otherFrame.scratch = tm.scratchForCar(other, i)
 			carJunctionBodies(otherFrame, inter)
 			if gap, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, other.JunctionCorridor, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}, f.car.Length, f.car.Width); ok {
 				target = math.Min(target, sim.JunctionFollowingSpeed(gap, other.Speed, f.car.Speed, 220))
@@ -177,26 +197,37 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 				break
 			}
 		}
-		for candidate := 0; candidate < count; candidate++ {
-			i := candidate
-			if indexed {
-				i = ids[candidate]
+		tm.junctionExitCandidates = exitCandidates
+		var exitQueue sim.JunctionExitQueue
+		exitReady := false
+		blocksExit := func(body sim.OBB) bool {
+			if !exitReady {
+				if bodies == nil {
+					bodies = carJunctionBodies(f, inter)
+				}
+				exitQueue = sim.PrepareJunctionExitQueue(bodies, inter.Center, g, f.car.Length, f.car.Width)
+				exitReady = true
 			}
-			other := tm.Cars[i]
-			if i == f.index || i >= f.activeCount {
-				continue
-			}
-			if isExitQueueBlocking(&bodies, f, inter, g, other.Pos, other.Heading, other.Length, other.Width, other.Speed) {
-				occupied = true
-				break
+			return exitQueue.Blocks(body)
+		}
+		if !occupied {
+			for _, i := range exitCandidates {
+				other := tm.Cars[i]
+				if blocksExit(sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}) {
+					occupied = true
+					break
+				}
 			}
 		}
 		for _, bus := range f.buses {
-			if bus == nil {
+			if occupied {
+				break
+			}
+			if bus == nil || math.Abs(bus.Speed) > 5 {
 				continue
 			}
 			body := bus.BodyEnvelope()
-			if isExitQueueBlocking(&bodies, f, inter, g, body.Center, body.Heading, body.HalfLen*2, body.HalfWid*2, bus.Speed) {
+			if nearExitQueue(inter.Center, body.Center, bus.Speed, exitReachSquared) && blocksExit(body) {
 				occupied = true
 				break
 			}
@@ -211,9 +242,10 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 
 // Vehicles already inside clear first. Before entry, green movements precede
 // right-on-red, then arrival time and a stable ID resolve a simultaneous merge.
-func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other *sim.TrafficCar, index int, ownGap float64) bool {
+func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other *sim.TrafficCar, index int, ownGap float64, otherScratch ...*carJunctionScratch) bool {
 	if other.JunctionTurn != nil {
-		if other.JunctionTurn.LaneChange || other.JunctionTurn.Center.Distance(inter.Center) >= 1 {
+		dc := other.JunctionTurn.Center.Sub(inter.Center)
+		if other.JunctionTurn.LaneChange || math.Abs(dc.X) >= 1 || math.Abs(dc.Y) >= 1 || dc.Dot(dc) >= 1 {
 			return false
 		}
 		// Entry permission is decided before attaching a junction turn. Once
@@ -223,10 +255,11 @@ func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other 
 	}
 	u := sim.UnitFromAngle(other.Heading)
 	delta := inter.Center.Sub(other.Pos)
-	if math.Abs(delta.X*u.Y-delta.Y*u.X) > inter.ApproachRoadHalfWidth(other.Heading, f.laneWidth) {
+	stopLine, halfWidth := inter.ApproachGeometry(u, f.laneWidth)
+	if math.Abs(delta.X*u.Y-delta.Y*u.X) > halfWidth {
 		return false
 	}
-	gap := delta.Dot(u) - inter.GetStopLineDistForHeading(other.Heading, f.laneWidth) - other.Length/2
+	gap := delta.Dot(u) - stopLine - other.Length/2
 	if delta.Dot(u) <= 0 || gap > math.Max(180, other.Speed*other.Speed/(2*220)+60) {
 		return false
 	}
@@ -238,6 +271,9 @@ func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other 
 	}
 	otherFrame := f
 	otherFrame.car = other
+	if len(otherScratch) > 0 {
+		otherFrame.scratch = otherScratch[0]
+	}
 	left, right := carIntersectionTurns(otherFrame, inter)
 	signal := inter.GetSignalForHeading(other.Heading, left)
 	if signal == sim.SignalRed && !right {
@@ -312,12 +348,7 @@ func carCanReachJunction(car *sim.TrafficCar, center sim.Vec2, approachReach flo
 	return d.Dot(d) <= radius*radius
 }
 
-func isExitQueueBlocking(bodies *[]sim.OBB, f carFrame, inter *sim.TrafficIntersection, g sim.JunctionGeometry, pos sim.Vec2, heading, length, width, speed float64) bool {
-	if math.Abs(speed) > 5 || pos.Distance(inter.Center) > 2*(g.HalfX+g.HalfY)+200 {
-		return false
-	}
-	if *bodies == nil {
-		*bodies = carJunctionBodies(f, inter)
-	}
-	return sim.ExitQueueBlocksEntry(*bodies, inter.Center, g, f.car.Length, f.car.Width, sim.OBB{Center: pos, Heading: heading, HalfLen: length / 2, HalfWid: width / 2}, speed)
+func nearExitQueue(center, pos sim.Vec2, speed, reachSquared float64) bool {
+	delta := pos.Sub(center)
+	return !(math.Abs(speed) > 5 || delta.Dot(delta) > reachSquared)
 }

@@ -95,4 +95,33 @@ func TestIntersectionCarNeedsOwnFullTimeout(t *testing.T) {
 	if len(tm.Cars) != 0 {
 		t.Fatal("Did not remove after full stationary timeout")
 	}
+	if len(tm.pendingExits) != 1 || tm.pendingExits[0] != car.Pos {
+		t.Fatal("Deadlock removal did not schedule a replacement")
+	}
+	tm.updateBoundaryTraffic(bus, 1, 52, w)
+	if len(tm.pendingExits) != 0 || len(tm.Cars) != 1 || tm.Cars[0].ID <= car.ID {
+		t.Fatal("Deadlock removal permanently reduced the population")
+	}
+}
+
+func TestLegacyTrafficDeficitFillsRoadSitesWithoutResettingCars(t *testing.T) {
+	sim.SeedSimulation(19)
+	const lw = 52.
+	w := boundaryWorld()
+	w.Intersections = nil // Sparse maps can still replace cars on clear road sites.
+	sites := trafficSpawnSites(w, lw)
+	original := sites[0].car(100)
+	tm := &TrafficManager{Cars: []*sim.TrafficCar{original}, CarSpeedRange: sim.SpeedRange{MinKPH: 80, MaxKPH: 80}}
+	tm.RestorePopulation(PopulationSnapshot{NextCarID: 200})
+	for tick := 0; tick < 100; tick++ {
+		tm.updateBoundaryTraffic(nil, 4, lw, w)
+	}
+	if len(tm.Cars) != len(sites) || tm.Cars[0] != original {
+		t.Fatalf("expected %d safe cars and retained original, got %d cars", len(sites), len(tm.Cars))
+	}
+	for i, car := range tm.Cars[1:] {
+		if car.ID != 200+i || car.MaxSpeedKPH != 80 {
+			t.Fatalf("invalid replacement car %d at index %d", car.ID, i+1)
+		}
+	}
 }

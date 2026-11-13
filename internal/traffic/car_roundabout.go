@@ -136,7 +136,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			}
 			stopGap := roundaboutYieldGap(f.car, rb)
 			if fwdProj > 0 && math.Abs(f.car.RoadCenter-coord) < 25 && f.car.RoundaboutCooldown <= 0 {
-				if tm.roundaboutReserved(rb.Center) {
+				if tm.roundaboutReservedForCar(rb, f.car, forward, f.laneWidth) {
 					outer := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
 					join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outer, f.laneWidth)
 					start, _ := sim.RoundaboutEntryPoint(join, 0)
@@ -156,7 +156,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 					// 1. Yield check at entry line:
 					// Circulating vehicles coming from the left or traversing across entry mouth have right of way
 					myAngle := math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
-					needYield := tm.roundaboutReserved(rb.Center)
+					needYield := tm.roundaboutReservedForCar(rb, f.car, forward, f.laneWidth)
 
 					// Account for long buses whose noses are already at the mouth
 					// while their centers are still outside the circular roadway.

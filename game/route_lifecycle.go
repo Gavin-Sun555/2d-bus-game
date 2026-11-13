@@ -1,6 +1,8 @@
 package game
 
 import (
+	"fmt"
+
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
@@ -11,8 +13,28 @@ import (
 func (g *Game) ResetBusesToRouteStart() { g.resetBusesToRouteStart(true) }
 
 func (g *Game) resetBusesToRouteStart(resetFleet bool) {
-	if g.Route == nil || len(g.Route.StopIDs) == 0 || g.World == nil || len(g.World.Stops) == 0 {
+	firstStop := g.resetPlayerToRouteStart(!resetFleet)
+	if firstStop == nil {
 		return
+	}
+	if firstStop.WaitingPassengers < 4 {
+		firstStop.SeedWaitingPassengers(4 + sim.RandomIntn(4))
+	}
+	if g.AIBusMgr != nil {
+		g.AIBusMgr.ActiveRoute = g.Route
+		g.AIBusMgr.Routes = g.activeLines()
+		if resetFleet {
+			g.buildLineFleets(true)
+		}
+	}
+	g.ensureOperations()
+	g.SyncStopsWithRoute()
+	g.rollAlightingForNextStop()
+}
+
+func (g *Game) resetPlayerToRouteStart(queue bool) *sim.BusStop {
+	if g.Route == nil || len(g.Route.StopIDs) == 0 || g.World == nil || len(g.World.Stops) == 0 {
+		return nil
 	}
 
 	firstStopID := g.Route.StopIDs[0]
@@ -21,7 +43,6 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 	}
 	firstStop := g.World.Stops[firstStopID]
 
-	// 1. Reset player bus
 	if g.Bus != nil {
 		g.Bus.Pos = firstStop.FrontBerthPosition()
 		g.Bus.Heading = firstStop.Heading
@@ -39,7 +60,10 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 	}
 
 	g.boardedThisStop = false
+	g.AutopilotDeadlockTimer = 0
+	g.DeadlockTracker = sim.StationaryTracker{}
 	g.skipCooldown = 0
+	g.lastSkippedStopID = -1
 	g.stopBellRung = false
 	g.passengersAlighting = 0
 	g.bellToastShown = false
@@ -49,26 +73,10 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 	if g.AutopilotDriver != nil {
 		g.AutopilotDriver.Reset()
 	}
-	if !resetFleet {
+	if queue {
 		g.queuePlayerAtStop(firstStop)
 	}
 
-	// 2. Ensure initial stop has passengers for immediate departure
-	if firstStop.WaitingPassengers < 4 {
-		firstStop.WaitingPassengers = 4 + sim.RandomIntn(4)
-	}
-
-	// 3. Redistribute the initial AI fleet along the route, keeping the player at its start.
-
-	if g.AIBusMgr != nil {
-		g.AIBusMgr.ActiveRoute = g.Route
-		g.AIBusMgr.Routes = g.activeLines()
-		if resetFleet {
-			g.buildLineFleets(true)
-		}
-	}
-
-	// 4. Follow player bus with camera
 	if g.Camera != nil && g.Bus != nil {
 		g.Camera.FollowBus(g.Bus)
 		g.Camera.Pos = g.Bus.Pos
@@ -77,9 +85,7 @@ func (g *Game) resetBusesToRouteStart(resetFleet bool) {
 		g.Camera.Rotation = g.Camera.TargetRotation
 	}
 
-	g.ensureOperations()
-	g.SyncStopsWithRoute()
-	g.rollAlightingForNextStop()
+	return firstStop
 }
 
 // ResetToStartingStation resets the player's bus back to the starting station (起点站) of the active route.
@@ -98,7 +104,7 @@ func (g *Game) ResetToStartingStation() {
 	startStop := g.World.Stops[startID]
 
 	if startStop.WaitingPassengers < 4 {
-		startStop.WaitingPassengers = 4 + sim.RandomIntn(4)
+		startStop.SeedWaitingPassengers(4 + sim.RandomIntn(4))
 	}
 
 	g.Route.CurrentIndex = 0
@@ -159,23 +165,69 @@ func (g *Game) SyncStopsWithRoute() {
 		}
 		if !served {
 			s.WaitingPassengers = 0
+			s.SyncWaitingQueue(nil)
 			s.SpawnTimer = 0
 		} else if s.WaitingPassengers == 0 {
 			// Ensure route stops have passengers ready for service
-			s.WaitingPassengers = 4 + sim.RandomIntn(4)
+			s.SeedWaitingPassengers(4 + sim.RandomIntn(4))
 		}
 	}
 }
 
-// ReplanRoute updates the active route to the given stop sequence and resets
-// the player bus and AI fleet to the first station.
+// ReplanRoute commits a new stop sequence for the player's line.
 func (g *Game) ReplanRoute(stopIDs []int) {
 	if len(stopIDs) == 0 {
 		return
 	}
-	g.Route.Clear()
+	route := *g.Route
+	route.Clear()
 	for _, id := range stopIDs {
-		g.Route.AddStop(id)
+		route.AddStop(id)
 	}
-	g.ResetBusesToRouteStart()
+	if intSlicesEqual(g.Route.StopIDs, route.StopIDs) {
+		return
+	}
+	if !g.routeWithinTurnLimit(route.StopIDs) {
+		return
+	}
+	g.LineFleets[g.PlayerLine] = g.currentLineFleetSettings()
+	g.Route.StopIDs = route.StopIDs
+	g.commitRouteChange(g.Route)
+}
+
+func (g *Game) routeWithinTurnLimit(stops []int) bool {
+	turns := sim.RouteUTurnCount(g.World, stops, g.Settings.GetLaneWidth())
+	if turns <= sim.MaxRouteUTurns {
+		return true
+	}
+	g.HUD.AddWarningToast(fmt.Sprintf(locale.T("本线路每圈需掉头 %d 次，最多允许 %d 次。请调整站点顺序。", "This route needs %d U-turns per loop. The limit is %d. Reorder the stops."), turns, sim.MaxRouteUTurns))
+	return false
+}
+
+func (g *Game) commitRouteChange(route *sim.Route) {
+	route.CurrentIndex = 0
+	route.TotalTrips = 0
+	route.InvalidateDescription()
+	if g.IsPlanMode && route == g.planningRoute() {
+		g.rememberPlannedRoute(route)
+	}
+	player := route == g.Route
+	if player {
+		g.resetPlayerToRouteStart(true)
+		g.operationsRoute = append([]int(nil), route.StopIDs...)
+	}
+	if g.Operations != nil {
+		g.Operations.ResetLine(route, player)
+		g.careerRevenueMark = g.Operations.Revenue
+		if p := g.OperationsPanel; p != nil && p.SelectedVehicle >= 0 && g.Operations.Vehicles[p.SelectedVehicle] == nil {
+			p.SelectedVehicle = -1
+		}
+	}
+	g.ensureOperations()
+	if g.AIBusMgr != nil {
+		g.buildLineFleets(false)
+	}
+	if g.World != nil {
+		g.World.ReconcileWaitingPassengers(g.operatingLines()...)
+	}
 }

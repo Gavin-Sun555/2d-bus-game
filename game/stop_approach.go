@@ -71,7 +71,7 @@ func (g *Game) updateStopApproach() {
 		isValidStopApproach := isAlignedHeading && isOnStopRoad && isArrivingAtStop
 
 		currentLaneW := g.Settings.GetLaneWidth()
-		isPlayerBerserk := g.Settings.AutopilotBerserk || (g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
+		isPlayerBerserk := g.outerLaneDockAllowed()
 		isDocked := targetStop.ContainsBus(g.Bus) ||
 			(g.AutopilotDriver != nil && g.AutopilotDriver.State == autopilot.AutopilotStateDocked && g.AutopilotDriver.DockedStopID == targetStop.ID) ||
 			(g.Bus.DoorsOpen && isPlayerBerserk && targetStop.ContainsBusInOuterLane(g.Bus, currentLaneW))
@@ -99,9 +99,10 @@ func (g *Game) updateStopApproach() {
 		if distToTarget <= 380.0 && (isValidStopApproach || isCirclingNearStop) {
 			isOccupied := g.IsStopOccupiedByOtherVehicle(targetStop)
 			canSkip := !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
+			autoCanSkip := g.Settings.AutopilotEnabled && g.canAutopilotSkipStop(targetStop, isOccupied)
 
-			// Proactive AI Autopilot Skip when station can be skipped and no bell rung (both empty and occupied station)
-			if g.Settings.AutopilotEnabled && canSkip && forwardProj < 55.0 && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
+			// Proactive autopilot skip only while the bus is still approaching.
+			if autoCanSkip && !isDocked && forwardProj < 55.0 && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID
 				oldName := targetStop.LocalizedName()
@@ -177,10 +178,10 @@ func (g *Game) updateStopApproach() {
 			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 &&
 				(g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25))
 
-			isAIMissed := !canSkip && g.Settings.AutopilotEnabled && !isDocked &&
+			isAIMissed := !autoCanSkip && g.Settings.AutopilotEnabled && !isDocked &&
 				(isCenterOvershot || isStalledInOuterLane || isPassingInOuterLane || isCirclingNearStop)
 
-			if (forwardProj > 35.0 || (latDist > 65.0 && forwardProj > 15.0) || isCirclingNearStop) && distToTarget < 350.0 && !isDocked && canSkip && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
+			if (forwardProj > 35.0 || (latDist > 65.0 && forwardProj > 15.0) || isCirclingNearStop) && distToTarget < 350.0 && !isDocked && autoCanSkip && g.lastSkippedStopID != targetStop.ID && g.skipCooldown <= 0 {
 				// Lawful skip when station is empty or occupied with no bell rung (Point 4: pass straight through in outer or through lane)
 				g.skipCooldown = 0.5
 				g.lastSkippedStopID = targetStop.ID

@@ -15,7 +15,9 @@ type AIBus struct {
 	Retiring            bool // Finish this lap, alight at the terminal, then leave service.
 	retireReady         bool
 	lateArrivalWait     float64
+	skip                StationSkip // A skip decision holds until the bus passes that stop.
 	LineIndex           int
+	FleetSlot           int `json:",omitempty"` // One-based slot. Zero identifies a legacy save.
 	AssignedSpeedRange  sim.SpeedRange
 	ID                  int
 	MaxSpeedKPH         int
@@ -80,9 +82,12 @@ func (ab *AIBus) ResetToStartingStation(world *sim.World) {
 }
 
 // updateDeadlock applies this bus's independent stationary recovery clock.
-func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSystem, world *sim.World) bool {
+func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSystem, world *sim.World, beforeReset ...func(sim.TrafficRecoveryEvent)) bool {
 	ab.DeadlockTimer = ab.DeadlockTracker.Update(ab.DeadlockTimer, dt, ab.Bus.Pos, ab.Bus.Speed, jammed)
 	if ab.DeadlockTimer >= tls.DeadlockTimeoutAt(ab.Bus.Pos) {
+		if len(beforeReset) > 0 && beforeReset[0] != nil {
+			beforeReset[0](sim.TrafficRecoveryEvent{Kind: "bus", ID: ab.ID, Pos: ab.Bus.Pos, Reason: "deadlock-reset"})
+		}
 		ab.ResetToStartingStation(world)
 		return true
 	}
@@ -91,21 +96,24 @@ func (ab *AIBus) updateDeadlock(dt float64, jammed bool, tls *sim.TrafficLightSy
 
 // AIBusManager oversees all AI buses operating on the active city route
 type AIBusManager struct {
-	stationOnlyBuild bool // Per-line builder defers distribution until models are assigned.
-	PassengerRates   [sim.BusModelCount]sim.PassengerRates
-	Operations       *sim.TransitOperations
-	baseObstacles    []autopilot.VehicleObstacle
-	obstacles        []autopilot.VehicleObstacle
-	carSpatial       carSpatialIndex
-	carObstacles     []autopilot.VehicleObstacle
-	nearbyCarIndices []int
-	Buses            []*AIBus
-	BusSpeedRange    sim.SpeedRange
-	BusCount         int // Number of AI buses operating on the route (0 ~ 8)
-	CurrentMap       sim.MapTheme
-	CurrentLane      float64
-	ActiveRoute      *sim.Route
-	Routes           []*sim.Route
+	BeforeRecovery            func(sim.TrafficRecoveryEvent) `json:"-"`
+	LastBusID                 int                            // Highest issued ID, including vehicles that ended service.
+	stationOnlyBuild          bool                           // Per-line builder defers distribution until models are assigned.
+	PassengerOverloadPercents *[sim.BusModelCount]int
+	PassengerRates            [sim.BusModelCount]sim.PassengerRates
+	Operations                *sim.TransitOperations
+	baseObstacles             []autopilot.VehicleObstacle
+	obstacles                 []autopilot.VehicleObstacle
+	carSpatial                carSpatialIndex
+	carObstacles              []autopilot.VehicleObstacle
+	nearbyCarIndices          []int
+	Buses                     []*AIBus
+	BusSpeedRange             sim.SpeedRange
+	BusCount                  int // Number of AI buses operating on the route
+	CurrentMap                sim.MapTheme
+	CurrentLane               float64
+	ActiveRoute               *sim.Route
+	Routes                    []*sim.Route
 }
 
 // NewAIBusManager creates the AI bus manager with default 0 AI buses
@@ -124,18 +132,13 @@ func (abm *AIBusManager) GetLineCount(_ ...int) int {
 
 // SetLineCount updates the count of AI buses and rebuilds fleet
 func (abm *AIBusManager) SetLineCount(count int, world *sim.World, laneWidth float64, playerBus ...*sim.Bus) {
-	if count < 0 {
-		count = 0
-	} else if count > 8 {
-		count = 8
-	}
-	abm.BusCount = count
+	abm.BusCount = max(0, min(MaxBusesPerLine, count))
 	abm.RebuildFleet(world, laneWidth, playerBus...)
 }
 
-// CycleLineCount increments and wraps the count of AI buses (0 -> 1 -> ... -> 8 -> 0)
+// CycleLineCount increments and wraps the count of AI buses back to zero at the per-line limit
 func (abm *AIBusManager) CycleLineCount(world *sim.World, laneWidth float64, playerBus ...*sim.Bus) int {
-	next := (abm.BusCount + 1) % 9
+	next := (abm.BusCount + 1) % (MaxBusesPerLine + 1)
 	abm.SetLineCount(next, world, laneWidth, playerBus...)
 	return next
 }
@@ -268,17 +271,11 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		bus.TransmissionMode = sim.TransmissionAuto
 		bus.Speed = 0
 		bus.SteeringAngle = 0
-		bus.Capacity = sim.DefaultBusCapacity
+		abm.ApplyPassengerCapacity(bus)
 
-		rangeKPH := abm.BusSpeedRange.Normalize(50, 80)
-		speedKPH := rangeKPH.Sample()
 		driver := autopilot.NewAutopilotDriver()
 		driver.QueueAtStation(st.ID)
 		driver.DisallowOncomingOvertake = true
-		driver.BerserkMode = speedKPH > rangeKPH.MinKPH
-		driver.BerserkMaxSpeed = sim.SpeedKPH(speedKPH)
-		driver.CruiseSpeedLimit = sim.SpeedKPH(speedKPH)
-		bus.MaxSpeedFwd = sim.SpeedKPH(speedKPH)
 		queuedBuses := make([]*sim.Bus, 0, len(newBuses)+1)
 		if len(playerBus) > 0 && playerBus[0] != nil {
 			queuedBuses = append(queuedBuses, playerBus[0])
@@ -288,16 +285,20 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		}
 		sim.PlaceBusInStationQueue(bus, st, queuedBuses, laneWidth)
 		aiColor := busColors[i%len(busColors)]
-		newBuses = append(newBuses, &AIBus{
-			ID:          i + 1,
-			LineName:    targetRoute.Name,
-			Bus:         bus,
-			Route:       busRoute,
-			Driver:      driver,
-			MaxSpeedKPH: speedKPH, CanOvertake: speedKPH > rangeKPH.MinKPH,
+		ab := &AIBus{
+			ID:                  i + 1,
+			LineName:            targetRoute.Name,
+			Bus:                 bus,
+			Route:               busRoute,
+			Driver:              driver,
 			Color:               aiColor,
 			LastExchangedStopID: -1,
-		})
+		}
+		if !abm.stationOnlyBuild {
+			r := abm.BusSpeedRange.Normalize(50, sim.TrafficMaxSpeedKPH)
+			ab.assignLineSpeed(r, r.Sample())
+		}
+		newBuses = append(newBuses, ab)
 	}
 
 	if !abm.stationOnlyBuild {
@@ -305,6 +306,7 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 		if len(playerBus) > 0 && playerBus[0] != nil {
 			others = append(others, playerBus[0])
 		}
+		dispatched := make([]*AIBus, 0, len(newBuses))
 		used := map[int]bool{}
 		for _, b := range newBuses {
 			if used[b.ID] {
@@ -317,11 +319,13 @@ func (abm *AIBusManager) RebuildFleet(world *sim.World, laneWidth float64, playe
 					used[other.ID] = true
 				}
 			}
-			distributeInitialLine(group, world, laneWidth, others, nil)
+			group = distributeInitialLine(group, world, laneWidth, others, nil)
+			dispatched = append(dispatched, group...)
 			for _, placed := range group {
 				others = append(others, placed.Bus)
 			}
 		}
+		newBuses = dispatched
 	}
 	abm.Buses = newBuses
 }
@@ -368,4 +372,10 @@ func (abm *AIBusManager) GetLocalObstacles(pos sim.Vec2, speed float64, dst []au
 		}
 	}
 	return dst
+}
+
+func (abm *AIBusManager) ApplyPassengerCapacity(bus *sim.Bus) {
+	if bus.Model.Valid() && abm.PassengerOverloadPercents != nil {
+		bus.Capacity = bus.Model.CapacityWithOverload((*abm.PassengerOverloadPercents)[bus.Model])
+	}
 }

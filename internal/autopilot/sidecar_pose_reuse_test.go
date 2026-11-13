@@ -45,7 +45,9 @@ func (ad *AutopilotDriver) referenceSidecarSweepClear(f autopilotFrame, steer, h
 		}
 		for _, ob := range f.obstacles {
 			padding := 2.
-			if stoppedSidecar(f, ob, heading) {
+			if offset, trailer := stoppedSidecarOffset(f, ob, u, r); trailer {
+				padding = 0
+			} else if offset != 0 {
 				padding = .05
 			}
 			for _, other := range predictedObstacleBodies(ob, math.Max(0, ob.Speed)*float64(tick)/60) {
@@ -66,24 +68,32 @@ func TestSidecarPoseReuseMatchesOriginalSearch(t *testing.T) {
 	rng := rand.New(rand.NewSource(73584))
 	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -10000}, P2: sim.Vec2{X: 10000}, Lanes: 8}}}
 	for scene := 0; scene < 250; scene++ {
-		bus := sim.NewBus(0, 150, rng.Float64()*.3-.15)
+		y := 150.
+		if scene%5 == 0 {
+			y = 200 + rng.Float64()*30
+		}
+		bus := sim.NewBus(0, y, rng.Float64()*.3-.15)
 		bus.SetModel(sim.BusArticulated)
 		bus.TrailerHeading = bus.Heading + rng.Float64()*.4 - .2
 		bus.Speed = rng.Float64() * 25
 		f := autopilotFrame{bus: bus, world: w, laneWidth: 52, speedAbs: bus.Speed}
 		if scene%5 != 0 {
-			for i := 0; i < 24; i++ {
+			for i := 0; i < 23+scene%4; i++ {
 				f.obstacles = append(f.obstacles, VehicleObstacle{Pos: sim.Vec2{X: rng.Float64()*900 - 450, Y: rng.Float64() * 400}, Heading: rng.Float64()*.3 - .15, Length: 46, Width: 22, Speed: float64(i%3) * 20})
 			}
 		}
 		ad := NewAutopilotDriver()
+		var traffic sidecarSweepTraffic
+		if len(f.obstacles) <= maxCachedSidecarObstacles {
+			traffic.poses = make([][2]sim.OBB, len(f.obstacles)*sidecarSweepSamples)
+		}
 		for _, steer := range []float64{-1, -.3, 0, .3, 1} {
 			for _, gain := range []float64{0, 3, 8} {
 				var g []float64
 				if gain != 0 {
 					g = []float64{gain}
 				}
-				got := ad.sidecarSweepClear(f, steer, 0, 0, true, g...)
+				got := ad.sidecarSweepClear(f, steer, 0, 0, true, &traffic, g...)
 				want := ad.referenceSidecarSweepClear(f, steer, 0, 0, true, g...)
 				if got != want {
 					t.Fatalf("scene%d steer%g gain%g got%v want%v", scene, steer, gain, got, want)

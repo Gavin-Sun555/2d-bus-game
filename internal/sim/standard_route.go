@@ -57,8 +57,8 @@ func newStandardRoute(theme MapTheme, numStops int) *Route {
 	return route
 }
 
-// customMapStopOrder uses directed road distances, including platform approach
-// headings. Cheapest insertion keeps nearby stops together without moving any
+// customMapStopOrder favors fewer U-turns, then shorter directed road distances.
+// Cheapest insertion keeps nearby stops together without moving any
 // stations authored in a custom map. It runs only when loading that map.
 func customMapStopOrder(world *World) []int {
 	n := len(world.Stops)
@@ -74,16 +74,21 @@ func customMapStopOrder(world *World) []int {
 	if laneWidth <= 0 || math.IsNaN(laneWidth) || math.IsInf(laneWidth, 0) {
 		laneWidth = 42
 	}
-	cost := make([][]float64, n)
-	for i := range cost {
-		cost[i] = make([]float64, n)
-		for j := range cost[i] {
+	type legCost struct {
+		turns    int
+		distance float64
+	}
+	costs := make([][]legCost, n)
+	for i := range costs {
+		costs[i] = make([]legCost, n)
+		for j := range costs[i] {
 			if i == j {
 				continue
 			}
-			path := ComputeRoadPathBetweenStops(world, world.Stops[i], world.Stops[j], laneWidth)
+			leg := &costs[i][j]
+			path := computeRoadPathBetweenStops(world, world.Stops[i], world.Stops[j], laneWidth, &leg.turns)
 			for k := 1; k < len(path); k++ {
-				cost[i][j] += path[k].Distance(path[k-1])
+				leg.distance += path[k].Distance(path[k-1])
 			}
 		}
 	}
@@ -92,16 +97,18 @@ func customMapStopOrder(world *World) []int {
 	used[0] = true
 	for len(order) <= n {
 		bestStop, bestAt := -1, 0
-		bestCost := math.Inf(1)
+		bestTurns, bestDistance := math.MaxInt, math.Inf(1)
 		for stop := 1; stop < n; stop++ {
 			if used[stop] {
 				continue
 			}
 			for at := 1; at < len(order); at++ {
 				from, to := order[at-1], order[at]
-				added := cost[from][stop] + cost[stop][to] - cost[from][to]
-				if added < bestCost {
-					bestCost, bestStop, bestAt = added, stop, at
+				first, second, replaced := costs[from][stop], costs[stop][to], costs[from][to]
+				addedTurns := first.turns + second.turns - replaced.turns
+				addedDistance := first.distance + second.distance - replaced.distance
+				if addedTurns < bestTurns || (addedTurns == bestTurns && addedDistance < bestDistance) {
+					bestTurns, bestDistance, bestStop, bestAt = addedTurns, addedDistance, stop, at
 				}
 			}
 		}

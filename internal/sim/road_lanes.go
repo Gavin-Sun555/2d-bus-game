@@ -21,6 +21,14 @@ func (r RoadSegment) LaneCount() int {
 
 func (r RoadSegment) HasBusLane() bool { return r.Type == RoadBusBoulevard8Lane }
 
+// A planned bus left turn may start from the curb lane only on a road with a
+// curb bus lane. Ordinary 4/6/8-lane roads plan the inner left-turn lane; the
+// curb lane is then only a fallback after a blocked merge out of a stop just
+// before the junction (autopilot tryBlockedCurbLeft), and only on the arrow.
+func (r RoadSegment) AllowsCurbBusLeft() bool {
+	return r.HasBusLane()
+}
+
 // HasMedianBusLane is restricted to eight-lane roads with reserved bus lanes.
 func (r RoadSegment) HasMedianBusLane() bool {
 	return r.HasBusLane() && r.LaneCount() == 8 && r.MedianBusLane

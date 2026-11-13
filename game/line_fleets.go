@@ -22,18 +22,24 @@ func (g *Game) initializeLineFleets() {
 	}.Normalize()
 }
 func (g *Game) buildLineFleets(reset bool) {
+	if g.isCareer() {
+		g.syncCareerCondition()
+		g.configureCareerPlans()
+	}
 	if reset {
 		g.LineFleets[g.PlayerLine] = g.currentLineFleetSettings()
 	}
 	plans := make([]traffic.LineFleetPlan, 0, g.LineCount)
-	for i, r := range g.activeLines() {
+	for i, r := range g.operatingLines() {
 		plans = append(plans, traffic.LineFleetPlan{Route: r, Settings: g.LineFleets[i]})
 	}
 	var cars []*sim.TrafficCar
 	if g.TrafficMgr != nil {
 		cars = g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
 	}
+	g.syncPassengerCapacities()
 	g.AIBusMgr.ConfigureLineFleets(plans, g.World, g.Settings.GetLaneWidth(), g.Bus, reset, cars)
+	g.bindCareerVehicles()
 }
 func (g *Game) showPlayerLineSettings() {
 	c := g.LineFleets[g.PlayerLine].Normalize()
@@ -82,6 +88,10 @@ func (g *Game) isPlayerAtRouteStart() bool {
 }
 
 func (g *Game) SetLineFleet(index int, c traffic.LineFleetSettings) {
+	if g.isCareer() {
+		g.HUD.AddWarningToast("Career：请在经营车库购买和调度车辆 [F2] / Buy and dispatch through the Career garage [F2]")
+		return
+	}
 	if index < 0 || index >= len(g.LineFleets) {
 		return
 	}
@@ -96,7 +106,8 @@ func (g *Game) SetLineFleet(index int, c traffic.LineFleetSettings) {
 		g.showPlayerLineSettings()
 		if g.Bus != nil {
 			if g.isPlayerAtRouteStart() {
-				if g.Bus.SetModel(g.LineFleets[index].PlayerModel) {
+				model := g.LineFleets[index].PlayerModel
+				if g.Bus.SetModelWithCapacity(model, g.Settings.ModelPassengerCapacity(model)) {
 					g.Bus.PendingModel = nil
 					if g.Bus.Model == sim.BusArticulated {
 						sim.EnsureLongBusBays(g.World, g.Lines[index])
@@ -118,6 +129,10 @@ func (g *Game) SetLineFleet(index int, c traffic.LineFleetSettings) {
 
 // Legacy scalar settings remain a compatibility view; speed edits keep the mix.
 func (g *Game) currentLineFleetSettings() traffic.LineFleetSettings {
+	if g.isCareer() {
+		g.showPlayerLineSettings()
+		return g.LineFleets[g.PlayerLine]
+	}
 	c := g.LineFleets[g.PlayerLine].Normalize()
 	if c.BusCount != g.Settings.AIBusCount {
 		c.BusCount = g.Settings.AIBusCount

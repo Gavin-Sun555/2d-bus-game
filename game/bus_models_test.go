@@ -67,11 +67,11 @@ func TestNetworkModelButtonsRespectSharedLimit(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		g.handleNetworkAction(22)
 	}
-	if g.LineFleets[0].BusCount != 8 {
+	if g.LineFleets[0].BusCount != sim.MaxBusesPerLine {
 		t.Fatal("mixed limit")
 	}
 	g.handleNetworkAction(23)
-	if g.LineFleets[0].MixedModels || g.LineFleets[0].Counts() != [sim.BusModelCount]int{0, 8, 0} {
+	if g.LineFleets[0].MixedModels || g.LineFleets[0].Counts() != [sim.BusModelCount]int{0, sim.MaxBusesPerLine, 0} {
 		t.Fatal("uniform selection")
 	}
 	g.handleNetworkAction(24)

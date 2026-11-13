@@ -3,12 +3,16 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"flag"
 	"image"
 	_ "image/png"
 	"log"
+	"os"
+	runtimedebug "runtime/debug"
 	"strings"
 
 	"github.com/Gavin-Sun555/2d-bus-game/game"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
@@ -25,6 +29,17 @@ var icon64Bytes []byte
 var releaseVersion string
 
 func main() {
+	debug := flag.Bool("debug", false, "save long congestion and pre-recovery traffic snapshots")
+	flag.Parse()
+	// Leave headroom between collections in large, busy cities. Explicit
+	// runtime settings from the launch environment still take precedence.
+	if _, set := os.LookupEnv("GOGC"); !set {
+		runtimedebug.SetGCPercent(200)
+	}
+	if _, set := os.LookupEnv("GOMEMLIMIT"); !set {
+		runtimedebug.SetMemoryLimit(1 << 30)
+	}
+	locale.InitSystemLanguage()
 	const (
 		screenWidth  = 1280
 		screenHeight = 720
@@ -50,6 +65,14 @@ func main() {
 	}
 
 	g := game.NewGame(screenWidth, screenHeight)
+	if *debug {
+		if err := g.EnableDebug(); err != nil {
+			log.Fatalf("Enable debug mode: %v", err)
+		}
+	}
+	g.ShowModeSelection()
+	g.EnableAutosaves()
+	ebiten.SetWindowClosingHandled(true)
 	if err := g.EnableStationNames(); err != nil {
 		log.Printf("Station names unavailable: %v", err)
 		g.HUD.AddWarningToast("无法读取自定义站名文件 / Cannot read custom station names")
@@ -64,7 +87,11 @@ func main() {
 	}
 	defer g.CloseAnnouncements()
 
-	if err := ebiten.RunGame(game.WithGraphicsWarmup(g)); err != nil {
+	runErr := ebiten.RunGame(game.WithGraphicsWarmup(g))
+	if err := g.SaveOnExit(); err != nil {
+		log.Printf("Exit autosave failed: %v", err)
+	}
+	if err := runErr; err != nil {
 		log.Fatalf("Game crashed: %v", err)
 	}
 }

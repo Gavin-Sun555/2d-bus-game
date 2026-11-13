@@ -1,0 +1,332 @@
+{
+  "scenario": "slot1 copy, seed 5, 72 AI buses, 864 civilian cars",
+  "hardware": "Apple M4, macOS, 60 Hz vsync",
+  "offline_before": {
+    "Ticks": 1800,
+    "Warmup": 120,
+    "Buses": 72,
+    "CarsMin": 864,
+    "CarsMax": 864,
+    "CarsFinal": 864,
+    "MeanMS": 8.642059362777786,
+    "P50MS": 8.346958,
+    "P95MS": 11.291292,
+    "P99MS": 15.584375,
+    "MaxMS": 16.966875,
+    "BytesPerTick": 51476.36444444444,
+    "AllocsPerTick": 239.1338888888889,
+    "GCCount": 3,
+    "GCPauseMS": 0.158751,
+    "PlayerHealthStart": 79,
+    "PlayerHealthEnd": 79,
+    "FleetMinHealth": 100,
+    "PlayerDistance": 22235.60118246982,
+    "PoseHits": 375834,
+    "PoseMisses": 2054363,
+    "EndState": "b2a01d05379fee94e8ca7b32edb842865862c04d790ab8fb1ec09be74e488444"
+  },
+  "offline_after_profiled": {
+    "Ticks": 1800,
+    "Warmup": 120,
+    "Buses": 72,
+    "CarsMin": 864,
+    "CarsMax": 864,
+    "CarsFinal": 864,
+    "MeanMS": 7.917422126666666,
+    "P50MS": 7.746458,
+    "P95MS": 10.200625,
+    "P99MS": 10.977125,
+    "MaxMS": 19.446959,
+    "BytesPerTick": 32972.49333333333,
+    "AllocsPerTick": 220.26888888888888,
+    "GCCount": 2,
+    "GCPauseMS": 0.104542,
+    "PlayerHealthStart": 79,
+    "PlayerHealthEnd": 79,
+    "FleetMinHealth": 100,
+    "PlayerDistance": 22235.60118246982,
+    "PoseHits": 366404,
+    "PoseMisses": 1983785,
+    "EndState": "b2a01d05379fee94e8ca7b32edb842865862c04d790ab8fb1ec09be74e488444"
+  },
+  "native_before": {
+    "Update": {
+      "Count": 1680,
+      "MeanMS": 8.809541214285717,
+      "P50MS": 8.471417,
+      "P95MS": 11.337292,
+      "P99MS": 15.598083,
+      "MaxMS": 16.384375
+    },
+    "DrawSubmit": {
+      "Count": 1658,
+      "MeanMS": 1.328206646562124,
+      "P50MS": 1.328291,
+      "P95MS": 1.52,
+      "P99MS": 1.613042,
+      "MaxMS": 2.011417
+    },
+    "DrawInterval": {
+      "Count": 1657,
+      "MeanMS": 16.877911964393494,
+      "P50MS": 16.673708,
+      "P95MS": 17.772625,
+      "P99MS": 32.521792,
+      "MaxMS": 35.117875
+    },
+    "Groups": {
+      "high-speed": {
+        "Count": 1016,
+        "MeanMS": 9.066099025590555,
+        "P50MS": 8.542666,
+        "P95MS": 13.771958,
+        "P99MS": 15.713792,
+        "MaxMS": 16.384375
+      },
+      "junction": {
+        "Count": 306,
+        "MeanMS": 8.505506277777773,
+        "P50MS": 8.471417,
+        "P95MS": 9.272459,
+        "P99MS": 10.176959,
+        "MaxMS": 10.428166
+      },
+      "road": {
+        "Count": 358,
+        "MeanMS": 8.341306449720673,
+        "P50MS": 8.277667,
+        "P95MS": 9.622041,
+        "P99MS": 10.603791,
+        "MaxMS": 10.855375
+      }
+    },
+    "UpdateTPS": 60.01341782138987,
+    "DrawFPS": 59.227527826109764,
+    "FocusedDraws": 1658,
+    "Cars": 864,
+    "Buses": 72,
+    "EndState": "5737e1a16fd3122332bf104d2cbb376958d1d84cb16b552c74e7d512d522a4ef"
+  },
+  "native_after": {
+    "Update": {
+      "Count": 1680,
+      "MeanMS": 8.169453725000007,
+      "P50MS": 8.018583,
+      "P95MS": 10.3795,
+      "P99MS": 11.166125,
+      "MaxMS": 19.318166
+    },
+    "DrawSubmit": {
+      "Count": 1680,
+      "MeanMS": 1.3415859035714286,
+      "P50MS": 1.330917,
+      "P95MS": 1.54075,
+      "P99MS": 1.644,
+      "MaxMS": 3.561291
+    },
+    "DrawInterval": {
+      "Count": 1679,
+      "MeanMS": 16.666821247766517,
+      "P50MS": 16.666625,
+      "P95MS": 17.493,
+      "P99MS": 18.316334,
+      "MaxMS": 28.501542
+    },
+    "Groups": {
+      "high-speed": {
+        "Count": 1016,
+        "MeanMS": 8.325947890748038,
+        "P50MS": 8.132333,
+        "P95MS": 10.686,
+        "P99MS": 11.289125,
+        "MaxMS": 12.3135
+      },
+      "junction": {
+        "Count": 306,
+        "MeanMS": 8.153895702614376,
+        "P50MS": 8.042,
+        "P95MS": 9.113083,
+        "P99MS": 10.056833,
+        "MaxMS": 19.318166
+      },
+      "road": {
+        "Count": 358,
+        "MeanMS": 7.7386232290502734,
+        "P50MS": 7.677584,
+        "P95MS": 9.012625,
+        "P99MS": 9.9195,
+        "MaxMS": 10.333
+      }
+    },
+    "UpdateTPS": 59.98235064104927,
+    "DrawFPS": 59.98235064104927,
+    "FocusedDraws": 1680,
+    "Cars": 864,
+    "Buses": 72,
+    "EndState": "5737e1a16fd3122332bf104d2cbb376958d1d84cb16b552c74e7d512d522a4ef"
+  },
+  "offline_before_repeat": {
+    "Ticks": 1800,
+    "Warmup": 120,
+    "Buses": 72,
+    "CarsMin": 864,
+    "CarsMax": 864,
+    "CarsFinal": 864,
+    "MeanMS": 8.653257777777776,
+    "P50MS": 8.354625,
+    "P95MS": 11.419708,
+    "P99MS": 15.616458,
+    "MaxMS": 16.580958,
+    "BytesPerTick": 51635.13333333333,
+    "AllocsPerTick": 239.14111111111112,
+    "GCCount": 3,
+    "GCPauseMS": 0.130458,
+    "PlayerHealthStart": 79,
+    "PlayerHealthEnd": 79,
+    "FleetMinHealth": 100,
+    "PlayerDistance": 22235.60118246982,
+    "PoseHits": 375834,
+    "PoseMisses": 2054363,
+    "EndState": "b2a01d05379fee94e8ca7b32edb842865862c04d790ab8fb1ec09be74e488444"
+  },
+  "offline_after": {
+    "Ticks": 1800,
+    "Warmup": 120,
+    "Buses": 72,
+    "CarsMin": 864,
+    "CarsMax": 864,
+    "CarsFinal": 864,
+    "MeanMS": 7.819288838333315,
+    "P50MS": 7.690167,
+    "P95MS": 10.046375,
+    "P99MS": 10.843833,
+    "MaxMS": 12.335667,
+    "BytesPerTick": 32870.96,
+    "AllocsPerTick": 220.23611111111111,
+    "GCCount": 2,
+    "GCPauseMS": 0.089583,
+    "PlayerHealthStart": 79,
+    "PlayerHealthEnd": 79,
+    "FleetMinHealth": 100,
+    "PlayerDistance": 22235.60118246982,
+    "PoseHits": 366404,
+    "PoseMisses": 1983785,
+    "EndState": "b2a01d05379fee94e8ca7b32edb842865862c04d790ab8fb1ec09be74e488444"
+  },
+  "native_before_repeat": {
+    "Update": {
+      "Count": 1680,
+      "MeanMS": 8.923444454761912,
+      "P50MS": 8.6125,
+      "P95MS": 11.521875,
+      "P99MS": 15.630708,
+      "MaxMS": 16.805209
+    },
+    "DrawSubmit": {
+      "Count": 1660,
+      "MeanMS": 1.3417083927710844,
+      "P50MS": 1.331959,
+      "P95MS": 1.549125,
+      "P99MS": 1.668833,
+      "MaxMS": 2.5005
+    },
+    "DrawInterval": {
+      "Count": 1659,
+      "MeanMS": 16.867805706449644,
+      "P50MS": 16.6585,
+      "P95MS": 17.878208,
+      "P99MS": 24.644083,
+      "MaxMS": 46.092833
+    },
+    "Groups": {
+      "high-speed": {
+        "Count": 1016,
+        "MeanMS": 9.156436703740157,
+        "P50MS": 8.723917,
+        "P95MS": 13.808375,
+        "P99MS": 15.906833,
+        "MaxMS": 16.805209
+      },
+      "junction": {
+        "Count": 306,
+        "MeanMS": 8.649037035947703,
+        "P50MS": 8.650583,
+        "P95MS": 9.467959,
+        "P99MS": 10.56125,
+        "MaxMS": 11.664458
+      },
+      "road": {
+        "Count": 358,
+        "MeanMS": 8.496764413407817,
+        "P50MS": 8.401166,
+        "P95MS": 9.695,
+        "P99MS": 10.598292,
+        "MaxMS": 10.903833
+      }
+    },
+    "UpdateTPS": 59.981523993989605,
+    "DrawFPS": 59.26745823215639,
+    "FocusedDraws": 1660,
+    "Cars": 864,
+    "Buses": 72,
+    "EndState": "5737e1a16fd3122332bf104d2cbb376958d1d84cb16b552c74e7d512d522a4ef"
+  },
+  "native_after_repeat": {
+    "Update": {
+      "Count": 1680,
+      "MeanMS": 8.279435958333329,
+      "P50MS": 8.113333,
+      "P95MS": 10.508542,
+      "P99MS": 11.462709,
+      "MaxMS": 21.507791
+    },
+    "DrawSubmit": {
+      "Count": 1679,
+      "MeanMS": 1.3467957331745075,
+      "P50MS": 1.338709,
+      "P95MS": 1.559625,
+      "P99MS": 1.728541,
+      "MaxMS": 3.873625
+    },
+    "DrawInterval": {
+      "Count": 1678,
+      "MeanMS": 16.666970500595905,
+      "P50MS": 16.660416,
+      "P95MS": 17.529917,
+      "P99MS": 18.392958,
+      "MaxMS": 28.671583
+    },
+    "Groups": {
+      "high-speed": {
+        "Count": 1016,
+        "MeanMS": 8.39764890452756,
+        "P50MS": 8.130584,
+        "P95MS": 10.760167,
+        "P99MS": 11.509625,
+        "MaxMS": 12.822875
+      },
+      "junction": {
+        "Count": 306,
+        "MeanMS": 8.35586163071895,
+        "P50MS": 8.224542,
+        "P95MS": 9.213167,
+        "P99MS": 10.425625,
+        "MaxMS": 21.507791
+      },
+      "road": {
+        "Count": 358,
+        "MeanMS": 7.878624201117317,
+        "P50MS": 7.864291,
+        "P95MS": 8.989375,
+        "P99MS": 10.214041,
+        "MaxMS": 10.492625
+      }
+    },
+    "UpdateTPS": 60.014047215825244,
+    "DrawFPS": 59.97832456867296,
+    "FocusedDraws": 1679,
+    "Cars": 864,
+    "Buses": 72,
+    "EndState": "5737e1a16fd3122332bf104d2cbb376958d1d84cb16b552c74e7d512d522a4ef"
+  }
+}

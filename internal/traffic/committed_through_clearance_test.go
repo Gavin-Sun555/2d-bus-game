@@ -11,7 +11,7 @@ func TestCommittedThroughCarClearsStoppedOncomingTurn(t *testing.T) {
 	b.JunctionCorridor = &sim.JunctionCorridor{Center: sim.Vec2{X: 3900}, Remaining: .25}
 	c := &sim.TrafficCar{Pos: sim.Vec2{X: 3883.480041619549, Y: -26}, Heading: math.Pi, Length: 46, Width: 22}
 	c.JunctionTurn = &sim.CarJunctionTurn{Straight: true, Center: sim.Vec2{X: 3900}, Points: []sim.Vec2{c.Pos, {X: 3500, Y: -26}}, ExitHeading: math.Pi, EntryHeading: math.Pi}
-	if !committedThroughCarClearsStoppedTurn(c, b) {
+	if !committedCarClearsStoppedTurn(c, b) {
 		t.Fatal("clear committed car remains held by a following margin")
 	}
 	if got := (&TrafficManager{}).busFollowingSpeed(carFrame{car: c, buses: []*sim.Bus{b}}, 100); got != 100 {
@@ -20,19 +20,19 @@ func TestCommittedThroughCarClearsStoppedOncomingTurn(t *testing.T) {
 	c.Pos.Y = -15
 	c.JunctionTurn.Points[0] = c.Pos
 	c.JunctionTurn.Points[1].Y = -15
-	if committedThroughCarClearsStoppedTurn(c, b) {
+	if committedCarClearsStoppedTurn(c, b) {
 		t.Fatal("actual collision ignored")
 	}
 	c.Pos.Y = -26
 	c.JunctionTurn.Points[0] = c.Pos
 	c.JunctionTurn.Points[1].Y = -26
 	b.Speed = 1
-	if committedThroughCarClearsStoppedTurn(c, b) {
+	if committedCarClearsStoppedTurn(c, b) {
 		t.Fatal("moving turn ignored")
 	}
 	b.Speed = 0
 	c.JunctionTurn = nil
-	if committedThroughCarClearsStoppedTurn(c, b) {
+	if committedCarClearsStoppedTurn(c, b) {
 		t.Fatal("uncommitted car ignored entry rules")
 	}
 }

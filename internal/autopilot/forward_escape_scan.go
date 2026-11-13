@@ -1,8 +1,10 @@
 package autopilot
 
 import (
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
+	"math/bits"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 // One two-second actuator search, including all steering alternatives. Neither
@@ -10,13 +12,61 @@ import (
 // Keep the original order and per-pose distance test; only discard obstacles
 // outside every possible original broad-phase circle. Overflow/abnormal input
 // and a trial exceeding the conservative travel bound use the full scan.
-type forwardEscapeScan struct {
-	origin  sim.Vec2
-	travel  float64
-	count   int
-	valid   bool
-	entries [128]forwardEscapeObstacle
+const forwardEscapeTicks = 120
+
+type forwardEscapeBoundaryEntry struct {
+	pose           [4]uint64
+	blocked, valid bool
 }
+
+// The static boundary result depends only on the trial pose. The search still
+// checks live traffic at each trial time, including after a cache hit.
+type forwardEscapeBoundaries struct {
+	version       sim.BoundaryQueryVersion
+	length, width float64
+	articulated   bool
+	entries       [2048]forwardEscapeBoundaryEntry
+}
+
+func (cache *forwardEscapeBoundaries) reset(f autopilotFrame) {
+	version, reusable := f.world.BoundaryQueryVersion(f.laneWidth)
+	bus := f.bus
+	if !reusable || cache.version != version || cache.length != bus.Length || cache.width != bus.Width || cache.articulated != bus.IsArticulated() {
+		clear(cache.entries[:])
+	}
+	cache.version, cache.length, cache.width, cache.articulated = version, bus.Length, bus.Width, bus.IsArticulated()
+}
+
+func (cache *forwardEscapeBoundaries) blocked(f autopilotFrame, bus *sim.Bus) bool {
+	if cache == nil {
+		return forwardEscapeHitsBoundary(f, bus)
+	}
+	pose := [4]uint64{math.Float64bits(bus.Pos.X), math.Float64bits(bus.Pos.Y), math.Float64bits(bus.Heading), math.Float64bits(bus.TailHeading())}
+	hash := uint64(0)
+	for _, value := range pose {
+		hash = bits.RotateLeft64(hash^value, 13) * 0x9e3779b97f4a7c15
+	}
+	entry := &cache.entries[(hash^(hash>>32))&uint64(len(cache.entries)-1)]
+	if !entry.valid || entry.pose != pose {
+		*entry = forwardEscapeBoundaryEntry{pose: pose, blocked: forwardEscapeHitsBoundary(f, bus), valid: true}
+	}
+	return entry.blocked
+}
+
+func forwardEscapeHitsBoundary(f autopilotFrame, bus *sim.Bus) bool {
+	return math.Abs(sim.NormalizeAngle(bus.Heading-bus.TailHeading())) > sim.MaxArticulationAngle-.025 ||
+		bus.HitsHardBarrier(f.world, f.laneWidth)
+}
+
+type forwardEscapeScan struct {
+	origin     sim.Vec2
+	travel     float64
+	count      int
+	valid      bool
+	entries    [128]forwardEscapeObstacle
+	boundaries *forwardEscapeBoundaries
+}
+
 type forwardEscapeObstacle struct {
 	index      int
 	padding    float64
@@ -69,9 +119,11 @@ func (c *forwardEscapeScan) poseClear(f autopilotFrame, b *sim.Bus, elapsed floa
 	if !c.valid || !(elapsed >= 0 && elapsed <= 2) || !(delta.Dot(delta) <= c.travel*c.travel) {
 		return departureEscapePoseClear(f, b, elapsed)
 	}
-	if b.CheckBoundaries(f.world, f.laneWidth).Zone == sim.ZoneHardBarrier || math.Abs(sim.NormalizeAngle(b.Heading-b.TailHeading())) > sim.MaxArticulationAngle-.025 {
+	if c.boundaries.blocked(f, b) {
 		return false
 	}
+	var own [2]sim.OBB
+	ownReady := false
 	for i := 0; i < c.count; i++ {
 		e := &c.entries[i]
 		ob := f.obstacles[e.index]
@@ -88,8 +140,13 @@ func (c *forwardEscapeScan) poseClear(f autopilotFrame, b *sim.Bus, elapsed floa
 			}
 			other.HalfLen += e.padding
 			other.HalfWid += e.padding
-			if hit, _, _ := b.CollidesBody(other); hit {
-				return false
+			if !ownReady {
+				own, ownReady = b.BodyParts(), true
+			}
+			for _, part := range own {
+				if part.HalfLen > 0 && obbHits(part, other) {
+					return false
+				}
 			}
 		}
 	}

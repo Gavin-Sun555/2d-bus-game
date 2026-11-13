@@ -14,21 +14,21 @@ func TestAISpeedSettingsLimitsAndLayout(t *testing.T) {
 		s.AdjustAISpeed(1, 10)
 		s.AdjustAISpeed(3, 10)
 	}
-	if s.AICarMaxSpeed != 100 || s.AIBusMaxSpeed != 80 {
+	if s.AICarMaxSpeed != 120 || s.AIBusMaxSpeed != 120 {
 		t.Fatal("wrong upper bounds")
 	}
 	for i := 0; i < 20; i++ {
 		s.AdjustAISpeed(0, 10)
 		s.AdjustAISpeed(2, 10)
 	}
-	if s.AICarMinSpeed != 100 || s.AIBusMinSpeed != 80 {
+	if s.AICarMinSpeed != 120 || s.AIBusMinSpeed != 120 {
 		t.Fatal("minimum not clamped to maximum")
 	}
 	for i := 0; i < 20; i++ {
 		s.AdjustAISpeed(1, -10)
 		s.AdjustAISpeed(3, -10)
 	}
-	if s.AICarMaxSpeed != 100 || s.AIBusMaxSpeed != 80 {
+	if s.AICarMaxSpeed != 120 || s.AIBusMaxSpeed != 120 {
 		t.Fatal("maximum fell below minimum")
 	}
 	for i := 0; i < 20; i++ {

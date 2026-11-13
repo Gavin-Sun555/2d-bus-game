@@ -1,36 +1,23 @@
 package game
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
+	"math"
 	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/savefile"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/ui"
 )
 
-const saveVersion = 1
-const maxSaveBytes = 32 << 20
-
 // Version 1 originally allowed 1152 civilian cars. Validate the whole legacy
 // payload before adapting only the ambient population to the current limit.
 const maxCompatibleSavedCars = 1152
 
-type saveEnvelope struct {
-	Version  int             `json:"version"`
-	SavedAt  time.Time       `json:"saved_at"`
-	Name     string          `json:"name,omitempty"`
-	Checksum string          `json:"checksum"`
-	Data     json.RawMessage `json:"data"`
-}
 type savedBus struct {
 	Bus        sim.Bus
 	YieldingTo int
@@ -50,7 +37,31 @@ type savedExchange struct {
 	SkipCooldown             float64
 	LastSkipped              int
 }
+type citySave struct {
+	World                          *sim.World
+	Lines                          []*sim.Route
+	LineCount, PlayerLine          int
+	LineFleets                     [6]traffic.LineFleetSettings
+	Player                         savedBus
+	Fleet                          []savedFleetBus
+	LastAIBusID                    int `json:",omitempty"`
+	Cars                           []savedCar
+	Population                     traffic.PopulationSnapshot
+	Lights                         *sim.TrafficLightSystem
+	Operations                     sim.OperationsSnapshot
+	Camera                         sim.Camera
+	Exchange                       savedExchange
+	Planning                       bool
+	PlanningLine                   int
+	InitialStops                   []int
+	InitialIndex                   *int `json:",omitempty"`
+	RouteModified, HideOtherRoutes bool
+}
+
 type gameSave struct {
+	Mode                           PlayMode                  `json:",omitempty"`
+	Career                         *sim.CareerProfile        `json:",omitempty"`
+	Cities                         map[sim.MapTheme]citySave `json:",omitempty"`
 	World                          *sim.World
 	Settings                       ui.Settings
 	Lines                          []*sim.Route
@@ -58,6 +69,7 @@ type gameSave struct {
 	LineFleets                     [6]traffic.LineFleetSettings
 	Player                         savedBus
 	Fleet                          []savedFleetBus
+	LastAIBusID                    int `json:",omitempty"`
 	Cars                           []savedCar
 	Population                     traffic.PopulationSnapshot
 	Lights                         *sim.TrafficLightSystem
@@ -68,7 +80,79 @@ type gameSave struct {
 	Planning                       bool
 	PlanningLine                   int
 	InitialStops                   []int
+	InitialIndex                   *int `json:",omitempty"`
 	RouteModified, HideOtherRoutes bool
+}
+
+func (s *gameSave) citySave() citySave {
+	return citySave{
+		World:           s.World,
+		Lines:           s.Lines,
+		LineCount:       s.LineCount,
+		PlayerLine:      s.PlayerLine,
+		LineFleets:      s.LineFleets,
+		Player:          s.Player,
+		Fleet:           s.Fleet,
+		LastAIBusID:     s.LastAIBusID,
+		Cars:            s.Cars,
+		Population:      s.Population,
+		Lights:          s.Lights,
+		Operations:      s.Operations,
+		Camera:          s.Camera,
+		Exchange:        s.Exchange,
+		Planning:        s.Planning,
+		PlanningLine:    s.PlanningLine,
+		InitialStops:    s.InitialStops,
+		InitialIndex:    s.InitialIndex,
+		RouteModified:   s.RouteModified,
+		HideOtherRoutes: s.HideOtherRoutes,
+	}
+}
+
+func (s *gameSave) setCitySave(cs citySave) {
+	s.World = cs.World
+	s.Lines = cs.Lines
+	s.LineCount = cs.LineCount
+	s.PlayerLine = cs.PlayerLine
+	s.LineFleets = cs.LineFleets
+	s.Player = cs.Player
+	s.Fleet = cs.Fleet
+	s.LastAIBusID = cs.LastAIBusID
+	s.Cars = cs.Cars
+	s.Population = cs.Population
+	s.Lights = cs.Lights
+	s.Operations = cs.Operations
+	s.Camera = cs.Camera
+	s.Exchange = cs.Exchange
+	s.Planning = cs.Planning
+	s.PlanningLine = cs.PlanningLine
+	s.InitialStops = cs.InitialStops
+	s.InitialIndex = cs.InitialIndex
+	s.RouteModified = cs.RouteModified
+	s.HideOtherRoutes = cs.HideOtherRoutes
+}
+
+func cloneCitySave(cs citySave) citySave {
+	raw, err := json.Marshal(cs)
+	if err != nil {
+		return cs
+	}
+	var out citySave
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return cs
+	}
+	return out
+}
+
+func cloneCareerCities(cities map[sim.MapTheme]citySave) map[sim.MapTheme]citySave {
+	if len(cities) == 0 {
+		return nil
+	}
+	out := make(map[sim.MapTheme]citySave, len(cities))
+	for k, v := range cities {
+		out[k] = cloneCitySave(v)
+	}
+	return out
 }
 
 func (g *Game) savePath() (string, error) {
@@ -84,36 +168,55 @@ func snapshotBus(bus *sim.Bus, driver *autopilot.AutopilotDriver, ids map[*sim.B
 	state.Bus.TireTracks = nil
 	return state
 }
-func (g *Game) snapshot() gameSave {
-	ids := map[*sim.Bus]int{g.Bus: 0}
+
+func (g *Game) snapshotCity() citySave {
+	g.World.Clock.Rate = g.Settings.ClockRate
+	g.syncAutoHeadlights()
+	g.syncCareerCondition()
+	ids := make(map[*sim.Bus]int, 1+len(g.AIBusMgr.Buses))
+	ids[g.Bus] = 0
 	for _, b := range g.AIBusMgr.Buses {
 		ids[b.Bus] = b.ID
 	}
-	s := gameSave{World: g.World, Settings: *g.Settings, Lines: append([]*sim.Route(nil), g.Lines...), LineCount: g.LineCount, PlayerLine: g.PlayerLine, LineFleets: g.LineFleets,
-		Population: g.TrafficMgr.PopulationSnapshot(), Lights: g.TrafficLights, Operations: g.Operations.Snapshot(), Cash: g.Cash, Camera: *g.Camera,
-		Exchange: savedExchange{g.boardedThisStop, g.stopBellRung, g.bellToastShown, g.passengersAlighting, g.skipCooldown, g.lastSkippedStopID},
-		Planning: g.IsPlanMode, PlanningLine: g.PlayerLine, InitialStops: g.planModeInitialStops, RouteModified: g.planModeRouteModified, HideOtherRoutes: g.HideOtherRoutes}
-	s.Lines[g.PlayerLine] = g.Route
-	for i, r := range s.Lines {
+	cs := citySave{
+		World:           g.World,
+		Lines:           append([]*sim.Route(nil), g.Lines...),
+		LineCount:       g.LineCount,
+		PlayerLine:      g.PlayerLine,
+		LineFleets:      g.LineFleets,
+		LastAIBusID:     g.AIBusMgr.LastBusID,
+		Population:      g.TrafficMgr.PopulationSnapshot(),
+		Lights:          g.TrafficLights,
+		Operations:      g.Operations.Snapshot(),
+		Camera:          *g.Camera,
+		Exchange:        savedExchange{g.boardedThisStop, g.stopBellRung, g.bellToastShown, g.passengersAlighting, g.skipCooldown, g.lastSkippedStopID},
+		Planning:        g.IsPlanMode,
+		PlanningLine:    g.PlayerLine,
+		InitialStops:    g.planModeInitialStops,
+		RouteModified:   g.planModeRouteModified,
+		HideOtherRoutes: g.HideOtherRoutes,
+	}
+	cs.Lines[g.PlayerLine] = g.Route
+	if g.IsPlanMode {
+		cs.InitialIndex = &g.planModeInitialIndex
+	}
+	for i, r := range cs.Lines {
 		if r == g.planningRoute() {
-			s.PlanningLine = i
+			cs.PlanningLine = i
 		}
 	}
-	s.Settings.SaveRequested = false
-	s.Settings.LoadRequested = false
-	s.Settings.IsOpen = false
-	s.Settings.OpenNetworkRequested = false
-	s.Settings.OpenOperationsRequested = false
-	s.Settings.ReturnToMenuRequested = false
-	s.Settings.ThemeChanged = false
-	s.Settings.AIBusFleetChanged = false
-	s.Settings.CameraViewMode = g.Camera.Mode
-	s.Player = snapshotBus(g.Bus, g.AutopilotDriver, ids)
+	cs.Player = snapshotBus(g.Bus, g.AutopilotDriver, ids)
+	if n := len(g.AIBusMgr.Buses); n > 0 {
+		cs.Fleet = make([]savedFleetBus, 0, n)
+	}
+	if n := len(g.TrafficMgr.Cars); n > 0 {
+		cs.Cars = make([]savedCar, 0, n)
+	}
 	for _, b := range g.AIBusMgr.Buses {
 		vehicle := *b
 		vehicle.Bus = nil
 		vehicle.Driver = nil
-		s.Fleet = append(s.Fleet, savedFleetBus{Vehicle: vehicle, State: snapshotBus(b.Bus, b.Driver, ids)})
+		cs.Fleet = append(cs.Fleet, savedFleetBus{Vehicle: vehicle, State: snapshotBus(b.Bus, b.Driver, ids)})
 	}
 	for _, c := range g.TrafficMgr.Cars {
 		sc := savedCar{Car: *c, YieldingTo: -1, PassingLead: -1}
@@ -125,19 +228,43 @@ func (g *Game) snapshot() gameSave {
 		}
 		sc.Car.YieldingToBus = nil
 		sc.Car.PassingLeadBus = nil
-		s.Cars = append(s.Cars, sc)
+		cs.Cars = append(cs.Cars, sc)
 	}
+	return cs
+}
+
+func (g *Game) snapshot() gameSave {
+	cs := g.snapshotCity()
+	s := gameSave{Mode: g.Mode, Career: g.Career, Settings: *g.Settings, Cash: g.Cash}
+	s.setCitySave(cs)
+	if g.isCareer() && g.World != nil {
+		if g.careerCities == nil {
+			g.careerCities = make(map[sim.MapTheme]citySave)
+		}
+		g.careerCities[g.World.Theme] = cs
+		s.Cities = g.careerCities
+	}
+	s.Settings.SaveRequested = false
+	s.Settings.LoadRequested = false
+	s.Settings.IsOpen = false
+	s.Settings.OpenNetworkRequested = false
+	s.Settings.OpenOperationsRequested = false
+	s.Settings.ReturnToMenuRequested = false
+	s.Settings.ThemeChanged = false
+	s.Settings.AIBusFleetChanged = false
+	s.Settings.CameraViewMode = g.Camera.Mode
 	return s
 }
 
 // SaveGame writes one local slot atomically; failed writes retain the old slot.
 func (g *Game) SaveGame() error {
-	if g.State != StatePlaying {
+	if g.isCareer() {
+		if g.State != StateMainMenu && g.State != StatePlaying {
+			return fmt.Errorf("no active game to save")
+		}
+		g.prepareCareerSave()
+	} else if g.State != StatePlaying {
 		return fmt.Errorf("no active game to save")
-	}
-	payload, err := json.Marshal(g.snapshot())
-	if err != nil {
-		return err
 	}
 	path, err := g.savePath()
 	if err != nil {
@@ -150,76 +277,12 @@ func (g *Game) SaveGame() error {
 			return err
 		}
 	}
-	digest := sha256.Sum256(payload)
-	data, err := json.Marshal(saveEnvelope{
-		Version:  saveVersion,
-		SavedAt:  time.Now(),
-		Name:     name,
-		Checksum: hex.EncodeToString(digest[:]),
-		Data:     payload,
-	})
-	if err != nil {
-		return err
-	}
-	if len(data) > maxSaveBytes {
-		return fmt.Errorf("save exceeds size limit")
-	}
-	return writeSaveFileAtomically(path, data)
-}
-
-func writeSaveFileAtomically(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".save-*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), path)
-}
-
-func readSaveEnvelope(path string) (saveEnvelope, error) {
-	var envelope saveEnvelope
-	f, err := os.Open(path)
-	if err != nil {
-		return envelope, err
-	}
-	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, maxSaveBytes+1))
-	if err != nil {
-		return envelope, err
-	}
-	if len(raw) > maxSaveBytes {
-		return envelope, fmt.Errorf("save exceeds size limit")
-	}
-	if err = json.Unmarshal(raw, &envelope); err != nil {
-		return envelope, fmt.Errorf("invalid save file: %w", err)
-	}
-	if envelope.Version != saveVersion {
-		return envelope, fmt.Errorf("unsupported save version %d", envelope.Version)
-	}
-	digest := sha256.Sum256(envelope.Data)
-	if hex.EncodeToString(digest[:]) != envelope.Checksum {
-		return envelope, fmt.Errorf("save checksum mismatch")
-	}
-	return envelope, nil
+	return g.saveSnapshotFile(path, name, g.saveMetadata("manual", ""), time.Now())
 }
 
 func readSave(path string) (gameSave, error) {
 	var s gameSave
-	envelope, err := readSaveEnvelope(path)
+	envelope, err := savefile.Read[SaveMetadata](path)
 	if err != nil {
 		return s, err
 	}
@@ -247,7 +310,7 @@ func validSavedRoute(r *sim.Route, stops int, empty bool) bool {
 	return true
 }
 func validSavedBus(b *sim.Bus, stops int) bool {
-	if b == nil || !b.PassengerService.Valid() || !b.Model.Valid() || b.GeometryVersion < 0 || b.GeometryVersion > 1 || (b.PendingModel != nil && !b.PendingModel.Valid()) || b.Length <= 0 || b.Width <= 0 || b.WheelBase <= 0 || b.Capacity < 1 || b.Capacity > 1000 || b.PassengerCount != len(b.Passengers) || len(b.Passengers) > b.Capacity || b.Durability < 0 || b.Durability > 100 || b.MaxSpeedFwd <= 0 {
+	if b == nil || !b.PassengerService.Valid() || !b.Model.Valid() || b.GeometryVersion < 0 || b.GeometryVersion > 1 || (b.PendingModel != nil && !b.PendingModel.Valid()) || b.Length <= 0 || b.Width <= 0 || b.WheelBase <= 0 || b.Capacity < 1 || b.Capacity > 1000 || b.PassengerCount != len(b.Passengers) || len(b.Passengers) > max(b.Capacity, b.Model.MaxPassengerCapacity()) || b.Durability < 0 || b.Durability > 100 || b.MaxSpeedFwd <= 0 {
 		return false
 	}
 	for _, p := range b.Passengers {
@@ -257,20 +320,13 @@ func validSavedBus(b *sim.Bus, stops int) bool {
 	}
 	return true
 }
-func (s *gameSave) validate() error {
+func (cs *citySave) validateCity() error {
 	bad := func() error { return fmt.Errorf("invalid or incompatible save data") }
-	if s.Settings.PassengerRates != nil {
-		for _, rates := range s.Settings.PassengerRates {
-			if !rates.Valid() {
-				return bad()
-			}
-		}
-	}
-	if s.World == nil || s.Lights == nil || len(s.World.Roads) == 0 || len(s.World.Stops) == 0 || len(s.World.Stops) > 10000 || s.World.Theme < sim.MapThemeMetropolis || s.World.Theme > sim.MapThemeCustom || s.Settings.MapTheme != s.World.Theme {
+	if cs.World == nil || !cs.World.Clock.Valid() || cs.Lights == nil || len(cs.World.Roads) == 0 || len(cs.World.Stops) == 0 || len(cs.World.Stops) > 10000 || cs.World.Theme < sim.MapThemeMetropolis || cs.World.Theme > sim.MapThemeCustom {
 		return bad()
 	}
-	n := len(s.World.Stops)
-	for i, stop := range s.World.Stops {
+	n := len(cs.World.Stops)
+	for i, stop := range cs.World.Stops {
 		if stop == nil || stop.ID != i || stop.WaitingPassengers < 0 {
 			return bad()
 		}
@@ -280,52 +336,52 @@ func (s *gameSave) validate() error {
 			}
 		}
 	}
-	if len(s.Lines) != 6 || s.LineCount < 1 || s.LineCount > 6 || s.PlayerLine < 0 || s.PlayerLine >= s.LineCount || s.PlanningLine < 0 || s.PlanningLine >= s.LineCount {
+	if len(cs.Lines) != 6 || cs.LineCount < 1 || cs.LineCount > 6 || cs.PlayerLine < 0 || cs.PlayerLine >= cs.LineCount || cs.PlanningLine < 0 || cs.PlanningLine >= cs.LineCount {
 		return bad()
 	}
-	for i, r := range s.Lines {
-		if !validSavedRoute(r, n, i >= s.LineCount || (s.Planning && i == s.PlanningLine)) {
+	for i, r := range cs.Lines {
+		if !validSavedRoute(r, n, i >= cs.LineCount || (cs.Planning && i == cs.PlanningLine)) {
 			return bad()
 		}
 	}
-	if !validSavedBus(&s.Player.Bus, n) || len(s.Fleet) > 48 || len(s.Cars) > maxCompatibleSavedCars || len(s.Population.PendingExits)+len(s.Cars) > maxCompatibleSavedCars {
+	if cs.Planning && !validSavedRoute(&sim.Route{StopIDs: cs.InitialStops}, n, true) {
 		return bad()
 	}
-	if !s.Settings.AnnouncementVoice.Valid() || !s.Settings.Announcements.Valid() || s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Camera.Zoom <= 0 || s.Camera.TargetZoom <= 0 || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN || !s.Settings.PassengerSpawnRate.Valid() {
+	if !validSavedBus(&cs.Player.Bus, n) || len(cs.Fleet) > traffic.MaxFleetBuses || len(cs.Cars) > maxCompatibleSavedCars || len(cs.Population.PendingExits)+len(cs.Cars) > maxCompatibleSavedCars || cs.Camera.Zoom <= 0 || cs.Camera.TargetZoom <= 0 {
 		return bad()
 	}
-	if s.Settings.CameraViewMode < sim.CameraModeNorthUp || s.Settings.CameraViewMode > sim.CameraModeSouthUp {
-		return bad()
-	}
-	carRange := sim.SpeedRange{MinKPH: s.Settings.AICarMinSpeed, MaxKPH: s.Settings.AICarMaxSpeed}
-	if carRange != carRange.Normalize(60, 100) || s.Settings.Fare != s.Settings.Fare.Normalize() {
-		return bad()
-	}
-	for _, c := range s.LineFleets {
+	for _, c := range cs.LineFleets {
 		if c != c.Normalize() {
 			return bad()
 		}
 	}
 	ids := map[int]bool{0: true}
+	slots := map[int]bool{}
 	counts := [6]int{}
-	for _, b := range s.Fleet {
+	const maxSavedBusID = math.MaxInt - traffic.MaxFleetBuses
+	if cs.LastAIBusID < 0 || cs.LastAIBusID > maxSavedBusID {
+		return bad()
+	}
+	for _, b := range cs.Fleet {
 		v := b.Vehicle
-		if v.ID < 1 || v.ID > 48 || ids[v.ID] || v.LineIndex < 0 || v.LineIndex >= s.LineCount || ((v.ID-1)/traffic.MaxBusesPerLine) != v.LineIndex || !validSavedBus(&b.State.Bus, n) || !validSavedRoute(v.Route, n, false) {
+		slot := v.FleetSlotID()
+		if slot == 0 || slots[slot] || ids[v.ID] || v.LineIndex >= cs.LineCount || (v.ID > traffic.MaxFleetBuses && v.ID > cs.LastAIBusID) || !validSavedBus(&b.State.Bus, n) || !validSavedRoute(v.Route, n, false) {
 			return bad()
 		}
+		slots[slot] = true
 		ids[v.ID] = true
 		if !v.Retiring {
 			counts[v.LineIndex]++
 		}
 	}
-	for i := 0; i < s.LineCount; i++ {
-		if len(s.Lines[i].StopIDs) > 0 && counts[i] != s.LineFleets[i].BusCount {
+	for i := 0; i < cs.LineCount; i++ {
+		if len(cs.Lines[i].StopIDs) > 0 && counts[i] != cs.LineFleets[i].BusCount {
 			return bad()
 		}
 	}
 	seenCars := map[int]bool{}
-	for _, c := range s.Cars {
-		if c.Car.ID < 0 || seenCars[c.Car.ID] || c.Car.Length <= 0 || c.Car.Width <= 0 || c.Car.ID >= s.Population.NextCarID {
+	for _, c := range cs.Cars {
+		if c.Car.ID < 0 || seenCars[c.Car.ID] || c.Car.Length <= 0 || c.Car.Width <= 0 || c.Car.ID >= cs.Population.NextCarID {
 			return bad()
 		}
 		seenCars[c.Car.ID] = true
@@ -333,22 +389,105 @@ func (s *gameSave) validate() error {
 			return bad()
 		}
 	}
-	for _, i := range s.Lights.Intersections {
+	for _, i := range cs.Lights.Intersections {
 		if i == nil || i.Phase < sim.PhaseEWGreen || i.Phase > sim.PhaseNSLeftYellow {
 			return bad()
 		}
 	}
-	for _, c := range s.Lights.RoadCameras {
+	for _, c := range cs.Lights.RoadCameras {
 		if c == nil {
 			return bad()
 		}
 	}
-	for _, v := range s.Operations.Vehicles {
-		if v.Public.Route != nil && !validSavedRoute(v.Public.Route, n, true) {
+	for id, v := range cs.Operations.Vehicles {
+		if id < 0 || id > maxSavedBusID || (v.Public.Route != nil && !validSavedRoute(v.Public.Route, n, true)) {
 			return bad()
 		}
 	}
 	return nil
+}
+
+func (s *gameSave) validate() error {
+	bad := func() error { return fmt.Errorf("invalid or incompatible save data") }
+	if s.Mode != ModeFast && s.Mode != ModeCareer {
+		return bad()
+	}
+	if s.Mode == ModeFast && s.Career != nil {
+		return bad()
+	}
+	if s.Mode == ModeCareer {
+		if err := s.Career.Validate(); err != nil {
+			return err
+		}
+		if s.World == nil || !s.Career.MapUnlocked(s.World.Theme) || s.Cash != int(math.Floor(s.Career.Balance)) {
+			return bad()
+		}
+		seen := map[int]bool{}
+		validOwned := func(b *sim.Bus, player bool, line int) bool {
+			v := s.Career.Vehicle(b.OwnedVehicleID)
+			if v == nil || seen[v.ID] || v.SpecID != b.CatalogID {
+				return false
+			}
+			spec, _ := sim.FindVehicleSpec(v.SpecID)
+			if b.Model != spec.Model || b.PendingModel != nil || b.Durability != v.Condition || (player && v.ID != s.Career.PlayerVehicleID) || (!player && (v.ID == s.Career.PlayerVehicleID || v.Line != line)) {
+				return false
+			}
+			seen[v.ID] = true
+			return true
+		}
+		if !validOwned(&s.Player.Bus, true, s.PlayerLine) {
+			return bad()
+		}
+		for _, v := range s.Fleet {
+			if !validOwned(&v.State.Bus, false, v.Vehicle.LineIndex) {
+				return bad()
+			}
+		}
+		for theme, city := range s.Cities {
+			if city.World == nil || city.World.Theme != theme || !s.Career.MapUnlocked(theme) {
+				return bad()
+			}
+			if err := city.validateCity(); err != nil {
+				return err
+			}
+		}
+	}
+	if s.Settings.PassengerCapacities != nil {
+		for model, capacity := range s.Settings.PassengerCapacities {
+			if capacity < 0 || capacity > sim.BusModel(model).MaxPassengerCapacity() {
+				return bad()
+			}
+		}
+	}
+	if s.Settings.PassengerOverloadPercents != nil {
+		for _, percent := range s.Settings.PassengerOverloadPercents {
+			if percent < 0 || percent > 50 || percent%10 != 0 {
+				return bad()
+			}
+		}
+	}
+	if s.Settings.PassengerRates != nil {
+		for _, rates := range s.Settings.PassengerRates {
+			if !rates.Valid() {
+				return bad()
+			}
+		}
+	}
+	if !s.Settings.ClockRate.Valid() || s.World == nil || s.Settings.MapTheme != s.World.Theme {
+		return bad()
+	}
+	if !s.Settings.AnnouncementVoice.Valid() || !s.Settings.Announcements.Valid() || s.Settings.TrafficDensity < 1 || s.Settings.TrafficDensity > sim.TrafficDensityLevels || s.Settings.Language < locale.LanguageZH || s.Settings.Language > locale.LanguageEN || !s.Settings.PassengerSpawnRate.Valid() {
+		return bad()
+	}
+	if s.Settings.CameraViewMode < sim.CameraModeNorthUp || s.Settings.CameraViewMode > sim.CameraModeSouthUp {
+		return bad()
+	}
+	carRange := sim.SpeedRange{MinKPH: s.Settings.AICarMinSpeed, MaxKPH: s.Settings.AICarMaxSpeed}
+	if carRange != carRange.Normalize(60, sim.TrafficMaxSpeedKPH) || s.Settings.Fare != s.Settings.Fare.Normalize() {
+		return bad()
+	}
+	cs := s.citySave()
+	return cs.validateCity()
 }
 
 // LoadGame prepares and validates a separate game before replacing the live one.
@@ -357,13 +496,48 @@ func (g *Game) LoadGame() error {
 	if err != nil {
 		return err
 	}
+	return g.loadGamePath(path)
+}
+
+func (g *Game) restoreCareerCity(saved citySave) error {
+	cloned := cloneCitySave(saved)
+	s := gameSave{
+		Mode:     g.Mode,
+		Career:   g.Career,
+		Cities:   g.careerCities,
+		Settings: *g.Settings,
+		Cash:     int(math.Floor(g.Career.Balance)),
+	}
+	s.setCitySave(cloned)
+	if s.World != nil {
+		s.Settings.MapTheme = s.World.Theme
+		s.Settings.LargeRoadNetwork = s.World.LargeGrid
+		s.Settings.CenterBRT = s.World.CenterBRT
+	}
+	if err := g.restoreFromSave(s); err != nil {
+		return err
+	}
+	g.reconcileCareerCityFleet()
+	return nil
+}
+
+func (g *Game) loadGamePath(path string) error {
 	s, err := readSave(path)
 	if err != nil {
 		return err
 	}
+	if s.Mode != g.Mode {
+		return fmt.Errorf("存档属于另一种游戏模式 / Save belongs to another play mode")
+	}
 	if err = s.validate(); err != nil {
 		return err
 	}
+	return g.restoreFromSave(s)
+}
+
+func (g *Game) restoreFromSave(s gameSave) error {
+	var err error
+	s.Settings.AutopilotBerserkMaxSpeed = s.Settings.BerserkSpeedKPH()
 	s.limitAmbientPopulation()
 	// This is a game-wide guardrail, not a saved passenger-growth setting.
 	// Upgrade old saves without resetting their waiting counts or spawn clock.
@@ -371,11 +545,24 @@ func (g *Game) LoadGame() error {
 		stop.MaxWaiting = sim.DefaultStopMaxWaiting
 		stop.SyncWaitingQueue(nil)
 	}
+	s.World.RefreshGeneratedStopNames()
+	s.World.ConfigureCenterBRT(s.Settings.GetLaneWidth())
 	sim.StandardizeStopBays(s.World, s.Settings.GetLaneWidth())
-	next := &Game{Width: g.Width, Height: g.Height, State: StatePlaying, SelectedMapTheme: s.World.Theme, World: s.World, Settings: &s.Settings, Lines: s.Lines,
+	var careerCities map[sim.MapTheme]citySave
+	if s.Mode == ModeCareer {
+		careerCities = cloneCareerCities(s.Cities)
+		if careerCities == nil {
+			careerCities = make(map[sim.MapTheme]citySave)
+		}
+		if s.World != nil {
+			careerCities[s.World.Theme] = cloneCitySave(s.citySave())
+		}
+	}
+	next := &Game{trafficDebug: g.trafficDebug, autosavesEnabled: g.autosavesEnabled, sessionStarted: true, lastAutosaveAt: time.Now(), Mode: s.Mode, Career: s.Career, careerCities: careerCities, modeSessions: g.modeSessions, Width: g.Width, Height: g.Height, State: StatePlaying, SelectedMapTheme: s.World.Theme, World: s.World, Settings: &s.Settings, Lines: s.Lines,
 		LineCount: s.LineCount, PlayerLine: s.PlayerLine, LineFleets: s.LineFleets, Bus: &s.Player.Bus, Camera: &s.Camera, HUD: ui.NewHUD(), TrafficLights: s.Lights,
 		TrafficMgr: &traffic.TrafficManager{}, AIBusMgr: traffic.NewAIBusManager(), OperationsPanel: ui.NewOperationsPanel(), Cash: s.Cash,
 		IsPlanMode: s.Planning, HideOtherRoutes: s.HideOtherRoutes, planModeInitialStops: s.InitialStops, planModeRouteModified: s.RouteModified, savePathOverride: g.savePathOverride, activeSaveSlot: g.activeSaveSlot}
+	next.Settings.CareerMode = next.isCareer()
 	if next.World != nil {
 		next.World.PassengerSpawnRate = s.Settings.PassengerSpawnRate
 		next.Settings.MapTheme = next.World.Theme
@@ -393,6 +580,10 @@ func (g *Game) LoadGame() error {
 	if next.IsPlanMode {
 		next.planRoute = next.Lines[s.PlanningLine]
 		next.NetworkSelected = s.PlanningLine
+		next.planModeInitialIndex = next.planRoute.CurrentIndex
+		if s.InitialIndex != nil {
+			next.planModeInitialIndex = max(0, min(*s.InitialIndex, len(s.InitialStops)-1))
+		}
 	}
 	next.AutopilotDriver, err = s.Player.Driver.Restore(next.World)
 	if err != nil {
@@ -400,14 +591,23 @@ func (g *Game) LoadGame() error {
 	}
 	buses := map[int]*sim.Bus{0: next.Bus}
 	routes := map[int]*sim.Route{0: next.Route}
+	next.AIBusMgr.LastBusID = s.LastAIBusID
 	for _, saved := range s.Fleet {
 		v := saved.Vehicle
 		v.Bus = &saved.State.Bus
+		// Older saves can have a speed cap without its source range.
+		if v.AssignedSpeedRange == (sim.SpeedRange{}) {
+			v.AssignedSpeedRange = next.LineFleets[v.LineIndex].SpeedRange
+		}
+		if v.MaxSpeedKPH == 0 {
+			v.MaxSpeedKPH = int(math.Round(v.Bus.MaxSpeedFwd * sim.MetersPerPixel * 3.6))
+		}
 		v.Driver, err = saved.State.Driver.Restore(next.World)
 		if err != nil {
 			return err
 		}
 		next.AIBusMgr.Buses = append(next.AIBusMgr.Buses, &v)
+		next.AIBusMgr.LastBusID = max(next.AIBusMgr.LastBusID, v.ID)
 		buses[v.ID] = v.Bus
 		routes[v.ID] = v.Route
 	}
@@ -440,8 +640,12 @@ func (g *Game) LoadGame() error {
 	next.AIBusMgr.CurrentLane = next.Settings.GetLaneWidth()
 	sim.ClearRoutePathCache()
 	next.Operations = sim.RestoreOperations(s.Operations, next.World, next.Route, next.Settings.GetLaneWidth(), next.Settings.Fare, buses, routes)
+	for id := range next.Operations.Vehicles {
+		next.AIBusMgr.LastBusID = max(next.AIBusMgr.LastBusID, id)
+	}
 	next.AIBusMgr.Operations = next.Operations
-	next.operationsRoute = append([]int(nil), next.Route.StopIDs...)
+	next.careerRevenueMark = next.Operations.Revenue
+	next.operationsRoute = append([]int(nil), next.operationsStops()...)
 	next.operationsLaneWidth = next.Settings.GetLaneWidth()
 	next.lastLaneWidth = next.Settings.GetLaneWidth()
 	next.boardedThisStop = s.Exchange.Boarded
@@ -454,6 +658,7 @@ func (g *Game) LoadGame() error {
 	next.Camera.ScreenHeight = g.Height
 	next.showPlayerLineSettings()
 	next.syncAISpeedRanges()
+	next.syncPassengerCapacities()
 	next.Settings.IsOpen = false
 	next.Settings.OpenOperationsRequested = false
 	next.Settings.OpenNetworkRequested = false
@@ -461,12 +666,17 @@ func (g *Game) LoadGame() error {
 	next.Settings.LoadRequested = false
 	next.Settings.ReturnToMenuRequested = false
 	next.repairSharedTerminusQueues()
+	next.repairInvalidInitialPlayerSpawn()
+	next.World.Clock.Rate = next.Settings.ClockRate
+	next.syncAutoHeadlights()
 	// Device/player ownership belongs to this running session, not the save.
 	g.resetAnnouncements()
 	next.announcements = g.announcements
 	next.vehicleAudio = g.vehicleAudio
 	next.stopNames = g.stopNames
 	g.closeStopNameEditor()
+	g.closeStationSearch()
+	g.finishIntervalAutosave(true)
 	*g = *next
 	g.applyStopNames()
 	sim.ActiveWorldForRoute = g.World

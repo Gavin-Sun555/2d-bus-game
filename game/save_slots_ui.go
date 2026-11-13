@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/platforminput"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
 	ebiten "github.com/hajimehoshi/ebiten/v2"
@@ -17,6 +18,7 @@ import (
 )
 
 type saveSlotPicker struct {
+	automatic                          bool
 	open, load, confirm, confirmDelete bool
 	selected                           int
 	slots                              [MaxSaveSlots]SaveSlotInfo
@@ -33,6 +35,7 @@ type saveSlotPicker struct {
 }
 
 type savePickerLayout struct {
+	manualTab, autoTab     sim.Rect
 	panel                  sim.Rect
 	rows                   [MaxSaveSlots]sim.Rect
 	nameField, rename      sim.Rect
@@ -44,6 +47,8 @@ func savePickerBounds(width, height int) savePickerLayout {
 	h := 486.
 	x, y := (float64(width)-w)/2, (float64(height)-h)/2
 	l := savePickerLayout{panel: sim.Rect{X: x, Y: y, W: w, H: h}}
+	l.manualTab = sim.Rect{X: x + w - 280, Y: y + 14, W: 120, H: 30}
+	l.autoTab = sim.Rect{X: x + w - 150, Y: y + 14, W: 130, H: 30}
 	rowW := (w - 60) / 2
 	for i := range l.rows {
 		l.rows[i] = sim.Rect{X: x + 20 + float64(i/5)*(rowW+20), Y: y + 78 + float64(i%5)*50, W: rowW, H: 43}
@@ -135,7 +140,7 @@ func (p *saveSlotPicker) editNameKeys() {
 	ctrl := ebiten.IsKeyPressed(ebiten.KeyControl) || ebiten.IsKeyPressed(ebiten.KeyMeta)
 	if ctrl && inpututil.IsKeyJustPressed(ebiten.KeyV) && !p.nameCommitted {
 		p.nameIME.Confirm()
-		if text := stopNameClipboardText(); text != "" && !strings.ContainsAny(text, "\n\r\t") {
+		if text := platforminput.ClipboardText(); text != "" && !strings.ContainsAny(text, "\n\r\t") {
 			p.insertNameText(text)
 		}
 		return
@@ -306,7 +311,11 @@ func (g *Game) performDeleteSlot() {
 }
 
 func (g *Game) openSavePicker(load bool) {
-	if !load && g.State != StatePlaying {
+	if g.isCareer() {
+		if g.State != StateMainMenu {
+			return
+		}
+	} else if !load && g.State != StatePlaying {
 		return
 	}
 	g.savePicker.cancelSaveSlotRename()
@@ -373,6 +382,9 @@ func (g *Game) performSlotAction() {
 	}
 	g.savePicker.open = false
 	if load {
+		if g.isCareer() {
+			g.State = StateMainMenu
+		}
 		g.saveMessage = locale.Tf("已读取存档 %02d。", "Loaded slot %02d.", slot+1)
 	} else {
 		g.saveMessage = locale.Tf("已保存至存档 %02d。", "Saved to slot %02d.", slot+1)
@@ -383,6 +395,28 @@ func (g *Game) performSlotAction() {
 func (g *Game) updateSavePicker() {
 	p := &g.savePicker
 	l := savePickerBounds(g.Width, g.Height)
+	if p.load && !p.editingName {
+		if inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+			g.setSavePickerSource(!p.automatic)
+			return
+		}
+		if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+			x, y := ebiten.CursorPosition()
+			point := sim.Vec2{X: float64(x), Y: float64(y)}
+			if l.manualTab.Contains(point) {
+				g.setSavePickerSource(false)
+				return
+			}
+			if l.autoTab.Contains(point) {
+				g.setSavePickerSource(true)
+				return
+			}
+		}
+	}
+	if p.automatic {
+		g.updateAutoSavePicker()
+		return
+	}
 	if p.editingName {
 		if !ebiten.IsFocused() {
 			p.nameIME.Confirm()
@@ -545,8 +579,22 @@ func (g *Game) drawSavePicker(screen *ebiten.Image) {
 	if p.load {
 		title = locale.T("读取游戏", "Load game")
 	}
-	textui.DrawText(screen, title, l.panel.X+20, l.panel.Y+18, 22, sim.RGBA(241, 245, 249, 255))
-	textui.DrawText(screen, locale.T("选择槽位 · 数字 1–9/0 · R更名 · Del删除 · 回车确认 · ESC返回", "Select slot · 1–9/0 · R rename · Del delete · Enter confirm · Esc back"), l.panel.X+20, l.panel.Y+51, 13, sim.RGBA(148, 163, 184, 255))
+	textui.DrawText(screen, g.Mode.String()+" · "+title, l.panel.X+20, l.panel.Y+18, 22, sim.RGBA(241, 245, 249, 255))
+	hint := locale.T("选择槽位 · 数字 1–9/0 · R更名 · Del删除 · 回车确认 · ESC返回", "Select slot · 1–9/0 · R rename · Del delete · Enter confirm · Esc back")
+	if p.automatic {
+		hint = locale.T("↑↓ / 数字 1–5 选择 · Tab 手动/自动 · 回车读取 · ESC返回", "Up/Down / 1–5 select · Tab manual/auto · Enter load · Esc back")
+	}
+	textui.DrawText(screen, hint, l.panel.X+20, l.panel.Y+51, 13, sim.RGBA(148, 163, 184, 255))
+	if p.load {
+		box(l.manualTab, !p.automatic)
+		box(l.autoTab, p.automatic)
+		textui.DrawText(screen, locale.T("手动存档 [Tab]", "Manual [Tab]"), l.manualTab.X+9, l.manualTab.Y+8, 12, sim.RGBA(226, 232, 240, 255))
+		textui.DrawText(screen, locale.T("自动存档（5）", "Autosaves (5)"), l.autoTab.X+9, l.autoTab.Y+8, 12, sim.RGBA(226, 232, 240, 255))
+	}
+	if p.automatic {
+		g.drawAutoSavePicker(screen, l)
+		return
+	}
 	for i, r := range l.rows {
 		box(r, p.selected == i)
 		name := p.slotDisplayName(i)
@@ -559,14 +607,7 @@ func (g *Game) drawSavePicker(screen *ebiten.Image) {
 			textui.DrawText(screen, line, r.X+12, r.Y+13, 14, sim.RGBA(226, 232, 240, 255))
 			continue
 		}
-		stamp := p.slots[i].SavedAt.Format("2006-01-02 15:04:05")
-		if name == "" {
-			textui.DrawText(screen, fmt.Sprintf("%02d   %s", i+1, stamp), r.X+12, r.Y+13, 14, sim.RGBA(226, 232, 240, 255))
-			continue
-		}
-		top := fitSavePickerText(fmt.Sprintf("%02d   %s", i+1, name), 13, r.W-24)
-		textui.DrawText(screen, top, r.X+12, r.Y+6, 13, sim.RGBA(241, 245, 249, 255))
-		textui.DrawText(screen, "     "+stamp, r.X+12, r.Y+24, 11, sim.RGBA(148, 163, 184, 255))
+		drawSaveSlotEntry(screen, r, i, name, p.slots[i])
 	}
 
 	// Name editor / rename bar for the currently selected slot

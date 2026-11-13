@@ -38,7 +38,9 @@ func (ad *AutopilotDriver) connectDockDeparture(bus *sim.Bus, stop *sim.BusStop)
 		}
 		joinS = s
 		runway := 600.
-		if ad.BerserkMode && bus.IsArticulated() {
+		if !bus.IsArticulated() {
+			runway = 320
+		} else if ad.BerserkMode && bus.IsArticulated() {
 			// Finish merging before the paved station exit narrows to the curb.
 			runway = math.Max(400, 400+(ad.pathLane-52)*4)
 		}
@@ -51,7 +53,9 @@ func (ad *AutopilotDriver) connectDockDeparture(bus *sim.Bus, stop *sim.BusStop)
 		return
 	}
 	runIn := math.Min(120, goal.Sub(bus.Pos).Dot(forward)*0.25)
-	if ad.BerserkMode && bus.IsArticulated() {
+	if !bus.IsArticulated() {
+		runIn = math.Min(25, goal.Sub(bus.Pos).Dot(forward)*0.12)
+	} else if ad.BerserkMode && bus.IsArticulated() {
 		runIn = math.Min(runIn, 80)
 	}
 	if bus.IsArticulated() {

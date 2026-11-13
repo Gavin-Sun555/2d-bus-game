@@ -2,11 +2,161 @@ package game
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/ui"
 )
+
+func TestRoutePlanningRejectsMoreThanTwoUTurnsIncludingReturn(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.World = &sim.World{
+		Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 4}},
+		Stops: []*sim.BusStop{
+			{ID: 0, Pos: sim.Vec2{Y: 90}, Heading: 0},
+			{ID: 1, Pos: sim.Vec2{Y: -90}, Heading: math.Pi},
+		},
+	}
+	allowed := []int{0, 1}
+	overLimit := []int{0, 1, 0, 1}
+	if got := sim.RouteUTurnCount(g.World, allowed, 52); got != 2 {
+		t.Fatalf("out and back route has %d turns, want 2", got)
+	}
+	g.Route.StopIDs = slices.Clone(allowed)
+	g.ReplanRoute(overLimit)
+	if !slices.Equal(g.Route.StopIDs, allowed) {
+		t.Fatal("programmatic replan replaced a route with more than two U-turns")
+	}
+	g.IsPlanMode = true
+	g.rememberPlannedRoute(g.Route)
+	g.Route.StopIDs = overLimit
+	if g.finishPlannedRoute() || !slices.Equal(g.operatingLines()[0].StopIDs, allowed) {
+		t.Fatal("planner committed an over-limit draft")
+	}
+}
+
+func TestReplanningPreservesOtherServicesAndReachablePassengers(t *testing.T) {
+	for _, edited := range []int{0, 1} {
+		t.Run([]string{"player line", "AI line"}[edited], func(t *testing.T) {
+			g := NewGame(1280, 720)
+			g.SetTransitLineCount(2)
+			original := []int{0, 1, 2, 3, 0}
+			other := []int{0, 2, 4, 5, 0}
+			stops := [2][]int{}
+			stops[edited], stops[1-edited] = original, other
+			g.ReplanRoute(stops[0])
+			g.Lines[1].StopIDs = stops[1]
+			for i := 0; i < 2; i++ {
+				g.SetLineFleet(i, traffic.LineFleetSettings{BusCount: 1})
+			}
+			fleet := [2]*traffic.AIBus{}
+			for _, bus := range g.AIBusMgr.Buses {
+				fleet[bus.LineIndex] = bus
+			}
+			changed, retained := fleet[edited], fleet[1-edited]
+			retained.Bus.Speed = 50
+			retained.Route.CurrentIndex = 2
+			retained.Route.TotalTrips = 3
+			g.trackOperations(1)
+			ops := g.Operations
+			_, retainedFare := ops.BoardWithDestinations(retained.ID, retained.Bus, retained.Route, 0, []int{2})
+			ops.BoardWithDestinations(changed.ID, changed.Bus, changed.Route, 0, []int{3})
+			record := ops.Vehicle(retained.ID)
+			record.CompletedLaps = 2
+			playerPos := g.Bus.Pos
+
+			stop := g.World.Stops[0]
+			stop.WaitingPassengers = 5
+			stop.WaitingDestinations = []int{1, 2, 3, 4, -1}
+			stop.WaitingSince = []float64{1, 2, 3, 4, 5}
+			stop.SpawnTimer = .5
+			removed := g.World.Stops[1]
+			removed.SeedWaitingPassengers(3)
+			removed.SpawnTimer = .75
+			removed.SpawnInterval = .25
+			reordered := g.World.Stops[2]
+			reordered.WaitingPassengers = 2
+			reordered.WaitingDestinations = []int{3, 4}
+			reordered.WaitingSince = []float64{6, 7}
+			empty := g.World.Stops[3]
+			empty.WaitingPassengers = 0
+			empty.SyncWaitingQueue(nil)
+
+			g.PlanTransitLine(edited)
+			g.ClearPlannedRoute()
+			for _, id := range []int{0, 3, 2, 0} {
+				g.planningRoute().AddStop(id)
+			}
+			// Settings and the statistics panel can refresh during planning.
+			g.buildLineFleets(false)
+			g.ensureOperations()
+			if g.Operations != ops || g.Operations.Vehicles[changed.ID] == nil {
+				t.Fatal("draft discarded the running service's statistics")
+			}
+			g.TogglePlanMode()
+			g.ensureOperations()
+
+			if g.Operations != ops || ops.Vehicles[retained.ID] != record || record.CompletedLaps != 2 ||
+				ops.Vehicles[changed.ID] != nil || ops.Revenue != retainedFare || ops.Stations[0].Boarded != 1 {
+				t.Fatal("replanning reset unrelated statistics or kept old statistics for the edited line")
+			}
+			for _, bus := range g.AIBusMgr.Buses {
+				if bus.LineIndex == edited && (bus == changed || !slices.Equal(bus.Route.StopIDs, []int{0, 3, 2, 0})) {
+					t.Fatal("edited service was not dispatched on its new route")
+				}
+				if bus.LineIndex != edited && (bus != retained || bus.Bus.Speed != 50 || bus.Bus.PassengerCount != 1 ||
+					bus.Route.CurrentIndex != 2 || bus.Route.TotalTrips != 3) {
+					t.Fatal("replanning disturbed an unrelated bus")
+				}
+			}
+			if edited == 1 && g.Bus.Pos != playerPos {
+				t.Fatal("replanning an AI line moved the player")
+			}
+			if stop.WaitingPassengers != 4 || !slices.Equal(stop.WaitingDestinations, []int{2, 3, 4, -1}) ||
+				!slices.Equal(stop.WaitingSince, []float64{2, 3, 4, 5}) || stop.SpawnTimer != .5 {
+				t.Fatal("shared stop did not preserve the reachable queue and its timing")
+			}
+			if reordered.WaitingPassengers != 1 || !slices.Equal(reordered.WaitingDestinations, []int{4}) ||
+				!slices.Equal(reordered.WaitingSince, []float64{7}) || empty.WaitingPassengers != 0 {
+				t.Fatal("the route reorder reassigned passengers or reseeded an empty stop")
+			}
+			g.World.Update(1, g.activeLines()...)
+			if removed.WaitingPassengers != 0 || len(removed.WaitingDestinations) != 0 || len(removed.WaitingSince) != 0 || removed.SpawnTimer != 0 {
+				t.Fatal("unserved stop retained or generated passengers")
+			}
+		})
+	}
+}
+
+func TestRestoringOriginalPlanPreservesCursorAcrossSave(t *testing.T) {
+	g := NewGame(1280, 720)
+	g.EnterCity(sim.MapThemeMetropolis)
+	g.savePathOverride = t.TempDir() + "/save.json"
+	g.Route.CurrentIndex = 2
+	g.Route.TotalTrips = 3
+	g.trackOperations(1)
+	pos := g.Bus.Pos
+	original := slices.Clone(g.Route.StopIDs)
+	g.TogglePlanMode()
+	g.ClearPlannedRoute()
+	for _, id := range original {
+		g.planningRoute().AddStop(id)
+	}
+	if err := g.SaveGame(); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.LoadGame(); err != nil {
+		t.Fatal(err)
+	}
+	ops := g.Operations
+	g.TogglePlanMode()
+	if g.IsPlanMode || g.Route.CurrentIndex != 2 || g.Route.TotalTrips != 3 ||
+		g.Operations != ops || ops.Vehicle(0).Seconds != 1 || g.Bus.Pos != pos {
+		t.Fatal("committing the original itinerary reset an active journey")
+	}
+}
 
 func TestReplanRouteResetsPlayerAndDistributesAIBuses(t *testing.T) {
 	g := NewGame(1280, 720)

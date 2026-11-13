@@ -127,6 +127,12 @@ func TestRoundaboutUTurnCircumnavigatesFullLoop(t *testing.T) {
 	w := NewWorld(lw, MapThemeMetropolis)
 	rb := w.Roundabouts[0]
 	circR := getRoundaboutOuterLaneRadius(rb)
+	// Keep only the roads feeding this roundabout so the reversal is required.
+	w.Roads = []RoadSegment{
+		{P1: Vec2{X: -2000}, P2: Vec2{X: 2000}, Lanes: 4},
+		{P1: Vec2{Y: -2000}, P2: Vec2{Y: 2000}, Lanes: 4},
+	}
+	w.Intersections = []Vec2{rb.Center}
 
 	// Approaches to test: West, East, North, South
 	approaches := []struct {
@@ -283,6 +289,8 @@ func TestUTurnEntersLeftTurnLane(t *testing.T) {
 	s1Copy.Heading = math.Pi
 	s1Copy.UpdateGeometry(lw)
 	s1 := &s1Copy
+	// Keep the avenue but remove the parallel streets that permit a short detour.
+	w.Roads = []RoadSegment{{P1: Vec2{X: -2600 * MapGridScale}, P2: Vec2{X: 2600 * MapGridScale}, Lanes: 4}}
 
 	path := ComputeRoadPathBetweenStops(w, s0, s1, lw)
 	if len(path) == 0 {

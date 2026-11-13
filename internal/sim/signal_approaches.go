@@ -23,7 +23,11 @@ func (inter *TrafficIntersection) HasNS4Lane() bool {
 }
 
 func (inter *TrafficIntersection) GetApproachIndexForHeading(heading float64) int {
-	sinH, cosH := math.Sincos(heading)
+	return approachIndex(UnitFromAngle(heading))
+}
+
+func approachIndex(forward Vec2) int {
+	sinH, cosH := forward.Y, forward.X
 	if math.Abs(cosH) >= math.Abs(sinH) {
 		if cosH >= 0 {
 			return 0 // West approach (Eastbound)
@@ -128,6 +132,7 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 	inter.ApproachIs4Lane = [4]bool{false, false, false, false}
 
 	for _, r := range w.Roads {
+		lanes := r.LaneCount()
 		// Check Horizontal Road (EW)
 		if math.Abs(r.P1.Y-r.P2.Y) < 1.0 && math.Abs(r.P1.Y-center.Y) < 10.0 {
 			minX := math.Min(r.P1.X, r.P2.X)
@@ -137,8 +142,8 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 				inter.ApproachHasRoad[0] = true
 				inter.ApproachBusLane[0] = r.HasBusLane()
 				inter.ApproachMedianBusLane[0] = r.HasMedianBusLane()
-				if r.Lanes > inter.ApproachLanes[0] {
-					inter.ApproachLanes[0] = r.Lanes
+				if lanes > inter.ApproachLanes[0] {
+					inter.ApproachLanes[0] = lanes
 				}
 				inter.ApproachIs4Lane[0] = (inter.ApproachLanes[0] >= 4)
 			}
@@ -147,8 +152,8 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 				inter.ApproachHasRoad[1] = true
 				inter.ApproachBusLane[1] = r.HasBusLane()
 				inter.ApproachMedianBusLane[1] = r.HasMedianBusLane()
-				if r.Lanes > inter.ApproachLanes[1] {
-					inter.ApproachLanes[1] = r.Lanes
+				if lanes > inter.ApproachLanes[1] {
+					inter.ApproachLanes[1] = lanes
 				}
 				inter.ApproachIs4Lane[1] = (inter.ApproachLanes[1] >= 4)
 			}
@@ -163,8 +168,8 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 				inter.ApproachHasRoad[2] = true
 				inter.ApproachBusLane[2] = r.HasBusLane()
 				inter.ApproachMedianBusLane[2] = r.HasMedianBusLane()
-				if r.Lanes > inter.ApproachLanes[2] {
-					inter.ApproachLanes[2] = r.Lanes
+				if lanes > inter.ApproachLanes[2] {
+					inter.ApproachLanes[2] = lanes
 				}
 				inter.ApproachIs4Lane[2] = (inter.ApproachLanes[2] >= 4)
 			}
@@ -173,8 +178,8 @@ func (inter *TrafficIntersection) SetupApproachesFromWorld(w *World) {
 				inter.ApproachHasRoad[3] = true
 				inter.ApproachBusLane[3] = r.HasBusLane()
 				inter.ApproachMedianBusLane[3] = r.HasMedianBusLane()
-				if r.Lanes > inter.ApproachLanes[3] {
-					inter.ApproachLanes[3] = r.Lanes
+				if lanes > inter.ApproachLanes[3] {
+					inter.ApproachLanes[3] = lanes
 				}
 				inter.ApproachIs4Lane[3] = (inter.ApproachLanes[3] >= 4)
 			}
@@ -241,4 +246,16 @@ func intersectionApproachHeading(heading float64) float64 {
 func (inter *TrafficIntersection) ApproachRoadHalfWidth(heading, lw float64) float64 {
 	lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)]
 	return float64(lanes)*lw/2 + 12
+}
+
+// ApproachGeometry reuses the caller's unit heading for both stop-line and
+// road-width tests.
+func (inter *TrafficIntersection) ApproachGeometry(forward Vec2, lw float64) (stopLine, halfWidth float64) {
+	approach := approachIndex(forward)
+	ew, _, ns, _ := inter.GetApproachDimensions(lw)
+	stopLine = ew
+	if approach >= 2 {
+		stopLine = ns
+	}
+	return stopLine, float64(inter.ApproachLanes[approach])*lw/2 + 12
 }

@@ -27,26 +27,19 @@ func terrainTile(theme sim.MapTheme) *ebiten.Image {
 			hash = (hash ^ (hash >> 13)) * 1274126177
 			amount := float64(hash%100) / 100 * 0.22
 			c := tint(p.ground, p.grain, amount)
-			switch theme {
-			case sim.MapThemeMetropolis, sim.MapThemeTwinCities:
-				if x%64 == 0 || y%64 == 0 {
-					c = tint(p.ground, p.grain, 0.65)
-				}
-				if x%64 == 1 || y%64 == 1 {
-					c = tint(p.ground, rgb(0, 0, 0), 0.14)
-				}
-			case sim.MapThemeCoastalBay:
-				if (y+int(3*math.Sin(float64(x)*0.04)))%29 == 0 {
-					c = tint(c, p.grain, 0.4)
-				}
-			case sim.MapThemeRiverValley:
-				if (x/5+y/3)%47 == 0 {
-					c = tint(c, p.grain, 0.35)
-				}
-			case sim.MapThemeEmeraldLake:
-				if hash%61 < 2 {
-					c = tint(c, p.leafLight, 0.25)
-				}
+			wave := math.Sin(float64(x)*0.049+math.Cos(float64(y)*0.037)*1.8) + math.Cos(float64(y)*0.049-math.Sin(float64(x)*0.037)*1.8)
+			if wave > 0.35 {
+				c = tint(c, p.grain, 0.28)
+			} else if wave < -0.45 {
+				c = tint(c, p.foliage, 0.22)
+			}
+			if ((x+y)/18)%2 == 0 {
+				c = tint(c, p.grain, 0.08)
+			}
+			if hash%53 < 2 {
+				c = tint(c, p.leafLight, 0.24)
+			} else if hash%71 == 0 {
+				c = tint(c, p.foliage, 0.26)
 			}
 			pixels.SetRGBA(x, y, c)
 		}
@@ -93,37 +86,36 @@ func drawTerrain(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
 // objects or alter a route, bay, bridge or road's physical dimensions.
 func drawScenicFoundations(screen *ebiten.Image, cam *sim.Camera, w *sim.World) {
 	p := sceneColors(w.Theme)
-	for _, b := range w.Buildings {
-		if !cam.IsPointVisible(b.Pos, math.Hypot(b.W, b.H)) {
-			continue
+	if w.Theme != sim.MapThemeCustom {
+		// Crisp roadside granite sidewalks and manicured green boulevard verges
+		// frame each street while leaving the city blocks lushly landscaped.
+		const lw = 52.0
+		vergeCol := tint(p.ground, p.foliage, 0.45)
+		for _, r := range w.Roads {
+			dir := r.P2.Sub(r.P1)
+			length := dir.Length()
+			if length < 1 {
+				continue
+			}
+			center := r.P1.Add(r.P2).Mul(0.5)
+			if !cam.IsPointVisible(center, length/2+120) {
+				continue
+			}
+			u := dir.Mul(1 / length)
+			roadW := r.GetWidth(lw) + sim.ShoulderWidth*2
+			drawRotatedBox(screen, cam, center, u.X, u.Y, length, roadW+52, vergeCol)
+			drawRotatedBox(screen, cam, center, u.X, u.Y, length, roadW+34, p.paving)
 		}
-		border := 26.0
-		ground := tint(p.ground, p.paving, 0.35)
-		switch w.Theme {
-		case sim.MapThemeCoastalBay:
-			border = 65
-			ground = rgb(192, 175, 129)
-		case sim.MapThemeRiverValley:
-			for layer := 3; layer > 0; layer-- {
-				padding := float64(layer) * 34
-				drawRotatedBox(screen, cam, b.Pos, 1, 0, b.W+padding, b.H+padding, tint(p.ground, p.grain, float64(layer)*0.15))
+		for _, center := range w.Intersections {
+			if w.IsAtRoundabout(center) {
+				continue
 			}
-		case sim.MapThemeEmeraldLake:
-			border = 45
-			ground = rgb(184, 193, 159)
-		case sim.MapThemeTwinCities:
-			if b.Pos.X < 0 {
-				ground = rgb(83, 93, 101)
-			} else {
-				ground = rgb(58, 84, 87)
+			box := w.JunctionAt(center, lw)
+			if !cam.IsPointVisible(center, math.Hypot(box.HalfX, box.HalfY)+60) {
+				continue
 			}
-		}
-		drawRotatedBox(screen, cam, b.Pos, 1, 0, b.W+border*2, b.H+border*2, ground)
-		if cam.Zoom > 0.22 {
-			for x := -b.W/2 - border; x < b.W/2+border; x += 55 {
-				a := b.Pos.Add(sim.Vec2{X: x, Y: -b.H/2 - border})
-				worldLine(screen, cam, a, a.Add(sim.Vec2{Y: b.H + border*2}), 1, tint(ground, p.paving, 0.23))
-			}
+			drawRotatedBox(screen, cam, center, 1, 0, box.HalfX*2+52, box.HalfY*2+52, vergeCol)
+			drawRotatedBox(screen, cam, center, 1, 0, box.HalfX*2+34, box.HalfY*2+34, p.paving)
 		}
 	}
 	// Broad planted beds give tree groups a landscape context instead of dots

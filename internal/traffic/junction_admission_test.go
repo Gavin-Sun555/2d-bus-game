@@ -215,3 +215,96 @@ func TestDistantJunctionDoesNotReserveLocalEntry(t *testing.T) {
 		t.Fatal("built a cross-map corridor for unrelated junction")
 	}
 }
+
+func TestFourLaneCurbLeftEntryPriority(t *testing.T) {
+	const lw = 52.
+	inter := &sim.TrafficIntersection{
+		Phase: sim.PhaseEWLeftGreen, IsMajor: true,
+		ApproachHasRoad: [4]bool{true, true, true, true},
+		ApproachIs4Lane: [4]bool{true, true, true, true},
+		ApproachLanes:   [4]int{4, 4, 4, 4},
+	}
+	stop := inter.GetStopLineDistForHeading(0, lw)
+	bus := sim.NewBus(-stop-60, 1.5*lw, 0)
+	bus.JunctionCorridor = &sim.JunctionCorridor{CurbLeft: true, Remaining: .25}
+	f := carFrame{car: &sim.TrafficCar{}, laneWidth: lw}
+	for _, tc := range []struct {
+		name  string
+		phase sim.LightPhase
+		gap   float64
+		want  bool
+	}{
+		{"same green and comparable arrival", sim.PhaseEWLeftGreen, 14, true},
+		{"car already admitted", sim.PhaseEWLeftGreen, -1, false},
+		{"car clearly ahead", sim.PhaseEWLeftGreen, 1, false},
+		{"bus left arrow red", sim.PhaseEWGreen, 14, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inter.Phase = tc.phase
+			bumper := sim.Vec2{X: -stop - tc.gap, Y: .5 * lw}
+			if got := curbLeftBusHasEntryPriority(f, bus, inter, bumper, stop, tc.gap); got != tc.want {
+				t.Fatalf("bus entry priority=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParallelCurbBusAndInnerCarLeftCorridors(t *testing.T) {
+	for _, lw := range []float64{42, 52, 78} {
+		for _, incoming := range []int{4, 6, 8} {
+			for _, outgoing := range []int{4, 6, 8} {
+				t.Run(fmt.Sprintf("w%.0f/%dx%d", lw, incoming, outgoing), func(t *testing.T) {
+					center := sim.Vec2{}
+					in, out := sim.Vec2{X: 1}, sim.Vec2{Y: -1}
+					w := &sim.World{Roads: []sim.RoadSegment{
+						{P1: sim.Vec2{X: -4000}, P2: sim.Vec2{X: 4000}, Lanes: incoming},
+						{P1: sim.Vec2{Y: -4000}, P2: sim.Vec2{Y: 4000}, Lanes: outgoing},
+					}}
+					w.RebuildIntersections()
+					tls := sim.NewTrafficLightSystem()
+					tls.BuildForWorld(w)
+					inter := tls.Intersections[0]
+					car := &sim.TrafficCar{Pos: sim.Vec2{X: -600, Y: lw / 2}, Length: 46, Width: 22, IsEW: true}
+					plan := buildCarJunctionTurn(carFrame{car: car, world: w, tls: tls, laneWidth: lw}, inter)
+					if plan == nil || plan.ExitLane != 0 || math.Abs(plan.ExitHeading+math.Pi/2) > .01 {
+						t.Fatalf("inner car did not take the inner left exit: %+v", plan)
+					}
+					g := w.JunctionAt(center, lw)
+					bus := sim.CurbBusLeftTurnPath(center, in, out, (float64(incoming)/2-.5)*lw, (float64(outgoing)/2-.5)*lw, g, incoming, outgoing)
+					carBodies := sim.AppendPathBodies(nil, plan.Points, car.Length, car.Width)
+					busBodies := sim.AppendPathBodies(nil, bus, 96, 36)
+					if !sim.CorridorsSeparated(busBodies, carBodies) {
+						t.Fatal("left-turn corridors overlap")
+					}
+					for _, path := range []struct {
+						points []sim.Vec2
+						radius float64
+					}{{bus, 75}, {plan.Points, 50}} {
+						for i := 1; i < len(path.points)-1; i++ {
+							a, b := path.points[i].Sub(path.points[i-1]), path.points[i+1].Sub(path.points[i])
+							cross := math.Abs(a.X*b.Y - a.Y*b.X)
+							if cross > 1e-6 && a.Length()*b.Length()*a.Add(b).Length()/(2*cross) < path.radius {
+								t.Fatalf("turn radius fell below %.0f at point %d", path.radius, i)
+							}
+						}
+					}
+					opposingBus := sim.CurbBusLeftTurnPath(center, in.Mul(-1), out.Mul(-1), (float64(incoming)/2-.5)*lw, (float64(outgoing)/2-.5)*lw, g, incoming, outgoing)
+					opposingBodies := sim.AppendPathBodies(nil, opposingBus, 96, 36)
+					if !sim.CorridorsSeparated(busBodies, opposingBodies) || !sim.CorridorsSeparated(carBodies, opposingBodies) {
+						t.Fatal("turn crosses the opposing left turn")
+					}
+					articulated := sim.NewBus(bus[0].X, bus[0].Y, 0)
+					articulated.SetModel(sim.BusArticulated)
+					for _, pose := range busBodies {
+						next := articulated.AtPose(pose.Center, pose.Heading)
+						articulated = &next
+						parts := articulated.BodyParts()
+						if !sim.CorridorsSeparated(parts[:], carBodies) {
+							t.Fatal("articulated bus overlaps the inner car turn")
+						}
+					}
+				})
+			}
+		}
+	}
+}

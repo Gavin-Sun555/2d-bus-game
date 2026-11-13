@@ -131,28 +131,18 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		float32(s.autopilotBounds.W), float32(s.autopilotBounds.H), 1.5, apColor, true)
 	textui.DrawText(screen, apText, s.autopilotBounds.X+12, s.autopilotBounds.Y+5, 12, apColor)
 
-	// Option 4b: Player Bus Top Speed Limit (Manual Driving & Berserk Mode: 60, 80, 100, 120 km/h)
+	// Option 4b: Player bus top speed, shared by manual and both autopilot modes.
 	opt4bY := modalY + 172
 	speedLabelCol := sim.RGBA(226, 232, 240, 255)
-	textui.DrawText(screen, locale.T("   └ 公交最高限速 (手动极速/狂暴模式):", "   └ Bus Top Speed (Manual & Berserk):"), modalX+26, opt4bY+6, 13, speedLabelCol)
+	textui.DrawText(screen, locale.T("   └ 玩家公交车最高限速 (km/h)", "   └ Player bus top speed (km/h)"), modalX+26, opt4bY+6, 13, speedLabelCol)
 
-	speeds := []int{60, 80, 100, 120}
 	btnW := 48.0
 	btnH := 26.0
 	gap := 6.0
-	for idx, spd := range speeds {
+	for idx, spd := range berserkSpeedPresets {
 		bx := modalX + 340 + float64(idx)*(btnW+gap)
 		bRect := sim.Rect{X: bx, Y: opt4bY, W: btnW, H: btnH}
-		switch spd {
-		case 60:
-			s.berserkSpeed60Bounds = bRect
-		case 80:
-			s.berserkSpeed80Bounds = bRect
-		case 100:
-			s.berserkSpeed100Bounds = bRect
-		case 120:
-			s.berserkSpeed120Bounds = bRect
-		}
+		s.berserkSpeedBounds[idx] = bRect
 
 		isSelected := (s.AutopilotBerserkMaxSpeed == spd)
 		bgCol := sim.RGBA(30, 41, 59, 255)
@@ -175,6 +165,9 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 
 	fleetBtnColor := sim.RGBA(16, 185, 129, 255)
 	fleetBtnText := locale.Tf("%d 辆 · 线路管理 [T]", "%d buses · Lines [T]", s.AIBusCount)
+	if s.CareerMode {
+		fleetBtnText = locale.T("购车与调度 · 经营车库 [F2]", "Buy & dispatch · Garage [F2]")
+	}
 	vector.DrawFilledRect(screen, float32(s.aiBusToggleBounds.X), float32(s.aiBusToggleBounds.Y),
 		float32(s.aiBusToggleBounds.W), float32(s.aiBusToggleBounds.H), sim.RGBA(30, 41, 59, 255), true)
 	vector.StrokeRect(screen, float32(s.aiBusToggleBounds.X), float32(s.aiBusToggleBounds.Y),
@@ -241,21 +234,44 @@ func (s *Settings) Draw(screen *ebiten.Image, cam ...*sim.Camera) {
 		textui.DrawText(screen, fmt.Sprintf("%d%%", values[i]), modalX+418, y+4, 13, sim.RGBA(56, 189, 248, 255))
 	}
 
-	s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 490, W: 256, H: 28}
-	s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 490, W: 256, H: 28}
-	operationsButton(screen, s.saveBounds, locale.T("选择存档并保存 [F5]", "Save to slot [F5]"), false)
-	operationsButton(screen, s.loadBounds, locale.T("选择存档并读取 [F9]", "Load from slot [F9]"), false)
+	if s.CareerMode {
+		s.saveBounds = sim.Rect{}
+		s.loadBounds = sim.Rect{}
+		noteRect := sim.Rect{X: modalX + 26, Y: modalY + 490, W: 528, H: 28}
+		vector.DrawFilledRect(screen, float32(noteRect.X), float32(noteRect.Y), float32(noteRect.W), float32(noteRect.H), sim.RGBA(30, 41, 59, 200), true)
+		note := locale.T("生涯模式：请返回主界面保存或读取全局进度存档", "Career mode: return to main menu to save or load progress")
+		nw, _ := textui.MeasureText(note, 12)
+		textui.DrawText(screen, note, noteRect.X+(noteRect.W-nw)/2, noteRect.Y+7, 12, sim.RGBA(148, 163, 184, 255))
+	} else {
+		s.saveBounds = sim.Rect{X: modalX + 26, Y: modalY + 490, W: 256, H: 28}
+		s.loadBounds = sim.Rect{X: modalX + 298, Y: modalY + 490, W: 256, H: 28}
+		operationsButton(screen, s.saveBounds, locale.T("选择存档并保存 [F5]", "Save to slot [F5]"), false)
+		operationsButton(screen, s.loadBounds, locale.T("选择存档并读取 [F9]", "Load from slot [F9]"), false)
+	}
 	s.operationsBounds = sim.Rect{X: modalX + 26, Y: modalY + 524, W: 528, H: 30}
 	operationsButton(screen, s.operationsBounds, locale.T("票价设置与运营统计 [O]", "Fares & operating statistics [O]"), true)
 
 	s.passengerTimingBounds = sim.Rect{X: modalX + 26, Y: modalY + 560, W: 256, H: 26}
-	operationsButton(screen, s.passengerTimingBounds, locale.T("各车型上下客速度…", "Boarding / alighting times…"), false)
+	operationsButton(screen, s.passengerTimingBounds, locale.T("各车型超载比例与上下客…", "Overload & boarding times…"), false)
 	s.busSignalPriorityBounds = sim.Rect{X: modalX + 298, Y: modalY + 560, W: 256, H: 26}
 	priorityLabel := locale.T("公交信号优先：关闭", "Bus signal priority: OFF")
 	if s.BusSignalPriority {
 		priorityLabel = locale.T("公交信号优先：开启", "Bus signal priority: ON")
 	}
 	operationsButton(screen, s.busSignalPriorityBounds, priorityLabel, s.BusSignalPriority)
+
+	textui.DrawText(screen, locale.T("时间流速（现实 1 秒对应）", "Time rate (per real second)"), modalX+26, modalY+602, 13, sim.RGBA(226, 232, 240, 255))
+	for i, label := range []string{locale.T("1 秒", "1 sec"), locale.T("30 秒", "30 sec"), locale.T("1 分钟", "1 min")} {
+		r := sim.Rect{X: modalX + 340 + float64(i)*72, Y: modalY + 594, W: 66, H: 28}
+		s.clockRateBounds[i] = r
+		c := sim.RGBA(51, 65, 85, 255)
+		if s.ClockRate == sim.ClockRate(i) {
+			c = sim.RGBA(2, 132, 199, 255)
+		}
+		vector.DrawFilledRect(screen, float32(r.X), float32(r.Y), float32(r.W), float32(r.H), c, true)
+		tw, _ := textui.MeasureText(label, 12)
+		textui.DrawText(screen, label, r.X+(r.W-tw)/2, r.Y+7, 12, sim.RGBA(226, 232, 240, 255))
+	}
 
 	// Bottom Buttons: Return to Menu & Resume
 	s.menuButtonBounds = sim.Rect{X: modalX + 26, Y: modalY + modalH - 46, W: 250, H: 34}

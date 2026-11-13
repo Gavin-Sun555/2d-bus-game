@@ -8,7 +8,7 @@ import (
 
 func TestFleetBusMergeYieldReservesOnlySafeRearSlots(t *testing.T) {
 	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
-		for _, scenario := range []string{"stopped rear", "intermediate rear", "fast intermediate rear", "alongside intermediate", "rear safety margin", "offset rear body", "offset rear too close", "yawed bay exit rear", "yawed fast rear", "yawed alongside", "safe moving rear", "fast close rear", "alongside", "oncoming", "other lane", "already joined", "expired", "yawed merging leader", "continuing yawed leader", "turning bus"} {
+		for _, scenario := range []string{"stopped rear", "intermediate rear", "fast intermediate rear", "alongside intermediate", "rear safety margin", "offset rear body", "offset rear too close", "yawed bay exit rear", "yawed fast rear", "yawed alongside", "safe moving rear", "fast close rear", "alongside", "oncoming", "other lane", "already joined", "expired", "yawed merging leader", "continuing yawed leader", "continuing yawed follower", "turning bus"} {
 			t.Run(fmt.Sprintf("h%.2f/%s", h, scenario), func(t *testing.T) {
 				u := Vec2{X: math.Cos(h), Y: math.Sin(h)}
 				r := Vec2{X: -u.Y, Y: u.X}
@@ -69,13 +69,21 @@ func TestFleetBusMergeYieldReservesOnlySafeRearSlots(t *testing.T) {
 					merging.Heading += .9
 					follower.Pos = follower.Pos.Sub(u.Mul(50))
 					want = true
+				case "continuing yawed follower":
+					// A granted slot survives the follower's own angled approach
+					// once it moves; dropping it lets the follower crawl beside
+					// the merging tail.
+					follower.Heading += .29
+					follower.Pos = follower.Pos.Sub(u.Mul(60))
+					follower.Speed = 40
+					want = true
 				case "yawed merging leader":
 					merging.Heading += .5
 					want = true
 				case "turning bus":
 					merging.Heading += math.Pi / 3
 				}
-				limit, ok := BusMergeYieldLimit(follower, merging, 52, scenario == "continuing yawed leader")
+				limit, ok := BusMergeYieldLimit(follower, merging, 52, scenario == "continuing yawed leader" || scenario == "continuing yawed follower")
 				if ok != want {
 					t.Fatalf("yield=%v want%v limit%.1f", ok, want, limit)
 				}

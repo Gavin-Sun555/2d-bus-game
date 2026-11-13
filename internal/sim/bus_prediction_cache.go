@@ -45,9 +45,8 @@ func (b *Bus) PosePredictionStats() (hits, misses uint64) {
 	return 0, 0
 }
 
-// Return a slot, not a whole Bus, so misses and hits both copy the vehicle
-// exactly once in AtPose. A miss is reserved until the integrator completes;
-// this helper and the integrator run synchronously on the simulation thread.
+// A miss reserves a slot until the integrator completes. Pose predictions
+// and collision geometry use the same entries on the simulation thread.
 func (b *Bus) predictionEntry(pos Vec2, heading float64) (*busPredictionEntry, bool) {
 	key := busPredictionKey{pose: [8]uint64{math.Float64bits(b.Pos.X), math.Float64bits(b.Pos.Y), math.Float64bits(b.Heading), math.Float64bits(b.TrailerHeading), math.Float64bits(b.Length), math.Float64bits(pos.X), math.Float64bits(pos.Y), math.Float64bits(heading)}, initialized: b.TrailerInitialized}
 	hash := uint64(0x9e3779b97f4a7c15)

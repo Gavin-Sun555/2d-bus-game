@@ -103,6 +103,7 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 								if err = json.Unmarshal(raw, &saved); err != nil {
 									t.Fatal(err)
 								}
+								saved.PathRevision = currentDrivePathRevision - 1
 								restored, err := saved.Restore(w)
 								if err != nil {
 									t.Fatal(err)
@@ -167,4 +168,86 @@ func TestUTurnResumesThroughJunction(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestArticulatedWideUTurnHoldsSignalsUntilTrailerClears(t *testing.T) {
+	const lw = 52
+	const dt = 1.0 / 60
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -2000}, P2: sim.Vec2{X: 2000}, Lanes: 8},
+		{P1: sim.Vec2{Y: -2000}, P2: sim.Vec2{Y: 2000}, Lanes: 8},
+	}}
+	w.RebuildIntersections()
+	w.Stops = []*sim.BusStop{
+		sim.NewBusStop(0, "from", sim.Vec2{X: -900}, 0, 8, sim.RGBA(0, 0, 0, 255), lw),
+		sim.NewBusStop(1, "to", sim.Vec2{X: -1400}, math.Pi, 8, sim.RGBA(0, 0, 0, 255), lw),
+	}
+	geometry := w.JunctionAt(sim.Vec2{}, lw)
+	stopLine := geometry.HalfX + sim.JunctionStopInset
+	driver := NewAutopilotDriver()
+	driver.BerserkMode, driver.BerserkMaxSpeed = true, 1000
+	driver.drivePath = []sim.Vec2{{X: -900, Y: lw / 2}}
+	driver.drivePath = append(driver.drivePath, sim.UTurnPath(sim.Vec2{}, 0, lw/2, 2.5*lw, geometry)...)
+	driver.drivePath = append(driver.drivePath, sim.Vec2{X: -1400, Y: -2.5 * lw})
+	driver.cumLen = make([]float64, len(driver.drivePath))
+	for i := 1; i < len(driver.drivePath); i++ {
+		driver.cumLen[i] = driver.cumLen[i-1] + driver.drivePath[i-1].Distance(driver.drivePath[i])
+	}
+	bus := sim.NewBus(0, lw/2, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Pos.X = -stopLine - bus.Length/2 - 10
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	lights := sim.NewTrafficLightSystem()
+	lights.BuildForWorld(w)
+	inter := lights.Intersections[0]
+	inter.Phase, inter.Timer = sim.PhaseEWLeftGreen, inter.LeftGreenDuration-.5
+
+	th, _, _, _, _, _ := driver.ComputeControls(bus, route, w, lights, nil, lw, dt)
+	if th != 0 || driver.LastTargetSpeed != 0 || driver.uTurn == nil || driver.uTurn.entered {
+		t.Fatalf("bus proceeded with half a second of left green remaining: throttle %.2f target %.1f", th, driver.LastTargetSpeed)
+	}
+	// The nominal window has expired, but the controller still grants
+	// priority green. A queued bus may use that window to enter.
+	lights.BusPriorityEnabled = true
+	inter.BusPriorityQueue = []sim.BusSignalRequest{{Phase: sim.PhaseEWLeftGreen}}
+	inter.Timer = inter.LeftGreenDuration + 1
+	th, _, _, _, _, _ = driver.ComputeControls(bus, route, w, lights, nil, lw, dt)
+	if th <= 0 {
+		t.Fatal("bus did not use the extended green")
+	}
+	lights.BusPriorityEnabled, inter.BusPriorityQueue = false, nil
+	inter.Timer = 0
+	inter.LeftGreenDuration = 4
+	box := sim.OBB{HalfLen: stopLine, HalfWid: geometry.HalfY}
+	heldForTrailer := false
+	enteredAt := -1
+	for tick := 0; tick < 1200; tick++ {
+		lights.ClearUTurnOccupants()
+		if center, occupied := driver.UTurnClearance(bus, w, lw); occupied {
+			lights.ObserveUTurnOccupant(center)
+			if enteredAt < 0 {
+				enteredAt = tick
+			}
+		}
+		lights.Update(dt)
+		parts := bus.BodyParts()
+		frontInside, _, _ := sim.CheckOBBCollision(parts[0], box)
+		trailerInside, _, _ := sim.CheckOBBCollision(parts[1], box)
+		if inter.HoldingUTurnClearance() && !frontInside && trailerInside && math.Cos(bus.Heading) < -.9 {
+			heldForTrailer = true
+		}
+		if inter.Phase == sim.PhaseNSGreen {
+			if frontInside || trailerInside || !heldForTrailer {
+				t.Fatalf("released before trailer cleared: front %v trailer %v, held for trailer %v", frontInside, trailerInside, heldForTrailer)
+			}
+			t.Logf("entry to clearance %.2fs", float64(tick-enteredAt)*dt)
+			return
+		}
+		th, br, st, hb, doors, _ := driver.ComputeControls(bus, route, w, lights, nil, lw, dt)
+		bus.Update(dt, th, br, st, hb, doors)
+		if bus.CheckBoundaries(w, lw).Zone == sim.ZoneHardBarrier {
+			t.Fatalf("bus body left the road at tick %d: pos %v heading %.2f", tick, bus.Pos, bus.Heading)
+		}
+	}
+	t.Fatalf("bus did not clear the junction: %v heading %.2f", bus.Pos, bus.Heading)
 }

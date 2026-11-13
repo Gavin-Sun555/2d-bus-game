@@ -2,8 +2,10 @@ package game
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
+	"github.com/Gavin-Sun555/2d-bus-game/internal/platforminput"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 
 	ebiten "github.com/hajimehoshi/ebiten/v2"
@@ -11,6 +13,10 @@ import (
 )
 
 func (g *Game) updatePlanningMode(dt float64) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyF) && (ebiten.IsKeyPressed(ebiten.KeyControl) || ebiten.IsKeyPressed(ebiten.KeyMeta)) {
+		g.openStationSearch()
+		return
+	}
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonRight) || (ebiten.IsKeyPressed(ebiten.KeyShift) && inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft)) {
 		x, y := ebiten.CursorPosition()
 		point := sim.Vec2{X: float64(x), Y: float64(y)}
@@ -47,14 +53,17 @@ func (g *Game) updatePlanningMode(dt float64) {
 		}
 	}
 
-	// Mouse Zoom with expanded range for large map
+	// Mouse Scroll Wheel Zoom & Trackpad Two-Finger Pinch Zoom
 	minZoom := 0.04
 	if g.World != nil && g.World.LargeGrid {
 		minZoom = 0.01
 	}
-	_, wheelY := ebiten.Wheel()
-	if wheelY != 0 {
+	if wheelY := platforminput.TakeMouseWheelY(); wheelY != 0 {
 		g.Camera.TargetZoom = sim.Clamp(g.Camera.TargetZoom+wheelY*0.03, minZoom, 1.4)
+		g.Camera.Zoom = g.Camera.TargetZoom
+	}
+	if pinchDelta := g.consumePlanningPinchDelta(); pinchDelta != 0 {
+		g.Camera.TargetZoom = applyPlanningPinchZoom(g.Camera.TargetZoom, pinchDelta, minZoom, 1.4)
 		g.Camera.Zoom = g.Camera.TargetZoom
 	}
 
@@ -63,6 +72,10 @@ func (g *Game) updatePlanningMode(dt float64) {
 	mouseScreen := sim.Vec2{X: float64(mx), Y: float64(my)}
 
 	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		if g.HUD.PlanSearchBtnBounds.Contains(mouseScreen) {
+			g.openStationSearch()
+			return
+		}
 		// Check top-bar mode badge click to exit plan mode
 		if g.HUD.HandleModeBtnClick(mouseScreen) {
 			g.TogglePlanMode()
@@ -233,8 +246,7 @@ func (g *Game) PlanTransitLine(index int) bool {
 	}
 	if g.planRoute != route {
 		g.planRoute = route
-		g.planModeInitialStops = append([]int(nil), route.StopIDs...)
-		g.planModeRouteModified = false
+		g.rememberPlannedRoute(route)
 	}
 	g.Camera.Pos = sim.Vec2{}
 	g.Camera.TargetPos = sim.Vec2{}
@@ -249,6 +261,12 @@ func (g *Game) PlanTransitLine(index int) bool {
 	return true
 }
 
+func (g *Game) rememberPlannedRoute(route *sim.Route) {
+	g.planModeInitialStops = append([]int(nil), route.StopIDs...)
+	g.planModeInitialIndex = route.CurrentIndex
+	g.planModeRouteModified = false
+}
+
 // finishPlannedRoute dispatches changed services while keeping unrelated buses running.
 func (g *Game) finishPlannedRoute() bool {
 	route := g.planningRoute()
@@ -256,17 +274,17 @@ func (g *Game) finishPlannedRoute() bool {
 		g.HUD.AddWarningToast(locale.T("【路线未完成】请至少选择 1 个站点后再完成规划！", "[Empty Route] Select at least one stop before finishing!"))
 		return false
 	}
-	if g.planModeRouteModified || !intSlicesEqual(route.StopIDs, g.planModeInitialStops) {
-		if route == g.Route {
-			// Reconcile only this service's AI buses; other services retain their journeys.
-			g.resetBusesToRouteStart(false)
+	if !intSlicesEqual(route.StopIDs, g.planModeInitialStops) {
+		if !g.routeWithinTurnLimit(route.StopIDs) {
+			return false
 		}
-		g.buildLineFleets(false)
-		g.resetOperations()
-		g.SyncStopsWithRoute()
+		g.commitRouteChange(route)
+		return true
 	}
-	g.planModeInitialStops = append([]int(nil), route.StopIDs...)
-	g.planModeRouteModified = false
+	// Clearing and rebuilding the same itinerary may have moved its cursor.
+	route.CurrentIndex = g.planModeInitialIndex
+	route.InvalidateDescription()
+	g.rememberPlannedRoute(route)
 	return true
 }
 
@@ -276,8 +294,7 @@ func (g *Game) TogglePlanMode() {
 		g.syncCurrentLineSettings()
 		g.IsPlanMode = true
 		g.planRoute = g.Route
-		g.planModeInitialStops = append([]int(nil), g.Route.StopIDs...)
-		g.planModeRouteModified = false
+		g.rememberPlannedRoute(g.Route)
 		g.Camera.TargetPos = sim.Vec2{}
 		g.Camera.Pos = sim.Vec2{}
 		planZoom := 0.04
@@ -288,6 +305,9 @@ func (g *Game) TogglePlanMode() {
 		g.Camera.Zoom = planZoom
 		g.Camera.Rotation = 0
 		g.Camera.TargetRotation = 0
+		platforminput.ResetScrollAndPinch()
+		g.pinchTouchActive = false
+		g.pinchLastTouchDist = 0
 		g.HUD.AddToast(locale.T("路线规划：左键加站，右键改名，[H] 其他线路，[TAB] 完成", "Planning: click to add, right-click to rename, [H] other lines, [TAB] finish"), false)
 		return
 	}
@@ -295,10 +315,42 @@ func (g *Game) TogglePlanMode() {
 		return
 	}
 	g.IsPlanMode = false
+	g.closeStationSearch()
 	g.planRoute = nil
 	g.Camera.FollowBus(g.Bus)
 	g.Camera.Pos = g.Camera.TargetPos
 	g.Camera.RestoreDrivingZoom()
 	g.Camera.Rotation = g.Camera.TargetRotation
 	g.HUD.AddToast(locale.T("线路规划已完成，恢复运营。", "Route planning complete. Service resumed."), true)
+}
+
+func (g *Game) consumePlanningPinchDelta() float64 {
+	delta := platforminput.TakePinchDelta()
+
+	// Also support two-finger touch pinch on touch-enabled devices.
+	g.touchIDsBuf = ebiten.AppendTouchIDs(g.touchIDsBuf[:0])
+	if len(g.touchIDsBuf) == 2 {
+		x0, y0 := ebiten.TouchPosition(g.touchIDsBuf[0])
+		x1, y1 := ebiten.TouchPosition(g.touchIDsBuf[1])
+		dist := math.Hypot(float64(x1-x0), float64(y1-y0))
+		if g.pinchTouchActive && g.pinchLastTouchDist > 1.0 && dist > 1.0 {
+			delta += (dist - g.pinchLastTouchDist) / 220.0
+		}
+		g.pinchLastTouchDist = dist
+		g.pinchTouchActive = true
+	} else {
+		g.pinchTouchActive = false
+		g.pinchLastTouchDist = 0
+	}
+
+	return delta
+}
+
+func applyPlanningPinchZoom(currentZoom, pinchDelta, minZoom, maxZoom float64) float64 {
+	if pinchDelta == 0 || math.IsNaN(pinchDelta) || math.IsInf(pinchDelta, 0) {
+		return sim.Clamp(currentZoom, minZoom, maxZoom)
+	}
+	scale := math.Exp(pinchDelta * 1.5)
+	next := currentZoom*scale + pinchDelta*0.12
+	return sim.Clamp(next, minZoom, maxZoom)
 }

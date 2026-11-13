@@ -12,7 +12,7 @@ import (
 // road-only paths; an already connected departure starts on the actual bay axis.
 func (ad *AutopilotDriver) reconnectServedBayDeparture(bus *sim.Bus, stop *sim.BusStop, lw float64) {
 	passage := ad.skippedDeparture
-	if passage == nil || !passage.served || stop == nil || stop.ID != passage.stop.ID || ad.pathFromID != stop.ID || !bus.IsArticulated() || len(ad.drivePath) < 2 || math.Abs(bus.Speed) > 10 {
+	if passage == nil || !passage.served || stop == nil || stop.ID != passage.stop.ID || ad.pathFromID != stop.ID || len(ad.drivePath) < 2 || math.Abs(bus.Speed) > 10 {
 		return
 	}
 	forward := sim.UnitFromAngle(stop.Heading)

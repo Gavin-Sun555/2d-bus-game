@@ -16,9 +16,7 @@ func (ad *AutopilotDriver) updateRightTurnOffset(f autopilotFrame) bool {
 	}
 	if ad.rightTurnJunction != nil {
 		center := *ad.rightTurnJunction
-		g := f.world.JunctionAt(center, f.laneWidth)
-		d := f.bus.Pos.Sub(center)
-		if math.Abs(d.X) > g.HalfX+f.bus.OverallLength()/2+80 || math.Abs(d.Y) > g.HalfY+f.bus.OverallLength()/2+80 {
+		if !withinRightTurnTrackingArea(f, center) {
 			ad.rightTurnJunction = nil
 			ad.rightTurnWaiting = false
 			return false
@@ -63,6 +61,13 @@ func (ad *AutopilotDriver) updateRightTurnOffset(f autopilotFrame) bool {
 	return false
 }
 
+func withinRightTurnTrackingArea(f autopilotFrame, center sim.Vec2) bool {
+	g := f.world.JunctionAt(center, f.laneWidth)
+	delta := f.bus.Pos.Sub(center)
+	margin := f.bus.OverallLength()/2 + 80
+	return math.Abs(delta.X) <= g.HalfX+margin && math.Abs(delta.Y) <= g.HalfY+margin
+}
+
 func (ad *AutopilotDriver) trackRightTurnWithoutPassingOffset(f autopilotFrame) {
 	ad.rightTurnWaiting = false
 	heading := ad.rightTurnHeading
@@ -89,11 +94,12 @@ func (ad *AutopilotDriver) trackRightTurnWithoutPassingOffset(f autopilotFrame) 
 		if f.world != nil && ad.rightTurnJunction != nil {
 			center := *ad.rightTurnJunction
 			forward := sim.UnitFromAngle(heading)
+			bumperPos := f.bus.Pos.Add(forward.Mul(f.bus.Length / 2))
 			stopLineDist := 0.0
 			if f.tls != nil {
 				for _, it := range f.tls.Intersections {
 					if it.Center.Distance(center) < 1 {
-						stopLineDist = it.GetStopLineDistForHeading(heading, f.laneWidth)
+						stopLineDist = it.GetStopLineDistForHeading(heading, f.laneWidth) + f.world.RailIntersectionPullback(it, bumperPos, heading, f.laneWidth, f.bus.OverallLength())
 						break
 					}
 				}

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Gavin-Sun555/2d-bus-game/internal/savefile"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/traffic"
 )
@@ -117,7 +118,7 @@ func TestInvalidSaveLeavesCurrentGameUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	originalWorld, originalBus, originalCash := g.World, g.Bus, g.Cash
-	var envelope saveEnvelope
+	var envelope savefile.Envelope[SaveMetadata]
 	if err = json.Unmarshal(good, &envelope); err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +188,7 @@ func TestSaveSemanticValidationIsTransactional(t *testing.T) {
 			t.Fatal(err)
 		}
 		digest := sha256.Sum256(payload)
-		raw, err := json.Marshal(saveEnvelope{Version: saveVersion, Checksum: hex.EncodeToString(digest[:]), Data: payload})
+		raw, err := json.Marshal(savefile.Envelope[SaveMetadata]{Version: savefile.Version, Checksum: hex.EncodeToString(digest[:]), Data: payload})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,24 +304,6 @@ func TestLoadLegacyTrafficPopulationKeepsTransitState(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-	}
-}
-
-func TestInspectSaveSlot1(t *testing.T) {
-	g := NewGame(1280, 720)
-	if err := g.LoadGameSlot(0); err != nil {
-		t.Skip(err)
-	}
-	ab0 := g.AIBusMgr.Buses[0]
-	st74 := g.World.Stops[74]
-	for step := 0; step <= 600; step++ {
-		if step%60 == 0 {
-			t.Logf("step=%d wait=%d player=(pos=%.1f,%.1f spd=%.1f pax=%d rem=%.1f bTgt=%d aTgt=%d) ai0=(pos=%.1f,%.1f spd=%.1f pax=%d rem=%.1f bTgt=%d aTgt=%d)",
-				step, st74.WaitingPassengers,
-				g.Bus.Pos.X, g.Bus.Pos.Y, g.Bus.Speed, g.Bus.PassengerCount, g.Bus.PassengerServiceRemaining(), g.Bus.PassengerService.BoardingTarget, g.Bus.PassengerService.AlightingTarget,
-				ab0.Bus.Pos.X, ab0.Bus.Pos.Y, ab0.Bus.Speed, ab0.Bus.PassengerCount, ab0.Bus.PassengerServiceRemaining(), ab0.Bus.PassengerService.BoardingTarget, ab0.Bus.PassengerService.AlightingTarget)
-		}
-		_ = g.Update()
 	}
 }
 

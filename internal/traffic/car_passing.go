@@ -116,12 +116,8 @@ func (tm *TrafficManager) prepareCarPassing(f carFrame) float64 {
 	if leader == nil && leadBus == nil {
 		return math.Inf(1)
 	}
-	// Prefer passing on the left; the bus lane and dedicated right-turn lane
-	// are excluded from ordinary cruising by the lane count below.
+	// Prefer passing on the left, using only general traffic lanes.
 	highest := road.FirstGeneralTrafficLane() + road.GeneralTrafficLanes() - 1
-	if road.LaneCount() == 8 && !road.HasBusLane() {
-		highest = 2
-	}
 	for _, direction := range []int{-1, 1} {
 		target := car.LaneIndex + direction
 		if target < road.FirstGeneralTrafficLane() || target > highest || !tm.passingLaneClear(f, u, float64(direction)) {
@@ -161,11 +157,14 @@ func carLaneChangeLength(car *sim.TrafficCar, lw float64) float64 {
 }
 
 func (tm *TrafficManager) beginCarLaneChange(f carFrame, target int) {
+	tm.beginCarLaneChangeWithLength(f, target, carLaneChangeLength(f.car, f.laneWidth))
+}
+
+func (tm *TrafficManager) beginCarLaneChangeWithLength(f carFrame, target int, length float64) {
 	car := f.car
 	heading := math.Atan2(math.Sin(car.Heading), math.Cos(car.Heading))
 	u := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -u.Y, Y: u.X}
-	length := carLaneChangeLength(car, f.laneWidth)
 	shift := float64(target-car.LaneIndex) * f.laneWidth
 	points := make([]sim.Vec2, 33)
 	for i := range points {
@@ -204,4 +203,176 @@ func carCurrentLaneHasExit(f carFrame, inter *sim.TrafficIntersection) bool {
 		heading += math.Pi / 2
 	}
 	return hasRoadInDirection(f.world, inter.Center, heading) || isMapExitAhead(f.world, inter.Center, heading)
+}
+
+const carRecoveryLaneChangeSpeed = 45.
+
+// A passing gap can close after the car starts moving laterally. If the
+// remaining curve would hit a stopped bus, use a checked return to the source
+// lane instead of pinning both vehicles across their lane boundary.
+func (tm *TrafficManager) retreatBlockedCarPass(f carFrame) {
+	car, turn := f.car, f.car.JunctionTurn
+	if turn == nil || !turn.LaneChange || turn.SpeedLimit > 0 || !car.CanOvertake ||
+		f.world == nil || math.Abs(car.Speed) > 1 || f.world.InsideJunction(car.Pos, f.laneWidth, car.Length) {
+		return
+	}
+	road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos)
+	if !ok || car.LaneIndex < road.FirstGeneralTrafficLane() || car.LaneIndex >= road.LaneCount()/2 ||
+		math.IsInf(tm.carLaneChangeConflict(f, 100, true), 1) {
+		return
+	}
+	heading := turn.ExitHeading
+	u := sim.UnitFromAngle(heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	origin := sim.Vec2{Y: car.RoadCenter}
+	if !car.IsEW {
+		origin = sim.Vec2{X: car.RoadCenter}
+	}
+	offset := car.Pos.Sub(origin).Dot(r)
+	source := (float64(car.LaneIndex) + .5) * f.laneWidth
+	if math.Abs(offset-source) > .9*f.laneWidth {
+		return // The car has almost finished entering the destination lane.
+	}
+	length := math.Max(60, 2*math.Abs(offset-source))
+	yaw := sim.NormalizeAngle(car.Heading - heading)
+	if math.Abs(yaw) > .65 {
+		return
+	}
+	var points [25]sim.Vec2
+	for i := range points {
+		t := float64(i) / float64(len(points)-1)
+		shift := (source-offset)*t*t*(3-2*t) + math.Tan(yaw)*length*t*(1-t)*(1-t)
+		points[i] = car.Pos.Add(u.Mul(length * t)).Add(r.Mul(shift))
+		if i == 0 {
+			continue
+		}
+		d := points[i].Sub(points[i-1])
+		body := sim.OBB{Center: points[i], Heading: math.Atan2(d.Y, d.X), HalfLen: car.Length/2 + 1, HalfWid: car.Width/2 + 1}
+		for _, bus := range f.buses {
+			if bus == nil || bus.Pos.Distance(body.Center) > bus.OverallLength()+car.Length+30 {
+				continue
+			}
+			check := body
+			if math.Abs(bus.Speed) < 1 && math.Cos(bus.Heading-heading) > .98 {
+				check.HalfLen, check.HalfWid = car.Length/2, car.Width/2
+			}
+			if hit, _, _ := bus.CollidesBody(check); hit {
+				return
+			}
+		}
+		for _, other := range tm.carsForFrame(f) {
+			if other == car || other.Pos.Distance(body.Center) > car.Length+other.Length {
+				continue
+			}
+			if hit, _, _ := sim.CheckOBBCollision(body, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}); hit {
+				return
+			}
+		}
+	}
+	car.JunctionTurn = &sim.CarJunctionTurn{LaneChange: true, Points: points[:], ExitHeading: heading, ExitEW: car.IsEW, ExitRoadCenter: car.RoadCenter, ExitLane: car.LaneIndex, SpeedLimit: carRecoveryLaneChangeSpeed}
+	car.Passing, car.PassingLeadBus, car.PassingLeadID = false, nil, 0
+	car.DeadlockTimer = 0
+	car.DeadlockTracker = sim.StationaryTracker{}
+}
+
+// Recheck a live lane change after traffic has advanced. The current heading
+// alone misses vehicles that intersect the remaining lateral curve.
+func (tm *TrafficManager) carLaneChangeConflict(f carFrame, horizon float64, stoppedOnly bool) float64 {
+	car, turn := f.car, f.car.JunctionTurn
+	cars := tm.carsForFrame(f)
+	for distance := 4.; distance <= horizon; distance += 4 {
+		p, h := turn.Predict(distance)
+		elapsed := distance / math.Max(20, car.Speed)
+		body := sim.OBB{Center: p, Heading: h, HalfLen: car.Length/2 + 1, HalfWid: car.Width/2 + 1}
+		for _, other := range cars {
+			if other == car || (stoppedOnly && other.Speed > 3) {
+				continue
+			}
+			reach := car.Length + other.Length + math.Abs(other.Speed)*elapsed
+			d := other.Pos.Sub(p)
+			if d.Dot(d) > reach*reach {
+				continue
+			}
+			pos := other.Pos.Add(sim.UnitFromAngle(other.Heading).Mul(other.Speed * elapsed))
+			heading := other.Heading
+			if other.JunctionTurn != nil && other.Speed > 0 {
+				pos, heading = other.JunctionTurn.Predict(other.Speed * elapsed)
+			}
+			if hit, _, _ := sim.CheckOBBCollision(body, sim.OBB{Center: pos, Heading: heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}); hit {
+				return distance
+			}
+		}
+		for _, bus := range f.buses {
+			if bus == nil || (stoppedOnly && math.Abs(bus.Speed) > 2) {
+				continue
+			}
+			reach := car.Length + bus.OverallLength() + math.Abs(bus.Speed)*elapsed
+			d := bus.Pos.Sub(p)
+			if d.Dot(d) > reach*reach {
+				continue
+			}
+			pos := bus.Pos.Add(sim.UnitFromAngle(bus.Heading).Mul(bus.Speed * elapsed))
+			heading := bus.Heading
+			parts := bus.BodyParts()
+			if bus.Speed != 0 {
+				if prediction, ok := sim.PredictJunctionBody(bus.JunctionCorridor, math.Max(0, bus.Speed)*elapsed); ok {
+					pos, heading = prediction.Center, prediction.Heading
+				}
+				parts = bus.BodyPartsAtPose(pos, heading)
+			}
+			for _, part := range parts {
+				if part.HalfLen <= 0 {
+					continue
+				}
+				shape := body
+				if !stoppedOnly && turn.SpeedLimit == carRecoveryLaneChangeSpeed && math.Abs(bus.Speed) < 1 {
+					shape.HalfLen, shape.HalfWid = car.Length/2, car.Width/2
+				}
+				if hit, _, _ := sim.CheckOBBCollision(shape, part); hit {
+					return distance
+				}
+			}
+		}
+	}
+	return math.Inf(1)
+}
+
+// A stopped car beside an articulated rear can be the vehicle preventing the
+// bus from straightening. Give it a safe adjacent exit from that deadlock even
+// if its normal cruising tier does not initiate passing.
+func (tm *TrafficManager) releaseCarBesideBusTail(f carFrame) {
+	car := f.car
+	if car.JunctionTurn != nil || car.InRoundabout || math.Abs(car.Speed) > 1 || f.world == nil || car.DeadlockTimer < 2 ||
+		f.world.InsideJunction(car.Pos, f.laneWidth, car.Length) {
+		return
+	}
+	road, ok := f.world.RoadAt(car.RoadCenter, car.IsEW, car.Pos)
+	if !ok || car.LaneIndex <= road.FirstGeneralTrafficLane() {
+		return
+	}
+	u := sim.UnitFromAngle(car.Heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	for _, bus := range f.buses {
+		if bus == nil || !bus.IsArticulated() || math.Abs(bus.Speed) > 1 || bus.DoorsOpen || math.Cos(bus.Heading-car.Heading) < .9 {
+			continue
+		}
+		d := bus.Pos.Sub(car.Pos)
+		tail := bus.TrailerBody()
+		if d.Dot(u) <= car.Length/2 || d.Dot(r) < 0 || math.Abs(car.Pos.Sub(tail.Center).Dot(u)) > tail.HalfLen+car.Length/2+12 ||
+			math.Abs(car.Pos.Sub(tail.Center).Dot(r)) > tail.HalfWid+car.Width/2+14 {
+			continue
+		}
+		for _, length := range []float64{1.5 * f.laneWidth, 2 * f.laneWidth, 3 * f.laneWidth} {
+			tm.beginCarLaneChangeWithLength(f, car.LaneIndex-1, length)
+			car.JunctionTurn.SpeedLimit = carRecoveryLaneChangeSpeed
+			if math.IsInf(tm.carLaneChangeConflict(f, length, false), 1) {
+				car.Passing, car.PassingLeadBus, car.PassingLeadID = false, nil, 0
+				car.DeadlockTimer = 0
+				car.DeadlockTracker = sim.StationaryTracker{}
+				return
+			}
+		}
+		car.JunctionTurn = nil
+		return
+	}
 }

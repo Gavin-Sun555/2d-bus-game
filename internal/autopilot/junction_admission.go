@@ -39,6 +39,14 @@ func (ad *AutopilotDriver) junctionAdmissionSpeed(f autopilotFrame) float64 {
 			sameLeader := ob.Speed > 15 && math.Cos(ob.Heading-heading) > .98 && ob.Pos.Sub(f.bus.Pos).Dot(u) > 0 && math.Abs(ob.Pos.Sub(f.bus.Pos).X*u.Y-ob.Pos.Sub(f.bus.Pos).Y*u.X) < f.laneWidth*.35
 			conflict = !sameLeader && !sim.SeparatedJunctionCorridors(corridor, ob.JunctionCorridor)
 		}
+		if !conflict && !corridor.Entered && sim.UTurnPrecedesEntry(ob.JunctionCorridor, corridor, inter) {
+			conflict = !sim.SeparatedJunctionCorridors(corridor, ob.JunctionCorridor)
+		}
+		if !conflict && !corridor.Entered && len(corridor.Bodies) > 1 &&
+			math.Abs(corridorTurnAngle(corridor)) >= 2.8 &&
+			opposingGreenBeforeEntry(corridor, ob, inter, f.laneWidth) {
+			conflict = !sim.SeparatedJunctionCorridors(corridor, ob.JunctionCorridor)
+		}
 		if !waitingAtRed && ob.JunctionTurn != nil && !ob.JunctionTurn.LaneChange && ob.JunctionTurn.Center.Distance(corridor.Center) < 1 {
 			points := ob.JunctionTurn.Points[ob.JunctionTurn.Segment:]
 			delta := ob.Pos.Sub(f.bus.Pos)
@@ -101,4 +109,23 @@ func waitingOutsideRedEntry(ob VehicleObstacle, inter *sim.TrafficIntersection, 
 	yaw := ob.Heading - entry
 	nose := ob.Pos.Sub(inter.Center).Dot(u) + math.Abs(math.Cos(yaw))*ob.Length/2 + math.Abs(math.Sin(yaw))*ob.Width/2
 	return nose <= -half
+}
+
+// Two opposing left greens can release both approaches on the same tick.
+// A U-turn yields before entering to a conflicting regular movement.
+func opposingGreenBeforeEntry(c *sim.JunctionCorridor, ob VehicleObstacle, inter *sim.TrafficIntersection, laneWidth float64) bool {
+	other := ob.JunctionCorridor
+	if other == nil || other.Entered || other.Remaining <= 0 || other.Center.Distance(c.Center) > 1 ||
+		len(other.Bodies) < 2 || math.Cos(other.EntryHeading-c.EntryHeading) > -.98 {
+		return false
+	}
+	angle := corridorTurnAngle(other)
+	u := sim.UnitFromAngle(other.EntryHeading)
+	gap := inter.Center.Sub(ob.Pos).Dot(u) - inter.GetStopLineDistForHeading(other.EntryHeading, laneWidth) - ob.Length/2
+	uTurn := math.Abs(angle) >= 2.8
+	if gap > laneWidth || inter.GetSignalForHeading(other.EntryHeading, uTurn || angle < -.35) != sim.SignalGreen {
+		return false
+	}
+	// Use the approach direction to break symmetry between two U-turns.
+	return (!c.UTurnReady || !inter.WaitingUTurnHasPriority()) && (!uTurn || sim.UnitFromAngle(c.EntryHeading).Dot(sim.Vec2{X: 1, Y: 1}) < 0)
 }

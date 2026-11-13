@@ -138,18 +138,17 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 					}
 				}
 
-				entryLat := math.Abs(leadingPos.Sub(inter.Center).Dot(vRight))
 				signedEntryLat := leadingPos.Sub(inter.Center).Dot(vRight)
 				inter.PlayerEntryRightTurnLane = approachLanes >= 8 && signedEntryLat >= 3*lw && signedEntryLat <= 4*lw+12
-				inter.PlayerEntryBusLane = inter.ApproachBusLane[inter.GetApproachIndexForHeading(refHeading)] && entryLat >= 3*lw && entryLat <= 4*lw+12
+				inter.PlayerEntryBusLane = approachLanes >= 6 && signedEntryLat >= (float64(approachLanes/2)-1)*lw && signedEntryLat <= float64(approachLanes/2)*lw+12
 				if inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(refHeading)] {
-					inter.PlayerEntryBusLane = signedEntryLat >= 0 && signedEntryLat < lw
+					inter.PlayerEntryBusLane = inter.PlayerEntryBusLane || signedEntryLat >= 0 && signedEntryLat < lw
 					inter.PlayerEntryLane = 1
 					if signedEntryLat >= lw && signedEntryLat < 2*lw {
 						inter.PlayerEntryLane = 0
 					}
 				}
-				inter.PlayerEntryMedianBusLane = inter.PlayerEntryBusLane && inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(refHeading)]
+				inter.PlayerEntryMedianBusLane = signedEntryLat >= 0 && signedEntryLat < lw && inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(refHeading)]
 				inter.PlayerEntryMedianRightSignal = inter.GetMedianBusRightSignal(refHeading)
 				inter.PlayerEntryBusLeftOnly = false
 				// Preserve right-on-red behavior, but a small countersteer must
@@ -330,7 +329,7 @@ func (tls *TrafficLightSystem) CheckPlayerViolation(bus *Bus, laneWidth ...float
 				// Case B: Straight/Right Lane (1) must NOT turn left!
 				// 宽松判定：如果左转灯为绿灯/黄灯，或者只是借道转弯/压线的大巴车，不误判为违规左转。
 				// 只有在左转为红灯（禁止左转）时从直行车道左转，才判定违规！
-				if inter.PlayerEntryLane == 1 && !inter.PlayerEntryBusLeftOnly {
+				if inter.PlayerEntryLane == 1 && !inter.PlayerEntryBusLeftOnly && !inter.PlayerEntryBusLane {
 					if (reachedLeftExit || dHead < -0.35) && leftSig != SignalGreen && leftSig != SignalYellow {
 						inter.FinedThisPassage = true
 						inter.Cooldown = 6.0
@@ -451,6 +450,9 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 
 	for i, c := range candidates {
 		inter, distToLine := c.inter, c.distToLine
+		if inter.uTurnClearance && distToLine < lookAhead {
+			return true, distToLine
+		}
 		nearest := i == 0
 
 		// Determine which signal to respect (Left-turn vs Through):
@@ -523,7 +525,7 @@ func (tls *TrafficLightSystem) GetApproachingSignalInfo(pos Vec2, heading float6
 		forwardDist := toInter.X*cosH + toInter.Y*sinH
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
 
-		if forwardDist > 0 && forwardDist < stopLineDist+260 && lateralDist < math.Max(laneWidth*2.5, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
+		if forwardDist > 0 && forwardDist < stopLineDist+420 && lateralDist < math.Max(laneWidth*2.5, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
 			dist := forwardDist - stopLineDist
 			th, lf := inter.GetSignalForApproach(heading)
 			rem := 0.0

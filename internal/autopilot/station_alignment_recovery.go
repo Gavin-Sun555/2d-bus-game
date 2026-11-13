@@ -40,3 +40,27 @@ func stationActuatorAlignment(f autopilotFrame, target sim.Vec2) ([]sim.Vec2, si
 	}
 	return points, b.Pos, true
 }
+
+// Use the near side of the front berth when there is too little runway to
+// reach its center. Leave room for steering error at the boarding boundary.
+func stationRoadsideFrontAlignment(f autopilotFrame, berth, forward, right sim.Vec2) ([]sim.Vec2, sim.Vec2) {
+	stop := f.targetStop
+	if f.world == nil || stop.Width <= 12 {
+		return nil, sim.Vec2{}
+	}
+	across := f.bus.Pos.Sub(berth).Dot(right)
+	target := berth.Add(right.Mul(math.Copysign(stop.Width/2-6, across)))
+	points := stationAlignmentCurve(f.bus, target, forward)
+	if len(points) < 2 || !stationCurveCanSteer(f.bus, points) {
+		return nil, sim.Vec2{}
+	}
+	for i := 1; i < len(points); i++ {
+		delta := points[i].Sub(points[i-1])
+		pose := f.bus.AtPose(points[i], math.Atan2(delta.Y, delta.X))
+		if pose.CheckBoundaries(f.world, f.laneWidth).Zone == sim.ZoneHardBarrier ||
+			(i == len(points)-1 && !stop.ContainsBus(&pose)) {
+			return nil, sim.Vec2{}
+		}
+	}
+	return points, target
+}

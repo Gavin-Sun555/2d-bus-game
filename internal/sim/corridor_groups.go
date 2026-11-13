@@ -32,10 +32,18 @@ func groupCorridorBodies(b []OBB, dst []corridorBodyGroup) ([]corridorBodyGroup,
 			if !ok {
 				return nil, false
 			}
-			lo.X = math.Min(lo.X, a.X)
-			lo.Y = math.Min(lo.Y, a.Y)
-			hi.X = math.Max(hi.X, z.X)
-			hi.Y = math.Max(hi.Y, z.Y)
+			if a.X < lo.X {
+				lo.X = a.X
+			}
+			if a.Y < lo.Y {
+				lo.Y = a.Y
+			}
+			if z.X > hi.X {
+				hi.X = z.X
+			}
+			if z.Y > hi.Y {
+				hi.Y = z.Y
+			}
 		}
 		dst[i] = corridorBodyGroup{lo: lo, hi: hi, begin: begin, end: end}
 	}

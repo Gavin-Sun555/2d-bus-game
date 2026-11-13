@@ -27,8 +27,19 @@ const (
 
 // TrafficIntersection manages signal phases and stop lines for an intersection
 type TrafficIntersection struct {
+	PriorityResumePhase *LightPhase `json:",omitempty"`
+	demandKnown         bool
+	signalDemand        uint8
+	carSignalDemand     uint8
+
 	BusPriorityQueue   []BusSignalRequest `json:",omitempty"`
+	PriorityPhaseWait  [4]float64         `json:",omitempty"`
 	approachDimensions approachDimensionsCache
+	uTurnClearance     bool
+	waitingRegularLeft uint8
+	waitingLeft        uint8
+	UTurnServedPhases  uint8 `json:",omitempty"`
+	UTurnYieldOnGreen  bool  `json:",omitempty"`
 	ID                 int
 	Center             Vec2
 	Phase              LightPhase
@@ -79,17 +90,33 @@ type RoadCamera struct {
 	FlashTimer float64 // Camera strobe flash visual timer
 }
 
+type StationCrossingSignalState struct {
+	ID        int                   `json:"id"`
+	Phase     StationCrossingSignal `json:"phase"`
+	Timer     float64               `json:"timer"`
+	Extension float64               `json:"extension,omitempty"`
+	Priority  bool                  `json:"priority,omitempty"`
+}
+
 // TrafficLightSystem coordinates all city intersections and surveillance cameras
 type TrafficLightSystem struct {
-	BusPriorityEnabled bool `json:",omitempty"`
-	junctionIndex      *junctionIndex
-	Intersections      []*TrafficIntersection
-	RoadCameras        []*RoadCamera
+	carDemandRefresh float64
+	carDemandDensity int
+
+	BusPriorityEnabled     bool    `json:",omitempty"`
+	StationCrossingElapsed float64 `json:",omitempty"`
+	RailElapsed            float64 `json:",omitempty"`
+	junctionIndex          *junctionIndex
+	uTurnOccupants         map[Vec2]bool
+	Intersections          []*TrafficIntersection
+	RoadCameras            []*RoadCamera
+	StationCrossingStates  map[int]*StationCrossingSignalState `json:",omitempty"`
 }
 
 func NewTrafficLightSystem() *TrafficLightSystem {
 	tls := &TrafficLightSystem{
-		Intersections: make([]*TrafficIntersection, 0),
+		Intersections:         make([]*TrafficIntersection, 0),
+		StationCrossingStates: make(map[int]*StationCrossingSignalState),
 		RoadCameras: []*RoadCamera{
 			{ID: 0, Pos: Vec2{X: 1950 * MapGridScale, Y: 0}, RoadName: "中央主干大道 (东段)", IsEW: true, RoadCoord: 0, Lanes: 4},
 			{ID: 1, Pos: Vec2{X: -1950 * MapGridScale, Y: 0}, RoadName: "中央主干大道 (西段)", IsEW: true, RoadCoord: 0, Lanes: 4},
@@ -194,6 +221,8 @@ func NewTrafficLightSystem() *TrafficLightSystem {
 // BuildForWorld adapts traffic lights and speed cameras to the active city map's road topology
 func (tls *TrafficLightSystem) BuildForWorld(w *World) {
 	tls.junctionIndex = nil
+	tls.StationCrossingElapsed = 0
+	tls.RailElapsed = 0
 	if w == nil {
 		return
 	}
