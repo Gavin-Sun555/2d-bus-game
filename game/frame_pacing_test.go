@@ -163,8 +163,77 @@ func TestPresentationResetReleasesPreviousCity(t *testing.T) {
 		t.Fatal("kept old presentation clock")
 	}
 	for _, s := range w.frames.snapshots {
-		if s.world != nil || s.player.bus != nil || s.cars != nil || s.buses != nil {
+		if s.world != nil || s.player.bus != nil || s.cars != nil || s.buses != nil || s.carIndex != nil || s.busIndex != nil {
 			t.Fatal("retained prior city after switching modes")
 		}
+	}
+}
+
+func TestPresentationCarInterpolationSurvivesSliceIndexShift(t *testing.T) {
+	g := presentationTestGame()
+	c0 := &sim.TrafficCar{ID: 10, Pos: sim.Vec2{X: 0, Y: 26}, Speed: 600, Length: 46, Width: 22}
+	c1 := &sim.TrafficCar{ID: 11, Pos: sim.Vec2{X: 100, Y: 26}, Speed: 600, Length: 46, Width: 22}
+	c2 := &sim.TrafficCar{ID: 12, Pos: sim.Vec2{X: 200, Y: 26}, Speed: 600, Length: 46, Width: 22}
+	g.TrafficMgr.Cars = []*sim.TrafficCar{c0, c1, c2}
+
+	var p presentationFrames
+	p.capture(g, 0)
+	c0.Pos.X += 10
+	c1.Pos.X += 10
+	c2.Pos.X += 10
+	p.capture(g, simulationFrame)
+
+	// Simulate boundary despawn of c0 shifting c1 and c2 down by 1, plus advance to tick 2.
+	c1.Pos.X += 10
+	c2.Pos.X += 10
+	g.TrafficMgr.Cars = []*sim.TrafficCar{c1, c2}
+	p.capture(g, 2*simulationFrame)
+
+	// Interpolate between tick 0 and tick 1 (at 0.5*simulationFrame): c1 must be at 105, not live 120!
+	if !p.prepare(g, simulationFrame/2) {
+		t.Fatal("presentation unavailable after despawn")
+	}
+	if math.Abs(p.traffic.Cars[0].Pos.X-105) > 1e-9 || math.Abs(p.traffic.Cars[1].Pos.X-205) > 1e-9 {
+		t.Fatalf("despawn index shift broke car interpolation: got c1=%.2f c2=%.2f, want 105 and 205", p.traffic.Cars[0].Pos.X, p.traffic.Cars[1].Pos.X)
+	}
+
+	// Simulate boundary spawn inserted at index 0 shifting c1 and c2 up by 1.
+	cNew := &sim.TrafficCar{ID: 13, Pos: sim.Vec2{X: 500, Y: 26}, Speed: 600, Length: 46, Width: 22}
+	c1.Pos.X += 10
+	c2.Pos.X += 10
+	g.TrafficMgr.Cars = []*sim.TrafficCar{cNew, c1, c2}
+	p.capture(g, 3*simulationFrame)
+
+	// Interpolate between tick 1 and tick 2 (at 1.5*simulationFrame): c1=115, c2=215.
+	if !p.prepare(g, simulationFrame*3/2) {
+		t.Fatal("presentation unavailable after spawn insert")
+	}
+	if math.Abs(p.traffic.Cars[1].Pos.X-115) > 1e-9 || math.Abs(p.traffic.Cars[2].Pos.X-215) > 1e-9 {
+		t.Fatalf("spawn insert shift broke car interpolation: got c1=%.2f c2=%.2f, want 115 and 215", p.traffic.Cars[1].Pos.X, p.traffic.Cars[2].Pos.X)
+	}
+}
+
+func TestPresentationClockAbsorbsRefreshRateDrift(t *testing.T) {
+	var c presentationClock
+	origin := time.Unix(1, 0)
+	// Simulate 60 seconds of a 59.82 Hz display (16.7168ms per VSync vs 16.6667ms sim step).
+	realStep := time.Duration(math.Round(float64(time.Second) / 59.82))
+	var prev time.Duration
+	for i := 0; i < 3600; i++ {
+		now := origin.Add(time.Duration(i) * realStep)
+		latest := c.advance(now)
+		at := c.displayTime(now.Add(4 * time.Millisecond))
+		if i > 5 {
+			if at < prev {
+				t.Fatalf("frame %d: displayTime stepped backward: %v -> %v", i, prev, at)
+			}
+			if at >= latest {
+				t.Fatalf("frame %d: displayTime hit latest clamp (%v >= %v), stalling interpolation", i, at, latest)
+			}
+			if latest-at > 4*simulationFrame {
+				t.Fatalf("frame %d: displayTime fell behind snapshot ring (%v behind)", i, latest-at)
+			}
+		}
+		prev = at
 	}
 }

@@ -40,16 +40,28 @@ type carPoseRecord struct {
 	pose vehiclePose
 }
 type presentationSnapshot struct {
-	at     time.Duration
-	world  *sim.World
-	player busPoseRecord
-	camera sim.Camera
-	buses  []busPoseRecord
-	cars   []carPoseRecord
+	at            time.Duration
+	world         *sim.World
+	player        busPoseRecord
+	camera        sim.Camera
+	buses         []busPoseRecord
+	cars          []carPoseRecord
+	busIndex      map[*sim.Bus]int
+	carIndex      map[*sim.TrafficCar]int
+	busIndexBuilt bool
+	carIndexBuilt bool
 }
 
 func (s *presentationSnapshot) capture(g *Game, at time.Duration) {
 	s.at, s.world = at, g.World
+	if s.busIndexBuilt {
+		clear(s.busIndex)
+		s.busIndexBuilt = false
+	}
+	if s.carIndexBuilt {
+		clear(s.carIndex)
+		s.carIndexBuilt = false
+	}
 	s.player = busPoseRecord{g.Bus, g.Bus.Model, busPresentation(g.Bus)}
 	s.camera = *g.Camera
 	n := len(g.AIBusMgr.Buses)
@@ -70,6 +82,56 @@ func (s *presentationSnapshot) capture(g *Game, at time.Duration) {
 	for i, c := range cars {
 		s.cars[i] = carPoseRecord{c, c.ID, carPresentation(c)}
 	}
+}
+
+func (s *presentationSnapshot) findBus(live *sim.Bus, hint int) (busPoseRecord, bool) {
+	if hint < len(s.buses) {
+		if rec := s.buses[hint]; rec.bus == live && rec.model == live.Model {
+			return rec, true
+		}
+	}
+	if !s.busIndexBuilt {
+		if s.busIndex == nil {
+			s.busIndex = make(map[*sim.Bus]int, len(s.buses))
+		} else {
+			clear(s.busIndex)
+		}
+		for i, rec := range s.buses {
+			s.busIndex[rec.bus] = i
+		}
+		s.busIndexBuilt = true
+	}
+	if idx, ok := s.busIndex[live]; ok {
+		if rec := s.buses[idx]; rec.bus == live && rec.model == live.Model {
+			return rec, true
+		}
+	}
+	return busPoseRecord{}, false
+}
+
+func (s *presentationSnapshot) findCar(live *sim.TrafficCar, hint int) (carPoseRecord, bool) {
+	if hint < len(s.cars) {
+		if rec := s.cars[hint]; rec.car == live && rec.id == live.ID {
+			return rec, true
+		}
+	}
+	if !s.carIndexBuilt {
+		if s.carIndex == nil {
+			s.carIndex = make(map[*sim.TrafficCar]int, len(s.cars))
+		} else {
+			clear(s.carIndex)
+		}
+		for i, rec := range s.cars {
+			s.carIndex[rec.car] = i
+		}
+		s.carIndexBuilt = true
+	}
+	if idx, ok := s.carIndex[live]; ok {
+		if rec := s.cars[idx]; rec.car == live && rec.id == live.ID {
+			return rec, true
+		}
+	}
+	return carPoseRecord{}, false
 }
 
 type presentationFrames struct {
@@ -149,8 +211,12 @@ func (p *presentationFrames) prepare(g *Game, at time.Duration) bool {
 	}
 	for i, live := range g.AIBusMgr.Buses {
 		p.busValues[i] = *live.Bus
-		if i < len(a.buses) && i < len(b.buses) {
-			renderBus(&p.busValues[i], live.Bus, a.buses[i], b.buses[i], t)
+		aBus, aOk := a.findBus(live.Bus, i)
+		bBus, bOk := b.findBus(live.Bus, i)
+		if aOk && bOk {
+			renderBus(&p.busValues[i], live.Bus, aBus, bBus, t)
+		} else if bOk {
+			renderBus(&p.busValues[i], live.Bus, bBus, bBus, 0)
 		}
 		p.fleetValues[i] = *live
 		p.fleetValues[i].Bus = &p.busValues[i]
@@ -166,11 +232,14 @@ func (p *presentationFrames) prepare(g *Game, at time.Duration) bool {
 	}
 	for i, live := range cars {
 		p.carValues[i] = *live
-		if i < len(a.cars) && i < len(b.cars) && a.cars[i].car == live && b.cars[i].car == live && a.cars[i].id == live.ID && b.cars[i].id == live.ID {
-			v := interpolatePose(a.cars[i].pose, b.cars[i].pose, t)
-			if b.cars[i].pose.pos.Distance(live.Pos) <= math.Max(50, math.Abs(live.Speed)/60*4+1) {
-				p.carValues[i].Pos, p.carValues[i].Heading, p.carValues[i].RoadCurveYaw = v.pos, v.heading, 0
+		aCar, aOk := a.findCar(live, i)
+		bCar, bOk := b.findCar(live, i)
+		if bOk && bCar.pose.pos.Distance(live.Pos) <= math.Max(50, math.Abs(live.Speed)/60*4+1) {
+			v := bCar.pose
+			if aOk {
+				v = interpolatePose(aCar.pose, bCar.pose, t)
 			}
+			p.carValues[i].Pos, p.carValues[i].Heading, p.carValues[i].RoadCurveYaw = v.pos, v.heading, 0
 		}
 		p.traffic.Cars[i] = &p.carValues[i]
 	}

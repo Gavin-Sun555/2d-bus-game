@@ -18,6 +18,15 @@ func (c *presentationClock) advance(now time.Time) time.Duration {
 	}
 	c.ticks++
 	elapsed := time.Duration(c.ticks) * simulationFrame
+	// Gently absorb sustained display-vs-60Hz drift (e.g. 59.82/59.94 Hz VSync)
+	// before displayTime hits the edge of the snapshot ring, while leaving
+	// normal phase jitter and suspension catch-up batches untouched.
+	lag := now.Sub(c.origin) - elapsed
+	if lag > simulationFrame/2 && lag < time.Second/2 {
+		c.origin = c.origin.Add(min((lag-simulationFrame/2)/16, simulationFrame/4))
+	} else if lag < -simulationFrame*2 && lag > -time.Second/2 {
+		c.origin = c.origin.Add(max((lag+simulationFrame*2)/16, -simulationFrame/4))
+	}
 	return elapsed
 }
 func (c *presentationClock) displayTime(now time.Time) time.Duration {
