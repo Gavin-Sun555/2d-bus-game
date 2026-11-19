@@ -31,7 +31,7 @@ func (ad *AutopilotDriver) selectMedianRightTurn(f autopilotFrame) {
 		return
 	}
 	junction := a.approachingInter.Center
-	if ad.medianRightChoice != nil && ad.medianRightChoice.Distance(junction) < 1 {
+	if ad.fallbackActiveAt(junction) || (ad.medianRightChoice != nil && ad.medianRightChoice.Distance(junction) < 1) {
 		return
 	}
 	heading := approachRoadHeading(f.bus.Heading)
@@ -44,6 +44,9 @@ func (ad *AutopilotDriver) selectMedianRightTurn(f autopilotFrame) {
 	alreadyCurb := f.bus.Pos.Sub(origin).Dot(r) > 2.75*f.laneWidth
 	busQueue, curbQueue, middleClear := medianRightQueues(f, origin, u, r, a.distToStopLine)
 	current := f.bus.Pos.Sub(origin).Dot(r)
+	if !alreadyCurb && brtPlatformBlocksDividerCross(f.world, f.bus, heading, f.laneWidth, current, 3.5*f.laneWidth) {
+		return
+	}
 	enoughRunway := a.distToStopLine > math.Max(800, 3*f.laneWidth*4.5+f.bus.OverallLength())
 	preferCurb := busQueue > curbQueue && middleClear && enoughRunway
 	if preferCurb {

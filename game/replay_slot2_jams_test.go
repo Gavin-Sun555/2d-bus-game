@@ -466,6 +466,79 @@ func TestSavedSlot1StandardAutopilotQueuesLikeFleetAtStops(t *testing.T) {
 		}
 	}
 	if !served[188] || !served[186] || !served[184] {
+		s := g.AutopilotDriver.Snapshot()
+		t.Logf("player pos%v h%.3f state%v from%d to%d origin%+v target%v speed%.1f remaining%.1f", g.Bus.Pos, g.Bus.Heading, g.AutopilotDriver.State, s.PathFromID, s.PathToID, s.OffRouteOrigin, s.Public.LastPursuitPt, s.Public.LastTargetSpeed, s.Public.LastRemaining)
 		t.Fatalf("served %v, want stops 188, 186 and 184 from their bays", served)
+	}
+}
+
+// Save 2 (2026-11-16): the player's long bus finished its lane change into
+// the left-turn lane 2px over the centerline. The lane guard stopped it and
+// then crawled it at 20px/s along the line for 500px. It must steer back at
+// normal speed instead.
+func TestSavedSlot2LeftLaneChangeOverCenterlineKeepsDriving(t *testing.T) {
+	path := slot2Fixture(t, "../dist/slot2-left-lane-stop-2026-11-16.json")
+	sim.SeedSimulation(3)
+	g := loadSaveForTest(t, path, 1440, 900)
+	g.State = StatePlaying
+	start := g.Bus.Pos
+	lw := g.Settings.GetLaneWidth()
+	center, _, _, _ := sim.CurrentRoadInfo(g.World, g.Bus.Pos, math.Pi, lw)
+	if start.Y-center <= -g.Bus.Width/2 || start.Y-center > -g.Bus.Width/2+4 {
+		t.Fatalf("fixture no longer straddles the centerline: lateral %.1f", start.Y-center)
+	}
+	back := false
+	for f := 0; f < 120; f++ {
+		_ = g.Update()
+		// Before the junction, the body returns fully to its own side.
+		if g.Bus.Pos.X > -15000 && g.Bus.Pos.Y-center < -g.Bus.Width/2 {
+			back = true
+		}
+	}
+	if moved := start.X - g.Bus.Pos.X; moved < 80 {
+		t.Fatalf("bus moved only %.0fpx in 2s at lateral %.1f (speed %.1f)", moved, g.Bus.Pos.Y-center, g.Bus.Speed)
+	}
+	if !back {
+		t.Fatal("bus stayed over the centerline up to the junction")
+	}
+}
+
+// Save 2 (2026-11-16 09:14): long buses 147 and 153 stood touching beside
+// stop 31, 153 angled with its nose against 147's side. Every move or
+// boarding check of either rejected the contact, so both waited until the
+// fleet reset. The more angled bus now backs out and the other waits for it.
+func TestSavedSlot2SideBySideBusWedgeAtStop31Clears(t *testing.T) {
+	path := slot2Fixture(t, "../dist/debug-2026-11-16-slot2/congestion-20261116-091403.066467000-000005-bus153.json")
+	sim.SeedSimulation(9)
+	g := loadSaveForTest(t, path, 1440, 900)
+	g.State = StatePlaying
+	a, b := fleetBus(t, g, 147), fleetBus(t, g, 153)
+	touching := func() bool {
+		for _, part := range a.Bus.BodyParts() {
+			if part.HalfLen > 0 {
+				part.HalfLen++
+				part.HalfWid++
+				if hit, _, _ := b.Bus.CollidesBody(part); hit {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !touching() {
+		t.Fatal("fixture no longer has the side-by-side contact")
+	}
+	served := false
+	for f := 0; f < 60*90 && !served; f++ {
+		_ = g.Update()
+		served = (a.Bus.DoorsOpen && a.Driver.DockedStopID == 31) || (b.Bus.DoorsOpen && b.Driver.DockedStopID == 31)
+	}
+	if !served {
+		for _, x := range []int{147, 153} {
+			a := fleetBus(t, g, x)
+			s := a.Driver.Snapshot()
+			t.Logf("bus%d from%d to%d state%v origin%+v target%v speed%.1f remaining%.1f", x, s.PathFromID, s.PathToID, s.Public.State, s.OffRouteOrigin, s.Public.LastPursuitPt, s.Public.LastTargetSpeed, s.Public.LastRemaining)
+		}
+		t.Fatalf("neither bus served stop 31 in 90s; touching %v, 147 at %v, 153 at %v", touching(), a.Bus.Pos, b.Bus.Pos)
 	}
 }

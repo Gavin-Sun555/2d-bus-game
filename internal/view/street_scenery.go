@@ -148,8 +148,8 @@ func groupScenicLots(lots []metroLot) []scenicLotChunk {
 		group := lots[start:min(start+chunkSize, len(lots))]
 		first := group[0].footprint
 		chunk := scenicLotChunk{
-			min: sim.Vec2{X: first.Pos.X - first.W/2 - 40, Y: first.Pos.Y - first.H/2 - 40},
-			max: sim.Vec2{X: first.Pos.X + first.W/2 + 40, Y: first.Pos.Y + first.H/2 + 40},
+			min:  sim.Vec2{X: first.Pos.X - first.W/2 - 40, Y: first.Pos.Y - first.H/2 - 40},
+			max:  sim.Vec2{X: first.Pos.X + first.W/2 + 40, Y: first.Pos.Y + first.H/2 + 40},
 			lots: group,
 		}
 		for _, lot := range group {

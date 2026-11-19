@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
@@ -39,6 +40,8 @@ type trafficDebugState struct {
 	tick     uint64
 	sequence uint64
 	retryAt  float64
+	pending  int
+	done     chan debugWrite
 	watches  map[debugVehicleKey]*debugStopWatch
 	regions  map[debugRegion]float64
 }
@@ -90,6 +93,7 @@ func (g *Game) updateTrafficDebug(dt float64) {
 		d.watches = make(map[debugVehicleKey]*debugStopWatch)
 		d.regions = make(map[debugRegion]float64)
 	}
+	d.finishDebugWrites(false)
 	d.seconds += dt
 	d.tick++
 	if g.TrafficMgr != nil {
@@ -194,23 +198,55 @@ func (g *Game) captureTrafficDebugEvent(event sim.TrafficRecoveryEvent) bool {
 	metadata.Debug = report
 	now := time.Now()
 	d.sequence++
-	path := filepath.Join(d.dir, fmt.Sprintf("congestion-%s-%06d-%s%d.json", now.Format("20060102-150405.000000000"), d.sequence, event.Kind, event.ID))
-	payload, err := json.Marshal(snapshot)
-	if err == nil {
-		var encoded []byte
-		encoded, err = savefile.Encode(payload, "Traffic debug: "+event.Reason, metadata, now)
-		if err == nil {
-			err = savefile.Write(path, encoded)
-		}
+	job := debugWrite{
+		event: event, region: region, metadata: metadata, now: now,
+		path: filepath.Join(d.dir, fmt.Sprintf("congestion-%s-%06d-%s%d.json", now.Format("20060102-150405.000000000"), d.sequence, event.Kind, event.ID)),
 	}
-	if err != nil {
-		d.retryAt = d.seconds + 5
-		log.Printf("Traffic debug save failed: %v", err)
-		return false
-	}
+	// Encoding and writing a full save takes tens of milliseconds. Detach
+	// the snapshot from live state and finish off the simulation thread, as
+	// interval autosaves do.
+	job.snapshot = detachedSaveSnapshot(snapshot)
 	d.regions[region] = d.seconds + timeout
-	log.Printf("Traffic debug saved (%s %s%d at %.1f,%.1f): %s", event.Reason, event.Kind, event.ID, event.Pos.X, event.Pos.Y, path)
-	files, _ := filepath.Glob(filepath.Join(d.dir, "congestion-*.json"))
+	d.pending++
+	if d.done == nil {
+		d.done = make(chan debugWrite, 64)
+	}
+	dir, done := d.dir, d.done
+	go func() {
+		job.err = writeDebugSnapshot(dir, job)
+		job.snapshot = gameSave{}
+		done <- job
+	}()
+	return true
+}
+
+type debugWrite struct {
+	event    sim.TrafficRecoveryEvent
+	region   debugRegion
+	snapshot gameSave
+	metadata *SaveMetadata
+	now      time.Time
+	path     string
+	err      error
+}
+
+var debugRetention sync.Mutex
+
+func writeDebugSnapshot(dir string, job debugWrite) error {
+	payload, err := json.Marshal(job.snapshot)
+	if err != nil {
+		return err
+	}
+	encoded, err := savefile.Encode(payload, "Traffic debug: "+job.event.Reason, job.metadata, job.now)
+	if err != nil {
+		return err
+	}
+	debugRetention.Lock()
+	defer debugRetention.Unlock()
+	if err = savefile.Write(job.path, encoded); err != nil {
+		return err
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "congestion-*.json"))
 	sort.Strings(files)
 	for len(files) > MaxTrafficDebugSaves {
 		if err := os.Remove(files[0]); err != nil {
@@ -219,5 +255,42 @@ func (g *Game) captureTrafficDebugEvent(event sim.TrafficRecoveryEvent) bool {
 		}
 		files = files[1:]
 	}
-	return true
+	return nil
+}
+
+// finishDebugWrites applies completed background writes. A failed write
+// re-arms its vehicle and region so the snapshot is retried. wait blocks
+// until every write in flight has finished.
+func (d *trafficDebugState) finishDebugWrites(wait bool) {
+	for d.pending > 0 {
+		var job debugWrite
+		if wait {
+			job = <-d.done
+		} else {
+			select {
+			case job = <-d.done:
+			default:
+				return
+			}
+		}
+		d.pending--
+		event := job.event
+		if job.err != nil {
+			d.retryAt = d.seconds + 5
+			delete(d.regions, job.region)
+			if w := d.watches[debugVehicleKey{event.Kind, event.ID}]; w != nil {
+				w.Reported = false
+			}
+			log.Printf("Traffic debug save failed: %v", job.err)
+			continue
+		}
+		log.Printf("Traffic debug saved (%s %s%d at %.1f,%.1f): %s", event.Reason, event.Kind, event.ID, event.Pos.X, event.Pos.Y, job.path)
+	}
+}
+
+// FlushDebug waits for congestion snapshots still being written.
+func (g *Game) FlushDebug() {
+	if g.trafficDebug != nil {
+		g.trafficDebug.finishDebugWrites(true)
+	}
 }

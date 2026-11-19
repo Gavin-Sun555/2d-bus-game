@@ -167,8 +167,9 @@ func corridorBounds(bodies []OBB) (Vec2, Vec2) {
 	for _, b := range bodies {
 		if b.Heading != lastHeading {
 			lastHeading = b.Heading
-			c = math.Abs(math.Cos(b.Heading))
-			s = math.Abs(math.Sin(b.Heading))
+			sin, cos := math.Sincos(b.Heading)
+			c = math.Abs(cos)
+			s = math.Abs(sin)
 		}
 		x, y := b.HalfLen*c+b.HalfWid*s, b.HalfLen*s+b.HalfWid*c
 		if v := b.Center.X - x; v < lo.X {
@@ -282,6 +283,12 @@ func JunctionLeaderGap(ours, theirs *JunctionCorridor, leader OBB, ownLength, ow
 		return 0, false
 	}
 	distanceLimit := math.Max(12, ownWidth*.35)
+	if ours.geometryPublished() {
+		pad := distanceLimit + 1
+		if leader.Center.X < ours.Min.X-pad || leader.Center.X > ours.Max.X+pad || leader.Center.Y < ours.Min.Y-pad || leader.Center.Y > ours.Max.Y+pad {
+			return 0, false
+		}
+	}
 	best, along, traveled := math.Inf(1), 0., 0.
 	segments := ours.pathSegments()
 	for i := 1; i < len(ours.Bodies); i++ {

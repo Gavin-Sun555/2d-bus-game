@@ -163,7 +163,7 @@ func (s *sweepSample) collides(bus *sim.Bus, obstacle VehicleObstacle, distance,
 				return false
 			}
 		}
-		if s.tailReady && s.separatedFromPredictedBus(b, position, heading, lengthMargin, widthMargin) {
+		if s.separatedFromPredictedBusWithSource(bus, b, position, heading, lengthMargin, widthMargin) {
 			return false
 		}
 		return s.collidesParts(bus, b.BodyPartsAtPose(position, heading), lengthMargin, widthMargin)
@@ -171,30 +171,58 @@ func (s *sweepSample) collides(bus *sim.Bus, obstacle VehicleObstacle, distance,
 	return s.collidesParts(bus, predictedObstacleBodies(obstacle, distance), lengthMargin, widthMargin)
 }
 
+func (s *sweepSample) separatedFromPredictedBus(b *sim.Bus, position sim.Vec2, heading, lengthMargin, widthMargin float64) bool {
+	return s.separatedFromPredictedBusWithSource(nil, b, position, heading, lengthMargin, widthMargin)
+}
+
 // With both own sections known, test the other powered section and its
 // conservative trailer reach before integrating its trailer. A rejected
 // prediction can also put the powered section back at its starting pose.
-func (s *sweepSample) separatedFromPredictedBus(b *sim.Bus, position sim.Vec2, heading, lengthMargin, widthMargin float64) bool {
-	if predictedBusSeparated([2]sim.OBB{s.front, s.tail}, b, position, heading, lengthMargin, widthMargin) {
+func (s *sweepSample) separatedFromPredictedBusWithSource(bus, b *sim.Bus, position sim.Vec2, heading, lengthMargin, widthMargin float64) bool {
+	if !s.tailReady && bus == nil {
+		return false
+	}
+	if s.tailReady && predictedBusSeparated([2]sim.OBB{s.front, s.tail}, b, position, heading, lengthMargin, widthMargin) {
 		return true
 	}
 	if !b.IsArticulated() {
 		return false
 	}
 	target := sim.OBB{Center: position, Heading: heading, HalfLen: b.Length/2 + lengthMargin, HalfWid: b.Width/2 + widthMargin}
-	if obbHits(s.front, target) || obbHits(s.tail, target) {
+	if obbHits(s.front, target) {
 		return false
 	}
 	other := sweepSample{front: target}
-	if other.tailMayCollide(b, s.front) || other.tailMayCollide(b, s.tail) {
+	if other.tailMayCollide(b, s.front) {
 		return false
+	}
+	if s.tailReady {
+		if obbHits(s.tail, target) || other.tailMayCollide(b, s.tail) {
+			return false
+		}
+	} else {
+		if s.tailMayCollide(bus, target) {
+			return false
+		}
+		otherHitch := position.Sub(sim.UnitFromAngle(heading).Mul(b.Length / 2))
+		otherTailExtent := b.Length + b.Width/2 + math.Max(lengthMargin, widthMargin) + 1
+		otherTailBound := sim.OBB{Center: otherHitch, Heading: heading, HalfLen: otherTailExtent, HalfWid: otherTailExtent}
+		if s.tailMayCollide(bus, otherTailBound) {
+			return false
+		}
 	}
 	if !other.mayReject(b) {
 		return true
 	}
 	source := target
 	source.Center, source.Heading = b.Pos, b.Heading
-	return !obbHits(s.front, source) && !obbHits(s.tail, source)
+	if obbHits(s.front, source) {
+		return false
+	}
+	if s.tailReady {
+		return !obbHits(s.tail, source)
+	}
+	return !s.tailMayCollide(bus, source)
 }
 
 func (s *sweepSample) mayReject(bus *sim.Bus) bool {

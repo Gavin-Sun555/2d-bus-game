@@ -79,6 +79,9 @@ func searchRoadStates(w *World, xs, ys []float64, start, target roadState, allow
 			}
 			from := Vec2{X: xs[current.i], Y: ys[current.j]}
 			to := Vec2{X: xs[next.i], Y: ys[next.j]}
+			if turn.offset == 2 && !canUTurnAtGridPoint(w, from, current.dir) {
+				continue
+			}
 			if !isRoadConnecting(from, to, w) {
 				continue
 			}
@@ -113,4 +116,50 @@ func searchRoadStates(w *World, xs, ys []float64, start, target roadState, allow
 		states[i], states[j] = states[j], states[i]
 	}
 	return states, true
+}
+
+func canUTurnAtGridPoint(w *World, p Vec2, dir int) bool {
+	if w == nil {
+		return true
+	}
+	if len(w.Intersections) > 0 || len(w.Roundabouts) > 0 {
+		for _, inter := range w.Intersections {
+			if inter.Distance(p) <= 40 {
+				return true
+			}
+		}
+		for _, rb := range w.Roundabouts {
+			if rb.Center.Distance(p) <= 40 {
+				return true
+			}
+		}
+		return false
+	}
+	hasVertical, hasHorizontal := false, false
+	for _, r := range w.Roads {
+		if math.Abs(r.P1.X-r.P2.X) < 1 {
+			hasVertical = true
+		} else if math.Abs(r.P1.Y-r.P2.Y) < 1 {
+			hasHorizontal = true
+		}
+	}
+	if !hasVertical || !hasHorizontal {
+		return true
+	}
+	wantVertical := dir%2 == 0
+	const eps = 5.0
+	for _, r := range w.Roads {
+		if wantVertical && math.Abs(r.P1.X-r.P2.X) < 1 && math.Abs(p.X-r.P1.X) <= eps {
+			lo, hi := math.Min(r.P1.Y, r.P2.Y)-eps, math.Max(r.P1.Y, r.P2.Y)+eps
+			if p.Y >= lo && p.Y <= hi {
+				return true
+			}
+		} else if !wantVertical && math.Abs(r.P1.Y-r.P2.Y) < 1 && math.Abs(p.Y-r.P1.Y) <= eps {
+			lo, hi := math.Min(r.P1.X, r.P2.X)-eps, math.Max(r.P1.X, r.P2.X)+eps
+			if p.X >= lo && p.X <= hi {
+				return true
+			}
+		}
+	}
+	return false
 }

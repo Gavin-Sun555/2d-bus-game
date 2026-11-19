@@ -14,6 +14,7 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 	}
 	bumperPos := f.bus.Pos.Add(sim.UnitFromAngle(f.bus.Heading).Mul(f.bus.Length * .5))
 	targetSpd = math.Min(targetSpd, f.world.RailSpeedLimit(f.tls, bumperPos, f.bus.Heading, f.speedAbs, 135))
+	targetSpd = math.Min(targetSpd, railExitQueueSpeed(f, bumperPos))
 	targetSpd = math.Min(targetSpd, f.world.StationCrossingSpeedLimit(f.tls, bumperPos, f.bus.Heading, f.speedAbs, f.laneWidth, 135))
 	// Once lawfully across the entry line, the same junction's other
 	// approaches must not stop the bus in the middle of its U-turn. Signals
@@ -36,7 +37,7 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 
 	defaultStopLineDist := f.laneWidth*1.6 + 18.0
 	heading := approachRoadHeading(f.bus.Heading)
-	sinH, cosH := math.Sincos(heading)
+	sinH, cosH := sim.Sincos(heading)
 
 	// 1. Direct intersection route analysis:
 	// Classify the movement at the nearest junction whose stop line is ahead.
@@ -72,7 +73,7 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 	fallbackLimit := -1.0
 	allowYellow := ad.BerserkMode
 	upcomingUTurn := false
-	bumperAhead := f.bus.Length * 0.5 * math.Cos(f.bus.Heading-heading)
+	bumperAhead := f.bus.Length * 0.5 * sim.Cos(f.bus.Heading-heading)
 	var selectedInter *sim.TrafficIntersection
 	railPullback := 0.0
 	for _, c := range candidates {
@@ -230,4 +231,33 @@ func (ad *AutopilotDriver) trafficLightSpeed(f autopilotFrame, targetSpd float64
 	}
 	stopProfile := math.Sqrt(2 * 135.0 * math.Max(0.0, distToLine-14.0))
 	return math.Min(targetSpd, stopProfile)
+}
+
+// Keep the entire bus outside the gate until there is room for its rear to
+// clear the far side. A rolling car can brake for the next junction after the
+// bus enters, so its current speed does not count as available storage.
+func railExitQueueSpeed(f autopilotFrame, bumper sim.Vec2) float64 {
+	const braking = 135.0
+	const clearance = 43.0 // Forward gap used before a required right turn.
+	lookahead := f.speedAbs*f.speedAbs/(2*braking) + 90
+	entry, exit, approaching := f.world.LevelRailApproach(bumper, f.bus.Heading, lookahead)
+	if !approaching {
+		return math.Inf(1)
+	}
+	dir := math.Copysign(1, math.Sin(f.bus.Heading))
+	clearTo := exit + f.bus.OverallLength() + clearance
+	for _, obs := range f.obstacles {
+		delta := obs.Pos.Sub(bumper)
+		along := delta.Y * dir
+		sinH, cosH := math.Sincos(obs.Heading)
+		if sinH*dir < .8 {
+			continue
+		}
+		halfAcross := (obs.Length*math.Abs(cosH) + obs.Width*math.Abs(sinH)) / 2
+		halfAlong := (obs.Length*math.Abs(sinH) + obs.Width*math.Abs(cosH)) / 2
+		if math.Abs(delta.X) < f.bus.Width/2+halfAcross+2 && along+halfAlong > 0 && along-halfAlong < clearTo {
+			return math.Sqrt(2 * braking * math.Max(0, entry-15))
+		}
+	}
+	return math.Inf(1)
 }

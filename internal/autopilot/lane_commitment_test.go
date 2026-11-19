@@ -76,14 +76,54 @@ func TestBusLaneChangeKeepsTargetThroughQueueFluctuations(t *testing.T) {
 			t.Fatalf("reversed target during change at tick%d", i)
 		}
 	}
-	// Once settled, a moving lead vehicle and an empty curb lane do not cause a return.
+	// Once settled, equally clear lanes do not cause a gratuitous curb return.
 	bus.Pos.Y = 2.5 * lw
 	ad.holdLaneOffset(-lw)
-	frame.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: -1300, Y: 2.5 * lw}, Heading: 0, Speed: 90, Length: 48, Width: 22}}
+	frame.obstacles = nil
 	for i := 0; i < 600; i++ {
 		ad.updateBusLane(frame, 1./60)
 		if ad.TargetLaneOffset != -lw {
-			t.Fatalf("abandoned lane for moving traffic at tick%d", i)
+			t.Fatalf("abandoned equally clear lane at tick%d", i)
 		}
+	}
+	// A genuinely slower lead can justify a new decision after settling.
+	frame.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: -1300, Y: 2.5 * lw}, Heading: 0, Speed: 90, Length: 48, Width: 22}}
+	for i := 0; i < 600; i++ {
+		ad.updateBusLane(frame, 1./60)
+	}
+	if ad.TargetLaneOffset != 0 {
+		t.Fatal("did not choose faster clear curb lane after settling")
+	}
+}
+
+func TestBusLaneChoiceRestartsReevaluationDelay(t *testing.T) {
+	const lw = 52.
+	w := busLaneTestWorld(lw)
+	ad := NewAutopilotDriver()
+	ad.BerserkMode, ad.CanSkipTargetStop = true, true
+	ad.PrepareLeg(w, w.Stops[0], w.Stops[1], lw)
+	bus := sim.NewBus(-1800, 3.5*lw, 0)
+	f := autopilotFrame{bus: bus, world: w, laneWidth: lw, remaining: 5000, targetStop: w.Stops[1], speedAbs: 100}
+	f.s, _ = ad.trackPath(bus.Pos)
+	f.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: -1300, Y: 3.5 * lw}, Length: 46, Width: 22}}
+	ad.OvertakeTimer = 10
+	ad.updateBusLane(f, 1./60)
+	if ad.TargetLaneOffset != -lw || ad.OvertakeTimer > .1 {
+		t.Fatal("new lane choice retained the previous evaluation timer")
+	}
+	bus.Pos.Y = 2.5 * lw
+	ad.holdLaneOffset(-lw)
+	f.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: -1300, Y: 2.5 * lw}, Length: 46, Width: 22}}
+	for i := 0; i < 120; i++ {
+		ad.updateBusLane(f, 1./60)
+		if ad.TargetLaneOffset != -lw {
+			t.Fatal("rescored immediately after completing the lane change")
+		}
+	}
+	for i := 0; i < 300; i++ {
+		ad.updateBusLane(f, 1./60)
+	}
+	if ad.TargetLaneOffset != 0 {
+		t.Fatal("did not reconsider a faster lane after the evaluation delay")
 	}
 }

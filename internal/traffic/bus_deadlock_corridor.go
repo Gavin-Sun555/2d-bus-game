@@ -13,6 +13,7 @@ func busCarDeadlockCorridor(bus *sim.Bus, car *sim.TrafficCar) bool {
 	u := sim.UnitFromAngle(bus.Heading)
 	d := car.Pos.Sub(body.Center)
 	yaw := car.Heading - bus.Heading
-	carWidth := car.Length/2*math.Abs(math.Sin(yaw)) + car.Width/2*math.Abs(math.Cos(yaw))
+	sinY, cosY := math.Sincos(yaw)
+	carWidth := car.Length/2*math.Abs(sinY) + car.Width/2*math.Abs(cosY)
 	return math.Abs(d.X*u.Y-d.Y*u.X) <= body.HalfWid+carWidth+8
 }

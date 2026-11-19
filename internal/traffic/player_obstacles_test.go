@@ -45,3 +45,23 @@ func TestPlayerObstacleSnapshotWithoutAIBuses(t *testing.T) {
 		})
 	}
 }
+
+func TestPlayerObstacleSnapshotSuppliesPassingSightDistance(t *testing.T) {
+	world := &sim.World{}
+	tm := &TrafficManager{}
+	for i := range 40 {
+		tm.Cars = append(tm.Cars, &sim.TrafficCar{ID: i, Pos: sim.Vec2{X: 2300 + float64(i)*50}, Length: 46, Width: 22})
+	}
+	mgr := NewAIBusManager()
+	mgr.Update(1./60, nil, world, nil, tm, 52, 4)
+	if obs := mgr.GetLocalObstacles(sim.Vec2{}, 165, nil); len(obs) != 0 {
+		t.Fatalf("default local query returned %d distant cars", len(obs))
+	}
+	obs := mgr.GetLocalObstacles(sim.Vec2{}, 165, nil, 2900)
+	for _, o := range obs {
+		if o.Car == tm.Cars[0] {
+			return
+		}
+	}
+	t.Fatal("passing observation omitted an oncoming car beyond the default radius")
+}

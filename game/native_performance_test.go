@@ -1,12 +1,16 @@
 package game
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
+	"runtime/trace"
 	"slices"
 	"strconv"
 	"time"
@@ -24,6 +28,8 @@ type nativePerf struct {
 	game                                 *Game
 	warm                                 *GraphicsWarmupGame
 	ticks, total, warmup, draws, focused int
+	dropped                              int
+	simulationSeconds                    float64
 	updates, submits, intervals          []float64
 	lastDraw, started                    time.Time
 	groups                               map[string][]float64
@@ -48,16 +54,31 @@ func (p *nativePerf) Update() error {
 	if p.updatesSinceDraw == 0 {
 		p.firstUpdate = start
 	}
+	var region *trace.Region
+	if trace.IsEnabled() {
+		region = trace.StartRegion(context.Background(), "simulation")
+	}
 	err := p.warm.Update()
+	if region != nil {
+		region.End()
+	}
 	elapsed := time.Since(start)
 	p.updatesSinceDraw++
 	p.updateDuration += elapsed
 	p.maxUpdate = max(p.maxUpdate, elapsed)
 	if err == nil && p.game.World.Clock.ElapsedMinutes == before {
-		return fmt.Errorf("simulation paused at tick %d (state %v, settings %v, planning %v)", p.ticks, p.game.State, p.game.Settings.IsOpen, p.game.IsPlanMode)
+		if p.game.State != StatePlaying || p.game.Settings.IsOpen || p.game.IsPlanMode {
+			return fmt.Errorf("simulation paused at tick %d", p.ticks)
+		}
+		if p.ticks >= p.warmup {
+			p.dropped++
+		}
+		p.ticks++
+		return nil
 	}
 	ms := float64(elapsed.Nanoseconds()) / 1e6
 	if p.ticks >= p.warmup {
+		p.simulationSeconds += (p.game.World.Clock.ElapsedMinutes - before) * 60
 		if p.started.IsZero() {
 			p.started = start
 		}
@@ -207,6 +228,26 @@ func runNativePerformance() int {
 		}
 	}
 	p := &nativePerf{game: g, warm: WithGraphicsWarmup(g), total: ticks, warmup: 120, groups: map[string][]float64{}, frames: make([]nativeFrameSample, 0, ticks), minimalDraw: os.Getenv("BUS_NATIVE_MINIMAL_DRAW") == "1"}
+	if os.Getenv("BUS_NATIVE_PROFILE") == "1" {
+		cpu, err := os.Create(filepath.Join(out, "cpu.pprof"))
+		if err != nil {
+			return fail(err)
+		}
+		defer cpu.Close()
+		if err := pprof.StartCPUProfile(cpu); err != nil {
+			return fail(err)
+		}
+		defer pprof.StopCPUProfile()
+		f, err := os.Create(filepath.Join(out, "runtime.trace"))
+		if err != nil {
+			return fail(err)
+		}
+		defer f.Close()
+		if err := trace.Start(f); err != nil {
+			return fail(err)
+		}
+		defer trace.Stop()
+	}
 	ebiten.SetWindowSize(1470, 915)
 	ebiten.SetWindowTitle("Bus game · isolated performance replay")
 	ebiten.SetRunnableOnUnfocused(true)
@@ -226,7 +267,9 @@ func runNativePerformance() int {
 		UpdateTPS, DrawFPS               float64
 		FocusedDraws, Cars, Buses        int
 		EndState                         string
-	}{summarizePerf(p.updates), summarizePerf(p.submits), summarizePerf(p.intervals), groups, float64(len(p.updates)) / wall, float64(p.draws) / wall, p.focused, len(g.TrafficMgr.Cars), len(g.AIBusMgr.Buses), performanceStateHash(g)}
+		DroppedCatchUpTicks              int
+		SimulationSeconds, WallSeconds   float64
+	}{summarizePerf(p.updates), summarizePerf(p.submits), summarizePerf(p.intervals), groups, float64(len(p.updates)) / wall, float64(p.draws) / wall, p.focused, len(g.TrafficMgr.Cars), len(g.AIBusMgr.Buses), performanceStateHash(g), p.dropped, p.simulationSeconds, wall}
 	raw, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fail(err)
@@ -238,5 +281,10 @@ func runNativePerformance() int {
 		return fail(err)
 	}
 	fmt.Println(string(raw))
+	if os.Getenv("BUS_NATIVE_REQUIRE_REALTIME") == "1" {
+		if report.UpdateTPS < 59 || report.DrawFPS < 55 || p.dropped != 0 || math.Abs(p.simulationSeconds-wall) > .1 {
+			return fail(fmt.Errorf("frame pacing failed: simulation %.2f TPS, rendering %.2f FPS, skipped %d, simulation/wall %.3f/%.3fs", report.UpdateTPS, report.DrawFPS, p.dropped, p.simulationSeconds, wall))
+		}
+	}
 	return 0
 }

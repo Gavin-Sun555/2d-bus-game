@@ -407,3 +407,29 @@ func legacyMetropolisWorld(lw float64) *sim.World {
 	sim.ClearRoutePathCache()
 	return w
 }
+
+func TestTwoLaneStationApproachReturnsFromOncomingLane(t *testing.T) {
+	const lw = 52.0
+	w := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: -6000, Y: 0}, P2: sim.Vec2{X: 0, Y: 0}, Lanes: 2, Type: sim.RoadStreet2Lane, HasLines: true},
+		},
+	}
+	w.RebuildIntersections()
+	stopFrom := sim.NewBusStop(0, "From", sim.Vec2{X: -5000, Y: 0}, 0, 2, sim.RGBA(0, 0, 0, 255), lw)
+	stopTo := sim.NewBusStop(1, "To", sim.Vec2{X: -1000, Y: 0}, 0, 2, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{stopFrom, stopTo}
+	bus := sim.NewBus(-1350, -lw/2, 0)
+	ad := NewAutopilotDriver()
+	ad.BerserkMode = true
+	ad.PrepareLeg(w, stopFrom, stopTo, lw)
+	ad.OvertakeState = OvertakePassing
+	ad.LaneOffset = -lw
+	ad.TargetLaneOffset = -lw
+	bayCar := VehicleObstacle{Pos: sim.Vec2{X: -1010, Y: lw / 2}, Heading: 0, Speed: 0, Length: 46, Width: 22}
+	oncomingCar := VehicleObstacle{Pos: sim.Vec2{X: -1150, Y: -lw / 2}, Heading: math.Pi, Speed: 150, Length: 46, Width: 22}
+	ad.updateStationApproachLane(bus, stopTo, []VehicleObstacle{bayCar, oncomingCar}, lw, 100, 350, 1./60, false, false)
+	if ad.TargetLaneOffset != 0 || ad.OvertakeState != OvertakeReturning {
+		t.Fatalf("2-lane station approach stayed in oncoming lane: offset=%.1f state=%d", ad.TargetLaneOffset, ad.OvertakeState)
+	}
+}

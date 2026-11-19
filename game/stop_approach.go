@@ -39,9 +39,14 @@ func (g *Game) updateStopApproach() {
 
 		// 2. Road side: Bus must be on the stop's side of the road (or borrowing oncoming lane on 2-lane road while overtaking)
 		// Oncoming lanes of 4/6-lane roads, opposite carriageways, or parallel roads must NOT match
+		currentLaneW := g.Settings.GetLaneWidth()
 		toCenter := g.Bus.Pos.Sub(targetStop.RoadCenter)
 		sideDist := toCenter.X*perpVec.X + toCenter.Y*perpVec.Y
 		curbDist := targetStop.Pos.Distance(targetStop.RoadCenter)
+		if targetStop.CenterBRT {
+			roadHalf := float64(max(2, targetStop.RoadLanes)/2)*currentLaneW + g.World.BRTStationFlareAt(g.Bus.Pos, currentLaneW)
+			curbDist = math.Max(curbDist, roadHalf)
+		}
 		minSideDist := -25.0
 		if targetStop.RoadLanes <= 2 {
 			// On 2-lane roads, bus may borrow opposing lane during overtake
@@ -70,7 +75,6 @@ func (g *Game) updateStopApproach() {
 
 		isValidStopApproach := isAlignedHeading && isOnStopRoad && isArrivingAtStop
 
-		currentLaneW := g.Settings.GetLaneWidth()
 		isPlayerBerserk := g.outerLaneDockAllowed()
 		isDocked := targetStop.ContainsBus(g.Bus) ||
 			(g.AutopilotDriver != nil && g.AutopilotDriver.State == autopilot.AutopilotStateDocked && g.AutopilotDriver.DockedStopID == targetStop.ID) ||
@@ -95,8 +99,12 @@ func (g *Game) updateStopApproach() {
 			g.HUD.AddToast(locale.T("[🔔 下车铃响] 叮咚~ 有乘客请求在下一站下车！", "[🔔 Stop requested] A passenger has requested the next stop!"), false)
 		}
 
+		exhaustedOvershot := g.Settings.AutopilotEnabled && g.AutopilotDriver != nil &&
+			g.AutopilotDriver.PathTargetStopID() == targetStop.ID && g.AutopilotDriver.LastRemaining <= 5.0 &&
+			forwardProj > 55.0 && forwardProj < 1200.0 && isValidStopApproach
+
 		// 2. Skip Stop (飞站 / 漏站) check when approaching or past within 380px
-		if distToTarget <= 380.0 && (isValidStopApproach || isCirclingNearStop) {
+		if (distToTarget <= 380.0 || exhaustedOvershot) && (isValidStopApproach || isCirclingNearStop) {
 			isOccupied := g.IsStopOccupiedByOtherVehicle(targetStop)
 			canSkip := !g.stopBellRung && (targetStop.WaitingPassengers == 0 || isOccupied)
 			// Standard autopilot advances past a stop exactly as a fleet bus
@@ -170,7 +178,7 @@ func (g *Game) updateStopApproach() {
 
 			// Point 2: Missed stop penalty only applies when bus has physically missed or overshot the bay:
 			// A. Front-section center has passed the forward berth by >55px.
-			isCenterOvershot := forwardProj > 55.0 && distToTarget < 350.0
+			isCenterOvershot := forwardProj > 55.0 && (distToTarget < 350.0 || exhaustedOvershot)
 
 			// B. The front-section reference has passed the forward berth while
 			// in an outer/passing lane. A protruding nose alone is not a miss:
@@ -178,9 +186,12 @@ func (g *Game) updateStopApproach() {
 			// 1. Bus is stalled/crawling past the berth (Speed <8, latDist >65).
 			//    — this immediately resolves the exact deadlock where front has passed and bus stops at 0 km/h!
 			// 2. Bus is actively cruising/passing through in outer lane without docking (TargetLaneOffset in outer lane, forwardProj > 20.0)
-			isStalledInOuterLane := latDist > 65.0 && forwardProj > 20.0 && distToTarget < 350.0 && math.Abs(g.Bus.Speed) < 8.0
-			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 &&
-				(g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25))
+			isStalledInOuterLane := latDist > 65.0 && forwardProj > 20.0 && (distToTarget < 350.0 || exhaustedOvershot) && math.Abs(g.Bus.Speed) < 8.0
+			inOuterPassingLane := g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset < -currentLaneW*0.25 || g.AutopilotDriver.LaneOffset < -currentLaneW*0.25)
+			if targetStop.CenterBRT {
+				inOuterPassingLane = sideDist > currentLaneW+6 && g.AutopilotDriver != nil && (g.AutopilotDriver.TargetLaneOffset > currentLaneW*0.25 || g.AutopilotDriver.LaneOffset > currentLaneW*0.25)
+			}
+			isPassingInOuterLane := distToTarget < 350.0 && forwardProj > 20.0 && inOuterPassingLane
 
 			isAIMissed := !autoCanSkip && g.Settings.AutopilotEnabled && !fleetPassage && !isDocked &&
 				(isCenterOvershot || isStalledInOuterLane || isPassingInOuterLane || isCirclingNearStop)

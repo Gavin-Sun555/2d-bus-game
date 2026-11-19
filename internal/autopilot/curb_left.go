@@ -41,7 +41,7 @@ func (ad *AutopilotDriver) upgradeWideCurbPath(bus *sim.Bus, w *sim.World, lw fl
 	// lies on it in its direction of travel; otherwise keep the legacy path
 	// for this leg instead of stranding the bus on an unrelated route.
 	if ad.pathFromID < 0 || ad.pathFromID >= len(w.Stops) || ad.pathToID < 0 || ad.pathToID >= len(w.Stops) ||
-		!pathPassesPose(buildAutopilotDrivePath(w, w.Stops[ad.pathFromID], w.Stops[ad.pathToID], lw, false, ad.CanSkipTargetStop,
+		!pathPassesPose(ad.buildLegDrivePath(w, w.Stops[ad.pathFromID], w.Stops[ad.pathToID], lw, false, ad.CanSkipTargetStop,
 			sim.RoadPathOptions{LongVehicle: ad.articulatedPath, CurbBusLaneRightAt: ad.curbRightPathChoice()}), bus.Pos, bus.Heading, 1.5*lw) {
 		ad.pathRevision = currentDrivePathRevision
 		return
@@ -145,7 +145,14 @@ func (ad *AutopilotDriver) joinCurbLeftTurn(f autopilotFrame, center, u sim.Vec2
 		}
 	}
 	points = append(points, curve...)
-	points = append(points, ad.drivePath[exit+1:]...)
+	// The first waypoint beyond the junction can be kilometers away: it is
+	// often the start of the station's arrival taper, not a local turn exit.
+	// Drop only waypoints actually covered by the replacement curve.
+	tail := exit
+	if ad.drivePath[tail].Sub(curve[len(curve)-1]).Dot(out) <= 1 {
+		tail++
+	}
+	points = append(points, ad.drivePath[tail:]...)
 	ad.drivePath = points
 	ad.cumLen = make([]float64, len(points))
 	for i := 1; i < len(points); i++ {

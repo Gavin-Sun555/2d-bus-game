@@ -112,6 +112,16 @@ func (tm *TrafficManager) BuildForWorld(w *sim.World, count int, laneWidth float
 		site := dispatch.take(&remaining)
 		car := site.car(i)
 		car.Speed = 130 + sim.RandomFloat64()*30
+		fwd := sim.UnitFromAngle(car.Heading)
+		for _, ipt := range w.Intersections {
+			d := ipt.Sub(car.Pos)
+			along := d.Dot(fwd)
+			lat := math.Abs(d.X*fwd.Y - d.Y*fwd.X)
+			if along > -60 && along < 460 && lat < 4.5*laneWidth {
+				car.Speed = 0
+				break
+			}
+		}
 		if i%4 == 0 {
 			car.Type = sim.CarTaxi
 			car.Color = sim.RGBA(234, 179, 8, 255)
@@ -198,18 +208,28 @@ func trafficSpawnSites(w *sim.World, laneWidth float64) []trafficSpawnSite {
 				continue
 			}
 
-			for lane := r.FirstGeneralTrafficLane(); lane < r.FirstGeneralTrafficLane()+numLanesPerDir; lane++ {
+			firstLane := r.FirstGeneralTrafficLane()
+			for lane := firstLane; lane < firstLane+numLanesPerDir; lane++ {
 				offset := (float64(lane) + 0.5) * laneWidth
+				steps := lane - firstLane
 				if isEW {
-					defs = append(defs,
-						trafficSpawnSite{pos: sim.Vec2{X: pt.X, Y: roadCoord + offset}, h: 0, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class},
-						trafficSpawnSite{pos: sim.Vec2{X: pt.X, Y: roadCoord - offset}, h: math.Pi, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class},
-					)
+					p1 := sim.Vec2{X: pt.X, Y: roadCoord + offset}
+					if !tooCloseToForcedLeftBend(w, p1, 0, roadCoord, true, steps, laneWidth) {
+						defs = append(defs, trafficSpawnSite{pos: p1, h: 0, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class})
+					}
+					p2 := sim.Vec2{X: pt.X, Y: roadCoord - offset}
+					if !tooCloseToForcedLeftBend(w, p2, math.Pi, roadCoord, true, steps, laneWidth) {
+						defs = append(defs, trafficSpawnSite{pos: p2, h: math.Pi, rc: roadCoord, ew: true, laneIdx: lane, roadClass: class})
+					}
 				} else {
-					defs = append(defs,
-						trafficSpawnSite{pos: sim.Vec2{X: roadCoord - offset, Y: pt.Y}, h: math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class},
-						trafficSpawnSite{pos: sim.Vec2{X: roadCoord + offset, Y: pt.Y}, h: -math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class},
-					)
+					p1 := sim.Vec2{X: roadCoord - offset, Y: pt.Y}
+					if !tooCloseToForcedLeftBend(w, p1, math.Pi/2, roadCoord, false, steps, laneWidth) {
+						defs = append(defs, trafficSpawnSite{pos: p1, h: math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class})
+					}
+					p2 := sim.Vec2{X: roadCoord + offset, Y: pt.Y}
+					if !tooCloseToForcedLeftBend(w, p2, -math.Pi/2, roadCoord, false, steps, laneWidth) {
+						defs = append(defs, trafficSpawnSite{pos: p2, h: -math.Pi / 2, rc: roadCoord, ew: false, laneIdx: lane, roadClass: class})
+					}
 				}
 			}
 		}
@@ -236,7 +256,7 @@ func (tm *TrafficManager) Update(dt float64, bus *sim.Bus, tls *sim.TrafficLight
 	if tls != nil {
 		tls.PrepareJunctionIndex(laneWidth)
 	}
-	tm.updateRoundaboutReservations(bus, w, activeCount, laneWidth)
+	tm.updateRoundaboutReservationsAt(dt, bus, w, activeCount, laneWidth)
 	tm.spatialActive = !tm.disableSpatial && activeCount > 64
 	if tm.spatialActive {
 		tm.spatial.build(tm.Cars[:activeCount])

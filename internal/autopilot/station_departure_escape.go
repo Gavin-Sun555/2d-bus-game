@@ -77,6 +77,8 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 		// A missed berth can leave the powered section angled more sharply
 		// than a normal departure. The same full-body sweep still has to pass.
 		minHeadingAlignment = .5
+	} else if f.bus.IsArticulated() && !from.CenterBRT && (departing || inBay) {
+		minHeadingAlignment = .45
 	}
 	if f.bus.Pos.Distance(from.Pos) > from.Length+150 || math.Cos(f.bus.Heading-from.Heading) < minHeadingAlignment || ad.trafficLightSpeed(f, 30) <= .5 {
 		return 0, false
@@ -99,7 +101,8 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	rear := false
 	forward := sim.UnitFromAngle(f.bus.Heading)
 	for _, ob := range f.obstacles {
-		if ob.Bus != nil && math.Abs(ob.Speed) < 1 && ob.Pos.Sub(f.bus.Pos).Dot(forward) < -8 && ob.Pos.Distance(f.bus.Pos) < f.bus.OverallLength()+ob.Length && math.Cos(ob.Heading-f.bus.Heading) > .7 {
+		if ob.Bus != nil && math.Abs(ob.Speed) < 1 && ob.Pos.Sub(f.bus.Pos).Dot(forward) < -8 && ob.Pos.Distance(f.bus.Pos) < f.bus.OverallLength()+ob.Length &&
+			(math.Cos(ob.Heading-f.bus.Heading) > .7 || math.Cos(ob.Heading-from.Heading) > .8) {
 			rear = true
 			break
 		}
@@ -109,6 +112,7 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	}
 	var scan forwardEscapeScan
 	scan.prepare(f, 18)
+	ad.useForwardEscapeBoundaries(f, &scan)
 	// A rear-berth departure can already be beside an arriving bus with a
 	// real gap smaller than the ordinary 2px prediction margin. Retain a
 	// positive collision skin, checking every physical section at every tick.
@@ -127,8 +131,22 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	}
 	f.forwardEscape = &scan
 	turn := math.Copysign(1, f.bus.SteeringAngle)
-	choices := []float64{desired, turn, -turn, desired * .5, 0}
+	choices := [...]float64{desired, turn, -turn, desired * .5, 0}
+	var tested [len(choices)]float64
+	testedCount := 0
 	for _, steer := range choices {
+		dup := false
+		for _, prev := range tested[:testedCount] {
+			if prev == steer {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		tested[testedCount] = steer
+		testedCount++
 		if ad.stationDepartureEscapeClear(f, steer) {
 			ad.departureEscapeActive = active || !f.bus.IsArticulated()
 			return steer, true
@@ -138,7 +156,28 @@ func (ad *AutopilotDriver) stationDepartureEscape(f autopilotFrame, desired floa
 	// the current wheel angle. Settle the wheels while stopped only after proving
 	// the complete moving trajectory from that settled angle.
 	if f.speedAbs < .5 {
-		for _, steer := range []float64{desired, desired * .5, desired * .25, 0, sim.Clamp(-sim.NormalizeAngle(f.bus.Heading-from.Heading)*3, -1, 1)} {
+		var preTested [5]float64
+		preTestedCount := 0
+		for _, steer := range [...]float64{desired, desired * .5, desired * .25, 0, sim.Clamp(-sim.NormalizeAngle(f.bus.Heading-from.Heading)*3, -1, 1)} {
+			dup := false
+			if steer*f.bus.MaxSteerAngle == f.bus.SteeringAngle {
+				for _, prev := range tested[:testedCount] {
+					if prev == steer {
+						dup = true
+						break
+					}
+				}
+			}
+			for i := 0; !dup && i < preTestedCount; i++ {
+				if preTested[i] == steer {
+					dup = true
+				}
+			}
+			if dup {
+				continue
+			}
+			preTested[preTestedCount] = steer
+			preTestedCount++
 			parked := *f.bus
 			parked.SteeringAngle = steer * parked.MaxSteerAngle
 			aligned := f
@@ -170,25 +209,58 @@ func (ad *AutopilotDriver) stationForwardEscapeClear(f autopilotFrame, steer, sp
 	if trace.IsEnabled() {
 		defer trace.StartRegion(context.Background(), "autopilot.stationForwardEscapeClear").End()
 	}
-	var local forwardEscapeScan
 	if f.forwardEscape == nil {
-		local.prepare(f, speed)
-		f.forwardEscape = &local
+		scratch := ad.geometryScratch()
+		if scratch.forwardScan == nil {
+			scratch.forwardScan = &forwardEscapeScan{}
+		}
+		scratch.forwardScan.prepare(f, speed)
+		ad.useForwardEscapeBoundaries(f, scratch.forwardScan)
+		f.forwardEscape = scratch.forwardScan
 	}
+	scan := f.forwardEscape
 	b := *f.bus
 	startDistance := b.Pos.Distance(goal)
-	if !f.forwardEscape.poseClear(f, &b, 0) {
+	if !scan.initialChecked {
+		scan.initialClear = scan.poseClear(f, &b, 0)
+		scan.initialChecked = true
+	}
+	if !scan.initialClear {
 		return false
 	}
+	var poses [forwardEscapeTicks]forwardEscapePose
 	for tick := 1; tick <= forwardEscapeTicks; tick++ {
 		throttle, brake := ad.longitudinalControls(b.Speed, speed)
 		b.SetNextAccelerationScale(1)
 		b.Update(1./60, throttle, brake, steer, false, false)
-		if !f.forwardEscape.poseClear(f, &b, float64(tick)/60) {
+		clear, checkBoundary := scan.poseTrafficClear(f, &b, float64(tick)/60)
+		if !clear {
+			return false
+		}
+		if checkBoundary && scan.boundaries != nil {
+			if known, blocked := scan.boundaries.lookup(&b); known {
+				if blocked {
+					return false
+				}
+				checkBoundary = false
+			}
+		}
+		poses[tick-1] = forwardEscapePose{pos: b.Pos, heading: b.Heading, tailHeading: b.TailHeading(), checkBoundary: checkBoundary}
+	}
+	if !(startDistance-b.Pos.Distance(goal) > minimumProgress) {
+		return false
+	}
+	articulated := b.IsArticulated()
+	for _, p := range poses {
+		if !p.checkBoundary {
+			continue
+		}
+		b.Pos, b.Heading, b.TrailerHeading, b.TrailerInitialized = p.pos, p.heading, p.tailHeading, articulated
+		if scan.boundaries.blocked(f, &b) {
 			return false
 		}
 	}
-	return startDistance-b.Pos.Distance(goal) > minimumProgress
+	return true
 }
 func departureEscapePoseClear(f autopilotFrame, b *sim.Bus, elapsed float64) bool {
 	if b.CheckBoundaries(f.world, f.laneWidth).Zone == sim.ZoneHardBarrier || math.Abs(sim.NormalizeAngle(b.Heading-b.TailHeading())) > sim.MaxArticulationAngle-.025 {

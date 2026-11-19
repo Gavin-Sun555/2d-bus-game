@@ -111,3 +111,197 @@ func TestLeftTurnExitChoiceRetainsOccupiedLaneAndCommitmentGuards(t *testing.T) 
 		})
 	}
 }
+
+func TestParallelArticulatedBusesTurnLeftConcurrently(t *testing.T) {
+	for _, legacyOuterMidTurn := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacyOuter%v", legacyOuterMidTurn), func(t *testing.T) {
+			const lw = 52.0
+			w := &sim.World{Roads: []sim.RoadSegment{
+				{P1: sim.Vec2{X: -3000, Y: 0}, P2: sim.Vec2{X: 3000, Y: 0}, Lanes: 4},
+				{P1: sim.Vec2{X: 0, Y: -3000}, P2: sim.Vec2{X: 0, Y: 3000}, Lanes: 8, Type: sim.RoadBusBoulevard8Lane},
+			}}
+			w.RebuildIntersections()
+			from := sim.NewBusStop(0, "from", sim.Vec2{X: -2000, Y: 1.5 * lw}, 0, 4, sim.RGBA(0, 0, 0, 255), lw)
+			to := sim.NewBusStop(1, "to", sim.Vec2{X: 3.5*lw + 47, Y: -900}, -math.Pi/2, 8, sim.RGBA(0, 0, 0, 255), lw)
+			w.Stops = []*sim.BusStop{from, to}
+			route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+
+			tls := sim.NewTrafficLightSystem()
+			tls.BuildForWorld(w)
+			inter := tls.Intersections[0]
+			inter.Phase = sim.PhaseEWLeftGreen
+			inter.Timer = 0
+			line := inter.GetStopLineDistForHeading(0, lw)
+
+			inner := sim.NewBus(-line-60, .5*lw, 0)
+			inner.SetModel(sim.BusArticulated)
+			inner.Gear = sim.GearDrive
+			adInner := NewAutopilotDriver()
+			adInner.BerserkMode = true
+			adInner.DisallowOncomingOvertake = true
+			adInner.State = AutopilotStateCruising
+			adInner.PrepareLeg(w, from, to, lw)
+
+			outer := sim.NewBus(-line-60, 1.5*lw, 0)
+			outer.SetModel(sim.BusArticulated)
+			outer.Gear = sim.GearDrive
+			adOuter := NewAutopilotDriver()
+			adOuter.BerserkMode = true
+			adOuter.DisallowOncomingOvertake = true
+			adOuter.State = AutopilotStateCruising
+			adOuter.PrepareLeg(w, from, to, lw)
+			if legacyOuterMidTurn {
+				g := w.JunctionAt(sim.Vec2{}, lw)
+				curve := sim.WideLeftTurnPath(sim.Vec2{}, sim.Vec2{X: 1}, sim.Vec2{Y: -1}, 1.5*lw, 3.5*lw, g)
+				outerPos := sim.Vec2{X: -line + 175, Y: 43.1}
+				pts := append([]sim.Vec2{{X: -1200, Y: 1.5 * lw}}, curve...)
+				pts = append(pts, sim.Vec2{X: 3.5 * lw, Y: -850}, to.Pos)
+				adOuter.drivePath = pts
+				adOuter.cumLen = make([]float64, len(pts))
+				for i := 1; i < len(pts); i++ {
+					adOuter.cumLen[i] = adOuter.cumLen[i-1] + pts[i].Distance(pts[i-1])
+				}
+				adOuter.WaypointIdx = 1
+				fb := sim.Vec2{}
+				adOuter.fallbackJunction = &fb
+				next := outer.AtPose(outerPos, -.36)
+				outer = &next
+				outer.Speed = 95
+			}
+
+			for tick := 0; tick < 360; tick++ {
+				obsInner := []VehicleObstacle{ObserveBus(outer)}
+				obsOuter := []VehicleObstacle{ObserveBus(inner)}
+				thO, brO, stO, hbO, dO, _ := adOuter.ComputeControls(outer, route, w, tls, obsOuter, lw, 1./60)
+				thI, brI, stI, hbI, dI, _ := adInner.ComputeControls(inner, route, w, tls, obsInner, lw, 1./60)
+				outer.Update(1./60, thO, brO, stO, hbO, dO)
+				inner.Update(1./60, thI, brI, stI, hbI, dI)
+				if sweepBodiesCollision(inner.BodyParts(), ObserveBus(outer), 0, 0, 0) {
+					t.Fatalf("parallel turning buses collided at tick %d: inner=%v outer=%v", tick, inner.Pos, outer.Pos)
+				}
+			}
+			if inner.Pos.Y >= -120 || outer.Pos.Y >= -120 {
+				t.Fatalf("expected both buses to clear left turn concurrently on same green: inner=%v outer=%v", inner.Pos, outer.Pos)
+			}
+		})
+	}
+}
+
+func TestParallelLeftTurnExitSkipsOutgoingLaneTaper(t *testing.T) {
+	const lw = 52.0
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -3000, Y: 0}, P2: sim.Vec2{X: 3000, Y: 0}, Lanes: 8},
+		{P1: sim.Vec2{X: 0, Y: -3000}, P2: sim.Vec2{X: 0, Y: 3000}, Lanes: 8},
+		{P1: sim.Vec2{X: -3000, Y: -1800}, P2: sim.Vec2{X: 3000, Y: -1800}, Lanes: 8},
+	}}
+	w.RebuildIntersections()
+	from := sim.NewBusStop(0, "from", sim.Vec2{X: -1800, Y: 3.5 * lw}, 0, 8, sim.RGBA(0, 0, 0, 255), lw)
+	// At (0, -1800) heading north (-Pi/2), turning west (Pi) is a LEFT turn,
+	// so PrepareLeg generates a 3.5*lw -> 0.5*lw taper south of (0,0).
+	to := sim.NewBusStop(1, "to", sim.Vec2{X: -1800, Y: -1800 - 3.5*lw}, math.Pi, 8, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{from, to}
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	tls.Intersections[0].Phase = sim.PhaseEWLeftGreen
+	g := w.JunctionAt(sim.Vec2{}, lw)
+
+	line := tls.Intersections[0].GetStopLineDistForHeading(0, lw)
+	bus := sim.NewBus(-line-160, .5*lw, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Gear = sim.GearDrive
+	ad := NewAutopilotDriver()
+	ad.articulatedPath = true
+	ad.PrepareLeg(w, from, to, lw)
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+
+	outer := sim.NewBus(-line-20, 3.5*lw, 0)
+	outer.SetModel(sim.BusArticulated)
+	outer.Gear = sim.GearDrive
+	outer.Speed = 110
+	adOuter := NewAutopilotDriver()
+	adOuter.articulatedPath = true
+	adOuter.PrepareLeg(w, from, to, lw)
+
+	switchedInner := false
+	for tick := 0; tick < 600; tick++ {
+		obsInner := []VehicleObstacle{ObserveBus(outer)}
+		obsOuter := []VehicleObstacle{ObserveBus(bus)}
+		thO, brO, stO, hbO, dO, _ := adOuter.ComputeControls(outer, route, w, tls, obsOuter, lw, 1./60)
+		thI, brI, stI, hbI, dI, _ := ad.ComputeControls(bus, route, w, tls, obsInner, lw, 1./60)
+		outer.Update(1./60, thO, brO, stO, hbO, dO)
+		bus.Update(1./60, thI, brI, stI, hbI, dI)
+		if ad.exitCruise != nil && ad.exitCruise.LeftTurn && math.Abs(ad.exitCruise.Target.X-0.5*lw) <= 1 {
+			switchedInner = true
+		}
+		if switchedInner && bus.Pos.Y <= -g.HalfY-200 && bus.Pos.Y >= -1500 && bus.Pos.X > 0.5*lw+25 {
+			t.Fatalf("parallel left exit swerved into outer lanes at tick %d: pos=%v", tick, bus.Pos)
+		}
+		if bus.Pos.Y < -1400 {
+			break
+		}
+	}
+	if !switchedInner {
+		t.Fatalf("expected inner exit choice at 0.5*lw, exitCruise=%+v (pos=%v outer=%v)", ad.exitCruise, bus.Pos, outer.Pos)
+	}
+	for _, pt := range ad.drivePath {
+		if pt.Y <= -g.HalfY-200 && pt.Y >= -1500 && pt.X > 0.5*lw+3 {
+			t.Fatalf("parallel left exit swerved back into outer lanes at %v", pt)
+		}
+	}
+}
+
+func TestParallelLeftTurnExitAvoidsMultiKmDiagonal(t *testing.T) {
+	const lw = 52.0
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: -3000, Y: 0}, P2: sim.Vec2{X: 3000, Y: 0}, Lanes: 8},
+		{P1: sim.Vec2{X: 0, Y: -12000}, P2: sim.Vec2{X: 0, Y: 3000}, Lanes: 8},
+		{P1: sim.Vec2{X: -3000, Y: -10000}, P2: sim.Vec2{X: 3000, Y: -10000}, Lanes: 8},
+	}}
+	w.RebuildIntersections()
+	from := sim.NewBusStop(0, "from", sim.Vec2{X: -1800, Y: 3.5 * lw}, 0, 8, sim.RGBA(0, 0, 0, 255), lw)
+	to := sim.NewBusStop(1, "to", sim.Vec2{X: -1800, Y: -10000 - 3.5*lw}, math.Pi, 8, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{from, to}
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	tls.Intersections[0].Phase = sim.PhaseEWLeftGreen
+	line := tls.Intersections[0].GetStopLineDistForHeading(0, lw)
+
+	bus := sim.NewBus(-line-160, .5*lw, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Gear = sim.GearDrive
+	ad := NewAutopilotDriver()
+	ad.articulatedPath = true
+	ad.PrepareLeg(w, from, to, lw)
+
+	outer := sim.NewBus(-line-20, 3.5*lw, 0)
+	outer.SetModel(sim.BusArticulated)
+	outer.Gear = sim.GearDrive
+	outer.Speed = 110
+	adOuter := NewAutopilotDriver()
+	adOuter.articulatedPath = true
+	adOuter.PrepareLeg(w, from, to, lw)
+
+	switchedInner := false
+	for tick := 0; tick < 600; tick++ {
+		obsInner := []VehicleObstacle{ObserveBus(outer)}
+		obsOuter := []VehicleObstacle{ObserveBus(bus)}
+		thO, brO, stO, hbO, dO, _ := adOuter.ComputeControls(outer, route, w, tls, obsOuter, lw, 1./60)
+		thI, brI, stI, hbI, dI, _ := ad.ComputeControls(bus, route, w, tls, obsInner, lw, 1./60)
+		outer.Update(1./60, thO, brO, stO, hbO, dO)
+		bus.Update(1./60, thI, brI, stI, hbI, dI)
+		if ad.exitCruise != nil && ad.exitCruise.LeftTurn && ad.exitCruise.Target.X <= 1.5*lw+1 {
+			switchedInner = true
+			break
+		}
+	}
+	if !switchedInner {
+		t.Fatalf("expected chooseParallelLeftTurnExit to pick 0.5*lw exit lane (exitCruise=%+v, pos=%v)", ad.exitCruise, bus.Pos)
+	}
+	for i := 1; i < len(ad.drivePath); i++ {
+		a, b := ad.drivePath[i-1], ad.drivePath[i]
+		if math.Abs(a.X-b.X) > 20 && a.Distance(b) > 1000 {
+			t.Fatalf("segment %d->%d spans %.1fpx diagonally across lanes: %v -> %v", i-1, i, a.Distance(b), a, b)
+		}
+	}
+}

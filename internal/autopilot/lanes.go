@@ -30,6 +30,12 @@ func (ad *AutopilotDriver) progressLaneOffset(dt, speedAbs float64) {
 				latSpeed = sim.Clamp(speedAbs*0.50, 95.0, 160.0)
 				minDuration = 0.35
 				maxDuration = 0.55
+				if !ad.DisallowOncomingOvertake {
+					maxDuration = math.Max(0.55, 0.45*(totalDist/52.0))
+					if ad.TargetLaneOffset < ad.LaneOffsetStart && totalDist > 60.0 {
+						minDuration = math.Max(minDuration, 0.42*(totalDist/52.0))
+					}
+				}
 			}
 			if !ad.BerserkMode && ad.TargetLaneOffset < ad.LaneOffsetStart && ad.TargetLaneOffset <= -80.0 {
 				// Shifting left towards innermost left-turn lane on 6-lane road in standard mode (right next to double yellow line):
@@ -216,18 +222,14 @@ func isLaneClearToChange(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 	return true
 }
 
-// isOncomingLaneClear checks whether the oncoming lane on a 2-way 2-lane road
-// (typically at targetOffset = -laneWidth) is completely free of oncoming traffic
-// and any obstacles within safe sight distance before borrowing the lane to overtake.
-func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, currentOffset, targetOffset, laneWidth, speedAbs, cruiseSpeed float64) bool {
-	passingSpeed := math.Max(speedAbs, cruiseSpeed)
+// isOncomingLaneClear checks for traffic and obstacles in the opposing lane
+// within the sight distance needed to pass and return.
+func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, forward sim.Vec2, laneCenter, speedAbs, cruiseSpeed float64) bool {
 	corridorBase := bus.Width/2 + 12.0
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	for _, obs := range obstacles {
-		d := obs.Pos.Sub(bus.Pos)
-		fwd := d.X*cosH + d.Y*sinH
-		lat := -d.X*sinH + d.Y*cosH
-		latPath := lat + currentOffset
-		distToTarget := math.Abs(latPath - targetOffset)
+		fwd := obs.Pos.Sub(bus.Pos).Dot(forward)
+		distToTarget := math.Abs(obs.Pos.Dot(right) - laneCenter)
 		corridor := corridorBase + obs.Width/2
 		if distToTarget < corridor {
 			cosDiff := math.Cos(obs.Heading - bus.Heading)
@@ -242,7 +244,7 @@ func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 				// Must have ample clear sight distance ahead
 				// Reserve time for acceleration, the pass and a safe return; use
 				// actual opposing speed rather than treating it as a fixed 200.
-				reqClearDist := math.Max(700.0, (passingSpeed+math.Abs(obs.Speed))*4.5)
+				reqClearDist := OncomingPassSightDistance(speedAbs, cruiseSpeed, obs.Speed)
 				if fwd >= -40.0 && fwd < reqClearDist {
 					return false
 				}
@@ -256,6 +258,62 @@ func isOncomingLaneClear(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, 
 				if fwd < -sideDist && fwd > -260.0 && obs.Speed > speedAbs+12.0 {
 					return false
 				}
+			}
+		}
+	}
+	return true
+}
+
+// OncomingPassSightDistance is also the observation range the player needs
+// to evaluate the pass against opposing traffic at the configured speed.
+func OncomingPassSightDistance(speedAbs, cruiseSpeed, opposingSpeed float64) float64 {
+	return math.Max(700, (math.Max(speedAbs, cruiseSpeed)+math.Abs(opposingSpeed))*4.5)
+}
+
+// Only borrow an opposing lane if the bus can fit back into its own lane
+// ahead of the lead. A clear opposing lane alone cannot justify passing a
+// packed queue that would leave an articulated bus stranded at the divider.
+func oncomingPassHasReturnGap(bus *sim.Bus, obstacles []VehicleObstacle, lead *VehicleObstacle, forward sim.Vec2, laneCenter float64) bool {
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	required := bus.OverallLength() + 80
+	for i := range obstacles {
+		ob := &obstacles[i]
+		if ob == lead || math.Abs(ob.Pos.Dot(right)-laneCenter) >= (bus.Width+ob.Width)/2+5 {
+			continue
+		}
+		along := ob.Pos.Sub(lead.Pos).Dot(forward)
+		if along > 0 && along-(lead.Length+ob.Length)/2 < required {
+			return false
+		}
+	}
+	return true
+}
+
+// Leave the same time for clearing and returning before a junction as for
+// meeting opposing traffic. A long bus must also clear the divider with its
+// trailer before it reaches the entrance.
+func oncomingPassFitsBeforeJunction(f autopilotFrame, forward sim.Vec2, cruiseSpeed float64) bool {
+	if f.tls == nil {
+		return true
+	}
+	reserve := math.Max(900, math.Max(f.speedAbs, cruiseSpeed)*4.5+f.bus.OverallLength())
+	heading := math.Atan2(forward.Y, forward.X)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	for _, inter := range f.tls.Intersections {
+		delta := inter.Center.Sub(f.bus.Pos)
+		along := delta.Dot(forward)
+		if along > 0 && math.Abs(delta.Dot(right)) < f.laneWidth &&
+			along < inter.GetStopLineDistForHeading(heading, f.laneWidth)+reserve {
+			return false
+		}
+	}
+	if f.world != nil {
+		for _, rb := range f.world.Roundabouts {
+			delta := rb.Center.Sub(f.bus.Pos)
+			along := delta.Dot(forward)
+			if along > 0 && math.Abs(delta.Dot(right)) < rb.Radius+f.laneWidth &&
+				along < rb.Radius+65+reserve {
+				return false
 			}
 		}
 	}
@@ -405,4 +463,27 @@ func leftTurnLaneOffset(distBaseToCenter, laneWidth float64, is6Lane bool) float
 		maxShift = 2 * laneWidth
 	}
 	return sim.Clamp(-(distBaseToCenter - laneWidth*0.5), -maxShift, 0)
+}
+
+// alignLeftTurnLaneOffset transitions LaneOffset/TargetLaneOffset toward the
+// left-turn lane along an approaching left turn. Shifting further left across a
+// traffic lane requires lane-change clearance first.
+func (ad *AutopilotDriver) alignLeftTurnLaneOffset(bus *sim.Bus, obstacles []VehicleObstacle, cosH, sinH, distBaseToCenter, laneWidth float64, is6Lane, holdIfBlocked bool) bool {
+	targetLeftOffset := leftTurnLaneOffset(distBaseToCenter, laneWidth, is6Lane)
+	if targetLeftOffset < ad.LaneOffset-4.0 && !isLaneClearToChange(bus, obstacles, cosH, sinH, ad.LaneOffset, targetLeftOffset, laneWidth) {
+		if holdIfBlocked {
+			ad.TargetLaneOffset = ad.LaneOffset
+		}
+		return false
+	}
+	ad.TargetLaneOffset = targetLeftOffset
+	syncSnap := math.Abs(ad.LaneOffset-targetLeftOffset) < 1.5 ||
+		(distBaseToCenter <= laneWidth*1.15 && math.Abs(ad.LaneOffset-targetLeftOffset) < 4.0) ||
+		(ad.OvertakeState == OvertakeChangingLane && math.Abs(ad.LaneOffset-targetLeftOffset) < 1.0)
+	if syncSnap {
+		ad.LaneOffset = targetLeftOffset
+		ad.OvertakeState = OvertakeNone
+		ad.OvertakeTimer = 0.0
+	}
+	return true
 }

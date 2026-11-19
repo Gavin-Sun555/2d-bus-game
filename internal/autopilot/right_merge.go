@@ -12,7 +12,8 @@ import (
 func (ad *AutopilotDriver) holdBlockedRightMerge(f autopilotFrame) {
 	// Required merges already check every crossed lane and cap approach speed.
 	// Reapplying the passing gap here would freeze the same safe queue slot.
-	if ad.approachMerge != nil || (ad.busLaneJunction != nil && !ad.busJunctionEntered) {
+	if ad.approachMerge != nil || (ad.busLaneJunction != nil && !ad.busJunctionEntered) ||
+		(ad.midLaneRecovery != nil && ad.midLaneRecovery.Is2Lane) {
 		return
 	}
 	if f.world == nil || len(ad.drivePath) < 2 || len(f.obstacles) == 0 || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {

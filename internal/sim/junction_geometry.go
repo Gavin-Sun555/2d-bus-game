@@ -25,7 +25,7 @@ func NewJunctionGeometry(ewHalf, nsHalf, laneWidth float64) JunctionGeometry {
 
 func (w *World) JunctionAt(center Vec2, laneWidth float64) JunctionGeometry {
 	if cache := w.geometryCache; cache != nil && cache.width == laneWidth {
-		if e, ok := cache.entries[center]; ok {
+		if e, ok := cache.lookup(center); ok {
 			return e.geometry
 		}
 	}

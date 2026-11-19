@@ -231,7 +231,7 @@ func (tm *TrafficManager) resolveDeadlocksOracle(dt float64, bus *sim.Bus, activ
 				}
 				// If car is jammed against player bus (crosswise, oncoming, turning, or trapped against front bumper):
 				maxJamDist := (car.Length+bus.Length)*0.5 + 40.0
-				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) {
+				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) && carBusDeadlockCorridor(car, bus) {
 					isJammed = true
 				}
 			}
@@ -280,7 +280,7 @@ func (tm *TrafficManager) resolveDeadlocksOracle(dt float64, bus *sim.Bus, activ
 					if !isNearIntersection && headDiff > 0.98 && fwd > 10.0 && lat < laneWidth*1.5 {
 						continue
 					}
-					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
+					if (fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0) && carBusDeadlockCorridor(car, ab.Bus) {
 						isJammed = true
 						break
 					}

@@ -88,6 +88,7 @@ func main() {
 	defer g.CloseAnnouncements()
 
 	runErr := ebiten.RunGame(game.WithGraphicsWarmup(g))
+	g.FlushDebug()
 	if err := g.SaveOnExit(); err != nil {
 		log.Printf("Exit autosave failed: %v", err)
 	}

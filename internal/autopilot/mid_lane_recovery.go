@@ -38,6 +38,49 @@ func (ad *AutopilotDriver) retryStoppedMidLaneReturn(f autopilotFrame) {
 	}
 }
 
+func (ad *AutopilotDriver) retryStoppedOncomingReturn(f autopilotFrame) {
+	if ad.midLaneRecovery != nil || !ad.BerserkMode || ad.DisallowOncomingOvertake || f.bus.IsArticulated() ||
+		f.world == nil || f.speedAbs > 3 || ad.approachMerge != nil || ad.State != AutopilotStateCruising ||
+		(ad.OvertakeState != OvertakePassing && ad.OvertakeState != OvertakeReturning) ||
+		f.world.InsideJunction(f.bus.Pos, f.laneWidth, 180) {
+		return
+	}
+	heading := approachRoadHeading(f.bus.Heading)
+	forward := sim.UnitFromAngle(heading)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	center, ew, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+	if multi || six || math.Cos(f.bus.Heading-heading) < .98 || ad.pointAt(f.s+100).Sub(ad.pointAt(f.s)).Normalize().Dot(forward) < .98 {
+		return
+	}
+	origin := sim.Vec2{Y: center}
+	if !ew {
+		origin = sim.Vec2{X: center}
+	}
+	lateral := f.bus.Pos.Sub(origin).Dot(right)
+	if lateral < -f.laneWidth*.35 || lateral >= f.bus.Width/2 {
+		return
+	}
+	oncoming := false
+	for _, ob := range f.obstacles {
+		delta := ob.Pos.Sub(f.bus.Pos)
+		along := delta.Dot(forward)
+		side := ob.Pos.Sub(origin).Dot(right)
+		if side < 0 && math.Abs(ob.Speed) < 3 && math.Cos(ob.Heading-heading) < -.98 &&
+			along > f.bus.Length/2 && along < f.bus.Length/2+ob.Length/2+65 {
+			oncoming = true
+		}
+		if side <= 0 || math.Cos(ob.Heading-heading) < .98 || math.Abs(along) > 240 {
+			continue
+		}
+		if along >= 0 || math.Abs(ob.Speed) > 1 || stoppedFollowerGap(f, ob, heading) < 20 {
+			return
+		}
+	}
+	if oncoming {
+		ad.midLaneRecovery = &sim.BusLaneMergeRequest{Target: origin.Add(right.Mul(f.laneWidth * .5)), Heading: heading, Is2Lane: true, Remaining: .3}
+	}
+}
+
 // If a fleet bus's return gap closes after it has crossed the lane marking,
 // holding that fractional offset occupies two lanes forever. Retreat into the
 // previous lane when its gap is clear; keep the target until physically aligned.
@@ -78,6 +121,9 @@ func (ad *AutopilotDriver) advanceMidLaneRecovery(f autopilotFrame, dt float64) 
 	}
 	r := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
 	if ad.straightLaneRetreatActive() {
+		// Controls clear the transient intent each frame. Publish the pending
+		// merge before checking its gap, including a stopped rear follower.
+		f.bus.LaneMergeRequest = ad.approachMerge
 		base := ad.pointAt(f.s)
 		actual := f.bus.Pos.Sub(base).Dot(r)
 		destination := ad.approachMerge.Target.Sub(base).Dot(r)
@@ -87,7 +133,12 @@ func (ad *AutopilotDriver) advanceMidLaneRecovery(f autopilotFrame, dt float64) 
 		runway := 5 * math.Abs(destination-actual)
 		ad.busTurnHoldDistance = math.Max(.01, approachMergeStopDistance(f, ad.approachMerge)-25-runway)
 		if requiredMergeLaneClear(f, request.Heading, actual, destination) {
+			// Resume the mandatory merge from the real lane position. The
+			// previous retreat's interpolated target can be a lane away and
+			// would otherwise steer in the opposite direction for several ticks.
+			ad.holdLaneOffset(actual)
 			ad.midLaneRecovery = nil
+			ad.busTurnHoldDistance = 0
 			return false
 		}
 	}
@@ -184,11 +235,18 @@ func (ad *AutopilotDriver) midLaneSafeSteering(f autopilotFrame, steer float64) 
 }
 
 func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) bool {
-	center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, ad.midLaneRecovery.Heading, f.laneWidth)
+	heading := ad.midLaneRecovery.Heading
+	center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
 	pos, angle, wheel := f.bus.Pos, f.bus.Heading, f.bus.SteeringAngle
+	minClearance := 0.
+	if ad.midLaneRecovery.Is2Lane {
+		// The starting body is already over the divider. Allow only the
+		// rear corner's small initial swing while turning back into its lane.
+		minClearance = math.Min(0, math.Max(-f.laneWidth+.5, roadMedianClearance(f.bus, pos, angle, heading, center, ew)-8))
+	}
 	const dt = .02
 	for elapsed := 0.; elapsed <= .8; elapsed += dt {
-		if roadMedianClearance(f.bus, pos, angle, ad.midLaneRecovery.Heading, center, ew) < 0 {
+		if roadMedianClearance(f.bus, pos, angle, heading, center, ew) < minClearance {
 			return false
 		}
 		body := sim.OBB{Center: pos, Heading: angle, HalfLen: f.bus.Length/2 + 1, HalfWid: f.bus.Width/2 + 1}
@@ -231,7 +289,11 @@ func (ad *AutopilotDriver) midLaneSweepSafe(f autopilotFrame, steer float64) boo
 
 func (ad *AutopilotDriver) clearsQueueWhileRecentering(f autopilotFrame, ob VehicleObstacle) bool {
 	request := ad.midLaneRecovery
-	if request == nil || !ad.midLaneSweepClear || math.Abs(ob.Speed) > 3 || ob.Length > 65 || math.Cos(ob.Heading-request.Heading) < .98 {
+	if request == nil || !ad.midLaneSweepClear || math.Abs(ob.Speed) > 3 || ob.Length > 65 {
+		return false
+	}
+	alignment := math.Cos(ob.Heading - request.Heading)
+	if alignment < .98 && !(request.Is2Lane && alignment < -.98 && ob.Car != nil) {
 		return false
 	}
 	u := sim.UnitFromAngle(request.Heading)

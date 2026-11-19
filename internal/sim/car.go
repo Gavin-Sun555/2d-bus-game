@@ -63,8 +63,18 @@ type TrafficCar struct {
 	RoundaboutCurve       *CarRoundaboutCurve
 
 	// Deadlock prevention
-	DeadlockTimer   float64 // Time in seconds spent motionless while jammed against another non-player vehicle
-	DeadlockTracker StationaryTracker
+	DeadlockTimer           float64 // Time in seconds spent motionless while jammed against another non-player vehicle
+	DeadlockTracker         StationaryTracker
+	PassRetreatActive       bool    `json:",omitempty"` // Rolling an optional, blocked lane change back along its travelled prefix.
+	JunctionReverseActive   bool    `json:",omitempty"`
+	JunctionReverseYieldBus bool    `json:",omitempty"`
+	JunctionReverseYieldID  int     `json:",omitempty"` // Crossing turn released by a bounded retreat along the committed straight path.
+	ReverseRemaining        float64 `json:",omitempty"` // Remaining reverse distance when yielding to free a wedged bus
+	ReverseHold             float64 `json:",omitempty"` // Pause duration after reversing so the wedged bus can depart
+	ReverseCooldown         float64 `json:",omitempty"` // Minimum interval before another deadlock reverse can start
+	ReverseAttempts         int     `json:",omitempty"` // Consecutive deadlock reverse steps attempted without forward progress
+	YieldReverseRequest     float64 `json:",omitempty"` // Remaining TTL of a rear-yield request propagated from a blocked car ahead
+	YieldReverseDelay       float64 `json:",omitempty"` // Brief confirmation delay before acting on a rear-yield request
 }
 
 func (c *TrafficCar) VisualHeading() float64 { return c.Heading + c.RoadCurveYaw }

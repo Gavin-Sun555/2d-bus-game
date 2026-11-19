@@ -93,3 +93,135 @@ func TestLeadingCarClearsStoppedStationMergeBetweenTwoArticulatedBuses(t *testin
 		t.Fatalf("expected leading car to keep target speed 166.7, got %.2f", got)
 	}
 }
+
+func TestCarCreepsPastClearParallelStoppedBusCab(t *testing.T) {
+	b := sim.NewBus(-7744.72, 4169.19, -1.5677)
+	b.SetModel(sim.BusArticulated)
+	b.TrailerHeading = -1.5577
+	car := &sim.TrafficCar{
+		ID:      5958,
+		Pos:     sim.Vec2{X: -7774.0, Y: 4187.33},
+		Heading: -math.Pi / 2,
+		Length:  46,
+		Width:   22,
+	}
+	tm := &TrafficManager{}
+	if got := tm.busFollowingSpeed(carFrame{car: car, buses: []*sim.Bus{b}}, 150); got != 45 {
+		t.Fatalf("expected clear parallel stopped car to creep at 45, got %.2f", got)
+	}
+	// An active lane merge still lets an already-alongside non-yielding car clear first.
+	b77 := sim.NewBus(-7952.5, 2643.8, 1.564)
+	b77.SetModel(sim.BusArticulated)
+	b77.TrailerHeading = 1.532
+	b77.LaneMergeRequest = &sim.BusLaneMergeRequest{Heading: math.Pi / 2, Target: sim.Vec2{X: -7982}, Remaining: 0.3}
+	c9757 := &sim.TrafficCar{
+		ID:      9757,
+		Pos:     sim.Vec2{X: -7982.0, Y: 2632.8},
+		Heading: math.Pi / 2,
+		Length:  46,
+		Width:   22,
+	}
+	if got := tm.busFollowingSpeed(carFrame{car: c9757, buses: []*sim.Bus{b77}}, 150); got != 45 {
+		t.Fatalf("expected alongside non-yielding car to clear merging bus at 45, got %.2f", got)
+	}
+	// If the car overlaps laterally (same-lane obstruction), it must still stop.
+	car.Pos.X = -7760.0
+	if got := tm.busFollowingSpeed(carFrame{car: car, buses: []*sim.Bus{b}}, 150); got != 0 {
+		t.Fatalf("expected colliding car to stay stopped, got %.2f", got)
+	}
+}
+
+func TestCarAlongsideStationArrivalCanClearOppositeSide(t *testing.T) {
+	bus := sim.NewBus(-35.5054, 0, 1.78278)
+	bus.StationMergeRequest = &sim.BusStationMergeRequest{Remaining: .3}
+	bus.LaneMergeRequest = &sim.BusLaneMergeRequest{
+		Target: sim.Vec2{X: -47.12, Y: 88}, Heading: math.Pi / 2, Remaining: .3,
+	}
+	car := &sim.TrafficCar{Pos: sim.Vec2{Y: 21.5338}, Heading: math.Pi / 2, Length: 46, Width: 22}
+	tm := &TrafficManager{}
+	frame := carFrame{car: car, buses: []*sim.Bus{bus}}
+	if got := tm.busFollowingSpeed(frame, 150); got != 45 {
+		t.Fatalf("expected clear car beside the arriving bus to creep, speed limit %.2f", got)
+	}
+	bus.LaneMergeRequest.Target.X = car.Pos.X
+	if got := tm.busFollowingSpeed(frame, 150); got == 45 {
+		t.Fatal("car used the arrival exception on the side the bus is entering")
+	}
+}
+
+func TestCarAlongsideStraightWaitingTrailerCanClear(t *testing.T) {
+	bus := sim.NewBus(0, -29.21, math.Pi)
+	bus.SetModel(sim.BusArticulated)
+	bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Heading: math.Pi, Remaining: .3, LeftTurn: true}
+	car := &sim.TrafficCar{Pos: sim.Vec2{X: 82.18}, Heading: math.Pi, Length: 46, Width: 22}
+	tm := &TrafficManager{}
+	frame := carFrame{car: car, buses: []*sim.Bus{bus}}
+	if got := tm.busFollowingSpeed(frame, 150); got != 45 {
+		t.Fatalf("expected clear car beside the trailer to creep, speed limit %.2f", got)
+	}
+	car.Pos.Y = -1
+	if got := tm.busFollowingSpeed(frame, 150); got != 0 {
+		t.Fatalf("expected car in the body's swept path to hold, speed limit %.2f", got)
+	}
+}
+
+func TestAlongsideCarsClearOppositeSideOfStationDeparture(t *testing.T) {
+	bus := sim.NewBus(0, 29.44524, .00252)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = -.04738
+	bus.StationMergeRequest = &sim.BusStationMergeRequest{Departing: true, Remaining: .3}
+	bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: sim.Vec2{Y: 47.12}, Remaining: .3}
+	car := &sim.TrafficCar{Pos: sim.Vec2{X: 32.75765}, Length: 46, Width: 22}
+	tm := &TrafficManager{}
+	frame := carFrame{car: car, buses: []*sim.Bus{bus}}
+	if got := tm.busFollowingSpeed(frame, 150); got != 45 {
+		t.Fatalf("leading car should clear the side of the stopped bus at a crawl, got %.2f", got)
+	}
+	car.Pos.X = -31.10782
+	if got := tm.busFollowingSpeed(frame, 150); got != 45 {
+		t.Fatalf("alongside following car should also clear at a crawl, got %.2f", got)
+	}
+	car.Pos.X = 32.75765
+	car.Pos.Y = 2
+	if got := tm.busFollowingSpeed(frame, 150); got != 0 {
+		t.Fatalf("car overlapping the bus should remain stopped, got %.2f", got)
+	}
+}
+
+func TestLeadingCarClearsBusCorrectingIntoAdjacentTurnLane(t *testing.T) {
+	bus := sim.NewBus(0, 0, -.3893)
+	bus.SetModel(sim.BusDoubleDecker)
+	bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: sim.Vec2{Y: -24.3}, LeftTurn: true, Remaining: .3}
+	car := &sim.TrafficCar{Pos: sim.Vec2{X: 38.77, Y: 27.69}, Length: 46, Width: 22}
+	tm := &TrafficManager{}
+	frame := carFrame{car: car, buses: []*sim.Bus{bus}}
+	if got := tm.busFollowingSpeed(frame, 150); got != 45 {
+		t.Fatalf("clear car already ahead should leave at a crawl, got %.2f", got)
+	}
+	bus.LaneMergeRequest.Target.Y = car.Pos.Y
+	if carClearsParallelStoppedBus(car, bus) {
+		t.Fatal("car used the escape on the side the bus was entering")
+	}
+}
+
+func TestCarClearsWhenStoppedBusStraddlesDivider(t *testing.T) {
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -1000}, P2: sim.Vec2{X: 1000}, Lanes: 2}}}
+	for _, tc := range []struct{ side, yaw, tail, along float64 }{
+		{side: -12.05, yaw: .04975, tail: .08076, along: 9.80},
+		{side: -8.59, yaw: -.36758, tail: -.70071, along: 21.35},
+	} {
+		bus := sim.NewBus(0, tc.side, tc.yaw)
+		bus.SetModel(sim.BusArticulated)
+		bus.TrailerHeading = tc.tail
+		car := &sim.TrafficCar{Pos: sim.Vec2{X: tc.along, Y: 26}, Length: 46, Width: 22, IsEW: true}
+		tm := &TrafficManager{}
+		f := carFrame{car: car, world: w, laneWidth: 52, buses: []*sim.Bus{bus}}
+		if got := tm.busFollowingSpeed(f, 150); got != 45 {
+			t.Fatalf("clear path beside the straddling cab: speed %.2f", got)
+		}
+		car.Pos.Y = 12
+		if carClearsStoppedBusAcrossDivider(f, bus) {
+			t.Fatal("accepted a path that intersects the angled bus")
+		}
+	}
+}

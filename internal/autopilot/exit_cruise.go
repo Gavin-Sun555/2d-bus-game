@@ -109,6 +109,18 @@ func (ad *AutopilotDriver) updateExitCruise(f autopilotFrame, dt float64) bool {
 	base := ad.pointAt(f.s)
 	actual := f.bus.Pos.Sub(base).Dot(right)
 	currentLateral := request.Target.Sub(origin).Dot(right)
+	physLat := f.bus.Pos.Sub(origin).Dot(right)
+	minSectionLat := physLat
+	if f.bus.IsArticulated() {
+		minSectionLat = math.Min(minSectionLat, f.bus.TrailerBody().Center.Sub(origin).Dot(right))
+	}
+	islandCenterLat := sim.BRTPlatformOffset(f.laneWidth)
+	if road.HasMedianBusLane() && physLat < islandCenterLat && minSectionLat < f.laneWidth+6 && currentLateral > f.laneWidth &&
+		brtPlatformBlocksDividerCross(f.world, f.bus, request.Heading, f.laneWidth, minSectionLat, currentLateral) {
+		request.Target = origin.Add(right.Mul(.5 * f.laneWidth))
+		currentLateral = .5 * f.laneWidth
+		lane = 0
+	}
 	best := ad.busLaneTrafficScore(f, forward, right, lane, true)
 	stationGap := ad.stationBusLaneGap(f, forward, right, f.bus.Pos.Add(right.Mul(request.Target.Sub(f.bus.Pos).Dot(right))))
 	if request.Remaining == 0 && math.Abs(request.Target.Sub(f.bus.Pos).Dot(right)) < f.laneWidth*.2 &&
@@ -129,9 +141,32 @@ func (ad *AutopilotDriver) updateExitCruise(f autopilotFrame, dt float64) bool {
 			}
 		}
 	}
-	desired := request.Target.Sub(base).Dot(right)
 	target := request.Target
-	if math.Abs(desired-actual) > f.laneWidth*.35 && !requiredMergeLaneClear(f, request.Heading, actual, desired) {
+	if currentLateral >= f.laneWidth && f.world.CenterBRT {
+		// The outgoing lane is stored in road coordinates, but general lanes
+		// flare around BRT islands. An absolute hold must follow that same
+		// flare; otherwise it aims straight through the platform shelter.
+		ahead := math.Max(120, f.speedAbs*.9+90)
+		if f.bus.IsArticulated() {
+			ahead = math.Max(ahead, 220)
+		}
+		flare := f.world.BRTStationFlareAt(f.bus.Pos.Add(forward.Mul(ahead)), f.laneWidth)
+		for _, along := range []float64{ahead * .5, 0, -(f.bus.OverallLength() - f.bus.Length/2)} {
+			flare = math.Max(flare, f.world.BRTStationFlareAt(f.bus.Pos.Add(forward.Mul(along)), f.laneWidth))
+		}
+		target = target.Add(right.Mul(flare))
+	}
+	desired := target.Sub(base).Dot(right)
+	// The station flare bends the existing lane; following its center does
+	// not require an overtaking slot behind the bus. A genuine change to a
+	// different road lane still checks the whole crossed gap, unless the bus
+	// is already straddling an imminent Center BRT platform island corridor.
+	straddlingBRTIsland := f.world.CenterBRT &&
+		physLat > f.laneWidth-f.bus.Width/2-4 &&
+		physLat < f.laneWidth+sim.BRTStationMaxFlare+f.bus.Width/2+4 &&
+		brtPlatformAlongsideOrImminent(f.world, f.bus, request.Heading, f.laneWidth)
+	roadLaneShift := request.Target.Sub(f.bus.Pos).Dot(right)
+	if !straddlingBRTIsland && math.Abs(desired-actual) > f.laneWidth*.35 && math.Abs(roadLaneShift) > f.laneWidth*.35 && !requiredMergeLaneClear(f, request.Heading, actual, desired) {
 		// Keep moving in the current corridor while the lateral gap is
 		// blocked. Stopping here makes a same-lane follower close the very
 		// gap we need forever; ordinary following and body sweeps still
@@ -153,7 +188,11 @@ func (ad *AutopilotDriver) exitCruiseSettling(f autopilotFrame) bool {
 	}
 	// A nearby station already controls its approach, bay taper and speed.
 	// A pending exit must not shorten pursuit while the bus is docking.
-	if !ad.CanSkipTargetStop && f.remaining < math.Max(1200, f.speedAbs*2.4+180) {
+	dockWindow := math.Max(1200, f.speedAbs*2.4+180)
+	if f.targetStop != nil && f.targetStop.CenterBRT {
+		dockWindow = 380
+	}
+	if ad.stationDock != nil || (!ad.CanSkipTargetStop && f.remaining < dockWindow) {
 		return false
 	}
 	if math.Abs(sim.NormalizeAngle(f.bus.Heading-request.Heading)) > .03 || math.Abs(f.bus.SteeringAngle) > .05 {

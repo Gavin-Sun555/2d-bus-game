@@ -349,9 +349,12 @@ func (abm *AIBusManager) TotalActiveBuses() int {
 
 // GetLocalObstacles populates dst with dynamic obstacles (nearby civilian cars and other buses)
 // within the safe interaction radius of the given pose, avoiding whole-map linear scans.
-func (abm *AIBusManager) GetLocalObstacles(pos sim.Vec2, speed float64, dst []autopilot.VehicleObstacle) []autopilot.VehicleObstacle {
+func (abm *AIBusManager) GetLocalObstacles(pos sim.Vec2, speed float64, dst []autopilot.VehicleObstacle, minimumRadius ...float64) []autopilot.VehicleObstacle {
 	dst = dst[:0]
 	queryRadius := math.Max(2000.0, math.Abs(speed)*3.5+600.0)
+	if len(minimumRadius) > 0 {
+		queryRadius = math.Max(queryRadius, minimumRadius[0])
+	}
 	queryRadiusSq := queryRadius * queryRadius
 
 	if len(abm.carObstacles) > 32 {

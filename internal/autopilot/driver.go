@@ -46,7 +46,8 @@ const (
 
 // VehicleObstacle represents any vehicle in the world (civilian car or another bus)
 type VehicleObstacle struct {
-	Bus              *sim.Bus `json:"-"`
+	Bus              *sim.Bus        `json:"-"`
+	Car              *sim.TrafficCar `json:"-"`
 	YieldingTo       *sim.Bus
 	JunctionTurn     *sim.CarJunctionTurn
 	JunctionCorridor *sim.JunctionCorridor
@@ -68,6 +69,7 @@ const (
 // AutopilotDriver encapsulates autonomous driving intelligence for both the player's bus
 // (when autopilot is enabled) and background AI route buses.
 type AutopilotDriver struct {
+	brtCheckedPath                 brtPathSignature
 	FleetBus                       bool   `json:"-"`
 	BeforeRecovery                 func() `json:"-"`
 	stationQueries                 stationDecisionCache
@@ -138,36 +140,54 @@ type AutopilotDriver struct {
 	pathSynced   bool // false => next projection performs a global (non-monotonic) search
 	pathRevision int
 
-	stationDock            *stationDockPlan
-	departureFromDock      bool
-	pathSkipTarget         bool
-	bypassStopID           int
-	stationBypassHold      float64 // Bumper gap to a station blocker when no merge is available.
-	skippedDeparture       *skippedStopDeparture
-	stationDockUnreachable bool
-	pinnedLeaderWait       float64
-	offRouteWait           float64 // Seconds a fleet bus has been far from its leg path.
-	offRoadNetwork         bool    // Off route with no road under the bus; set by replanOffRoute.
-	directRoundaboutExit   *sim.Vec2
+	stationDock             *stationDockPlan
+	departureFromDock       bool
+	pathSkipTarget          bool
+	bypassStopID            int
+	stationBypassHold       float64 // Bumper gap to a station blocker when no merge is available.
+	skippedDeparture        *skippedStopDeparture
+	stationDockUnreachable  bool
+	pinnedLeaderWait        float64
+	stationArrivalStallWait float64
+	stationOverrunWait      float64
+	junctionRejoinActive    bool
+	offRouteOrigin          *sim.BusStop
+	offRouteWait            float64        // Seconds a fleet bus has been far from its leg path.
+	offRoadNetwork          bool           // Off route with no road under the bus; set by replanOffRoute.
+	outerDockWait           float64        // Seconds stopped beside the target bay, unable to enter it.
+	sideYield               *sideYieldHold // Backed away from an angled neighbor; wait for it.
+	outerDockAllowed        bool           // May board from the lane beside the bay; see updateOuterLaneDock.
+	hardBarrierTimer        float64        // Recent hard-barrier pushback while driving off-route.
+	barrierReverse          *barrierReverseState
+	barrierReverseCooldown  int
+	barrierYieldRelay       rearReverseYield
+	barrierYieldRelayTimer  float64
+	directRoundaboutExit    *sim.Vec2
 
-	exitCruise          *sim.BusLaneMergeRequest
-	busLaneJunction     *sim.Vec2
-	busLaneTurnChosen   bool
-	medianRightChoice   *sim.Vec2
-	curbBusRight        bool
-	rightTurnJunction   *sim.Vec2
-	rightTurnHeading    float64
-	rightTurnWaiting    bool
-	busJunctionEntered  bool
-	ordinaryBusLeft     bool
-	strandedMedianWait  float64
-	strandedMedianStart sim.Vec2
-	stationStallWait    float64
-	stationStallStart   sim.Vec2
-	pathOrdinaryBusLeft bool
-	busTurnHoldDistance float64
-	pathReturnHold      *sim.BusLaneMergeRequest // transient road-aligned hold while a route taper is blocked
-	CanSkipTargetStop   bool                     // Whether the active target stop can be skipped (no alighting pax and station empty/occupied)
+	exitCruise                 *sim.BusLaneMergeRequest
+	busLaneJunction            *sim.Vec2
+	busLaneTurnChosen          bool
+	berserkLeftTurnChoice      *sim.Vec2
+	turnExitGeometry           *turnExitGeometryScratch
+	medianRightChoice          *sim.Vec2
+	curbBusRight               bool
+	rightTurnJunction          *sim.Vec2
+	rightTurnHeading           float64
+	rightTurnWaiting           bool
+	busJunctionEntered         bool
+	ordinaryBusLeft            bool
+	strandedMedianWait         float64
+	strandedMedianStart        sim.Vec2
+	stationStallWait           float64
+	stationStallStart          sim.Vec2
+	pathOrdinaryBusLeft        bool
+	fallbackJunction           *sim.Vec2
+	blockedTurnMergeTimer      float64
+	busTurnHoldDistance        float64
+	junctionMergeSteerCap      float64
+	junctionMergeSteerCapValid bool
+	pathReturnHold             *sim.BusLaneMergeRequest // transient road-aligned hold while a route taper is blocked
+	CanSkipTargetStop          bool                     // Whether the active target stop can be skipped (no alighting pax and station empty/occupied)
 
 	// Last-frame tracking diagnostics (used by tests and debugging overlays)
 	LastPathS       float64  // Arc-length position of the bus along the drive path
@@ -207,11 +227,14 @@ func (ad *AutopilotDriver) GetBerserkCruiseSpeed() float64 {
 
 // Reset clears autonomous driving internal state
 func (ad *AutopilotDriver) Reset() {
+	ad.brtCheckedPath = brtPathSignature{}
 	ad.temporaryGeometry = nil
 	ad.roundaboutEdgeRecovery = nil
 	ad.roundaboutEdgeRetry = 0
 	ad.headonRecovery = nil
 	ad.headonDeadlockTimer = 0
+	ad.junctionRejoinActive = false
+	ad.offRouteOrigin = nil
 	ad.pathReturnHold = nil
 	ad.exitCruise = nil
 	ad.queueStopID = -1
@@ -220,6 +243,7 @@ func (ad *AutopilotDriver) Reset() {
 	ad.State = AutopilotStateCruising
 	ad.busLaneJunction = nil
 	ad.busLaneTurnChosen = false
+	ad.berserkLeftTurnChoice = nil
 	ad.rightTurnJunction = nil
 	ad.medianRightChoice = nil
 	ad.curbBusRight = false
@@ -229,7 +253,13 @@ func (ad *AutopilotDriver) Reset() {
 	ad.strandedMedianWait = 0
 	ad.stationStallWait = 0
 	ad.pathOrdinaryBusLeft = false
+	ad.fallbackJunction = nil
+	ad.blockedTurnMergeTimer = 0
 	ad.busTurnHoldDistance = 0
+	ad.barrierReverse = nil
+	ad.barrierReverseCooldown = 0
+	ad.barrierYieldRelay = rearReverseYield{}
+	ad.barrierYieldRelayTimer = 0
 	ad.arrivalEscapeRetry = 0
 	ad.sidecarEscapeRetry = 0
 	ad.sidecarPresteer, ad.sidecarPresteerValid = 0, false
@@ -239,6 +269,8 @@ func (ad *AutopilotDriver) Reset() {
 	ad.roadSafetyHold = false
 	ad.roadRecoverySpeed = 0
 	ad.roadReverseActive = false
+	ad.barrierReverse = nil
+	ad.barrierReverseCooldown = 0
 	ad.midLaneRecovery = nil
 	ad.midLaneSweepClear = false
 	ad.approachMerge = nil
@@ -311,6 +343,7 @@ func (ad *AutopilotDriver) ComputeControls(
 	if ad != nil && ad.BerserkMode {
 		response = 1.2
 	}
+	bus.ReverseYieldRequest = math.Max(0, bus.ReverseYieldRequest-dt)
 	bus.SetNextAccelerationScale(response)
 	if ad != nil {
 		ad.roundaboutEdgeRetry = math.Max(0, ad.roundaboutEdgeRetry-dt)
@@ -351,10 +384,35 @@ func (ad *AutopilotDriver) ComputeControls(
 	speedAbs := math.Abs(bus.Speed)
 
 	if ad.headonRecovery != nil {
-		f := autopilotFrame{bus: bus, world: world, obstacles: obstacles, laneWidth: laneWidth}
+		f := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth,
+			targetStop: targetStop, fromStop: prevStop, s: ad.LastPathS, speedAbs: speedAbs,
+			remaining: ad.LastRemaining, distToStop: distToStop, lateralErr: ad.LastLateralErr}
 		th, br, st, done := ad.headonRecoveryControls(f, dt)
 		if !done {
 			return th, br, st, false, false, false
+		}
+	}
+	// A departure/sidecar controller can itself be the rear blocker. Accept
+	// a checked yield before those controllers hold their forward position.
+	if ad.FleetBus && bus.ReverseYieldRequest > 0 && speedAbs < 1 {
+		f := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, laneWidth: laneWidth,
+			targetStop: targetStop, fromStop: prevStop, s: ad.LastPathS, speedAbs: speedAbs,
+			remaining: ad.LastRemaining, distToStop: distToStop, lateralErr: ad.LastLateralErr}
+		if distance, revSteer := ad.requestedReverseYieldPlan(f); distance > 0 {
+			ad.headonDeadlockTimer += math.Max(0, dt)
+			if ad.headonDeadlockTimer >= .6 {
+				ad.headonRecovery = &HeadonDeadlockRecovery{
+					StartPos:           bus.Pos,
+					TargetDistance:     distance,
+					YieldHoldRemaining: 4,
+					ParallelRetreat:    revSteer == 0,
+					FollowerRetreat:    revSteer != 0,
+					RetreatSteer:       revSteer,
+				}
+				th, br, st, _ := ad.headonRecoveryControls(f, dt)
+				return th, br, st, false, false, false
+			}
+			return 0, 1, 0, false, false, false
 		}
 	}
 	if ad.roundaboutEdgeRecovery != nil {
@@ -412,9 +470,28 @@ func (ad *AutopilotDriver) ComputeControls(
 		ad.departureFromDock = false
 	}
 	frameForDock := autopilotFrame{bus: bus, world: world, tls: tls, obstacles: obstacles, targetStop: targetStop, fromStop: ad.fromStop(world), laneWidth: laneWidth, s: ad.LastPathS, speedAbs: speedAbs, remaining: remDist, distToStop: distToStop}
+	ad.updateOuterLaneDock(frameForDock, dt)
 	ad.clearPassedBusLaneJunction(frameForDock)
 	ad.requestStationMerge(frameForDock)
+	if ad.tryStationOverrunRetreat(frameForDock, dt) && ad.headonRecovery == nil {
+		ad.LastTargetSpeed = 0
+		return 0, 1, 0, false, false, false
+	}
+	if ad.headonRecovery != nil && (ad.headonRecovery.StationRetreat || ad.headonRecovery.ParallelRetreat) && !bus.DoorsOpen {
+		if th, br, st, done := ad.headonRecoveryControls(frameForDock, dt); !done {
+			return th, br, st, false, false, false
+		}
+	}
+	if ad.headonRecovery == nil && ad.holdingSideYield(dt) {
+		ad.LastTargetSpeed = 0
+		return 0, 1, 0, false, false, false
+	}
 	if inputs, active := ad.stationDockControls(frameForDock); active {
+		if ad.waitingAtUsableOuterBoardingPose(frameForDock, inputs) {
+			// A checked separation crawl must not carry a waiting route bus
+			// beyond its last usable boarding window before permission arrives.
+			return 0, 1, inputs.steer, false, false, false
+		}
 		if (ad.sidecarEscapeActive || (inputs.throttle == 0 && inputs.brake > 0)) && !inputs.isDocked && !inputs.toggleDoors {
 			desired, _, _, _ := ad.pursuitSteering(frameForDock)
 			if escapeSteer, clear := ad.stationArrivalEscape(frameForDock, desired); clear {
@@ -430,6 +507,29 @@ func (ad *AutopilotDriver) ComputeControls(
 				return th, br, escapeSteer, false, false, false
 			} else if ad.sidecarPresteerValid {
 				return 0, 1, escapeSteer, false, false, false
+			}
+			if inputs.throttle == 0 && inputs.brake > 0 {
+				stallSteer := inputs.steer
+				if ad.articulatedSweptSpeed(autopilotFrame{bus: bus, world: world, laneWidth: laneWidth}, desired) <= .5 {
+					stallSteer = desired
+				}
+				if ad.tryStationArrivalReverseRecovery(frameForDock, stallSteer, dt) {
+					th, br, st, _ := ad.headonRecoveryControls(frameForDock, dt)
+					return th, br, st, false, false, false
+				}
+				// Two long buses held side by side beside the platform: the
+				// straight one backs off so the angled one can turn in.
+				if ad.tryPinnedLeaderRetreat(frameForDock, dt) {
+					th, br, st, _ := ad.headonRecoveryControls(frameForDock, dt)
+					return th, br, st, false, false, false
+				}
+				// Docking returns before the road recovery controllers below.
+				// An arriving bus can itself pin a departure's trailer, and must
+				// be able to offer the same fully checked follower retreat here.
+				if ad.laneChangeFollowerRetreatDistance(frameForDock) > 0 && ad.tryHeadonDeadlockRecovery(frameForDock, dt) {
+					th, br, st, _ := ad.headonRecoveryControls(frameForDock, dt)
+					return th, br, st, false, false, false
+				}
 			}
 		}
 		return inputs.throttle, inputs.brake, inputs.steer, false, inputs.toggleDoors, inputs.isDocked
@@ -460,7 +560,7 @@ func (ad *AutopilotDriver) ComputeControls(
 		maxDockSpeed = 26.0 // Snap into docked state smoothly as bus enters the bay
 	}
 	inBaseLane := math.Abs(ad.LaneOffset) < 10.0
-	isBerserkOuterDock := ad.BerserkMode && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
+	isBerserkOuterDock := ad.outerDockAllowed && targetStop.ContainsBusInOuterLane(bus, laneWidth) &&
 		(speedAbs < 15.0 || (ad.OvertakeState != OvertakePassing && speedAbs < maxDockSpeed))
 	platformDockReady := targetStop.ContainsBus(bus)
 	fallbackDockReady := inBaseLane && (alignedNearBay || restingAtStop)
@@ -480,6 +580,9 @@ func (ad *AutopilotDriver) ComputeControls(
 		}
 	}
 	outerDockReady := isBerserkOuterDock
+	if (platformDockReady || fallbackDockReady) && ad.preferForwardArticulatedBay(frameForDock) {
+		platformDockReady, fallbackDockReady = false, false
+	}
 	bayDockReady := (platformDockReady || fallbackDockReady) && ad.stationBoardingCapacity(bus, targetStop, obstacles)
 	if !ad.CanSkipTargetStop && ad.State != AutopilotStateDeparting && speedAbs < maxDockSpeed &&
 		(outerDockReady || bayDockReady) && stationBoardingPoseClear(frameForDock) {
@@ -522,11 +625,30 @@ func (ad *AutopilotDriver) ComputeControls(
 		s: s, speedAbs: speedAbs, remaining: remaining,
 		distToStop: distToStop, lateralErr: lateralErr,
 	}
+	if ad.barrierReverseCooldown > 0 {
+		ad.barrierReverseCooldown--
+	}
+	if ad.barrierYieldRelayTimer > 0 {
+		ad.barrierYieldRelayTimer = math.Max(0, ad.barrierYieldRelayTimer-dt)
+		if speedAbs < .5 && ad.barrierReverse == nil {
+			ad.barrierYieldRelay.send()
+		} else {
+			ad.barrierYieldRelayTimer = 0
+			ad.barrierYieldRelay = rearReverseYield{}
+		}
+	}
 	var targetPt sim.Vec2
 	steer, frame.alpha, targetPt, frame.nearRoundabout = ad.pursuitSteering(frame)
 	if th, br, st, active := ad.roadReverseControls(frame); active {
 		bus.SetNextAccelerationScale(1)
 		return th, br, st, false, false, false
+	}
+	if ad.barrierReverse != nil {
+		th, br, st, active := ad.barrierReverseControls(frame, steer, dt)
+		if active {
+			bus.SetNextAccelerationScale(1)
+			return th, br, st, false, false, false
+		}
 	}
 	steer = ad.midLaneSafeSteering(frame, steer)
 	steer = ad.holdOccupiedRightLane(frame, steer)
@@ -536,19 +658,89 @@ func (ad *AutopilotDriver) ComputeControls(
 	if ad.approachMerge != nil || ad.midLaneRecovery != nil {
 		bus.SetNextAccelerationScale(1)
 	}
-	targetSpd := math.Min(ad.targetSpeed(frame), ad.controlSweptSpeed(frame, steer))
-	sweepSpeed := ad.articulatedSweptSpeed(frame, steer)
-	if targetSpd >= 16 && sweepSpeed == 0 && frame.nearRoundabout && speedAbs < 16 {
-		if alternative, clear := ad.roundaboutIslandSteering(frame, steer); clear {
-			steer, sweepSpeed = alternative, 16
+	targetSpd := ad.targetSpeed(frame)
+	if ad.junctionMergeSteerCapValid && targetSpd > 0 {
+		capMag := math.Abs(ad.junctionMergeSteerCap)
+		if ad.junctionMergeSteerCap >= 0 {
+			steer = sim.Clamp(steer, 0, capMag)
+		} else {
+			steer = sim.Clamp(steer, -capMag, 0)
+		}
+		if speedAbs <= .5 && math.Abs(bus.SteeringAngle-steer*bus.MaxSteerAngle) > .05 {
+			return 0, 1, steer, false, false, false
+		}
+		targetSpd = math.Min(targetSpd, 18)
+	}
+	preSweepTarget := targetSpd
+	if targetSpd > 0 {
+		targetSpd = math.Min(targetSpd, ad.controlSweptSpeed(frame, steer))
+	}
+	allowUnwind := preSweepTarget >= 16 && !frame.nearRoundabout && speedAbs < 16 && bus.IsArticulated() &&
+		!ad.departureEscapeActive && !ad.departurePresteerValid && !ad.sidecarEscapeActive
+	if allowUnwind && ad.parallelTrailerStraightClear(frame, steer) {
+		if math.Abs(bus.SteeringAngle) > .02 {
+			return 0, 1, 0, false, false, false
+		}
+		steer, targetSpd = 0, math.Min(preSweepTarget, 16)
+		bus.SetNextAccelerationScale(1)
+	}
+	if targetSpd == 0 && allowUnwind {
+		if alternative, presteer, clear := ad.roundaboutSweepUnwindSteering(frame, steer); clear {
+			if presteer {
+				return 0, 1, alternative, false, false, false
+			}
+			steer, targetSpd = alternative, 16
+			bus.SetNextAccelerationScale(1)
+		} else if alternative, clear := ad.articulatedBarrierUnwindSteer(frame, steer); clear {
+			steer, targetSpd = alternative, 16
+			bus.SetNextAccelerationScale(1)
+		}
+	} else if targetSpd == 0 && preSweepTarget >= 16 && !frame.nearRoundabout && speedAbs < 16 && !bus.IsArticulated() {
+		if alternative, presteer, clear := ad.compactControlUnwindSteer(frame, steer); clear {
+			if presteer {
+				return 0, 1, alternative, false, false, false
+			}
+			steer, targetSpd = alternative, 16
 			bus.SetNextAccelerationScale(1)
 		}
 	}
-	targetSpd = math.Min(targetSpd, sweepSpeed)
+	if targetSpd > 0 {
+		sweepSpeed := ad.articulatedSweptSpeed(frame, steer)
+		if targetSpd >= 16 && sweepSpeed == 0 && speedAbs < 20 && bus.IsArticulated() &&
+			!ad.departureEscapeActive && !ad.departurePresteerValid && !ad.sidecarEscapeActive {
+			if frame.nearRoundabout {
+				if alternative, clear := ad.roundaboutIslandSteering(frame, steer); clear {
+					steer, sweepSpeed = alternative, 16
+					bus.SetNextAccelerationScale(1)
+				}
+			}
+			if sweepSpeed == 0 {
+				if alternative, presteer, clear := ad.roundaboutSweepUnwindSteering(frame, steer); clear {
+					if presteer {
+						return 0, 1, alternative, false, false, false
+					}
+					steer, sweepSpeed = alternative, 16
+					bus.SetNextAccelerationScale(1)
+				} else if allowUnwind {
+					if alternative, clear := ad.articulatedBarrierUnwindSteer(frame, steer); clear {
+						steer, sweepSpeed = alternative, 16
+						bus.SetNextAccelerationScale(1)
+					}
+				}
+			}
+		}
+		targetSpd = math.Min(targetSpd, sweepSpeed)
+	}
 	if ad.busTurnHoldDistance > 0 {
 		targetSpd = math.Min(targetSpd, math.Sqrt(2*135*math.Max(0, ad.busTurnHoldDistance-10)))
 	}
 
+	if targetSpd <= .5 || ad.junctionRejoinActive {
+		if th, br, st, active := ad.junctionLaneRejoinControls(frame); active {
+			bus.SetNextAccelerationScale(1)
+			return th, br, st, false, false, false
+		}
+	}
 	if targetSpd <= .5 {
 		if escapeSteer, clear := ad.stationArrivalEscape(frame, steer); clear {
 			steer, targetSpd = escapeSteer, stationArrivalCrawlSpeed(frame)
@@ -604,6 +796,18 @@ func (ad *AutopilotDriver) ComputeControls(
 		return th, br, st, false, false, false
 	} else if targetSpd > .5 {
 		ad.pinnedLeaderWait = 0
+		ad.stationArrivalStallWait = 0
+	}
+	if targetSpd <= .5 && ad.tryStationArrivalReverseRecovery(frame, steer, dt) {
+		th, br, st, _ := ad.headonRecoveryControls(frame, dt)
+		return th, br, st, false, false, false
+	}
+	if targetSpd <= .5 && ad.tryBarrierReverseRecovery(frame, steer, dt) {
+		th, br, st, active := ad.barrierReverseControls(frame, steer, dt)
+		if active {
+			bus.SetNextAccelerationScale(1)
+			return th, br, st, false, false, false
+		}
 	}
 	if targetSpd <= .5 && ad.tryHeadonDeadlockRecovery(frame, dt) {
 		th, br, st, _ := ad.headonRecoveryControls(frame, dt)
@@ -644,14 +848,15 @@ type autopilotFrame struct {
 	targetStop     *sim.BusStop
 	fromStop       *sim.BusStop
 
-	laneWidth      float64
-	s              float64
-	speedAbs       float64
-	remaining      float64
-	distToStop     float64
-	lateralErr     float64
-	alpha          float64
-	nearRoundabout bool
+	laneWidth             float64
+	s                     float64
+	speedAbs              float64
+	remaining             float64
+	distToStop            float64
+	lateralErr            float64
+	alpha                 float64
+	nearRoundabout        bool
+	allowBarrierUnwindYaw bool
 }
 
 // PathTargetStopID identifies the destination of the cached driving leg.

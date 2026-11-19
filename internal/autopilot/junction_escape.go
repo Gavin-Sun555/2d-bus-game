@@ -36,15 +36,48 @@ func junctionRetreatNeeded(f autopilotFrame) bool {
 	return false
 }
 
-func junctionReverseControls(b *sim.Bus) (throttle, brake, steer float64) {
-	steer = sim.Clamp(4*sim.NormalizeAngle(b.Heading-b.TailHeading()), -.8, .8)
+// A committed crossing car cannot reverse out of its arc. A turning bus
+// pinned against that arc can instead make checked rearward space, even
+// while its trailer is bent and its path tracking error is small.
+func (ad *AutopilotDriver) committedCarTurnBlocksBus(f autopilotFrame) bool {
+	c := f.bus.JunctionCorridor
+	if c == nil || !c.Entered || c.Remaining <= 0 || len(c.Bodies) < 2 {
+		return false
+	}
+	angle := math.Abs(corridorTurnAngle(c))
+	if angle < .5 || angle >= 2.8 {
+		return false
+	}
+	for _, ob := range f.obstacles {
+		turn := ob.JunctionTurn
+		if ob.Bus != nil || math.Abs(ob.Speed) > 1 || turn == nil || turn.LaneChange || turn.Center.Distance(c.Center) > 1 || math.Abs(math.Cos(turn.EntryHeading-c.EntryHeading)) > .2 {
+			continue
+		}
+		one := f
+		one.obstacles = []VehicleObstacle{ob}
+		if ad.junctionSweptSpeed(one) <= .5 {
+			return true
+		}
+	}
+	return false
+}
+
+func junctionReverseControls(b *sim.Bus, alignEntry bool, entryHeading float64) (throttle, brake, steer float64) {
+	ang := sim.NormalizeAngle(b.Heading - b.TailHeading())
+	steer = sim.Clamp(4*ang, -1, 1)
+	if alignEntry && math.Abs(ang) < 0.94 {
+		hdgErr := sim.NormalizeAngle(b.Heading - entryHeading)
+		if math.Abs(hdgErr) <= 0.45 {
+			steer = sim.Clamp(4*hdgErr+1.2*ang, -1, 1)
+		}
+	}
 	if b.Speed < -16 {
 		return 0, .3, steer
 	}
 	return sim.Clamp((16+b.Speed)/15, .05, .35), 0, steer
 }
 
-func junctionReverseClear(f autopilotFrame, ticks int) bool {
+func junctionReverseClear(f autopilotFrame, ticks int, alignEntry bool, entryHeading float64) bool {
 	var scan forwardEscapeScan
 	scan.prepare(f, 16)
 	b := *f.bus
@@ -55,7 +88,7 @@ func junctionReverseClear(f autopilotFrame, ticks int) bool {
 	b.StationMergeRequest = nil
 	b.ShiftTo(sim.GearReverse)
 	for tick := 1; tick <= ticks; tick++ {
-		th, br, st := junctionReverseControls(&b)
+		th, br, st := junctionReverseControls(&b, alignEntry, entryHeading)
 		b.SetNextAccelerationScale(1)
 		b.Update(1./60, th, br, st, false, false)
 		if !scan.poseClear(f, &b, float64(tick)/60) {

@@ -15,7 +15,7 @@ type busMergeObservation struct {
 // alongside or too close to brake comfortably clear the bus first.
 func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64 {
 	car := f.car
-	if f.world == nil || car.InRoundabout || car.JunctionTurn != nil {
+	if f.world == nil || car.InRoundabout || (car.JunctionTurn != nil && (!car.JunctionTurn.Straight || car.JunctionTurn.LaneChange)) {
 		car.YieldingToBus = nil
 		return target
 	}
@@ -49,8 +49,21 @@ func (tm *TrafficManager) busMergeYieldSpeed(f carFrame, target float64) float64
 		if bus == nil || bus.DoorsOpen {
 			continue
 		}
+		if car.JunctionTurn != nil {
+			req := bus.LaneMergeRequest
+			// Keep the committed straight movement, but acknowledge a small
+			// alignment by the bus already ahead in the same junction. The
+			// normal braking/gap checks below still decide whether to yield.
+			if req == nil || req.RightTurn || req.LeftTurn || req.Is2Lane || req.Junction.Distance(car.JunctionTurn.Center) > 1 ||
+				math.Cos(car.Heading-req.Heading) < .98 || math.Abs(bus.Pos.Sub(req.Target).Dot(sim.Vec2{X: -math.Sin(req.Heading), Y: math.Cos(req.Heading)})) > f.laneWidth*.25 {
+				continue
+			}
+		}
 		if limit, ok := laneBusYieldLimit(f, bus, previous); ok {
 			grant(bus, limit)
+		}
+		if car.JunctionTurn != nil {
+			continue
 		}
 		if bus.StationMergeRequest == nil || bus.StationMergeRequest.Remaining <= 0 {
 			continue

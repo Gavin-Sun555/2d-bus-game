@@ -3,6 +3,7 @@ package game
 import (
 	"image/color"
 	"math"
+	"time"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/textui"
@@ -65,21 +66,52 @@ func WithGraphicsWarmup(g *Game) *GraphicsWarmupGame {
 }
 
 type GraphicsWarmupGame struct {
-	game  *Game
-	ready bool
+	game   *Game
+	ready  bool
+	clock  presentationClock
+	frames presentationFrames
 }
 
 func (g *GraphicsWarmupGame) Update() error {
 	if !g.ready {
 		return nil
 	}
-	return g.game.Update()
+	if !presentationActive(g.game) {
+		g.resetPresentation()
+		return g.game.Update()
+	}
+	now := time.Now()
+	if g.frames.count == 0 {
+		g.frames.capture(g.game, 0)
+	}
+	world, player := g.game.World, g.game.Bus
+	err := g.game.Update()
+	if world != g.game.World || player != g.game.Bus {
+		g.resetPresentation()
+		if presentationActive(g.game) {
+			g.frames.capture(g.game, 0)
+		}
+		return err
+	}
+	g.frames.capture(g.game, g.clock.advance(now))
+	return err
+}
+func (g *GraphicsWarmupGame) resetPresentation() {
+	if g.frames.count == 0 && g.clock.origin.IsZero() {
+		return
+	}
+	g.clock = presentationClock{}
+	g.frames = presentationFrames{}
 }
 func (g *GraphicsWarmupGame) Layout(w, h int) (int, int)              { return g.game.Layout(w, h) }
 func (g *GraphicsWarmupGame) LayoutF(w, h float64) (float64, float64) { return g.game.LayoutF(w, h) }
 func (g *GraphicsWarmupGame) Draw(screen *ebiten.Image) {
 	if g.ready {
-		g.game.Draw(screen)
+		if g.frames.prepare(g.game, g.clock.displayTime(time.Now())) {
+			g.game.drawWithVehicles(screen, &g.frames.camera, &g.frames.player, &g.frames.traffic, &g.frames.fleet)
+		} else {
+			g.game.Draw(screen)
+		}
 		return
 	}
 	screen.Fill(color.RGBA{R: 15, G: 23, B: 42, A: 255})

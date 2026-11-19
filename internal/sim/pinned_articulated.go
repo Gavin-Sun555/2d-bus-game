@@ -11,27 +11,51 @@ import "math"
 // for aligned, moving or compact buses, distant lanes, and buses already
 // alongside the follower.
 func PinnedArticulatedRearGap(leader *Bus, pos Vec2, heading, halfLen, halfWid, reach float64) (float64, bool) {
-	if leader == nil || !leader.IsArticulated() || math.Abs(leader.Speed) >= 1 || math.Cos(leader.TailHeading()-heading) < .95 {
+	if leader == nil || !leader.IsArticulated() || math.Abs(leader.Speed) >= 1 || math.Cos(leader.TailHeading()-heading) < .35 {
 		return 0, false
 	}
 	if yaw := math.Abs(NormalizeAngle(leader.Heading - heading)); yaw < .2 || yaw > 1.2 {
 		return 0, false
 	}
 	u := UnitFromAngle(heading)
+	if leader.Pos.Sub(pos).Dot(u) <= 0 {
+		return 0, false
+	}
 	r := Vec2{X: -u.Y, Y: u.X}
+	latLimit := halfWid + reach
 	rear := math.Inf(1)
 	minLat, maxLat := math.Inf(1), math.Inf(-1)
 	for _, part := range leader.BodyParts() {
 		if part.HalfLen <= 0 {
 			continue
 		}
-		yaw := part.Heading - heading
-		along := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
-		side := part.HalfLen*math.Abs(math.Sin(yaw)) + part.HalfWid*math.Abs(math.Cos(yaw))
-		delta := part.Center.Sub(pos)
-		rear = math.Min(rear, delta.Dot(u)-along)
-		minLat = math.Min(minLat, delta.Dot(r)-side)
-		maxLat = math.Max(maxLat, delta.Dot(r)+side)
+		dc := part.Center.Sub(pos)
+		cU, cR := dc.Dot(u), dc.Dot(r)
+		pU := UnitFromAngle(part.Heading)
+		pR := Vec2{X: -pU.Y, Y: pU.X}
+		lU, lR := pU.Dot(u)*part.HalfLen, pU.Dot(r)*part.HalfLen
+		wU, wR := pR.Dot(u)*part.HalfWid, pR.Dot(r)*part.HalfWid
+		corners := [4]Vec2{
+			{X: cU + lU + wU, Y: cR + lR + wR},
+			{X: cU + lU - wU, Y: cR + lR - wR},
+			{X: cU - lU - wU, Y: cR - lR - wR},
+			{X: cU - lU + wU, Y: cR - lR + wR},
+		}
+		for i, a := range corners {
+			minLat = math.Min(minLat, a.Y)
+			maxLat = math.Max(maxLat, a.Y)
+			if math.Abs(a.Y) <= latLimit {
+				rear = math.Min(rear, a.X)
+			}
+			b := corners[(i+1)&3]
+			if dy := b.Y - a.Y; math.Abs(dy) > 1e-9 {
+				for _, bound := range [2]float64{-latLimit, latLimit} {
+					if t := (bound - a.Y) / dy; t > 0 && t < 1 {
+						rear = math.Min(rear, a.X+(b.X-a.X)*t)
+					}
+				}
+			}
+		}
 	}
 	if math.IsInf(rear, 0) {
 		return 0, false

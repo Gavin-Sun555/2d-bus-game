@@ -36,8 +36,12 @@ func roundaboutBusHeadway(car *sim.TrafficCar, bus *sim.Bus) float64 {
 	difference := sim.NormalizeAngle(car.RoundaboutAngle - angle)
 	tangent := sim.Vec2{X: radial.Y, Y: -radial.X}.Normalize()
 	circulating := tangent.Dot(sim.UnitFromAngle(bus.Heading)) > .85
-	if circulating && car.RoundaboutCurve == nil && difference > 0 && difference < 1.3 && math.Abs(car.RoundaboutTargetR-radial.Length()) <= 45 {
-		gap := difference*math.Min(car.RoundaboutRadius, radial.Length()) - car.Length/2 - body.HalfLen
+	if circulating && (car.RoundaboutCurve == nil || !car.RoundaboutCurve.Exiting) && difference > 0 && difference < 1.3 && math.Abs(car.RoundaboutTargetR-radial.Length()) <= 45 {
+		carR := car.RoundaboutRadius
+		if car.RoundaboutCurve != nil || carR <= 0 {
+			carR = car.Pos.Sub(car.RoundaboutCenter).Length()
+		}
+		gap := difference*math.Min(carR, radial.Length()) - car.Length/2 - body.HalfLen
 		if gap <= 3 {
 			return 0
 		}

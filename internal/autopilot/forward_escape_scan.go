@@ -37,6 +37,22 @@ func (cache *forwardEscapeBoundaries) reset(f autopilotFrame) {
 	cache.version, cache.length, cache.width, cache.articulated = version, bus.Length, bus.Width, bus.IsArticulated()
 }
 
+func (cache *forwardEscapeBoundaries) lookup(bus *sim.Bus) (known, blocked bool) {
+	if cache == nil {
+		return false, false
+	}
+	pose := [4]uint64{math.Float64bits(bus.Pos.X), math.Float64bits(bus.Pos.Y), math.Float64bits(bus.Heading), math.Float64bits(bus.TailHeading())}
+	hash := uint64(0)
+	for _, value := range pose {
+		hash = bits.RotateLeft64(hash^value, 13) * 0x9e3779b97f4a7c15
+	}
+	entry := &cache.entries[(hash^(hash>>32))&uint64(len(cache.entries)-1)]
+	if entry.valid && entry.pose == pose {
+		return true, entry.blocked
+	}
+	return false, false
+}
+
 func (cache *forwardEscapeBoundaries) blocked(f autopilotFrame, bus *sim.Bus) bool {
 	if cache == nil {
 		return forwardEscapeHitsBoundary(f, bus)
@@ -59,12 +75,16 @@ func forwardEscapeHitsBoundary(f autopilotFrame, bus *sim.Bus) bool {
 }
 
 type forwardEscapeScan struct {
-	origin     sim.Vec2
-	travel     float64
-	count      int
-	valid      bool
-	entries    [128]forwardEscapeObstacle
-	boundaries *forwardEscapeBoundaries
+	origin         sim.Vec2
+	travel         float64
+	count          int
+	valid          bool
+	initialChecked bool
+	initialClear   bool
+	entries        [128]forwardEscapeObstacle
+	boundaries     *forwardEscapeBoundaries
+	traffic        [][2]sim.OBB
+	trafficReady   []bool
 }
 
 type forwardEscapeObstacle struct {
@@ -74,8 +94,40 @@ type forwardEscapeObstacle struct {
 	bodies     [2]sim.OBB
 }
 
+func (ad *AutopilotDriver) useForwardEscapeBoundaries(f autopilotFrame, scan *forwardEscapeScan) {
+	if f.world == nil || f.bus == nil {
+		return
+	}
+	scratch := ad.geometryScratch()
+	if scratch.forwardEscapeBoundaries == nil {
+		scratch.forwardEscapeBoundaries = new(forwardEscapeBoundaries)
+	}
+	scratch.forwardEscapeBoundaries.reset(f)
+	scan.boundaries = scratch.forwardEscapeBoundaries
+	if scan.valid && scan.count > 0 {
+		needed := (forwardEscapeTicks + 1) * scan.count
+		if cap(scratch.forwardTraffic) < needed {
+			scratch.forwardTraffic = make([][2]sim.OBB, needed)
+		}
+		scan.traffic = scratch.forwardTraffic[:needed]
+		if cap(scratch.forwardTrafficReady) < needed {
+			scratch.forwardTrafficReady = make([]bool, needed)
+		}
+		scan.trafficReady = scratch.forwardTrafficReady[:needed]
+		clear(scan.trafficReady)
+	}
+}
+
 func (c *forwardEscapeScan) prepare(f autopilotFrame, targetSpeed float64) {
-	*c = forwardEscapeScan{}
+	c.origin = sim.Vec2{}
+	c.travel = 0
+	c.count = 0
+	c.valid = false
+	c.initialChecked = false
+	c.initialClear = false
+	c.boundaries = nil
+	c.traffic = nil
+	c.trafficReady = nil
 	if f.bus == nil {
 		return
 	}
@@ -114,25 +166,56 @@ func (c *forwardEscapeScan) prepare(f autopilotFrame, targetSpeed float64) {
 	c.valid = true
 }
 
-func (c *forwardEscapeScan) poseClear(f autopilotFrame, b *sim.Bus, elapsed float64) bool {
+type forwardEscapePose struct {
+	pos                  sim.Vec2
+	heading, tailHeading float64
+	checkBoundary        bool
+}
+
+func (c *forwardEscapeScan) poseTrafficClear(f autopilotFrame, b *sim.Bus, elapsed float64) (clear, checkBoundary bool) {
 	delta := b.Pos.Sub(c.origin)
 	if !c.valid || !(elapsed >= 0 && elapsed <= 2) || !(delta.Dot(delta) <= c.travel*c.travel) {
-		return departureEscapePoseClear(f, b, elapsed)
+		return departureEscapePoseClear(f, b, elapsed), false
 	}
-	if c.boundaries.blocked(f, b) {
-		return false
+	if math.Abs(sim.NormalizeAngle(b.Heading-b.TailHeading())) > sim.MaxArticulationAngle-.025 {
+		return false, false
 	}
 	var own [2]sim.OBB
 	ownReady := false
+	tick := int(math.Round(elapsed * 60))
+	canCache := len(c.trafficReady) == (forwardEscapeTicks+1)*c.count && tick >= 0 && tick <= forwardEscapeTicks && float64(tick)/60 == elapsed
 	for i := 0; i < c.count; i++ {
 		e := &c.entries[i]
 		ob := f.obstacles[e.index]
-		if ob.Pos.Distance(b.Pos) > b.OverallLength()+ob.Length+math.Abs(ob.Speed)*elapsed+40 {
+		d := ob.Pos.Sub(b.Pos)
+		limit := b.OverallLength() + ob.Length + math.Abs(ob.Speed)*elapsed + 40
+		if d.Dot(d) > limit*limit {
 			continue
 		}
 		parts := e.bodies
 		if !e.stationary {
-			parts = predictedObstacleBodies(ob, math.Max(0, ob.Speed)*elapsed)
+			cacheIdx := tick*c.count + i
+			if canCache && c.trafficReady[cacheIdx] {
+				parts = c.traffic[cacheIdx]
+			} else {
+				dist := math.Max(0, ob.Speed) * elapsed
+				if ob.Bus != nil && dist > 0 {
+					if !ownReady {
+						own, ownReady = b.BodyParts(), true
+					}
+					position, heading := predictedObstacleBusPose(ob, dist)
+					if predictedBusSeparated(own, ob.Bus, position, heading, e.padding, e.padding) {
+						continue
+					}
+					parts = ob.Bus.BodyPartsAtPose(position, heading)
+				} else {
+					parts = predictedObstacleBodies(ob, dist)
+				}
+				if canCache {
+					c.traffic[cacheIdx] = parts
+					c.trafficReady[cacheIdx] = true
+				}
+			}
 		}
 		for _, other := range parts {
 			if other.HalfLen <= 0 {
@@ -145,10 +228,21 @@ func (c *forwardEscapeScan) poseClear(f autopilotFrame, b *sim.Bus, elapsed floa
 			}
 			for _, part := range own {
 				if part.HalfLen > 0 && obbHits(part, other) {
-					return false
+					return false, false
 				}
 			}
 		}
+	}
+	return true, true
+}
+
+func (c *forwardEscapeScan) poseClear(f autopilotFrame, b *sim.Bus, elapsed float64) bool {
+	clear, checkBoundary := c.poseTrafficClear(f, b, elapsed)
+	if !clear {
+		return false
+	}
+	if checkBoundary && c.boundaries.blocked(f, b) {
+		return false
 	}
 	return true
 }

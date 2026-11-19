@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+func TestJunctionExitFitsEntireArticulatedBus(t *testing.T) {
+	geometry := sim.NewJunctionGeometry(110, 110, 52)
+	corridor := &sim.JunctionCorridor{Bodies: []sim.OBB{
+		{Center: sim.Vec2{X: -180, Y: 26}},
+		{Center: sim.Vec2{X: 260, Y: 26}},
+	}}
+	lead := VehicleObstacle{Pos: sim.Vec2{X: geometry.HalfX + 160, Y: 26}, Length: 46, Width: 22}
+	bus := sim.NewBus(0, 0, 0)
+	if exitQueueBlocksObstacle(corridor, geometry, bus, lead) {
+		t.Fatal("downstream space is already sufficient for a compact bus")
+	}
+	bus.SetModel(sim.BusArticulated)
+	if !exitQueueBlocksObstacle(corridor, geometry, bus, lead) {
+		t.Fatal("admitting the articulated bus would leave its trailer in the junction")
+	}
+	lead.Pos.X += 125
+	if exitQueueBlocksObstacle(corridor, geometry, bus, lead) {
+		t.Fatal("exit queue should release the bus once both sections fit")
+	}
+}
+
 func TestBusWaitsBeforeEntryUntilExitQueueClears(t *testing.T) {
 	for _, movement := range []string{"straight", "left", "right"} {
 		for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
@@ -87,4 +108,48 @@ func TestBusWaitsBeforeEntryUntilExitQueueClears(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestArticulatedNeighborEnvelopeDoesNotBlockClearExitLane(t *testing.T) {
+	const lw = 52.
+	w := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: -4000, Y: 0}, P2: sim.Vec2{X: 4000, Y: 0}, Lanes: 8},
+			{P1: sim.Vec2{X: 0, Y: -4000}, P2: sim.Vec2{X: 0, Y: 4000}, Lanes: 8},
+		},
+	}
+	w.RebuildIntersections()
+	from := sim.NewBusStop(0, "from", sim.Vec2{X: -3.5 * lw, Y: -3000}, math.Pi/2, 8, sim.RGBA(0, 0, 0, 255), lw)
+	to := sim.NewBusStop(1, "to", sim.Vec2{X: -3.5 * lw, Y: 3000}, math.Pi/2, 8, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{from, to}
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	it := tls.Intersections[0]
+	it.Phase = sim.PhaseNSGreen
+
+	line := it.GetStopLineDistForHeading(math.Pi/2, lw)
+	bus := sim.NewBus(-3.5*lw, -line-150, math.Pi/2)
+	ad := NewAutopilotDriver()
+	ad.BerserkMode = true
+	ad.PrepareLeg(w, from, to, lw)
+	ad.trackPath(bus.Pos)
+
+	// Angled articulated neighbor wholly inside Lane 2 (-2.5*lw = -130):
+	// its merged BodyEnvelope() widens beyond HalfWid=18 across -2.0*lw,
+	// whereas both physical sections clear Lane 3 (-3.5*lw = -182).
+	g := w.JunctionAt(sim.Vec2{}, lw)
+	neighbor := sim.NewBus(-2.5*lw+6, g.HalfY+80, math.Pi/2-0.30)
+	neighbor.TrailerHeading = math.Pi/2 + 0.15
+	neighbor.TrailerInitialized = neighbor.IsArticulated()
+	obstacles := []VehicleObstacle{ObserveBus(neighbor)}
+
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	for tick := 0; tick < 600; tick++ {
+		th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, w, tls, obstacles, lw, 1./60)
+		bus.Update(1./60, th, br, st, hb, doors)
+		if bus.Pos.Y > g.HalfY+150 {
+			return
+		}
+	}
+	t.Fatalf("bus in clear Lane 3 stalled at y=%.1f due to angled neighbor in Lane 2", bus.Pos.Y)
 }

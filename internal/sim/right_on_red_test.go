@@ -91,3 +91,32 @@ func TestEightLaneRightLaneDoesNotExcuseRedStraightOrLeft(t *testing.T) {
 		}
 	}
 }
+
+func TestNonCurbRightTurnStopsOnRed(t *testing.T) {
+	lw := 52.0
+	tls, inter, forward, right := eightLaneRedApproach(lw, 0, false)
+	line := inter.GetStopLineDistForHeading(0, lw)
+
+	// Curb lane (3.5*lw on 8-lane) right turn may turn on Through Red.
+	curbPos := forward.Mul(-line - 30).Add(right.Mul(3.5 * lw))
+	if stop, _ := tls.CheckStopForVehicleAtSpeed(curbPos, 0, 200, lw, false, true, false, 60, true); stop {
+		t.Fatal("expected curb-lane right turn to be allowed on red")
+	}
+
+	// Inner/middle non-curb lanes must stop for Through Red when routeKnown is true.
+	for _, lat := range []float64{0.5 * lw, 1.5 * lw, 2.5 * lw} {
+		pos := forward.Mul(-line - 30).Add(right.Mul(lat))
+		if stop, _ := tls.CheckStopForVehicleAtSpeed(pos, 0, 200, lw, false, true, false, 60, true); !stop {
+			t.Fatalf("expected non-curb right turn at lat=%.1f to stop on through red", lat)
+		}
+	}
+
+	// Once the through signal turns green, non-curb fallback right turns may proceed.
+	inter.Phase = PhaseEWGreen
+	for _, lat := range []float64{0.5 * lw, 1.5 * lw, 2.5 * lw} {
+		pos := forward.Mul(-line - 30).Add(right.Mul(lat))
+		if stop, _ := tls.CheckStopForVehicleAtSpeed(pos, 0, 200, lw, false, true, false, 60, true); stop {
+			t.Fatalf("expected non-curb right turn at lat=%.1f to proceed on through green", lat)
+		}
+	}
+}

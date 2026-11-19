@@ -58,13 +58,49 @@ func TestBorrowingLaneReservesAccelerationAndReturnTime(t *testing.T) {
 		right := sim.Vec2{X: -u.Y, Y: u.X}
 		bus := sim.NewBus(0, 0, heading)
 		obs := VehicleObstacle{Pos: u.Mul(2100).Sub(right.Mul(52)), Heading: heading + math.Pi, Speed: 230, Length: 48, Width: 24}
-		if isOncomingLaneClear(bus, []VehicleObstacle{obs}, u.X, u.Y, 0, -52, 52, 340, 667) {
+		// A slight yaw is enough to project a distant car into a different
+		// lane if sight distance is measured relative to the bus's nose.
+		bus.Heading += .08
+		if isOncomingLaneClear(bus, []VehicleObstacle{obs}, u, -52, 340, 667) {
 			t.Fatalf("heading%.2f borrowed with insufficient time to accelerate, pass and return", heading)
 		}
 		obs.Pos = u.Mul(5000).Sub(right.Mul(52))
-		if !isOncomingLaneClear(bus, []VehicleObstacle{obs}, u.X, u.Y, 0, -52, 52, 340, 667) {
+		if !isOncomingLaneClear(bus, []VehicleObstacle{obs}, u, -52, 340, 667) {
 			t.Fatalf("heading%.2f distant vehicle incorrectly prevents pass", heading)
 		}
+	}
+}
+
+func TestArticulatedOncomingPassNeedsRoomBeforeJunction(t *testing.T) {
+	bus := sim.NewBus(0, 26, 0)
+	bus.SetModel(sim.BusArticulated)
+	lights := sim.NewTrafficLightSystem()
+	inter := &sim.TrafficIntersection{Center: sim.Vec2{X: 1500}}
+	lights.Intersections = []*sim.TrafficIntersection{inter}
+	f := autopilotFrame{bus: bus, tls: lights, laneWidth: 52, speedAbs: 210}
+	if oncomingPassFitsBeforeJunction(f, sim.Vec2{X: 1}, 444) {
+		t.Fatal("cannot begin an articulated pass when its return could reach the next junction")
+	}
+	inter.Center.X = 5000
+	if !oncomingPassFitsBeforeJunction(f, sim.Vec2{X: 1}, 444) {
+		t.Fatal("distant junction should leave enough room for the pass")
+	}
+}
+
+func TestBorrowedLaneLeadReleaseRequiresFullBusClearance(t *testing.T) {
+	bus := sim.NewBus(0, -20.7, 0)
+	bus.SetModel(sim.BusArticulated)
+	ad := NewAutopilotDriver()
+	ad.OvertakeState, ad.TargetLaneOffset = OvertakePassing, -52
+	car := &sim.TrafficCar{Pos: sim.Vec2{X: 100, Y: 26}, Length: 46, Width: 22}
+	obstacle := VehicleObstacle{Car: car, Pos: car.Pos, Length: car.Length, Width: car.Width}
+	f := autopilotFrame{bus: bus, laneWidth: 52}
+	if !ad.clearsLeadInBorrowedLane(f, obstacle, 0, true) {
+		t.Fatal("separated lead should stop supplying headway after the full bus clears")
+	}
+	bus.TrailerHeading = -.15
+	if ad.clearsLeadInBorrowedLane(f, obstacle, 0, true) {
+		t.Fatal("trailer still crossing the divider needs normal headway")
 	}
 }
 

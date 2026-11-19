@@ -9,7 +9,7 @@ import (
 func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) float64 {
 	var departure departureSweepCache
 	f.departureCache = &departure
-	targetSpd = math.Min(targetSpd, ad.roundaboutEntryObstacleSpeed(f))
+	targetSpd = math.Min(targetSpd, ad.roundaboutEntryDriveSpeed(f))
 	targetSpd = ad.stationDepartureTrafficSpeed(f, targetSpd)
 	rearCars := ad.departureRearCars(f)
 	// E. Forward Vehicle Obstacle Avoidance
@@ -20,9 +20,10 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 	bumperPos := f.bus.Pos.Add(sim.Vec2{X: cosH * f.bus.Length * 0.5, Y: sinH * f.bus.Length * 0.5})
 	fwdLimit += f.world.RailCrossingLookahead(bumperPos, f.bus.Heading, f.bus.OverallLength())
 	// These inputs remain constant for the entire obstacle scan.
+	roadCenter := 0.
 	roadEW, roadMulti, roadSix := false, false, false
 	if f.world != nil {
-		_, roadEW, roadMulti, roadSix = sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+		roadCenter, roadEW, roadMulti, roadSix = sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
 	}
 	for _, obs := range f.obstacles {
 		if rearCars.matches(obs) {
@@ -54,7 +55,10 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 			continue
 		}
 
-		if ad.clearsTurnExitQueue(f, obs) || ad.clearsStationYieldNeighbor(f, obs) || ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+		if ad.clearsTurnExitQueue(f, obs) || ad.clearsStoppedJunctionTurnSideObstacle(f, obs, latDist) || ad.clearsStationYieldNeighbor(f, obs) || ad.clearsStoppedParallelBus(f, obs) || ad.clearsStationDepartureNeighbor(f, obs) || ad.clearsQueueWhileRecentering(f, obs) || ad.clearsServedStationQueue(f, obs) || ad.clearsYieldingCarDuringDeparture(f, obs) || ad.clearsSkippedStopBay(f, obs) || ad.clearsThroughQueueDuringMerge(f, obs) || ad.isSafelyWaitingOutsideRoundabout(f, obs) || ad.clearsStationaryAdjacentRoundaboutCar(f, obs, latDist) || roundaboutLanesSeparated(f, obs, cosH, sinH, latDist) {
+			continue
+		}
+		if f.world != nil && !roadMulti && !roadSix && ad.clearsLeadInBorrowedLane(f, obs, roadCenter, roadEW) {
 			continue
 		}
 
@@ -172,7 +176,12 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 				// 2. It has lateral separation in vehicle local frame (latDist >= Width/2 + obs.Width/2 - 2.0)
 				// 3. It has lateral separation in road frame (roadLatDist >= Width/2 + obs.Width/2 - 2.0)
 				// 4. We are on a multi-lane road
-				if dPath >= (f.bus.Width/2+obs.Width/2-2.0) &&
+				sideBySideAdjacent := ad.OvertakeState == OvertakeReturning && ad.approachMerge == nil &&
+					fwdDist < f.bus.Length/2 &&
+					latDist >= (f.bus.Width/2+obs.Width/2+4.0) &&
+					roadLatDist >= (f.bus.Width/2+obs.Width/2+4.0) &&
+					cosHeadDiff > 0.95
+				if (dPath >= (f.bus.Width/2+obs.Width/2-2.0) || sideBySideAdjacent) &&
 					latDist >= (f.bus.Width/2+obs.Width/2-2.0) &&
 					roadLatDist >= (f.bus.Width/2+obs.Width/2-2.0) &&
 					isMultiLaneRoad {
@@ -188,10 +197,17 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 				// Lane classification tolerates small position errors. A car near
 				// that boundary can still overlap the bus's forward corridor, so
 				// use bumper headway before allowing the adjacent-lane speed floor.
-				if obs.Bus == nil && cosHeadDiff > .98 {
+				angledCarInStraightLane := cosHeadDiff > .75 &&
+					math.Abs(sim.NormalizeAngle(f.bus.Heading-approachRoadHeading(f.bus.Heading))) < .05 &&
+					math.Abs(sim.NormalizeAngle(obs.Heading-f.bus.Heading)) >= .05
+				if obs.Bus == nil && (cosHeadDiff > .98 || angledCarInStraightLane) {
 					sinDiff := math.Abs(math.Sin(obs.Heading - f.bus.Heading))
 					carHalfWidth := (obs.Width*cosHeadDiff + obs.Length*sinDiff) / 2
-					if latDist < f.bus.Width/2+carHalfWidth {
+					margin := 0.0
+					if angledCarInStraightLane {
+						margin = 2.0
+					}
+					if latDist < f.bus.Width/2+carHalfWidth+margin {
 						carHalfLength := (obs.Length*cosHeadDiff + obs.Width*sinDiff) / 2
 						gap := fwdDist - f.bus.Length/2 - carHalfLength
 						targetSpd = math.Min(targetSpd, sim.JunctionFollowingSpeed(gap, obs.Speed*cosHeadDiff, f.speedAbs, 135))
@@ -270,6 +286,29 @@ func (ad *AutopilotDriver) obstacleSpeed(f autopilotFrame, targetSpd float64) fl
 	return math.Min(targetSpd, ad.followingSpeed(f))
 }
 
+// Once the entire bus has reached the borrowed lane, an aligned leader in
+// the original lane no longer supplies its forward headway. Oncoming
+// traffic and the actuator/body sweeps retain their ordinary constraints.
+func (ad *AutopilotDriver) clearsLeadInBorrowedLane(f autopilotFrame, ob VehicleObstacle, center float64, ew bool) bool {
+	if ad.DisallowOncomingOvertake || ad.OvertakeState != OvertakePassing ||
+		ad.TargetLaneOffset > -f.laneWidth*.8 || f.nearRoundabout ||
+		ob.Car == nil || ob.JunctionTurn != nil || ob.JunctionCorridor != nil && ob.JunctionCorridor.Remaining > 0 {
+		return false
+	}
+	heading := approachRoadHeading(f.bus.Heading)
+	if math.Cos(f.bus.Heading-heading) < .99 || math.Cos(ob.Heading-heading) < .999 {
+		return false
+	}
+	forward := sim.UnitFromAngle(heading)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	origin := sim.Vec2{Y: center}
+	if !ew {
+		origin = sim.Vec2{X: center}
+	}
+	return ob.Pos.Sub(origin).Dot(right) >= ob.Width/2+3 &&
+		busCenterlineClearance(f.bus, heading+math.Pi, center, ew) >= 2
+}
+
 // isSafelyWaitingOutsideRoundabout excludes stopped vehicles outside the curb
 // only when they also clear the tracked path or the bus's physical envelope.
 func (ad *AutopilotDriver) isSafelyWaitingOutsideRoundabout(f autopilotFrame, obs VehicleObstacle) bool {
@@ -293,6 +332,23 @@ func (ad *AutopilotDriver) isSafelyWaitingOutsideRoundabout(f autopilotFrame, ob
 	return false
 }
 
+func (ad *AutopilotDriver) clearsStationaryAdjacentRoundaboutCar(f autopilotFrame, obs VehicleObstacle, latDist float64) bool {
+	if !f.nearRoundabout || f.world == nil || obs.Bus != nil || obs.Speed >= 1.0 || len(ad.drivePath) < 2 {
+		return false
+	}
+	for _, rb := range f.world.Roundabouts {
+		dBus, dObs := f.bus.Pos.Distance(rb.Center), obs.Pos.Distance(rb.Center)
+		if !(dBus <= rb.Radius+100.0 && dObs <= rb.Radius+100.0) {
+			continue
+		}
+		if math.Abs(dBus-dObs) >= f.laneWidth*0.55 && latDist >= f.bus.Width/2+obs.Width/2+6.0 &&
+			minDistanceToPath(obs.Pos, ad.drivePath, ad.WaypointIdx) > f.bus.Width/2+obs.Width/2+4.0 {
+			return true
+		}
+	}
+	return false
+}
+
 func roundaboutLanesSeparated(f autopilotFrame, obs VehicleObstacle, cosH, sinH, latDist float64) bool {
 	if !f.nearRoundabout || f.world == nil {
 		return false
@@ -306,10 +362,32 @@ func roundaboutLanesSeparated(f autopilotFrame, obs VehicleObstacle, cosH, sinH,
 		if math.Abs(cosH) >= math.Abs(sinH) {
 			entryLatDist = math.Abs(f.bus.Pos.Y - obs.Pos.Y)
 		}
-		if entryLatDist >= f.bus.Width/2+obs.Width/2+2.0 {
+		// Cartesian lane separation applies to straight approaches. On the
+		// circular arc, a leader in the very same lane differs in both X and Y.
+		// Treating that as an adjacent lane lets the bus accelerate into it.
+		straightApproach := math.Abs(math.Cos(f.bus.Heading-approachRoadHeading(f.bus.Heading))) > .98 &&
+			dBus >= rb.Radius-8 && dObs >= rb.Radius-8
+		if straightApproach && entryLatDist >= f.bus.Width/2+obs.Width/2+2.0 {
 			return true
 		}
 		if math.Abs(dBus-dObs) >= f.laneWidth*0.75 && latDist >= f.bus.Width/2+obs.Width/2-4.0 {
+			if obs.Bus != nil && obs.Bus.IsArticulated() {
+				partShared := false
+				for _, part := range obs.Bus.BodyParts() {
+					if part.HalfLen <= 0 {
+						continue
+					}
+					dp := part.Center.Sub(f.bus.Pos)
+					pLat := math.Abs(-dp.X*sinH + dp.Y*cosH)
+					if math.Abs(dBus-part.Center.Distance(rb.Center)) < f.laneWidth*0.75 || pLat < f.bus.Width/2+part.HalfWid-4.0 {
+						partShared = true
+						break
+					}
+				}
+				if partShared {
+					continue
+				}
+			}
 			return true
 		}
 	}
@@ -337,6 +415,13 @@ func (ad *AutopilotDriver) clearsStoppedParallelBus(f autopilotFrame, ob Vehicle
 	}
 	horizon := math.Min(400, delta.Dot(u)+(f.bus.OverallLength()+ob.Bus.OverallLength())/2+30)
 	base := ad.pointAt(f.s)
+	obParts := ob.Bus.BodyParts()
+	for i := range obParts {
+		if obParts[i].HalfLen > 0 {
+			obParts[i].HalfWid += 2
+			obParts[i].HalfLen += 2
+		}
+	}
 	for distance := 0.; distance <= horizon; distance += 8 {
 		point := ad.pointAt(f.s + distance)
 		if math.Abs(point.Sub(base).X*u.Y-point.Sub(base).Y*u.X) > 2 || point.Sub(base).Dot(u) < distance-3 {
@@ -355,28 +440,73 @@ func (ad *AutopilotDriver) clearsStoppedParallelBus(f autopilotFrame, ob Vehicle
 			own = cache.bodies
 		} else {
 			b := f.bus.AtPose(f.bus.Pos.Add(u.Mul(distance)), f.bus.Heading)
-			clear := b.CheckBoundaries(f.world, f.laneWidth).Zone != sim.ZoneHardBarrier
 			own = b.BodyParts()
+			for _, body := range obParts {
+				if body.HalfLen <= 0 {
+					continue
+				}
+				for _, part := range own {
+					if part.HalfLen <= 0 {
+						continue
+					}
+					if obbHits(part, body) {
+						return false
+					}
+				}
+			}
+			clear := b.CheckBoundaries(f.world, f.laneWidth).Zone != sim.ZoneHardBarrier
 			if cache != nil {
 				*cache = parallelSweepPose{ready: true, clear: clear, bodies: own}
 			}
 			if !clear {
 				return false
 			}
+			continue
 		}
-		for _, body := range ob.Bus.BodyParts() {
+		for _, body := range obParts {
 			if body.HalfLen <= 0 {
 				continue
 			}
-			body.HalfWid += 2
-			body.HalfLen += 2
 			for _, part := range own {
 				if part.HalfLen <= 0 {
 					continue
 				}
-				if hit, _, _ := sim.CheckOBBCollision(part, body); hit {
+				if obbHits(part, body) {
 					return false
 				}
+			}
+		}
+	}
+	return true
+}
+
+func (ad *AutopilotDriver) clearsStoppedJunctionTurnSideObstacle(f autopilotFrame, obs VehicleObstacle, latDist float64) bool {
+	if ad == nil || f.bus == nil || math.Abs(obs.Speed) > 1.0 || latDist < f.bus.Width/2+obs.Width/2+6.0 {
+		return false
+	}
+	jc := f.bus.JunctionCorridor
+	if jc == nil || !jc.Entered || jc.Remaining <= 0 || len(jc.Bodies) < 2 {
+		return false
+	}
+	if math.Abs(sim.NormalizeAngle(f.bus.Heading-approachRoadHeading(f.bus.Heading))) < .18 {
+		return false
+	}
+	if len(ad.drivePath) < 2 || minDistanceToPath(obs.Pos, ad.drivePath, ad.WaypointIdx) < f.bus.Width/2+obs.Width/2+4.0 {
+		return false
+	}
+	obParts := predictedObstacleBodies(obs, 0)
+	for _, obPart := range obParts {
+		if obPart.HalfLen <= 0 {
+			continue
+		}
+		obPart.HalfLen += 2.0
+		obPart.HalfWid += 2.0
+		for _, body := range jc.Bodies {
+			if body.HalfLen <= 0 {
+				continue
+			}
+			if obbHits(body, obPart) {
+				return false
 			}
 		}
 	}

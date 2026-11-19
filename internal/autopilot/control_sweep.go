@@ -56,6 +56,9 @@ func (ad *AutopilotDriver) controlSweptSpeed(f autopilotFrame, steer float64) fl
 					break
 				}
 				limit = math.Min(limit, math.Sqrt(2*180*math.Max(0, speed*elapsed-18)))
+				if limit == 0 {
+					return 0
+				}
 				break
 			}
 			index++
@@ -68,4 +71,79 @@ type controlSample struct {
 	sweepSample
 	pos               sim.Vec2
 	heading, steering float64
+}
+
+// compactControlUnwindSteer softens a sharp pursuit steer on a compact bus when
+// rear-overhang swing clips a stationary rear-side vehicle's sweep margin while
+// a gentler same-sign or straight crawl stays lane-safe and barrier-clear.
+func (ad *AutopilotDriver) compactControlUnwindSteer(f autopilotFrame, desired float64) (float64, bool, bool) {
+	if f.world == nil || f.bus == nil || f.bus.IsArticulated() || f.nearRoundabout || math.Abs(desired) < .25 ||
+		ad.followingSpeed(f) <= .5 || ad.obstacleSpeed(f, 30) <= .5 {
+		return 0, false, false
+	}
+	if _, _, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth); !multi && !six && desired <= 0 {
+		return 0, false, false
+	}
+	if f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.Length/2) {
+		return 0, false, false
+	}
+	nearInter := false
+	for _, inter := range f.world.Intersections {
+		j := f.world.JunctionAt(inter, f.laneWidth)
+		if math.Abs(f.bus.Pos.X-inter.X) <= j.HalfX+f.laneWidth && math.Abs(f.bus.Pos.Y-inter.Y) <= j.HalfY+f.laneWidth {
+			nearInter = true
+			break
+		}
+	}
+	if nearInter && ad.approachMerge == nil {
+		return 0, false, false
+	}
+	savedHold, savedSpeed := ad.roadSafetyHold, ad.roadRecoverySpeed
+	defer func() {
+		ad.roadSafetyHold, ad.roadRecoverySpeed = savedHold, savedSpeed
+	}()
+	sweepFrame := frameWithoutClosingRearFollowers(f)
+	barrierClear := func(base *sim.Bus, cand float64) bool {
+		probe := *base
+		pos, heading, wheel := probe.Pos, probe.Heading, probe.SteeringAngle
+		for step := 0; step < 10; step++ {
+			rate := probe.SteerTurnSpeed
+			if cand == 0 {
+				rate = probe.SteerReturnSpd
+			}
+			wheel += sim.Clamp(cand*probe.MaxSteerAngle-wheel, -rate*.04, rate*.04)
+			heading += 16 / probe.WheelBase * math.Tan(wheel) * .04
+			pos = pos.Add(sim.UnitFromAngle(heading).Mul(16 * .04))
+			probe = probe.AtPose(pos, heading)
+			if probe.HitsHardBarrier(f.world, f.laneWidth) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, scale := range []float64{.65, .5, .35, .25, .15, 0} {
+		cand := desired * scale
+		checked := ad.roadLaneSafeSteering(f, cand)
+		hold := ad.roadSafetyHold
+		ad.roadSafetyHold, ad.roadRecoverySpeed = savedHold, savedSpeed
+		if hold || math.Abs(checked-cand) > .01 {
+			continue
+		}
+		if ad.controlSweptSpeed(sweepFrame, cand) >= 16 && barrierClear(f.bus, cand) {
+			return cand, false, true
+		}
+		if f.speedAbs <= .5 && math.Abs(f.bus.SteeringAngle-cand*f.bus.MaxSteerAngle) > .03 {
+			settled := *f.bus
+			settled.SteeringAngle = cand * settled.MaxSteerAngle
+			settledFrame := sweepFrame
+			settledFrame.bus = &settled
+			sc := ad.roadLaneSafeSteering(settledFrame, cand)
+			sHold := ad.roadSafetyHold
+			ad.roadSafetyHold, ad.roadRecoverySpeed = savedHold, savedSpeed
+			if !sHold && math.Abs(sc-cand) <= .01 && ad.controlSweptSpeed(settledFrame, cand) >= 16 && barrierClear(&settled, cand) {
+				return cand, true, true
+			}
+		}
+	}
+	return 0, false, false
 }

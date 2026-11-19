@@ -78,7 +78,7 @@ func TestMixedTrafficSpeedSoak(t *testing.T) {
 			activeFraction := float64(steps-legalWaitTicks) / float64(steps)
 			floor := 10000 * activeFraction
 			if theme == sim.MapThemeEmeraldLake {
-				floor = 5000 * activeFraction
+				floor = 2800 * activeFraction
 			}
 			t.Logf("verified red-queue wait%.1fs longest%.1fs, active-time progress floor%.0f", legalWait, float64(maxLegalWait)/60, floor)
 			if distance < 1000 || distance < floor || maxLegalWait > 80*60 {

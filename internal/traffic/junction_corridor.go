@@ -156,6 +156,7 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 		if indexed {
 			count = len(ids)
 		}
+		var ownPriority junctionOwnPriorityState
 		for candidate := 0; candidate < count; candidate++ {
 			i := candidate
 			if indexed {
@@ -171,6 +172,12 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			if other.InRoundabout {
 				continue
 			}
+			if other.JunctionTurn != nil {
+				dc := other.JunctionTurn.Center.Sub(inter.Center)
+				if other.JunctionTurn.LaneChange || math.Abs(dc.X) >= 1 || math.Abs(dc.Y) >= 1 || dc.Dot(dc) >= 1 {
+					continue
+				}
+			}
 			if !tm.disableJunctionBroadPhase && !carCanReachJunction(other, inter.Center, approachReach) {
 				continue
 			}
@@ -178,15 +185,16 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			if delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.75 && math.Cos(other.Heading-f.car.Heading) > .85 {
 				continue
 			}
-			otherFrame := f
-			otherFrame.car = other
-			otherFrame.scratch = tm.scratchForCar(other, i)
-			if !otherHasJunctionPriority(f, inter, other, i, gap, otherFrame.scratch) {
+			otherScratch := tm.scratchForCar(other, i)
+			if !otherHasJunctionPriorityState(f, inter, other, i, gap, &ownPriority, otherScratch) {
 				continue
 			}
 			if bodies == nil {
 				bodies = carJunctionBodies(f, inter)
 			}
+			otherFrame := f
+			otherFrame.car = other
+			otherFrame.scratch = otherScratch
 			carJunctionBodies(otherFrame, inter)
 			if gap, ok := sim.JunctionLeaderGap(f.car.JunctionCorridor, other.JunctionCorridor, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2}, f.car.Length, f.car.Width); ok {
 				target = math.Min(target, sim.JunctionFollowingSpeed(gap, other.Speed, f.car.Speed, 220))
@@ -226,10 +234,11 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 			if bus == nil || math.Abs(bus.Speed) > 5 {
 				continue
 			}
-			body := bus.BodyEnvelope()
-			if nearExitQueue(inter.Center, body.Center, bus.Speed, exitReachSquared) && blocksExit(body) {
-				occupied = true
-				break
+			for _, part := range bus.BodyParts() {
+				if part.HalfLen > 0 && nearExitQueue(inter.Center, part.Center, bus.Speed, exitReachSquared) && blocksExit(part) {
+					occupied = true
+					break
+				}
 			}
 		}
 		if occupied {
@@ -242,7 +251,17 @@ func (tm *TrafficManager) junctionQueueSpeed(f carFrame, target float64) float64
 
 // Vehicles already inside clear first. Before entry, green movements precede
 // right-on-red, then arrival time and a stable ID resolve a simultaneous merge.
+type junctionOwnPriorityState struct {
+	ready       bool
+	left, right bool
+	signal      sim.LightSignal
+}
+
 func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other *sim.TrafficCar, index int, ownGap float64, otherScratch ...*carJunctionScratch) bool {
+	return otherHasJunctionPriorityState(f, inter, other, index, ownGap, nil, otherScratch...)
+}
+
+func otherHasJunctionPriorityState(f carFrame, inter *sim.TrafficIntersection, other *sim.TrafficCar, index int, ownGap float64, ownState *junctionOwnPriorityState, otherScratch ...*carJunctionScratch) bool {
 	if other.JunctionTurn != nil {
 		dc := other.JunctionTurn.Center.Sub(inter.Center)
 		if other.JunctionTurn.LaneChange || math.Abs(dc.X) >= 1 || math.Abs(dc.Y) >= 1 || dc.Dot(dc) >= 1 {
@@ -279,8 +298,19 @@ func otherHasJunctionPriority(f carFrame, inter *sim.TrafficIntersection, other 
 	if signal == sim.SignalRed && !right {
 		return false
 	}
-	ownLeft, ownRight := carIntersectionTurns(f, inter)
-	ownSignal := inter.GetSignalForHeading(f.car.Heading, ownLeft)
+	var ownLeft, ownRight bool
+	var ownSignal sim.LightSignal
+	if ownState != nil {
+		if !ownState.ready {
+			ownState.left, ownState.right = carIntersectionTurns(f, inter)
+			ownState.signal = inter.GetSignalForHeading(f.car.Heading, ownState.left)
+			ownState.ready = true
+		}
+		ownLeft, ownRight, ownSignal = ownState.left, ownState.right, ownState.signal
+	} else {
+		ownLeft, ownRight = carIntersectionTurns(f, inter)
+		ownSignal = inter.GetSignalForHeading(f.car.Heading, ownLeft)
+	}
 	if right && signal == sim.SignalRed && ownSignal != sim.SignalRed {
 		return false
 	}

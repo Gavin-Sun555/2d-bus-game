@@ -115,7 +115,8 @@ func carIntersectionTurns(f carFrame, inter *sim.TrafficIntersection) (left, rig
 	// signal selection, swept-corridor admission and the committed path.
 	straight := hasRoadInDirection(f.world, inter.Center, car.Heading) || isMapExitAhead(f.world, inter.Center, car.Heading)
 	hasRight := hasRoadInDirection(f.world, inter.Center, car.Heading+math.Pi/2)
-	left = hasLeft && ((!straight && (!hasRight || car.LaneIndex == leftLane)) || (car.LaneIndex == leftLane && dedicated))
+	singleLaneTurnLeft := !dedicated && (car.ID <= 0 || car.ID%2 != 0)
+	left = hasLeft && ((!straight && (!hasRight || (dedicated && car.LaneIndex == leftLane) || singleLaneTurnLeft)) || (car.LaneIndex == leftLane && dedicated))
 	if dedicated && car.LaneIndex != leftLane {
 		left = false
 	}
@@ -132,6 +133,23 @@ func carIntersectionTurns(f carFrame, inter *sim.TrafficIntersection) (left, rig
 
 func moveCarThroughJunction(car *sim.TrafficCar, dt float64) {
 	turn := car.JunctionTurn
+	if car.Speed < 0 && ((car.JunctionReverseActive && !turn.LaneChange) || (car.PassRetreatActive && turn.LaneChange)) {
+		distance := -car.Speed * dt
+		for distance > 0 {
+			step := math.Min(distance, turn.Progress)
+			turn.Progress -= step
+			distance -= step
+			if distance <= 0 || turn.Segment == 0 {
+				break
+			}
+			turn.Segment--
+			turn.Progress = turn.Points[turn.Segment].Distance(turn.Points[turn.Segment+1])
+		}
+		a, b := turn.Points[turn.Segment], turn.Points[turn.Segment+1]
+		car.Pos = a.Add(b.Sub(a).Normalize().Mul(turn.Progress))
+		car.Heading = math.Atan2(b.Y-a.Y, b.X-a.X)
+		return
+	}
 	distance := math.Max(0, car.Speed) * dt
 	for distance > 0 && turn.Segment < len(turn.Points)-1 {
 		a, b := turn.Points[turn.Segment], turn.Points[turn.Segment+1]

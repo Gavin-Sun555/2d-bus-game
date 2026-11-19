@@ -1,0 +1,96 @@
+{
+  "version": "0.1.0",
+  "date": "2026-11-18",
+  "decision": "LOCAL_PASS_PENDING_PLATFORM_CI",
+  "scope": "Local qualification on macOS arm64 prior to tagging v0.1.0; remote GitHub Actions test, race and build jobs remain required before public release.",
+  "evidenceDirectory": "dist/release-0.1.0-2026-11-18/evidence/",
+  "checks": {
+    "qualification-final": {
+      "status": "passed",
+      "passEvents": 339,
+      "skippedCount": 8,
+      "failedCount": 0
+    },
+    "regression-final": {
+      "status": "passed",
+      "passEvents": 12057,
+      "skippedCount": 80,
+      "failedCount": 0
+    },
+    "release-soak-final": {
+      "status": "passed",
+      "suites": [
+        "TestRelease005TrafficSoak",
+        "TestMixedTrafficSpeedSoak",
+        "TestRelease007MixedFleetSoak",
+        "TestRelease009BRTSoak"
+      ],
+      "failedCount": 0
+    },
+    "map-matrix-20min-soak": {
+      "status": "passed",
+      "scenarios": 16,
+      "secondsPerScenario": 1200,
+      "totalSimulatedMinutes": 320,
+      "hardIncidents": 0,
+      "unresolvedEpisodes": 0
+    },
+    "static-checks": {
+      "goModVerify": "passed",
+      "goVet": "passed",
+      "raceShardScriptTests": "passed",
+      "gitDiffCheck": "passed"
+    }
+  },
+  "coverageStatementsPercent": 69.0,
+  "race": {
+    "status": "passed",
+    "shards": 8,
+    "allPackagesClean": true,
+    "dataRacesDetected": 0
+  },
+  "nativeChecks": {
+    "platform": "darwin/arm64",
+    "graphics": "Metal",
+    "playerAndFleetDamage": false
+  },
+  "performance": {
+    "performance-default": {
+      "MeanDrawFPS": 59.819403287314884,
+      "MeanUpdateTPS": 59.819403287314884,
+      "UpdateP50MS": 3.999458,
+      "UpdateP95MS": 5.305083,
+      "UpdateP99MS": 5.666041,
+      "UpdateMaxMS": 10.252791,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "FleetMinDurability": 100
+    },
+    "performance-brt": {
+      "MeanDrawFPS": 59.830440809953316,
+      "MeanUpdateTPS": 59.830440809953316,
+      "UpdateP50MS": 3.755959,
+      "UpdateP95MS": 4.988,
+      "UpdateP99MS": 5.602084,
+      "UpdateMaxMS": 9.83025,
+      "CarsFinal": 864,
+      "FleetBuses": 48,
+      "PlayerDamageSteps": 0,
+      "FleetMinDurability": 100
+    }
+  },
+  "artifacts": {
+    "targets": [
+      "darwin-arm64",
+      "darwin-amd64",
+      "windows-amd64",
+      "linux-amd64"
+    ],
+    "archiveVerification": "passed"
+  },
+  "publicationPreparation": {
+    "requestedActor": "Gavin-Sun555",
+    "releaseAuthorPolicy": "Maintainer-created draft release reused by release workflow so release author stays Gavin-Sun555."
+  }
+}

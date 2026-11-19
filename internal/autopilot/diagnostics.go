@@ -45,7 +45,7 @@ func (ad *AutopilotDriver) DiagnoseStop(bus *sim.Bus, route *sim.Route, world *s
 		steer, _, _, _ := probe.pursuitSteering(frame)
 		m := map[string]float64{"signal": probe.trafficLightSpeed(frame, 150), "obstacles": probe.obstacleSpeed(frame, 150), "junction_admission": probe.junctionAdmissionSpeed(frame), "junction_sweep": probe.junctionSweptSpeed(frame)}
 		m["exit_settling"] = probe.exitCruiseSpeed(frame)
-		m["roundabout_entry"] = probe.roundaboutEntryObstacleSpeed(frame)
+		m["roundabout_entry"] = probe.roundaboutEntryDriveSpeed(frame)
 		m["station_departure"] = probe.stationDepartureTrafficSpeed(frame, 150)
 		m["following"] = probe.followingSpeed(frame)
 		m["control_sweep"] = probe.controlSweptSpeed(frame, steer)
@@ -93,6 +93,12 @@ func (ad *AutopilotDriver) DiagnoseStop(bus *sim.Bus, route *sim.Route, world *s
 	}
 	d.Limits = limits(f)
 	d.Limits["station"] = copyDriver.stationSpeed(f, 150)
+	d.Limits["fleet_merge_yield"] = -1
+	if bus.YieldingToBus != nil {
+		if l, ok := sim.BusMergeYieldLimit(bus, bus.YieldingToBus, lw, true); ok {
+			d.Limits["fleet_merge_yield"] = l
+		}
+	}
 	d.Limits["turn_hold"] = -1
 	if ad.busTurnHoldDistance > 0 {
 		d.Limits["turn_hold"] = math.Sqrt(2 * 135 * math.Max(0, ad.busTurnHoldDistance-10))

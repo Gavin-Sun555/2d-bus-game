@@ -42,9 +42,11 @@ func (ad *AutopilotDriver) updateOvertaking(
 	}
 	ad.pathReturnHold = nil
 	ad.stationBypassHold = 0
+	ad.busTurnHoldDistance = 0
 	ad.prepareStationYieldRecovery(baseFrame)
 	ad.prepareServedStationMerge(baseFrame)
 	ad.retryStoppedMidLaneReturn(baseFrame)
+	ad.retryStoppedOncomingReturn(baseFrame)
 	if ad.advanceMidLaneRecovery(baseFrame, dt) {
 		return
 	}
@@ -52,6 +54,19 @@ func (ad *AutopilotDriver) updateOvertaking(
 	// A second lane offset would move that same curve across an extra lane.
 	if ad.dockDepartureRun > 0 {
 		if s < ad.dockDepartureRun && world != nil && !world.InsideJunction(bus.Pos, laneWidth, 0) {
+			if bus.LaneMergeRequest == nil {
+				heading := approachRoadHeading(bus.Heading)
+				u := sim.UnitFromAngle(heading)
+				r := sim.Vec2{X: -u.Y, Y: u.X}
+				endPt := ad.pointAt(ad.dockDepartureRun)
+				if math.Abs(bus.Pos.Sub(endPt).Dot(r)) > 10 {
+					bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: endPt, Heading: heading, Remaining: .3}
+				}
+			}
+			if speedAbs < 5 && ad.checkCurrentLaneJunctionFallback(baseFrame, dt) {
+				ad.dockDepartureRun = 0
+				return
+			}
 			ad.holdLaneOffset(0)
 			ad.OvertakeState = OvertakeNone
 			return
@@ -69,7 +84,14 @@ func (ad *AutopilotDriver) updateOvertaking(
 		return
 	}
 
-	ad.busTurnHoldDistance = 0
+	ad.clearPassedFallbackJunction(baseFrame)
+	if ad.fallbackJunction != nil {
+		ad.trackJunctionTurnLane(baseFrame, dt)
+		ad.holdLaneOffset(0)
+		ad.OvertakeState = OvertakeNone
+		return
+	}
+
 	if ad.uTurn != nil && ad.uTurn.entered {
 		ad.approachMerge = nil
 		ad.approachMergeJoined = false
@@ -83,33 +105,8 @@ func (ad *AutopilotDriver) updateOvertaking(
 		return
 	}
 
-	ad.selectMedianRightTurn(baseFrame)
-	baseFrame.s = ad.LastPathS
-	ad.requestFourLaneLeftMerge(baseFrame)
-	if !ad.BerserkMode {
-		if ad.approachMerge != nil && (ad.approachMerge.RightTurn || ad.approachMerge.LeftTurn) {
-			if ad.advanceApproachMerge(baseFrame, dt) {
-				return
-			}
-		}
-		ad.approachMerge = nil
-		ad.approachMergeJoined = false
-	}
-	if ad.BerserkMode && world != nil && len(ad.drivePath) >= 2 && (ad.State == AutopilotStateCruising || ad.State == AutopilotStateApproaching) {
-		if ad.updateRequiredApproachMerge(baseFrame, dt) {
-			return
-		}
-	}
-	if ad.updateRightTurnOffset(baseFrame) {
-		return
-	}
-	if ad.trackJunctionTurnLane(baseFrame, dt) {
-		return
-	}
-	if ad.updateExitCruise(baseFrame, dt) {
-		return
-	}
-	if ad.updateBusLane(baseFrame, dt) {
+	handled := ad.updateApproachLanePolicies(baseFrame, dt)
+	if ad.checkCurrentLaneJunctionFallback(baseFrame, dt) || handled {
 		return
 	}
 	// If Berserk mode is disabled, not in driving state, or path invalid: smoothly return to base lane
@@ -240,14 +237,8 @@ func (ad *AutopilotDriver) updateOvertaking(
 			// Upcoming corner is a LEFT turn on a multi-lane road:
 			if ad.LaneOffset < -laneWidth*0.3 || ad.OvertakeState != OvertakeNone {
 				// Bus was overtaking on the left.
-				// Do not return to the outer right lane; stay in the left lane which leads directly into the left-turn lane.
-				targetLeftOffset := leftTurnLaneOffset(distBaseToCenter, laneWidth, is6Lane)
-				ad.TargetLaneOffset = targetLeftOffset
-				if math.Abs(ad.LaneOffset-targetLeftOffset) < 1.5 || distBaseToCenter <= laneWidth*1.15 {
-					ad.LaneOffset = targetLeftOffset
-					ad.OvertakeState = OvertakeNone
-					ad.OvertakeTimer = 0.0
-				}
+				// Do not return to the outer right lane; align into the left-turn lane when clear.
+				ad.alignLeftTurnLaneOffset(bus, obstacles, cosH, sinH, distBaseToCenter, laneWidth, is6Lane, true)
 			} else {
 				// Bus was not overtaking: keep offset 0.0, drivePath will naturally merge into left-turn lane
 				ad.TargetLaneOffset = 0.0
@@ -313,18 +304,33 @@ func (ad *AutopilotDriver) updateOvertaking(
 			}
 		}
 
+		roadH := approachRoadHeading(bus.Heading)
+		sinR, cosR := math.Sincos(roadH)
+		actualOffset := bus.Pos.Sub(basePt).Dot(sim.Vec2{X: -sinR, Y: cosR})
 		if ad.LaneOffset <= -laneWidth*0.4 || ad.TargetLaneOffset <= -laneWidth*0.4 {
-			// Already in inner passing lane: stay in inner lane and enter roundabout smoothly!
-			ad.TargetLaneOffset = -laneWidth
-			if is6Lane && ad.LaneOffset <= -laneWidth*1.5 {
-				ad.TargetLaneOffset = -2.0 * laneWidth
+			// Only commit to the inner approach lane if the bus has physically
+			// reached it or the merge into it is still clear. Otherwise an
+			// aborted lane change keeps aiming sideways into an adjacent vehicle.
+			desiredInner := -laneWidth
+			if is6Lane && actualOffset <= -laneWidth*1.5 {
+				desiredInner = -2.0 * laneWidth
 			}
-			if ad.OvertakeState == OvertakeReturning {
-				ad.OvertakeState = OvertakePassing
+			if actualOffset <= -laneWidth*0.4 || isLaneClearToChange(bus, obstacles, cosR, sinR, actualOffset, desiredInner, laneWidth) {
+				ad.TargetLaneOffset = desiredInner
+				if ad.OvertakeState == OvertakeReturning {
+					ad.OvertakeState = OvertakePassing
+				}
+			} else {
+				ad.TargetLaneOffset = 0.0
+				if math.Abs(actualOffset) < laneWidth*0.35 {
+					ad.LaneOffset = 0.0
+					ad.OvertakeState = OvertakeNone
+					ad.OvertakeTimer = 0.0
+				}
 			}
 			ad.progressLaneOffset(dt, speedAbs)
 			return
-		} else if (hasStoppedCarsInOuter || queuedOuter > 0) && isLaneClearToChange(bus, obstacles, cosH, sinH, ad.LaneOffset, -laneWidth, laneWidth) {
+		} else if (hasStoppedCarsInOuter || queuedOuter > 0) && isLaneClearToChange(bus, obstacles, cosR, sinR, actualOffset, -laneWidth, laneWidth) {
 			// Move inward only for an actual queue. Berserk mode alone is
 			// not a reason to leave a clear outer approach and then merge back.
 			ad.TargetLaneOffset = -laneWidth
@@ -340,8 +346,19 @@ func (ad *AutopilotDriver) updateOvertaking(
 
 	// Mid-block overtaking
 	var passOffset float64
+	var roadForward, roadRight sim.Vec2
+	var oncomingLaneCenter float64
 	if is2Lane {
 		passOffset = -laneWidth // On 2-lane road: borrow oncoming lane to the left in RHT
+		// Sight distance is measured in the road's actual lane. Neither the
+		// interpolated steering target nor the bus's yaw tracks that corridor.
+		roadForward = sim.UnitFromAngle(approachRoadHeading(bus.Heading))
+		roadRight = sim.Vec2{X: -roadForward.Y, Y: roadForward.X}
+		roadOrigin := sim.Vec2{X: roadCenter}
+		if isEW {
+			roadOrigin = sim.Vec2{Y: roadCenter}
+		}
+		oncomingLaneCenter = roadOrigin.Dot(roadRight) - laneWidth/2
 	} else if distBaseToCenter > laneWidth*0.95 {
 		passOffset = -laneWidth // Inner passing lane (left side in RHT)
 	} else {
@@ -454,11 +471,24 @@ func (ad *AutopilotDriver) updateOvertaking(
 		// Don't initiate overtaking if approaching destination stop without sufficient runway
 		// to complete the pass and cleanly pull into the bay in front, or when approaching an intersection/corner
 		minOvertakeRunway := math.Max(450.0, speedAbs*2.4+160.0)
+		if ad.FleetBus && bus.IsArticulated() && !ad.CanSkipTargetStop && targetStop != nil && !targetStop.CenterBRT {
+			// Reserve room to clear the lead with the entire trailer, return
+			// to the curb lane, and bring the tail into the platform.
+			heading := approachRoadHeading(bus.Heading)
+			u := sim.UnitFromAngle(heading)
+			r := sim.Vec2{X: -u.Y, Y: u.X}
+			if math.Cos(targetStop.Heading-heading) > .98 && math.Abs(targetStop.RoadCenter.Sub(bus.Pos).Dot(r)) < 4*laneWidth {
+				minOvertakeRunway = math.Max(minOvertakeRunway, targetStop.Length+3*bus.OverallLength())
+			}
+		}
 		if remaining < minOvertakeRunway || isUpcomingCorner {
 			break
 		}
 		if is2Lane {
 			if approach.approachingInter != nil && approach.distToStopLine < math.Max(350.0, speedAbs*1.5) {
+				break
+			}
+			if !oncomingPassFitsBeforeJunction(frame, roadForward, ad.GetBerserkCruiseSpeed()) {
 				break
 			}
 		} else if isApproachingIntersection {
@@ -538,7 +568,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 		fwdMax := math.Max(480.0, speedAbs*2.4+160.0)
 
 		var blockerDist float64 = 9999.0
-		foundBlocker := false
+		var blocker *VehicleObstacle
 
 		for i := range obstacles {
 			obs := &obstacles[i]
@@ -561,7 +591,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 						if fwd < math.Max(reqAdvance, 400.0) {
 							if fwd < blockerDist {
 								blockerDist = fwd
-								foundBlocker = true
+								blocker = obs
 							}
 						}
 					}
@@ -569,7 +599,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 			}
 		}
 
-		if foundBlocker {
+		if blocker != nil {
 			targetPassOffset := passOffset
 			if (is6LaneStraight || (is6Lane && hasNextLeftTurn)) && ad.BerserkMode {
 				leftScore, midScore, rightScore, leftBlocked, midBlocked, rightBlocked := evaluate6LaneTraffic(bus, obstacles, cosH, sinH, laneWidth, ad.LaneOffset, ad.GetBerserkCruiseSpeed())
@@ -622,7 +652,14 @@ func (ad *AutopilotDriver) updateOvertaking(
 			// Verify passing lane is safe and clear to change into
 			clearToChange := false
 			if is2Lane {
-				clearToChange = isOncomingLaneClear(bus, obstacles, cosH, sinH, ad.LaneOffset, targetPassOffset, laneWidth, speedAbs, ad.GetBerserkCruiseSpeed())
+				if bus.IsArticulated() && blocker.Speed > 45 && speedAbs-blocker.Speed < 60 {
+					// A long bus already matching a moving leader would spend
+					// most of the return window drawing its trailer alongside.
+					// Wait until there is enough closing speed to finish the pass.
+					break
+				}
+				clearToChange = oncomingPassHasReturnGap(bus, obstacles, blocker, roadForward, oncomingLaneCenter+laneWidth) &&
+					isOncomingLaneClear(bus, obstacles, roadForward, oncomingLaneCenter, speedAbs, ad.GetBerserkCruiseSpeed())
 			} else {
 				clearToChange = isLaneClearToChange(bus, obstacles, cosH, sinH, ad.LaneOffset, targetPassOffset, laneWidth)
 			}
@@ -646,7 +683,7 @@ func (ad *AutopilotDriver) updateOvertaking(
 				ad.OvertakeTimer = 0.0
 				break
 			}
-			if !isOncomingLaneClear(bus, obstacles, cosH, sinH, ad.LaneOffset, ad.TargetLaneOffset, laneWidth, speedAbs, ad.GetBerserkCruiseSpeed()) {
+			if !isOncomingLaneClear(bus, obstacles, roadForward, oncomingLaneCenter, speedAbs, ad.GetBerserkCruiseSpeed()) {
 				if isBaseLaneClearToReturn(bus, obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, nil) {
 					ad.TargetLaneOffset = 0.0
 					ad.OvertakeState = OvertakeReturning
@@ -736,15 +773,12 @@ func (ad *AutopilotDriver) updateOvertaking(
 			}
 			hasImminentOncoming := false
 			for _, obs := range obstacles {
-				d := obs.Pos.Sub(bus.Pos)
-				fwd := d.X*cosH + d.Y*sinH
-				lat := -d.X*sinH + d.Y*cosH
-				latPath := lat + ad.LaneOffset
-				distToOncoming := math.Abs(latPath - (-laneWidth))
+				fwd := obs.Pos.Sub(bus.Pos).Dot(roadForward)
+				distToOncoming := math.Abs(obs.Pos.Dot(roadRight) - oncomingLaneCenter)
 				corridor := bus.Width/2 + obs.Width/2 + 14.0
 				if distToOncoming < corridor {
 					cosDiff := math.Cos(obs.Heading - bus.Heading)
-					if cosDiff < -0.2 && fwd > 0 && fwd < math.Max(600.0, speedAbs*2.0+120.0) {
+					if cosDiff < -0.2 && fwd > 0 && fwd < math.Max(950.0, speedAbs*2.6+250.0) {
 						hasImminentOncoming = true
 						break
 					}
@@ -852,11 +886,11 @@ func (ad *AutopilotDriver) updateOvertaking(
 		shouldReturn := false
 		if !hasObstacleNotCleared && ad.OvertakeTimer > 0.6 {
 			if isUpcomingLeft || isUpcomingCornerLeft || hasNextLeftTurn {
-				targetLeftOffset := leftTurnLaneOffset(distBaseToCenter, laneWidth, is6Lane)
-				ad.TargetLaneOffset = targetLeftOffset
-				ad.OvertakeState = OvertakeNone
-				ad.OvertakeTimer = 0.0
-				break
+				if ad.alignLeftTurnLaneOffset(bus, obstacles, cosH, sinH, distBaseToCenter, laneWidth, is6Lane, false) {
+					ad.OvertakeState = OvertakeNone
+					ad.OvertakeTimer = 0.0
+					break
+				}
 			}
 			if is6LaneStraight {
 				leftScore, midScore, rightScore, leftBlocked, midBlocked, rightBlocked := evaluate6LaneTraffic(bus, obstacles, cosH, sinH, laneWidth, ad.LaneOffset, ad.GetBerserkCruiseSpeed())
@@ -919,11 +953,11 @@ func (ad *AutopilotDriver) updateOvertaking(
 		ad.OvertakeTimer += dt
 
 		if isUpcomingLeft || isUpcomingCornerLeft {
-			targetLeftOffset := leftTurnLaneOffset(distBaseToCenter, laneWidth, is6Lane)
-			ad.TargetLaneOffset = targetLeftOffset
-			ad.OvertakeState = OvertakeNone
-			ad.OvertakeTimer = 0.0
-			break
+			if ad.alignLeftTurnLaneOffset(bus, obstacles, cosH, sinH, distBaseToCenter, laneWidth, is6Lane, false) {
+				ad.OvertakeState = OvertakeNone
+				ad.OvertakeTimer = 0.0
+				break
+			}
 		}
 
 		// Active collision avoidance during return maneuver:
@@ -975,4 +1009,85 @@ func (ad *AutopilotDriver) updateOvertaking(
 	}
 
 	ad.progressLaneOffset(dt, speedAbs)
+}
+
+func (ad *AutopilotDriver) updateApproachLanePolicies(f autopilotFrame, dt float64) bool {
+	ad.selectBerserkLeftTurn(f)
+	f.s = ad.LastPathS
+	ad.selectMedianRightTurn(f)
+	f.s = ad.LastPathS
+	ad.requestFourLaneLeftMerge(f)
+	if !ad.BerserkMode {
+		if ad.approachMerge != nil && (ad.approachMerge.RightTurn || ad.approachMerge.LeftTurn) {
+			if ad.advanceApproachMerge(f, dt) {
+				return true
+			}
+		}
+		ad.approachMerge = nil
+		ad.approachMergeJoined = false
+	}
+	if ad.BerserkMode && f.world != nil && len(ad.drivePath) >= 2 && (ad.State == AutopilotStateCruising || ad.State == AutopilotStateApproaching) {
+		if ad.updateRequiredApproachMerge(f, dt) {
+			return true
+		}
+	}
+	if ad.updateRightTurnOffset(f) {
+		return true
+	}
+	if ad.trackJunctionTurnLane(f, dt) {
+		return true
+	}
+	if ad.updateExitCruise(f, dt) {
+		return true
+	}
+	if ad.holdStraightJunctionLane(f, dt) {
+		return true
+	}
+	handled := ad.updateBusLane(f, dt)
+	ad.chooseParallelLeftTurnExit(f)
+	return handled
+}
+
+// Queue balancing belongs to the road approaches. Starting an optional
+// multi-lane pass inside the crossing can turn a through bus onto the cross
+// street while its route still runs straight ahead.
+func (ad *AutopilotDriver) holdStraightJunctionLane(f autopilotFrame, dt float64) bool {
+	if f.world == nil || f.remaining < 600 || ad.busLaneJunction != nil || ad.uTurn != nil ||
+		!f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
+		return false
+	}
+	u := sim.UnitFromAngle(approachRoadHeading(f.bus.Heading))
+	base := ad.pointAt(f.s)
+	for _, d := range []float64{40, 100, 200} {
+		v := ad.pointAt(f.s + d).Sub(base)
+		if v.Length() < d-1 || v.Normalize().Dot(u) < .9999 {
+			return false
+		}
+	}
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	actual := f.bus.Pos.Sub(base).Dot(r)
+	held := actual
+	roadH := math.Atan2(u.Y, u.X)
+	center, ew, multi, six := sim.CurrentRoadInfo(f.world, base, roadH, f.laneWidth)
+	if multi || six {
+		origin := sim.Vec2{Y: center}
+		if !ew {
+			origin = sim.Vec2{X: center}
+		}
+		minLegal := 0.5*f.laneWidth - base.Sub(origin).Dot(r)
+		if held < minLegal {
+			held = minLegal
+		}
+	}
+	if ad.OvertakeState != OvertakeNone && math.Abs(ad.TargetLaneOffset-actual) > 4 && ad.TargetLaneOffset >= held-1 {
+		ad.progressLaneOffset(dt, f.speedAbs)
+	} else if held > actual+4 {
+		ad.TargetLaneOffset = held
+		ad.OvertakeState = OvertakeReturning
+		ad.progressLaneOffset(dt, f.speedAbs)
+	} else {
+		ad.holdLaneOffset(held)
+		ad.OvertakeState = OvertakeNone
+	}
+	return true
 }

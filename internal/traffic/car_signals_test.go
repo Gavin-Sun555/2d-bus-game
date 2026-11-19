@@ -97,3 +97,33 @@ func TestCivilianThroughAndLeftStillStopOnRed(t *testing.T) {
 		}
 	}
 }
+
+func TestExitedBusPastJunctionBoxDoesNotBlockGreenSignal(t *testing.T) {
+	w, tls := eightLaneWorld(sim.RoadBoulevard8Lane)
+	inter := tls.Intersections[0]
+	inter.Phase = sim.PhaseNSGreen
+	// Bus heading East (+X) has already exited the cross-street box, even though
+	// it is still within a long BRT stopLine+20 radius of the intersection center.
+	inter.ApproachLanes = [4]int{8, 8, 8, 8}
+	bus := sim.NewBus(300, 52, 0)
+	car := &sim.TrafficCar{
+		ID:          1,
+		Pos:         sim.Vec2{X: -26, Y: -inter.GetStopLineDistForHeading(math.Pi/2, 52) - 20},
+		Heading:     math.Pi / 2,
+		Length:      46,
+		Width:       22,
+		LaneIndex:   0,
+		TargetSpeed: 90,
+	}
+	tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
+	f := carFrame{car: car, world: w, tls: tls, laneWidth: 52, buses: []*sim.Bus{bus}}
+	if !busExitedJunctionBox(f, bus, inter) {
+		t.Fatal("expected exited bus to satisfy busExitedJunctionBox")
+	}
+	if spd := tm.signalSpeed(f, 90); spd < 90 {
+		t.Fatalf("exited bus blocked green signal: speed=%.1f", spd)
+	}
+	if spd := tm.intersectionYieldSpeed(f, 90); spd < 90 {
+		t.Fatalf("exited bus blocked intersection yield: speed=%.1f", spd)
+	}
+}

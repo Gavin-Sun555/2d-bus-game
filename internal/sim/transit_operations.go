@@ -215,6 +215,16 @@ func (o *TransitOperations) InterruptJourney(id int) {
 	}
 }
 
+// ResetVehicle starts a vehicle's statistics afresh (service distance, time,
+// laps, average speed, passengers and revenue) when it begins another
+// service. Network, station and line totals keep what it already earned.
+func (o *TransitOperations) ResetVehicle(id int) {
+	if o == nil {
+		return
+	}
+	delete(o.Vehicles, id)
+}
+
 // EndVehicleService freezes the final record for the history list.
 func (o *TransitOperations) EndVehicleService(id int) {
 	if o == nil {

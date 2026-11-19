@@ -17,8 +17,8 @@ func TestHeadonConflictDetection(t *testing.T) {
 	ad := NewAutopilotDriver()
 
 	// 1. Two buses head-to-head facing each other (Ego Westbound, Other Eastbound)
-	ego := sim.NewBus(50.0, 0.0, math.Pi)   // Heading West (pi)
-	other := sim.NewBus(-50.0, 0.0, 0.0)   // Heading East (0)
+	ego := sim.NewBus(50.0, 0.0, math.Pi) // Heading West (pi)
+	other := sim.NewBus(-50.0, 0.0, 0.0)  // Heading East (0)
 	other.Speed = 0
 
 	f := autopilotFrame{
@@ -372,5 +372,137 @@ func TestSideBySideDeadlockReverseLifecycle(t *testing.T) {
 	}
 	if th <= 0 || br > 0 {
 		t.Fatalf("expected reverse th > 0, br == 0, got th=%.2f br=%.2f", th, br)
+	}
+}
+
+func TestArticulatedRearClearanceChecksTrailer(t *testing.T) {
+	world := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: 9000, Y: 7252}, P2: sim.Vec2{X: 12000, Y: 7252}, Lanes: 4, Type: 0},
+		},
+	}
+	ego := sim.NewBus(10832.9, 7228.6, -0.001)
+	ego.SetModel(sim.BusArticulated)
+	ego.TrailerHeading = 0.010
+
+	ad := NewAutopilotDriver()
+	ad.LaneOffset = -45.9
+
+	// Car sitting ~9px behind the articulated trailer (~176px behind tractor Pos).
+	rearCar := VehicleObstacle{
+		Pos:     sim.Vec2{X: 10656.8, Y: 7226.0},
+		Heading: 0,
+		Length:  46,
+		Width:   22,
+		Speed:   0,
+	}
+	fBlocked := autopilotFrame{
+		bus:       ego,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{rearCar},
+		speedAbs:  0,
+	}
+	if ad.headonRearClear(fBlocked, 22.0) {
+		t.Fatal("expected headonRearClear=false when a car is 9px behind articulated trailer")
+	}
+
+	// Front leader creating a merge conflict in checkMergeConflict while rearCar blocks reversing.
+	frontLeader := sim.NewBus(11040.2, 7225.2, -0.004)
+	frontLeader.SetModel(sim.BusArticulated)
+	fDeadlock := fBlocked
+	fDeadlock.obstacles = []VehicleObstacle{ObserveBus(frontLeader), rearCar}
+	for i := 0; i < 150; i++ {
+		if ad.tryHeadonDeadlockRecovery(fDeadlock, 0.1) {
+			t.Fatal("articulated bus must NOT initiate reverse recovery when rear car blocks its trailer")
+		}
+	}
+
+	// Immediate rear guard in headonRecoveryControls must abort if a rear car is close behind the trailer
+	// (including swept/parallel retreats when within stopping margin).
+	for _, parallel := range []bool{false, true} {
+		bus := *ego
+		bus.ShiftTo(sim.GearReverse)
+		bus.Speed = -15.0
+		drv := NewAutopilotDriver()
+		drv.headonRecovery = &HeadonDeadlockRecovery{
+			StartPos:           bus.Pos.Add(sim.Vec2{X: 8}),
+			TargetDistance:     22.0,
+			YieldHoldRemaining: 4.0,
+			ParallelRetreat:    parallel,
+		}
+		veryCloseCar := rearCar
+		veryCloseCar.Pos.X = 10665.0 // ~1px behind trailer rear edge (~10688.9)
+		fClose := autopilotFrame{
+			bus:       &bus,
+			world:     world,
+			laneWidth: 52,
+			obstacles: []VehicleObstacle{veryCloseCar},
+			speedAbs:  15.0,
+		}
+		th, br, _, done := drv.headonRecoveryControls(fClose, 1.0/60.0)
+		if done || !drv.headonRecovery.ReversingDone {
+			t.Fatalf("parallel=%v: expected reversing to abort cleanly into yield hold", parallel)
+		}
+		if bus.Gear != sim.GearDrive || br != 1.0 || th != 0.0 {
+			t.Fatalf("parallel=%v: expected GearDrive brake=1 th=0 on abort, got gear=%v br=%.2f th=%.2f", parallel, bus.Gear, br, th)
+		}
+	}
+
+	// Clear rear when car is well behind the trailer.
+	farCar := rearCar
+	farCar.Pos.X = 10550.0
+	fClear := autopilotFrame{
+		bus:       ego,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{farCar},
+		speedAbs:  0,
+	}
+	if !ad.headonRearClear(fClear, 22.0) {
+		t.Fatal("expected headonRearClear=true when rear car is well behind trailer")
+	}
+
+	// Approaching rear car moving fast toward the trailer must also block a long reverse.
+	approachingCar := rearCar
+	approachingCar.Pos.X = 10580.0
+	approachingCar.Speed = 200.0
+	fApproaching := autopilotFrame{
+		bus:       ego,
+		world:     world,
+		laneWidth: 52,
+		obstacles: []VehicleObstacle{approachingCar},
+		speedAbs:  0,
+	}
+	if ad.headonRearClear(fApproaching, 70.0) {
+		t.Fatal("expected headonRearClear=false when a car is approaching the trailer from behind")
+	}
+}
+
+func TestJunctionReverseControlsFullUnwindAndEntryAlignment(t *testing.T) {
+	// Articulated jackknife unwind uses full [-1, 1] steer range.
+	b := sim.NewBus(0, 0, 0.25)
+	b.SetModel(sim.BusArticulated)
+	b.TrailerHeading = 0
+	b.Speed = 0
+	_, _, steer := junctionReverseControls(b, false, 0)
+	if steer != 1.0 {
+		t.Fatalf("expected full +1.0 unwind steer for ang=0.25, got %.3f", steer)
+	}
+
+	b.Heading = -0.25
+	_, _, steer = junctionReverseControls(b, false, 0)
+	if steer != -1.0 {
+		t.Fatalf("expected full -1.0 unwind steer for ang=-0.25, got %.3f", steer)
+	}
+
+	// With alignEntry enabled and small articulation angle, reverse steer aligns heading toward entryHeading.
+	bAligned := sim.NewBus(0, 0, 0.20)
+	bAligned.SetModel(sim.BusArticulated)
+	bAligned.TrailerHeading = 0.20
+	bAligned.Speed = 0
+	_, _, alignSteer := junctionReverseControls(bAligned, true, 0)
+	if math.Abs(alignSteer-0.8) > 1e-6 {
+		t.Fatalf("expected entry-alignment steer 0.8 for hdgErr=0.20, got %.6f", alignSteer)
 	}
 }

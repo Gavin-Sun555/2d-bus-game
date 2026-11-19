@@ -320,3 +320,94 @@ func TestBerserkMode6LaneOvertakingIntoUpcomingLeftTurn(t *testing.T) {
 		}
 	})
 }
+
+func TestSixLaneLeftTurnApproachHoldsMiddleLaneWhenInnerBlocked(t *testing.T) {
+	const lw = 52.0
+	w, _ := turnTestWorld(6, 4, 0, lw)
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	for _, inter := range tls.Intersections {
+		inter.Phase = sim.PhaseEWLeftGreen
+	}
+
+	route := &sim.Route{
+		Name:         "LeftTurn6LaneBlockedInner",
+		StopIDs:      []int{0, 1},
+		CurrentIndex: 1,
+	}
+
+	driver := NewAutopilotDriver()
+	driver.BerserkMode = true
+	driver.PrepareLeg(w, w.Stops[0], w.Stops[1], lw)
+
+	// 1. Direct helper verification: 6-lane left shift from -lw to -2*lw holds -lw when inner lane is occupied.
+	directBus := sim.NewBus(-700, lw*1.5, 0)
+	directBus.Speed = 120.0
+	driver.OvertakeState = OvertakePassing
+	driver.LaneOffset = -lw
+	driver.TargetLaneOffset = -lw
+	innerBlocker := VehicleObstacle{
+		Pos:     sim.Vec2{X: directBus.Pos.X + 10, Y: lw * 0.5},
+		Heading: 0,
+		Speed:   60.0,
+		Length:  48,
+		Width:   22,
+	}
+	if driver.alignLeftTurnLaneOffset(directBus, []VehicleObstacle{innerBlocker}, 1, 0, 2.5*lw, lw, true, true) {
+		t.Fatal("expected alignLeftTurnLaneOffset to reject leftward shift into occupied inner lane")
+	}
+	if math.Abs(driver.TargetLaneOffset-(-lw)) > 1e-6 {
+		t.Fatalf("expected blocked alignLeftTurnLaneOffset to hold -lw (%.2f), got %.2f", -lw, driver.TargetLaneOffset)
+	}
+	if !driver.alignLeftTurnLaneOffset(directBus, nil, 1, 0, 2.5*lw, lw, true, true) {
+		t.Fatal("expected alignLeftTurnLaneOffset to accept leftward shift once inner lane clears")
+	}
+	if math.Abs(driver.TargetLaneOffset-(-2*lw)) > 1e-6 {
+		t.Fatalf("expected clear alignLeftTurnLaneOffset to target -2*lw (%.2f), got %.2f", -2*lw, driver.TargetLaneOffset)
+	}
+
+	// 2. Full ComputeControls verification approaching the 6-lane left turn.
+	bus := sim.NewBus(-700, lw*1.5, 0)
+	bus.Speed = 220.0
+	bus.Gear = sim.GearDrive
+	s, _ := driver.trackPath(bus.Pos)
+	basePt := driver.pointAt(s)
+	initOffset := bus.Pos.Y - basePt.Y
+	if initOffset >= -4.0 {
+		t.Fatalf("expected bus at Y=%.2f to be left of base path Y=%.2f", bus.Pos.Y, basePt.Y)
+	}
+	driver.OvertakeState = OvertakePassing
+	driver.LaneOffset = initOffset
+	driver.TargetLaneOffset = initOffset
+	driver.lastTargetLaneOffset = initOffset
+
+	outerSlow := VehicleObstacle{
+		Pos:     sim.Vec2{X: bus.Pos.X + 40, Y: lw * 2.5},
+		Heading: 0,
+		Speed:   30.0,
+		Length:  48,
+		Width:   22,
+	}
+
+	dt := 1.0 / 60.0
+	for tick := 0; tick < 15; tick++ {
+		outerSlow.Pos.X = bus.Pos.X + 40
+		innerBlocker.Pos.X = bus.Pos.X + 10
+		th, br, st, hb, doors, _ := driver.ComputeControls(bus, route, w, tls, []VehicleObstacle{outerSlow, innerBlocker}, lw, dt)
+		bus.Update(dt, th, br, st, hb, doors)
+		curBaseY := driver.pointAt(driver.LastPathS).Y
+		wantInnerTarget := lw*0.5 - curBaseY
+		if math.Abs(driver.TargetLaneOffset-wantInnerTarget) < 12.0 {
+			t.Fatalf("tick %d: bus swerved toward occupied inner lane (TargetLaneOffset=%.2f vs innerTarget=%.2f, LaneOffset=%.2f)",
+				tick, driver.TargetLaneOffset, wantInnerTarget, driver.LaneOffset)
+		}
+	}
+
+	// Once the inner left-turn lane clears, ComputeControls shifts TargetLaneOffset to the inner left-turn lane.
+	driver.ComputeControls(bus, route, w, tls, []VehicleObstacle{outerSlow}, lw, dt)
+	curBaseY := driver.pointAt(driver.LastPathS).Y
+	wantInnerTarget := lw*0.5 - curBaseY
+	if math.Abs(driver.TargetLaneOffset-wantInnerTarget) > 6.0 {
+		t.Fatalf("expected TargetLaneOffset near inner lane %.2f after inner lane cleared, got %.2f", wantInnerTarget, driver.TargetLaneOffset)
+	}
+}

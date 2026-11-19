@@ -32,6 +32,9 @@ func availableStationBerthsInto(bus *sim.Bus, stop *sim.BusStop, obstacles []Veh
 		candidate := *bus
 		candidate.Pos, candidate.Heading = rear, stop.Heading
 		candidate.ResetArticulation()
+		// The controller brakes just before the target. A rear marker on
+		// the last fraction of the boarding strip is not a usable berth.
+		candidate.Pos = candidate.Pos.Sub(sim.UnitFromAngle(stop.Heading).Mul(4))
 		if stop.ContainsBus(&candidate) {
 			targets = append(targets, rear)
 		}
@@ -122,7 +125,11 @@ func stationBoardingPoseClear(f autopilotFrame) bool {
 				return false
 			}
 		}
-		if sweepBodiesCollision(f.bus.BodyParts(), ob, 0, .5, .5) {
+		pad := .5
+		if f.speedAbs < 3 && math.Abs(ob.Speed) < 3 {
+			pad = 0
+		}
+		if sweepBodiesCollision(f.bus.BodyParts(), ob, 0, pad, pad) {
 			return false
 		}
 	}

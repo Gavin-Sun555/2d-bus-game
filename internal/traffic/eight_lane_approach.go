@@ -78,7 +78,7 @@ func (tm *TrafficManager) laneMergeClear(f carFrame, forward sim.Vec2, direction
 		}
 		// A follower paused behind us must not reserve our escape into the
 		// empty lane ahead. Its normal headway keeps it behind our rear bumper.
-		if math.Cos(other.JunctionTurn.ExitHeading-f.car.Heading) > .98 && other.Pos.Sub(f.car.Pos).Dot(forward) < -(f.car.Length+other.Length)/2-12 {
+		if sim.Cos(other.JunctionTurn.ExitHeading-f.car.Heading) > .98 && other.Pos.Sub(f.car.Pos).Dot(forward) < -(f.car.Length+other.Length)/2-12 {
 			continue
 		}
 		if ours == nil {

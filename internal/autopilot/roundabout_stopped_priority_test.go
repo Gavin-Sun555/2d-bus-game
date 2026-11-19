@@ -16,15 +16,16 @@ func TestEntryYieldsOutsideRingToStoppedCirculatingCar(t *testing.T) {
 				u := sim.Vec2{X: math.Cos(h), Y: math.Sin(h)}
 				r := sim.Vec2{X: -u.Y, Y: u.X}
 				w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", rb.Center.Sub(u.Mul(800)), h, 4, sim.RGBA(0, 0, 0, 255), 52), sim.NewBusStop(1, "to", rb.Center.Add(u.Mul(800)), h, 4, sim.RGBA(0, 0, 0, 255), 52)}
-				p := rb.Center.Sub(u.Mul(360)).Add(r.Mul(78))
+				p := rb.Center.Sub(u.Mul(rb.Radius + 120)).Add(r.Mul(78))
 				bus := sim.NewBus(p.X, p.Y, h)
 				bus.Speed = 90
 				ad := NewAutopilotDriver()
 				ad.BerserkMode = berserk
 				ad.DisallowOncomingOvertake = true
 				route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
-				a := h + math.Pi - math.Asin(78./214) - .3
-				ob := VehicleObstacle{Pos: rb.Center.Add(sim.Vec2{X: 214 * math.Cos(a), Y: 214 * math.Sin(a)}), Heading: a - math.Pi/2, Length: 46, Width: 22}
+				outerR := roundaboutOuterLaneRadius(&rb)
+				a := h + math.Pi - math.Asin(78./outerR) - .3
+				ob := VehicleObstacle{Pos: rb.Center.Add(sim.Vec2{X: outerR * math.Cos(a), Y: outerR * math.Sin(a)}), Heading: a - math.Pi/2, Length: 46, Width: 22}
 				for tick := 0; tick < 180; tick++ {
 					th, br, st, hb, d, _ := ad.ComputeControls(bus, route, w, nil, []VehicleObstacle{ob}, 52, 1./60)
 					bus.Update(1./60, th, br, st, hb, d)

@@ -8,7 +8,7 @@ import (
 
 func laneBusYieldLimit(f carFrame, bus, previous *sim.Bus) (float64, bool) {
 	request := bus.LaneMergeRequest
-	if request == nil || request.Remaining <= 0 || request.Joined || math.Cos(f.car.Heading-request.Heading) < .98 || math.Cos(bus.Heading-request.Heading) < .5 {
+	if request == nil || request.Remaining <= 0 || request.Joined || sim.Cos(f.car.Heading-request.Heading) < .98 || sim.Cos(bus.Heading-request.Heading) < .5 {
 		return 0, false
 	}
 	forward := sim.UnitFromAngle(request.Heading)
@@ -23,16 +23,26 @@ func laneBusYieldLimit(f carFrame, bus, previous *sim.Bus) (float64, bool) {
 		return 0, false
 	}
 	yaw := bus.Heading - request.Heading
-	extent := body.HalfLen*math.Abs(math.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw))
+	extent := body.HalfLen*math.Abs(sim.Cos(yaw)) + body.HalfWid*math.Abs(math.Sin(yaw))
 	gap := body.Center.Sub(f.car.Pos).Dot(forward) - extent - f.car.Length/2 - 30
 	minGap := -8.0
+	shift := math.Abs(bus.Pos.Sub(request.Target).Dot(right))
+	smallCorrection := !request.Is2Lane && shift <= .30*f.laneWidth
+	if request.Is2Lane && !bus.IsArticulated() && shift <= .40*f.laneWidth {
+		smallCorrection = true
+	}
 	if previous == bus {
 		minGap = -30.0
+	} else if math.Abs(f.car.Speed) <= 1 && math.Abs(bus.Speed) <= 1 &&
+		!request.LeftTurn && !request.RightTurn && smallCorrection && sim.Cos(bus.Heading-request.Heading) > .98 {
+		// A stopped follower can acknowledge a small in-lane correction
+		// with a 16px physical bumper gap. No moving car uses this margin.
+		minGap = -14.0
 	}
 	if gap < minGap || gap > 750 {
 		return 0, false
 	}
-	closingSpeed := math.Max(0, f.car.Speed-bus.Speed*math.Cos(bus.Heading-request.Heading))
+	closingSpeed := math.Max(0, f.car.Speed-bus.Speed*sim.Cos(bus.Heading-request.Heading))
 	braking := closingSpeed*closingSpeed/(2*220) + closingSpeed*.2
 	if previous != bus && f.car.Speed > 35.0 && math.Max(0, gap) < braking {
 		return 0, false

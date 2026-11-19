@@ -44,6 +44,7 @@ func (abm *AIBusManager) Update(
 	}
 	for i, c := range activeCars {
 		abm.carObstacles[i] = autopilot.VehicleObstacle{
+			Car:              c,
 			Pos:              c.Pos,
 			YieldingTo:       c.YieldingToBus,
 			JunctionTurn:     c.JunctionTurn,
@@ -187,6 +188,9 @@ func (abm *AIBusManager) Update(
 			ab.Bus.OnShoulder = false
 		}
 		if bRes.Zone == sim.ZoneHardBarrier {
+			if ab.Driver != nil {
+				ab.Driver.NoteHardBarrierImpact()
+			}
 			ab.Bus.Pos = ab.Bus.Pos.Add(bRes.Pushback.Mul(bRes.Penetration + 4.0))
 			ab.Bus.Speed = 0
 		}

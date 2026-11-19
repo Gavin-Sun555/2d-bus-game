@@ -118,8 +118,13 @@ func AdvancePastEmptyStation(w *sim.World, bus *sim.Bus, route *sim.Route, drive
 	if stop.CenterBRT {
 		roadEdge += w.BRTStationFlareAt(bus.Pos, laneWidth)
 	}
+	maxLateral := roadEdge + sim.ShoulderWidth
+	if !stop.CenterBRT {
+		maxLateral = math.Max(maxLateral, roadEdge+stop.Width)
+	}
 	if math.Cos(bus.Heading-stop.Heading) < .9 || delta.Dot(forward) < -2 ||
-		delta.Dot(forward) > bus.Length || lateral < 0 || lateral > roadEdge {
+		delta.Dot(forward) > math.Max(bus.OverallLength(), stop.Length)+laneWidth ||
+		lateral < 0 || lateral > maxLateral {
 		return nil
 	}
 	route.AdvanceToNextStop()
@@ -226,6 +231,17 @@ func RecoverPassedStation(w *sim.World, bus *sim.Bus, route *sim.Route, driver *
 	// The bay-width check below is too narrow for those lanes on wide roads.
 	pastRoadsideBerth := onBoardingRoad && driver.LastRemaining <= 2 &&
 		along > bus.Length/2+12 && endpointPassed > bus.Length/2+12
+	pastCenterBRTIsland := false
+	if stop.CenterBRT && driver.State == autopilot.AutopilotStateApproaching &&
+		driver.LastRemaining <= 5 && along > bus.Length/2+12 && endpointPassed > bus.Length/2+12 &&
+		math.Cos(bus.Heading-stop.Heading) > .95 && math.Cos(bus.TailHeading()-stop.Heading) > .95 &&
+		!(route.IsTerminusIndex(route.CurrentIndex) && (retiring || bus.PendingModel != nil)) &&
+		!w.InsideJunction(bus.Pos, laneWidth, bus.OverallLength()/2) {
+		side := bus.Pos.Sub(stop.RoadCenter).Dot(sim.Vec2{X: -u.Y, Y: u.X})
+		maxSide := float64(max(2, stop.RoadLanes)/2)*laneWidth + w.BRTStationFlareAt(bus.Pos, laneWidth)
+		pastCenterBRTIsland = side > laneWidth+6 && side <= maxSide
+	}
+	pastRoadsideBerth = pastRoadsideBerth || pastCenterBRTIsland
 	// A slightly yawed arrival can be past the final berth while its path
 	// projection still reports distance remaining. On the verified boarding
 	// road, use the same three-second retry as an aligned late arrival;

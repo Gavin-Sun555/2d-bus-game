@@ -15,7 +15,7 @@ func moveCar(car *sim.TrafficCar, dt float64) {
 		moveCarThroughJunction(car, dt)
 	} else if car.InRoundabout {
 		moveCarRoundabout(car, dt)
-	} else if car.Speed > 0 {
+	} else if car.Speed != 0 {
 		car.Pos.X += car.Speed * math.Cos(car.Heading) * dt
 		car.Pos.Y += car.Speed * math.Sin(car.Heading) * dt
 	}

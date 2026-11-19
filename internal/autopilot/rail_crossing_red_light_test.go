@@ -7,6 +7,36 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+func TestArticulatedBusWaitsForRollingQueueToClearRailExit(t *testing.T) {
+	const laneWidth = 52.
+	world := &sim.World{LargeGrid: true, CenterBRT: true}
+	world.BuildMap(sim.MapThemeRiverValley, laneWidth)
+	rail := world.Railways()[0]
+	found := false
+	for _, crossing := range rail.Crossings {
+		found = found || crossing.Center.X == 0 && crossing.Level
+	}
+	if !found {
+		t.Fatal("expected the level crossing on the approach to the central junction")
+	}
+	gate := rail.HalfWidth + sim.RailGateMargin
+	bus := sim.NewBus(laneWidth/2, rail.Y+gate+63, -math.Pi/2)
+	bus.SetModel(sim.BusArticulated)
+	bumper := bus.Pos.Add(sim.UnitFromAngle(bus.Heading).Mul(bus.Length / 2))
+	lead := VehicleObstacle{
+		Pos:     sim.Vec2{X: laneWidth / 2, Y: rail.Y - gate - 175},
+		Heading: bus.Heading, Speed: 35, Length: 46, Width: 22,
+	}
+	frame := autopilotFrame{bus: bus, world: world, laneWidth: laneWidth, obstacles: []VehicleObstacle{lead}}
+	if limit := railExitQueueSpeed(frame, bumper); limit > .01 {
+		t.Fatalf("moving queue does not leave trailer room; got speed cap %.2f", limit)
+	}
+	frame.obstacles[0].Pos.Y -= 100
+	if limit := railExitQueueSpeed(frame, bumper); !math.IsInf(limit, 1) {
+		t.Fatalf("bus still held after leader opened space for both sections; got %.2f", limit)
+	}
+}
+
 func TestBusDoesNotStopOnRailwayTracksForDownstreamIntersectionRedLight(t *testing.T) {
 	const lw = 52.0
 	for _, large := range []bool{false, true} {
@@ -334,4 +364,3 @@ func TestBusClearsRailwayTracksWhenStoppedForDownstreamRed(t *testing.T) {
 			rearY, railSouthGate)
 	}
 }
-

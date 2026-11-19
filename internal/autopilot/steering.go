@@ -64,8 +64,13 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		// On 2-lane roads borrowing oncoming lane: smooth, longer lookahead prevents steep yaw into opposite shoulder
 		lookahead = sim.Clamp(f.speedAbs*0.42+50.0, 65.0, 105.0)
 	} else if !isTransitioningToLeftTurn && (ad.OvertakeState == OvertakeChangingLane || (ad.LaneOffset != 0 && math.Abs(f.lateralErr) > 6.0)) {
-		// Responsive lookahead during mid-block lane transition so bus steers decisively into new lane
-		lookahead = sim.Clamp(f.speedAbs*0.28+36.0, 48.0, 92.0)
+		// Responsive lookahead during mid-block lane transition so bus steers decisively into new lane,
+		// while scaling for high-speed player Berserk sprints so multi-lane returns never whip across the centerline.
+		maxLookahead := 92.0
+		if !ad.DisallowOncomingOvertake {
+			maxLookahead = math.Max(92.0, f.speedAbs*0.48)
+		}
+		lookahead = sim.Clamp(f.speedAbs*0.28+36.0, 48.0, maxLookahead)
 	} else if ad.BerserkMode {
 		lookahead = sim.Clamp(f.speedAbs*0.55+45.0, 55.0, 210.0)
 	}
@@ -73,6 +78,13 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	// Clamp lookahead when approaching or executing sharp corners so Pure Pursuit does not cut across the corner
 	// into oncoming lanes before or during the intersection turn (not for circular roundabout tracking):
 	if !nearRoundabout {
+		near2, near4, near6 := math.Inf(1), math.Inf(1), math.Inf(1)
+		if f.speedAbs > 150 {
+			near2, near4, near6 = 600, 600, 600
+		}
+		if f.bus.IsArticulated() && !ad.BerserkMode {
+			near2, near4, near6 = 120, 240, 360
+		}
 		startClampK := ad.WaypointIdx
 		if startClampK < 1 {
 			startClampK = 1
@@ -88,21 +100,23 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 			segPrev := ad.drivePath[k].Sub(ad.drivePath[k-1])
 			segNext := ad.drivePath[k+1].Sub(ad.drivePath[k])
 			turn := math.Abs(sim.NormalizeAngle(math.Atan2(segNext.Y, segNext.X) - math.Atan2(segPrev.Y, segPrev.X)))
-			if k+2 < len(ad.drivePath) {
+			// Sparse straight-road vertices can be kilometres apart. Only nearby
+			// samples of the same curve may shorten the current pursuit distance.
+			if k+2 < len(ad.drivePath) && segNext.Length() < near2 {
 				seg2 := ad.drivePath[k+2].Sub(ad.drivePath[k+1])
 				t2 := math.Abs(sim.NormalizeAngle(math.Atan2(seg2.Y, seg2.X) - math.Atan2(segPrev.Y, segPrev.X)))
 				if t2 > turn {
 					turn = t2
 				}
 			}
-			if k+4 < len(ad.drivePath) {
+			if k+4 < len(ad.drivePath) && ad.drivePath[k+3].Sub(ad.drivePath[k]).Length() < near4 {
 				seg4 := ad.drivePath[k+4].Sub(ad.drivePath[k+3])
 				t4 := math.Abs(sim.NormalizeAngle(math.Atan2(seg4.Y, seg4.X) - math.Atan2(segPrev.Y, segPrev.X)))
 				if t4 > turn {
 					turn = t4
 				}
 			}
-			if k+6 < len(ad.drivePath) {
+			if k+6 < len(ad.drivePath) && ad.drivePath[k+5].Sub(ad.drivePath[k]).Length() < near6 {
 				seg6 := ad.drivePath[k+6].Sub(ad.drivePath[k+5])
 				t6 := math.Abs(sim.NormalizeAngle(math.Atan2(seg6.Y, seg6.X) - math.Atan2(segPrev.Y, segPrev.X)))
 				if t6 > turn {
@@ -321,7 +335,8 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	}
 
 	if nearRb != nil && ad.directRoundaboutExit == nil && ad.parallelRoundaboutJoin(f, nearRb) {
-		if points, forward, ok := ad.roundaboutEntryCurve(f, nearRb, roundaboutLaneOffset(nearRb, f.bus, ad.LaneOffset)); ok {
+		var curveBuf [33]sim.Vec2
+		if points, forward, ok := ad.roundaboutEntryCurveInto(curveBuf[:0], f, nearRb, roundaboutLaneOffset(nearRb, f.bus, ad.LaneOffset)); ok {
 			targetPt = pursuitAlongEntry(points, f.bus.Pos, forward, lookahead)
 			f.bus.RoundaboutEntry = &sim.BusRoundaboutEntry{Center: nearRb.Center, Forward: forward, Remaining: .3}
 		}
@@ -371,7 +386,15 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 	if hold := ad.pathReturnHold; hold != nil {
 		forward := sim.UnitFromAngle(hold.Heading)
 		right := sim.Vec2{X: -forward.Y, Y: forward.X}
-		targetPt = f.bus.Pos.Add(forward.Mul(lookahead)).Add(right.Mul(hold.Target.Sub(f.bus.Pos).Dot(right)))
+		shift := hold.Target.Sub(f.bus.Pos).Dot(right)
+		mergeLookahead := lookahead
+		if f.bus.IsArticulated() && math.Abs(shift) > 10 {
+			// A stopped long bus still needs a full lane-change runway. The
+			// short settling lookahead otherwise commands full lock, sweeps the
+			// trailer into the median and repeats the same reverse forever.
+			mergeLookahead = math.Max(mergeLookahead, math.Max(160, math.Abs(shift)*3))
+		}
+		targetPt = f.bus.Pos.Add(forward.Mul(mergeLookahead)).Add(right.Mul(shift))
 	}
 	toTarget := targetPt.Sub(f.bus.Pos)
 	alpha = sim.NormalizeAngle(math.Atan2(toTarget.Y, toTarget.X) - f.bus.Heading)
@@ -380,7 +403,12 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		// On roads, a vehicle must NEVER lock steering at ±1.0 (±39°) to make sharp U-turns into oncoming traffic.
 		// Instead, determine the forward road travel direction and steer smoothly forward.
 		roadHeading := f.bus.Heading
-		if f.targetStop != nil {
+		if nearRb != nil && f.bus.Pos.Distance(nearRb.Center) <= nearRb.Radius+15.0 {
+			radial := math.Atan2(f.bus.Pos.Y-nearRb.Center.Y, f.bus.Pos.X-nearRb.Center.X)
+			roadHeading = radial - math.Pi*0.5
+		} else if ad.rightTurnJunction != nil && !ad.rightTurnWaiting && alpha > 0 {
+			roadHeading = sim.NormalizeAngle(ad.rightTurnHeading + math.Pi*0.5)
+		} else if f.targetStop != nil && (f.world == nil || (f.distToStop < 250 && f.remaining < 350)) {
 			roadHeading = f.targetStop.Heading
 		} else if f.world != nil {
 			_, isEW, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
@@ -397,6 +425,10 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 					roadHeading = -math.Pi / 2
 				}
 			}
+		} else if heading, ok := ad.localPathHeading(f); ok {
+			roadHeading = heading
+		} else if f.targetStop != nil {
+			roadHeading = f.targetStop.Heading
 		}
 		headingDiff := sim.NormalizeAngle(roadHeading - f.bus.Heading)
 		if math.Abs(headingDiff) < math.Pi*0.65 {
@@ -409,6 +441,9 @@ func (ad *AutopilotDriver) pursuitSteering(f autopilotFrame) (steer, alpha float
 		alpha = sim.Clamp(alpha, -math.Pi/2, math.Pi/2)
 	}
 	ld := math.Max(toTarget.Length(), 25.0)
+	if ad.LastLateralErr > 2*f.laneWidth && f.world != nil && f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.Length/2) {
+		ld = math.Max(lookahead, 25.0)
+	}
 	delta := math.Atan2(2.0*f.bus.WheelBase*math.Sin(alpha), ld)
 	steer = sim.Clamp(delta/f.bus.MaxSteerAngle, -1.0, 1.0)
 

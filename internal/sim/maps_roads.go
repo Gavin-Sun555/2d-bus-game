@@ -37,11 +37,11 @@ func (w *World) buildMap1Metropolis(laneWidth float64) {
 		Bridge{Pos: Vec2{X: 1300, Y: -300}, Heading: math.Pi / 2, Length: 120, Width: 80, Name: "东市民运河桥"},
 	)
 
-	// Central Civic Roundabout
+	// Central Civic Roundabout (enlarged ring so articulated buses have room)
 	w.Roundabouts = append(w.Roundabouts, Roundabout{
 		Center:      Vec2{X: 0, Y: 0},
-		Radius:      240.0,
-		InnerRadius: 120.0,
+		Radius:      300.0,
+		InnerRadius: 115.0,
 		Name:        "CBD中央市政环岛广场",
 		Type:        RoundaboutCivic,
 	})
@@ -100,8 +100,8 @@ func (w *World) buildMap2CoastalBay(laneWidth float64) {
 	// Lighthouse Roundabout at (-1300, 600)
 	w.Roundabouts = append(w.Roundabouts, Roundabout{
 		Center:      Vec2{X: -1300, Y: 600},
-		Radius:      225.0,
-		InnerRadius: 110.0,
+		Radius:      300.0,
+		InnerRadius: 115.0,
 		Name:        "海滨灯塔环岛",
 		Type:        RoundaboutLighthouse,
 	})
@@ -208,8 +208,8 @@ func (w *World) buildMap4EmeraldLake(laneWidth float64) {
 	// Lake Island Roundabout at (0, 0)
 	w.Roundabouts = append(w.Roundabouts, Roundabout{
 		Center:      Vec2{X: 0, Y: 0},
-		Radius:      220.0,
-		InnerRadius: 105.0,
+		Radius:      300.0,
+		InnerRadius: 115.0,
 		Name:        "湖心仙岛古风环岛",
 		Type:        RoundaboutIsland,
 	})

@@ -65,6 +65,9 @@ func TestBusLanePreferenceAndPassing(t *testing.T) {
 				if scenario == "unsafe return" {
 					want = initial
 				}
+				if berserk && scenario == "return" {
+					want = initial // Equally clear lanes do not justify changing back.
+				}
 				if ad.TargetLaneOffset != want {
 					t.Fatalf("target%.1f want%.1f", ad.TargetLaneOffset, want)
 				}

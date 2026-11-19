@@ -514,3 +514,25 @@ func TestArticulatedPassedBerthUsesFullLengthAndLateralProjection(t *testing.T) 
 		}
 	}
 }
+
+func TestAdvancePastEmptyStationAllowsShoulderOvertake(t *testing.T) {
+	const lw = 52.
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -2200}, P2: sim.Vec2{X: 2400}, Lanes: 8}}}
+	for i, x := range []float64{-1200, 0, 1200} {
+		w.Stops = append(w.Stops, sim.NewBusStop(i, "stop", sim.Vec2{X: x}, 0, 8, sim.RGBA(0, 0, 0, 255), lw, 0))
+	}
+	stop := w.Stops[1]
+	route := &sim.Route{StopIDs: []int{0, 1, 2}, CurrentIndex: 1}
+	// Articulated bus passing empty stop slightly right of the 8-lane roadEdge (208px)
+	// due to an overtake/shoulder offset (lateral=210px, inside bay width 252px).
+	bus := sim.NewBus(10, 4*lw+2, 0)
+	bus.SetModel(sim.BusArticulated)
+	bus.Speed = 255
+	ad := autopilot.NewAutopilotDriver()
+	ad.CanSkipTargetStop = true
+	ad.PrepareLeg(w, w.Stops[0], stop, lw)
+	ad.LastRemaining = 0
+	if got := AdvancePastEmptyStation(w, bus, route, ad, lw, 1./60); got == nil || route.CurrentIndex != 2 {
+		t.Fatalf("expected bus slightly in shoulder/bay recess to advance past empty stop, got %v index=%d", got, route.CurrentIndex)
+	}
+}

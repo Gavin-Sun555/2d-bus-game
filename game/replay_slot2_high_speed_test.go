@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
@@ -243,7 +242,7 @@ func TestSlot2BerserkCrashNovember4(t *testing.T) {
 // TestSaveSlot2BerserkOvertakesSlowerAI ensures that in Save Slot 2 on the 8-lane
 // bus boulevard (城市拓展大道), the player's 120 km/h berserk autopilot changes lanes to
 // Lane 2 to pass the slower AI bus #10 (traveling at ~80 km/h), accelerates to cruise speed,
-// passes AI #10, and cleanly returns to the reserved bus lane (Lane 3).
+// passes AI #10, and keeps its clear passing lane instead of returning without a speed benefit.
 func TestSaveSlot2BerserkOvertakesSlowerAI(t *testing.T) {
 	savePath := firstFixture(filepath.Join("..", "dist", "slot2-oct30-1116", "slot2.json"))
 	if savePath == "" {
@@ -284,7 +283,6 @@ func TestSaveSlot2BerserkOvertakesSlowerAI(t *testing.T) {
 
 	laneChanged := false
 	passedLeader := false
-	returnedToLane := false
 
 	for tick := 1; tick <= 350; tick++ {
 		if err := g.Update(); err != nil {
@@ -301,10 +299,9 @@ func TestSaveSlot2BerserkOvertakesSlowerAI(t *testing.T) {
 			passedLeader = true
 		}
 
-		// 3. Bus returns to base lane (Lane 3) after completing the pass
-		if passedLeader && math.Abs(ad.LaneOffset) < 1.0 && ad.OvertakeState == autopilot.OvertakeNone {
-			returnedToLane = true
-			break
+		// Once ahead, equally clear lanes do not justify returning to the bus lane.
+		if passedLeader && ad.TargetLaneOffset > -lw+1 {
+			t.Fatal("player abandoned clear passing lane without a speed benefit")
 		}
 	}
 
@@ -314,7 +311,7 @@ func TestSaveSlot2BerserkOvertakesSlowerAI(t *testing.T) {
 	if !passedLeader {
 		t.Errorf("player bus failed to pass AI #10: PlayerX=%.1f AIX=%.1f", p.Pos.X, ai10.Pos.X)
 	}
-	if !returnedToLane {
-		t.Errorf("player bus failed to return to base bus lane after passing: LaneOffset=%.1f OvertakeState=%d", ad.LaneOffset, ad.OvertakeState)
+	if passedLeader && math.Abs(ad.LaneOffset+lw) > 1 {
+		t.Errorf("player failed to settle in selected passing lane: LaneOffset=%.1f", ad.LaneOffset)
 	}
 }

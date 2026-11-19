@@ -15,6 +15,18 @@ func BuildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64) []
 }
 
 func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, skipDeparture, skipArrival bool, options ...sim.RoadPathOptions) []sim.Vec2 {
+	return buildDrivePathWithRunIn(w, from, to, lw, skipDeparture, skipArrival, 280, options...)
+}
+
+func (ad *AutopilotDriver) buildLegDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, skipDeparture, skipArrival bool, options ...sim.RoadPathOptions) []sim.Vec2 {
+	runIn := 280.
+	if ad.BerserkMode {
+		runIn = 160 // Keep the fast mode's optional parallel-lane boarding.
+	}
+	return buildDrivePathWithRunIn(w, from, to, lw, skipDeparture, skipArrival, runIn, options...)
+}
+
+func buildDrivePathWithRunIn(w *sim.World, from, to *sim.BusStop, lw float64, skipDeparture, skipArrival bool, articulatedRunIn float64, options ...sim.RoadPathOptions) []sim.Vec2 {
 	if to == nil {
 		return nil
 	}
@@ -25,7 +37,10 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 	bayStraight := apBayStraight
 	mergeLength, departureStraight := 160., 25.
 	if long {
-		bayStraight = 160
+		// The rear marker is 120px behind the front one. Finish the lateral
+		// entry before it, leaving the trailer the same 160px straight run
+		// that a front-berth arrival previously had.
+		bayStraight = articulatedRunIn
 		mergeLength = 360
 		departureStraight = 120
 	}
@@ -80,6 +95,12 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 	tail := []sim.Vec2{to.Pos}
 	if skipArrival {
 		tail = []sim.Vec2{lane2}
+		// A smoothed road route may omit the abeam point at a distant
+		// stop. Its penultimate point can be the previous turn's run-out.
+		// Flying the stop still needs the complete outgoing road segment.
+		if ahead := destination.Sub(lane2).Dot(h2); ahead > 3 && lane2.Sub(raw[n-3]).Normalize().Dot(h2) > .9 {
+			tail = append(tail, lane2.Add(h2.Mul(ahead)))
+		}
 		end = n - 2
 	} else if math.Abs(lane2.Sub(to.Pos).Dot(h2)) < 10.0 && n-3 >= 0 {
 		seg := lane2.Sub(raw[n-3])
@@ -87,7 +108,9 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 		if segLen > 1e-6 && seg.Mul(1/segLen).Dot(h2) > 0.9 {
 			taperDist := math.Min(170.0, segLen*0.4)
 			if long {
-				taperDist = math.Min(340, segLen*.45)
+				// Keep the same 500px approach envelope; spend more of it
+				// straightening inside the bay, rather than entering earlier.
+				taperDist = math.Min(500-articulatedRunIn, segLen*.45)
 			}
 			tail = []sim.Vec2{lane2.Sub(h2.Mul(taperDist + bayStraight)), bayEntry, to.Pos}
 			end = n - 2
@@ -102,7 +125,9 @@ func buildAutopilotDrivePath(w *sim.World, from, to *sim.BusStop, lw float64, sk
 	if long && !skipArrival {
 		path, _, _ = joinFoldedArrival(w, path, destination, to.Heading, lw)
 	}
-	return smoothRoundaboutDepartures(w, path, lw)
+	path = smoothRoundaboutDepartures(w, path, lw)
+	path, _ = clearBRTPlatformTransitions(w, path, lw, long)
+	return path
 }
 
 func dedupePath(pts []sim.Vec2) []sim.Vec2 {
@@ -119,6 +144,8 @@ func dedupePath(pts []sim.Vec2) []sim.Vec2 {
 // resetLegManeuvers clears lane, merge and turn commitments that belong to
 // the previous leg's path.
 func (ad *AutopilotDriver) resetLegManeuvers() {
+	ad.brtCheckedPath = brtPathSignature{}
+	ad.offRouteOrigin = nil
 	ad.dockDepartureRun = 0
 	ad.smoothDockDeparture = false
 	ad.midLaneRecovery = nil
@@ -130,11 +157,16 @@ func (ad *AutopilotDriver) resetLegManeuvers() {
 	ad.exitCruise = nil
 	ad.busLaneJunction = nil
 	ad.busLaneTurnChosen = false
+	ad.berserkLeftTurnChoice = nil
 	ad.medianRightChoice = nil
 	ad.curbBusRight = false
 	ad.rightTurnJunction = nil
 	ad.rightTurnWaiting = false
 	ad.busJunctionEntered = false
+	ad.fallbackJunction = nil
+	ad.blockedTurnMergeTimer = 0
+	ad.barrierReverse = nil
+	ad.barrierReverseCooldown = 0
 }
 
 func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw float64) {
@@ -181,8 +213,25 @@ func (ad *AutopilotDriver) PrepareLeg(w *sim.World, from, to *sim.BusStop, lw fl
 		ad.skippedDeparture = nil
 	}
 	skipFrom := ad.skippedDeparture != nil && from != nil && ad.skippedDeparture.stop.ID == from.ID
+	pathFrom, skipPathFrom := from, skipFrom
+	if ad.offRouteOrigin != nil {
+		pathFrom, skipPathFrom = ad.offRouteOrigin, true
+	}
 	ad.directRoundaboutExit = nil
-	ad.drivePath = buildAutopilotDrivePath(w, from, to, lw, skipFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath, CurbBusLaneRightAt: ad.curbRightPathChoice()})
+	ad.fallbackJunction = nil
+	ad.blockedTurnMergeTimer = 0
+	ad.drivePath = ad.buildLegDrivePath(w, pathFrom, to, lw, skipPathFrom, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: ad.ordinaryBusLeft, LongVehicle: ad.articulatedPath, CurbBusLaneRightAt: ad.curbRightPathChoice()})
+	// Road routing can start at the next junction when the virtual origin is
+	// between stops. Keep the current road approach when a later lane choice
+	// rebuilds that route, rather than dropping it and triggering another replan.
+	if ad.offRouteOrigin != nil && len(ad.drivePath) >= 2 {
+		origin := stopRoadPoint(ad.offRouteOrigin, lw, w)
+		forward := sim.UnitFromAngle(ad.offRouteOrigin.Heading)
+		origin = origin.Add(forward.Mul(ad.offRouteOrigin.Pos.Sub(origin).Dot(forward)))
+		if ad.drivePath[0].Sub(origin).Dot(forward) > 5 && ad.drivePath[1].Sub(ad.drivePath[0]).Normalize().Dot(forward) > .9 {
+			ad.drivePath = append([]sim.Vec2{origin}, ad.drivePath...)
+		}
+	}
 	ad.pathRevision = currentDrivePathRevision
 	if skipFrom {
 		ad.prependSkippedDeparture(lw, w)
@@ -236,6 +285,11 @@ func projectToSegment(p, a, b sim.Vec2) (float64, float64) {
 // only used on first sync or when the bus has strayed far from the path.
 // Returns the arc-length position s and the lateral distance to the path.
 func (ad *AutopilotDriver) trackPath(pos sim.Vec2) (float64, float64) {
+	if !ad.pathSynced && ad.pathWorld != nil {
+		// Junction lane choices can splice a new return taper into a cached
+		// leg after its initial build. Validate that future taper as well.
+		ad.repairUpcomingBRTTransition(pos)
+	}
 	path := ad.drivePath
 	n := len(path)
 	if n < 2 {
@@ -372,9 +426,38 @@ func (ad *AutopilotDriver) cornerSpeedLimit(s, speed float64) float64 {
 				turn = t4
 			}
 		}
+		if k+8 < n && path[k+7].Sub(path[k]).Length() < 360.0 {
+			g := path[k+8].Sub(path[k+7])
+			t8 := math.Abs(sim.NormalizeAngle(math.Atan2(g.Y, g.X) - math.Atan2(a.Y, a.X)))
+			if t8 > turn {
+				turn = t8
+			}
+		}
+		arcLen := 0.0
+		cumTurn := 0.0
+		prevHeading := math.Atan2(a.Y, a.X)
+		for m := k; m < n-1 && arcLen < 360.0; m++ {
+			seg := path[m+1].Sub(path[m])
+			segLen := seg.Length()
+			if segLen > 75.0 {
+				break
+			}
+			segHeading := math.Atan2(seg.Y, seg.X)
+			cumTurn += sim.NormalizeAngle(segHeading - prevHeading)
+			prevHeading = segHeading
+			arcLen += segLen
+			if absCum := math.Abs(cumTurn); absCum > turn {
+				turn = absCum
+			}
+		}
 
 		vc := math.Inf(1)
 		switch {
+		case turn > 2.2:
+			vc = 42.0
+			if ad.BerserkMode {
+				vc = 65.0
+			}
 		case turn > 1.1:
 			vc = 48.0
 			if ad.BerserkMode {

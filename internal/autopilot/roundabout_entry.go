@@ -51,7 +51,11 @@ func (ad *AutopilotDriver) joiningInnerRoundabout(rb *sim.Roundabout, s, laneWid
 // inner ring. Driving straight to the inner circle and then turning 90 degrees
 // lets the bus's front cut into the island before the rear has joined the ring.
 func (ad *AutopilotDriver) innerRoundaboutEntryTarget(f autopilotFrame, rb *sim.Roundabout, lookahead, offset float64) (sim.Vec2, bool) {
-	points, forward, ok := ad.innerRoundaboutEntryCurve(f, rb, offset)
+	if !ad.joiningInnerRoundabout(rb, f.s, f.laneWidth) {
+		return sim.Vec2{}, false
+	}
+	var buf [33]sim.Vec2
+	points, forward, ok := ad.roundaboutEntryCurveInto(buf[:0], f, rb, offset)
 	if !ok {
 		return sim.Vec2{}, false
 	}
@@ -66,6 +70,10 @@ func (ad *AutopilotDriver) innerRoundaboutEntryCurve(f autopilotFrame, rb *sim.R
 }
 
 func (ad *AutopilotDriver) roundaboutEntryCurve(f autopilotFrame, rb *sim.Roundabout, offset float64) ([]sim.Vec2, sim.Vec2, bool) {
+	return ad.roundaboutEntryCurveInto(make([]sim.Vec2, 0, 33), f, rb, offset)
+}
+
+func (ad *AutopilotDriver) roundaboutEntryCurveInto(dst []sim.Vec2, f autopilotFrame, rb *sim.Roundabout, offset float64) ([]sim.Vec2, sim.Vec2, bool) {
 	entry, forward, ok := ad.roundaboutEntry(rb)
 	if !ok || f.s >= ad.cumLen[entry]+roundaboutOuterLaneRadius(rb)*(apRoundaboutEntrySweep+.05) {
 		return nil, sim.Vec2{}, false
@@ -89,7 +97,7 @@ func (ad *AutopilotDriver) roundaboutEntryCurve(f autopilotFrame, rb *sim.Rounda
 	}
 	join, _ := sim.RoundaboutEntryPoint(curve, 1)
 	angle := math.Atan2(join.Y-rb.Center.Y, join.X-rb.Center.X)
-	points := make([]sim.Vec2, 0, 33)
+	points := dst[:0]
 	for i := 0; i <= 24; i++ {
 		point, _ := sim.RoundaboutEntryPoint(curve, float64(i)/24)
 		points = append(points, point)

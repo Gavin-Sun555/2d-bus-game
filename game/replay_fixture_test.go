@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
 )
 
 // firstFixture returns the absolute path of the first candidate that is an
@@ -31,6 +33,8 @@ func firstFixture(candidates ...string) string {
 // at path into it, failing the test if the save cannot be loaded.
 func loadSaveForTest(t testing.TB, path string, width, height int) *Game {
 	t.Helper()
+	prevLang := locale.CurrentLanguage
+	t.Cleanup(func() { locale.SetLanguage(prevLang) })
 	g := NewGame(width, height)
 	g.savePathOverride = path
 	if err := g.LoadGame(); err != nil {

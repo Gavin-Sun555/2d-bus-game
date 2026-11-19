@@ -103,6 +103,31 @@ func TestFastCarBrakesForStationaryLeader(t *testing.T) {
 	}
 }
 
+func TestOptionalPassingReturnLeavesActiveBusMergeGap(t *testing.T) {
+	car := &sim.TrafficCar{Pos: sim.Vec2{Y: 26}, Heading: 0, Speed: 249, Length: 46, Width: 22}
+	bus := sim.NewBus(330, 40, 0)
+	bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: sim.Vec2{Y: 78}, Remaining: .3}
+	manager := &TrafficManager{Cars: []*sim.TrafficCar{car}}
+	frame := carFrame{car: car, laneWidth: 52, activeCount: 1, buses: []*sim.Bus{bus}}
+	if manager.passingLaneClear(frame, sim.Vec2{X: 1}, 1) {
+		t.Fatal("optional return claimed the slot reserved by a bus merging ahead")
+	}
+	bus.LaneMergeRequest.Remaining = 0
+	if !manager.passingLaneClear(frame, sim.Vec2{X: 1}, 1) {
+		t.Fatal("expired merge still blocked a physically clear return")
+	}
+	car.Pos.Y = 78
+	bus.Pos.Y = 120
+	bus.LaneMergeRequest.Remaining = .3
+	if manager.passingLaneClear(frame, sim.Vec2{X: 1}, -1) {
+		t.Fatal("optional pass crossed the active bay departure in its source lane")
+	}
+	bus.LaneMergeRequest.Remaining = 0
+	if !manager.passingLaneClear(frame, sim.Vec2{X: 1}, -1) {
+		t.Fatal("expired bay departure still blocked a physically clear source lane")
+	}
+}
+
 func TestTwoLaneCarsFollowWithoutBorrowing(t *testing.T) {
 	for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
 		for _, occupied := range []bool{false, true} {
@@ -164,6 +189,23 @@ func TestBlockedPassingReturnKeepsLegalLaneMoving(t *testing.T) {
 	}
 }
 
+func TestUnstartedCarPassCancelsWhenTrailerBlocksItsFirstStep(t *testing.T) {
+	world := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -1000}, P2: sim.Vec2{X: 1000}, Lanes: 4}}}
+	car := &sim.TrafficCar{Pos: sim.Vec2{Y: 78}, Length: 46, Width: 22, IsEW: true, LaneIndex: 1,
+		Passing: true, PassingBaseLane: 1, CanOvertake: true, DeadlockTimer: 7}
+	bus := sim.NewBus(141.36, 43.40, -.20264)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = .06915
+	tm := &TrafficManager{Cars: []*sim.TrafficCar{car}}
+	f := carFrame{car: car, world: world, laneWidth: 52, buses: []*sim.Bus{bus}}
+	tm.beginCarLaneChangeWithLength(f, 0, 220)
+	oldPos, oldHeading := car.Pos, car.Heading
+	tm.cancelUnstartedCarPass(f)
+	if car.JunctionTurn != nil || car.Passing || car.Pos != oldPos || car.Heading != oldHeading || car.LaneIndex != 1 {
+		t.Fatal("blocked pass should release the unused curve without moving the car")
+	}
+}
+
 func TestBlockedCarPassRetreatsWithoutMovingItsPose(t *testing.T) {
 	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -5000}, P2: sim.Vec2{X: 5000}, Lanes: 4}}}
 	bus := sim.NewBus(90, 79.61, -.028)
@@ -182,5 +224,33 @@ func TestBlockedCarPassRetreatsWithoutMovingItsPose(t *testing.T) {
 	}
 	if !recoveryLaneChangeClearsStoppedBus(car, bus) {
 		t.Fatal("retreat intersects the parked bus")
+	}
+}
+
+func TestFinishAlignedCarPassPastEnd(t *testing.T) {
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000, Y: -1852}, P2: sim.Vec2{X: 3000, Y: -1852}, Lanes: 4}}}
+	car := &sim.TrafficCar{
+		Pos:     sim.Vec2{X: 1741.33, Y: -1930},
+		Heading: math.Pi,
+		Length:  48,
+		Width:   22,
+		IsEW:    true,
+		Passing: true,
+	}
+	car.JunctionTurn = &sim.CarJunctionTurn{
+		LaneChange:     true,
+		ExitLane:       1,
+		ExitHeading:    math.Pi,
+		ExitRoadCenter: -1852,
+		ExitEW:         true,
+		Segment:        1,
+		Points: []sim.Vec2{
+			{X: 1800, Y: -1930},
+			{X: 1763.93, Y: -1930},
+			{X: 1757.48, Y: -1930},
+		},
+	}
+	if !finishAlignedCarPass(carFrame{car: car, world: w, laneWidth: 52}) || car.JunctionTurn != nil || car.LaneIndex != 1 {
+		t.Fatalf("expected aligned car past lane-change end to finish turn, got turn=%v lane=%d", car.JunctionTurn, car.LaneIndex)
 	}
 }

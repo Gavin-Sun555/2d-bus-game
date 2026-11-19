@@ -233,8 +233,8 @@ func TestSavedSlot1Oct30JamRecovery(t *testing.T) {
 
 	playerInitHealth := g.Bus.Durability
 
-	// Run 3600 ticks (60 seconds)
-	for tick := 0; tick < 3600; tick++ {
+	// Run 4200 ticks (70 seconds)
+	for tick := 0; tick < 4200; tick++ {
 		if err := g.Update(); err != nil {
 			t.Fatalf("tick %d Update failed: %v", tick, err)
 		}

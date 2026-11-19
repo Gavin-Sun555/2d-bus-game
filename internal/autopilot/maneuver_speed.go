@@ -6,18 +6,56 @@ import (
 	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
+// The route can contain an ordinary left-turn taper without an active merge
+// request. Start braking before that taper reaches the adjacent traffic.
+func (ad *AutopilotDriver) routeTaperSpeed(f autopilotFrame) float64 {
+	limit := math.Inf(1)
+	if f.world == nil || !ad.BerserkMode || ad.FleetBus || ad.approachMerge != nil || ad.busLaneJunction != nil ||
+		f.nearRoundabout {
+		return limit
+	}
+	heading := approachRoadHeading(f.bus.Heading)
+	_, _, _, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+	if !six {
+		return limit
+	}
+	forward := sim.UnitFromAngle(heading)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	start := ad.pointAt(f.s)
+	ahead := ad.pointAt(f.s + math.Max(200, f.speedAbs*1.2)).Sub(start)
+	if ahead.Dot(forward) < 140 || ahead.Dot(right) > -f.laneWidth*.45 {
+		return limit
+	}
+	for _, ob := range f.obstacles {
+		delta := ob.Pos.Sub(f.bus.Pos)
+		along := delta.Dot(forward)
+		side := delta.Dot(right)
+		if math.Cos(ob.Heading-heading) > .95 && along > -180 && along < 280 &&
+			side < -f.laneWidth*.45 && side > ahead.Dot(right)-f.laneWidth*.6 {
+			return 85
+		}
+	}
+	return limit
+}
+
 // Reserve time and distance for the lateral move, then approach that zone
 // with a braking envelope instead of crawling from the first planning frame.
 // Gap selection, signal braking and the actual-body sweeps remain separate.
 func (ad *AutopilotDriver) approachManeuverSpeed(f autopilotFrame, request *sim.BusLaneMergeRequest) float64 {
-	if !ad.BerserkMode || f.world == nil || request.Is2Lane {
-		return 80
-	}
 	right := sim.Vec2{X: -math.Sin(request.Heading), Y: math.Cos(request.Heading)}
 	shift := math.Abs(request.Target.Sub(f.bus.Pos).Dot(right))
+	rightTurnCap := math.Inf(1)
+	if request.RightTurn && shift > 6 {
+		if stopDist := approachMergeStopDistance(f, request); stopDist < math.Max(140, shift*2.5) {
+			rightTurnCap = math.Max(42, 42+math.Max(0, stopDist)*0.3)
+		}
+	}
+	if !ad.BerserkMode || f.world == nil || request.Is2Lane {
+		return math.Min(80, rightTurnCap)
+	}
 	reserve := math.Max(360, shift*5+f.bus.OverallLength()*2)
 	runway := math.Max(0, approachMergeStopDistance(f, request)-reserve)
-	limit := math.Sqrt(80*80 + 2*130*runway)
+	limit := math.Min(math.Sqrt(80*80+2*130*runway), rightTurnCap)
 	if shift > 4 && ad.heldApproachLane(f, request) == nil {
 		limit = math.Min(limit, 240)
 	}
@@ -40,7 +78,11 @@ func (ad *AutopilotDriver) approachManeuverSpeed(f autopilotFrame, request *sim.
 // the junction, follow that lane's leader. A queue in the requested lane must
 // not make the bus crawl alongside it before there is any lateral movement.
 func (ad *AutopilotDriver) approachTrafficRequest(f autopilotFrame, request *sim.BusLaneMergeRequest) *sim.BusLaneMergeRequest {
-	if request == nil || !ad.BerserkMode || ad.approachManeuverSpeed(f, request) <= 160 {
+	if request == nil {
+		return nil
+	}
+	farHold := approachMergeStopDistance(f, request) > math.Max(360, f.bus.OverallLength()*1.7)
+	if !farHold && (!ad.BerserkMode || ad.approachManeuverSpeed(f, request) <= 160) {
 		return request
 	}
 	if current := ad.heldApproachLane(f, request); current != nil {

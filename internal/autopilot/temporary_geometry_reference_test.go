@@ -37,14 +37,17 @@ func (ad *AutopilotDriver) originalTemporaryAdmission(f autopilotFrame) float64 
 		conflict := false
 		waitingAtRed := waitingOutsideRedEntry(ob, inter, g)
 		if !waitingAtRed && ob.JunctionCorridor != nil && ob.JunctionCorridor.Remaining > 0 && ob.JunctionCorridor.Entered && ob.JunctionCorridor.Center.Distance(corridor.Center) < 1 {
-			sameLeader := ob.Speed > 15 && math.Cos(ob.Heading-heading) > .98 && ob.Pos.Sub(f.bus.Pos).Dot(u) > 0 && math.Abs(ob.Pos.Sub(f.bus.Pos).X*u.Y-ob.Pos.Sub(f.bus.Pos).Y*u.X) < f.laneWidth*.35
+			var otherExit float64
+			if n := len(ob.JunctionCorridor.Bodies); n >= 1 {
+				otherExit = ob.JunctionCorridor.Bodies[n-1].Heading
+			}
+			sameLeader := ad.sameDirectionMovingLeader(corridor, f, heading, u, ob, ob.JunctionCorridor.EntryHeading, otherExit)
 			conflict = !sameLeader && !sim.SeparatedJunctionCorridors(corridor, ob.JunctionCorridor)
 		}
 		if !waitingAtRed && ob.JunctionTurn != nil && !ob.JunctionTurn.LaneChange && ob.JunctionTurn.Center.Distance(corridor.Center) < 1 {
 			points := ob.JunctionTurn.Points[ob.JunctionTurn.Segment:]
 			otherBodies := sim.AppendPathBodies(nil, points, ob.Length, ob.Width)
-			delta := ob.Pos.Sub(f.bus.Pos)
-			sameLeader := ob.Speed > 15 && math.Cos(ob.Heading-heading) > .98 && delta.Dot(u) > 0 && math.Abs(delta.X*u.Y-delta.Y*u.X) < f.laneWidth*.35
+			sameLeader := ad.sameDirectionMovingLeader(corridor, f, heading, u, ob, ob.JunctionTurn.EntryHeading, ob.JunctionTurn.ExitHeading)
 			conflict = conflict || (!sameLeader && !sim.CorridorsSeparated(corridor.Bodies, otherBodies))
 		}
 		if conflict {

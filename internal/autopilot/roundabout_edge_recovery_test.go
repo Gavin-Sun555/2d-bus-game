@@ -143,3 +143,56 @@ func TestArticulatedTurnKeepsJunctionClearanceUntilTailExits(t *testing.T) {
 		})
 	}
 }
+
+func TestRoundaboutRingTangentSteeringAndZoneRoadRecovery(t *testing.T) {
+	const lw = 52.
+	w := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: -2000, Y: 0}, P2: sim.Vec2{X: 2000, Y: 0}, Lanes: 6},
+			{P1: sim.Vec2{X: 0, Y: -2000}, P2: sim.Vec2{X: 0, Y: 2000}, Lanes: 6},
+		},
+		Roundabouts: []sim.Roundabout{
+			{Center: sim.Vec2{X: 0, Y: 0}, Radius: 240, InnerRadius: 120, Name: "rb"},
+		},
+	}
+	w.RebuildIntersections()
+	from := sim.NewBusStop(0, "from", sim.Vec2{X: 78, Y: 1500}, -math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), lw)
+	stop := sim.NewBusStop(1, "stop", sim.Vec2{X: 26, Y: 1500}, math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), lw)
+	w.Stops = []*sim.BusStop{from, stop}
+
+	// 1. Inside roundabout with behind target (|alpha| > pi/2), fallback must follow ring tangent, not targetStop.Heading.
+	bus := sim.NewBus(-151.0, 56.1, 0.20)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = -0.387
+	bus.TrailerInitialized = true
+	ad := NewAutopilotDriver()
+	ad.BerserkMode = true
+	ad.PrepareLeg(w, from, stop, lw)
+	s, _ := ad.trackPath(sim.Vec2{X: -220, Y: 0})
+	f := autopilotFrame{
+		bus: bus, world: w, laneWidth: lw, s: s, targetStop: stop, distToStop: bus.Pos.Distance(stop.Pos),
+	}
+	steer, alpha, targetPt, _ := ad.pursuitSteering(f)
+	if steer <= 0 {
+		t.Fatalf("expected outward ring-tangent right steer (>0) inside roundabout, got steer=%.3f alpha=%.3f target=%+v", steer, alpha, targetPt)
+	}
+
+	// 2. Bus on ZoneRoad facing inner island barrier must trigger reverse recovery even outside ZoneShoulder.
+	bus.Pos = sim.Vec2{X: -151.0, Y: 56.1}
+	bus.Heading = 0.20
+	bus.TrailerHeading = -0.387
+	bus.SteeringAngle = -bus.MaxSteerAngle
+	f.speedAbs = 0
+	if bus.CheckBoundaries(w, lw).Zone == sim.ZoneShoulder {
+		t.Fatalf("expected inner ring pose to sit inside ZoneRoad, got ZoneShoulder")
+	}
+	if !ad.tryRoundaboutEdgeRecovery(f, -0.65) {
+		empty := f
+		empty.obstacles = nil
+		t.Fatalf("expected tryRoundaboutEdgeRecovery to start reverse recovery from ZoneRoad curb block: swept=%.1f clear0=%v bnd=%+v",
+			ad.articulatedSweptSpeed(empty, -0.65), edgeRecoveryPoseClear(f, f.bus, 0), bus.CheckBoundaries(w, lw))
+	}
+	if ad.roundaboutEdgeRecovery == nil || ad.roundaboutEdgeRecovery.ReverseSteer >= 0 {
+		t.Fatalf("expected reverse steer (<0) to clear front barrier overhang, got %+v", ad.roundaboutEdgeRecovery)
+	}
+}

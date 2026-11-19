@@ -179,3 +179,80 @@ func TestStationArrivalChecksAngledNeighborAtNominalWidth(t *testing.T) {
 		t.Fatal("station arrival accepted overlapping bodies")
 	}
 }
+
+func TestArticulatedShelterWedgeReverseRecovery(t *testing.T) {
+	const lw = 52.0
+	w := &sim.World{
+		Roads: []sim.RoadSegment{
+			{P1: sim.Vec2{X: -2000}, P2: sim.Vec2{X: 2000}, Lanes: 6},
+			{P1: sim.Vec2{X: 650, Y: -1500}, P2: sim.Vec2{X: 650, Y: 1500}, Lanes: 4},
+		},
+		Stops: []*sim.BusStop{
+			sim.NewBusStop(0, "from", sim.Vec2{X: -1200, Y: 0}, 0, 6, sim.RGBA(0, 0, 0, 255), lw),
+			sim.NewBusStop(1, "to", sim.Vec2{X: 50, Y: 0}, 0, 6, sim.RGBA(0, 0, 0, 255), lw),
+		},
+	}
+	w.RebuildIntersections()
+	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
+	sim.EnsureLongBusBays(w, route)
+	stop := w.Stops[1]
+
+	// Place articulated bus folded just short of the shelter canopy (clear at tick 0, clipped moving forward).
+	bus := sim.NewBus(stop.Pos.X-91.0, stop.Pos.Y+9.0, -0.018)
+	bus.SetModel(sim.BusArticulated)
+	bus.TrailerHeading = 0.307
+
+	ad := NewAutopilotDriver()
+	ad.ComputeControls(bus, route, w, nil, nil, lw, 1./60)
+
+	// Guard: red signal must NOT trigger arrival reverse recovery.
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	tls.Intersections[0].Phase = sim.PhaseNSGreen
+	redBus := sim.NewBus(w.Intersections[0].X-250, 26, 0)
+	redBus.SetModel(sim.BusArticulated)
+	redFrame := autopilotFrame{bus: redBus, world: w, tls: tls, targetStop: stop, laneWidth: lw, s: 1250, remaining: 100}
+	ad.stationArrivalStallWait = 2.0
+	if ad.tryStationArrivalReverseRecovery(redFrame, -1, 1.5) {
+		t.Fatal("arrival reverse triggered at a red traffic signal")
+	}
+	if ad.stationArrivalStallWait != 0 {
+		t.Fatal("red signal did not reset stationArrivalStallWait")
+	}
+
+	// Guard: stopping behind another vehicle with clear static geometry must NOT trigger arrival reverse recovery.
+	bayBus := sim.NewBus(stop.FrontBerthPosition().X, stop.FrontBerthPosition().Y, 0)
+	bayBus.DoorsOpen = true
+	clearBus := sim.NewBus(stop.Pos.X-220, stop.Pos.Y-26, 0)
+	clearBus.SetModel(sim.BusArticulated)
+	clearFrame := autopilotFrame{
+		bus:        clearBus,
+		world:      w,
+		targetStop: stop,
+		laneWidth:  lw,
+		obstacles:  []VehicleObstacle{ObserveBus(bayBus)},
+	}
+	if ad.tryStationArrivalReverseRecovery(clearFrame, 0, 1.5) {
+		t.Fatal("arrival reverse triggered solely due to occupied berth obstacle")
+	}
+
+	// Simulate wedged arrival until reverse recovery unlocks forward progress.
+	origin := bus.Pos
+	reversed := false
+	for tick := 0; tick < 900; tick++ {
+		th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, w, nil, nil, lw, 1./60)
+		bus.Update(1./60, th, br, st, hb, doors)
+		if bus.Speed < -1 {
+			reversed = true
+		}
+		if r := bus.CheckBoundaries(w, lw); r.Zone == sim.ZoneHardBarrier {
+			t.Fatalf("recovery hit hard barrier at tick %d: %s", tick, r.ObstacleName)
+		}
+	}
+	if !reversed {
+		t.Fatal("expected wedged shelter arrival to execute verified reverse recovery")
+	}
+	if moved := bus.Pos.Sub(origin).X; moved < 30 {
+		t.Fatalf("bus remained stalled after arrival reverse recovery (dx=%.1f pos=%v)", moved, bus.Pos)
+	}
+}

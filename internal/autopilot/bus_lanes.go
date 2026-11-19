@@ -45,6 +45,13 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	forward := sim.UnitFromAngle(heading)
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	approach := ad.approachingIntersection(f, true, true)
+	if ad.berserkLeftTurnChoice != nil && ad.BerserkMode && !ad.FleetBus {
+		planned := ad.berserkLeftApproach(f)
+		if planned.approachingInter != nil && planned.approachingInter.Center.Distance(*ad.berserkLeftTurnChoice) < 1 {
+			// Slowing for traffic must not discard the chosen approach lane.
+			approach = planned
+		}
+	}
 	if approach.approachingInter != nil && f.world.IsAtRoundabout(approach.approachingInter.Center) {
 		return false
 	}
@@ -144,21 +151,68 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 		ad.progressLaneOffset(dt, f.speedAbs)
 		return true
 	}
-	if !ad.CanSkipTargetStop && f.remaining < math.Max(420, f.speedAbs*2.2+150) {
-		if ad.BerserkMode && !road.HasMedianBusLane() {
-			ad.updateStationApproachLane(f.bus, f.targetStop, f.obstacles, f.laneWidth, f.speedAbs, f.remaining, dt, true, true)
-		} else {
-			ad.TargetLaneOffset = 0
-			ad.progressLaneOffset(dt, f.speedAbs)
-		}
-		return true
-	}
 	origin := sim.Vec2{Y: center}
 	if !ew {
 		origin = sim.Vec2{X: center}
 	}
 	basePoint := ad.pointAt(f.s)
 	base := basePoint.Sub(origin).Dot(right)
+	physLat := f.bus.Pos.Sub(origin).Dot(right)
+
+	approachWindow := math.Max(420, f.speedAbs*2.2+150)
+	sameStopRoad := road.HasMedianBusLane() && f.targetStop != nil && f.targetStop.CenterBRT &&
+		math.Cos(f.targetStop.Heading-heading) > 0.95 && math.Abs(f.bus.Pos.Sub(f.targetStop.RoadCenter).Dot(right)) < 4.5*f.laneWidth
+	if sameStopRoad {
+		approachWindow = math.Max(1350, f.speedAbs*3.5+f.bus.OverallLength()+320)
+	}
+	if !ad.CanSkipTargetStop && f.remaining < approachWindow {
+		if ad.BerserkMode && !road.HasMedianBusLane() {
+			ad.updateStationApproachLane(f.bus, f.targetStop, f.obstacles, f.laneWidth, f.speedAbs, f.remaining, dt, true, true)
+		} else if sameStopRoad && physLat > f.laneWidth+4 {
+			uStop := sim.UnitFromAngle(f.targetStop.Heading)
+			dLong := f.bus.Pos.Sub(f.targetStop.Pos).Dot(uStop)
+			islandCutoff := -brtInwardReturnMinClear(f.bus, f.laneWidth, physLat)
+			curLane := max(1, min(3, int(math.Round(physLat/f.laneWidth-.5))))
+			if dLong > islandCutoff {
+				held := (float64(curLane)+.5)*f.laneWidth - base
+				ad.TargetLaneOffset = held
+				ad.LaneOffset = math.Max(ad.LaneOffset, held)
+				ad.OvertakeState = OvertakePassing
+				ad.progressLaneOffset(dt, f.speedAbs)
+				return true
+			}
+			actual := f.bus.Pos.Sub(basePoint).Dot(right)
+			if f.bus.LaneMergeRequest == nil {
+				mergeTarget := origin.Add(right.Mul(.5 * f.laneWidth)).Add(forward.Mul(f.bus.Pos.Sub(origin).Dot(forward)))
+				f.bus.LaneMergeRequest = &sim.BusLaneMergeRequest{Target: mergeTarget, Heading: heading, Remaining: .3}
+			}
+			merged := false
+			for candLane := 0; candLane < curLane; candLane++ {
+				candOffset := (float64(candLane)+.5)*f.laneWidth - base
+				if candLane == 0 && brtPlatformBlocksInwardReturn(f.world, f.bus, heading, f.laneWidth, physLat, 0.5*f.laneWidth) {
+					continue
+				}
+				if requiredMergeLaneClear(f, heading, actual, candOffset) ||
+					isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, candOffset, f.laneWidth) {
+					ad.TargetLaneOffset = candOffset
+					ad.OvertakeState = OvertakeReturning
+					merged = true
+					break
+				}
+			}
+			if !merged {
+				held := (float64(curLane)+.5)*f.laneWidth - base
+				if ad.TargetLaneOffset > held {
+					ad.TargetLaneOffset = held
+				}
+			}
+			ad.progressLaneOffset(dt, f.speedAbs)
+		} else {
+			ad.TargetLaneOffset = 0
+			ad.progressLaneOffset(dt, f.speedAbs)
+		}
+		return true
+	}
 	busLane := (float64(road.BusLaneIndex()) + .5) * f.laneWidth
 	actual := f.bus.Pos.Sub(basePoint).Dot(right)
 	desiredLane := road.BusLaneIndex()
@@ -168,25 +222,37 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	ad.OvertakeTimer += dt
 	settled := math.Abs(actual-ad.TargetLaneOffset) < f.laneWidth*.2 && math.Abs(ad.LaneOffset-ad.TargetLaneOffset) < 1
 	roomToChange := !approach.isApproachingIntersection || approach.distToStopLine > math.Max(450, f.speedAbs*2)
+	aheadPoint := ad.pointAt(f.s + math.Max(360, f.speedAbs*1.8))
+	aheadBase := aheadPoint.Sub(origin).Dot(right)
+	taperAhead := math.Abs(aheadBase-busLane) > f.laneWidth*.2 || (aheadPoint.Distance(basePoint) > 1 && aheadPoint.Sub(basePoint).Normalize().Dot(forward) < .98)
+	if taperAhead {
+		roomToChange = false
+	}
 	best := ad.busLaneTrafficScore(f, forward, right, desiredLane, approach.isApproachingIntersection)
 	canReevaluate := (best == 0) || (settled && roomToChange && (ad.OvertakeState == OvertakeNone || ad.OvertakeTimer >= 6))
 	if ad.BerserkMode && canReevaluate {
-		if desiredLane != road.BusLaneIndex() && best > 0 && best < 6.0 {
+		if ad.FleetBus && desiredLane != road.BusLaneIndex() && best > 0 && best < 6.0 {
 			// A moving lead vehicle in general traffic does not trigger an overtake or curb return.
 		} else {
 			candidates := []int{3, 2, 1}
 			if !approach.isApproachingIntersection || road.HasMedianBusLane() {
 				candidates = append(candidates, 0)
 			}
+			noOutwardBeforeBRTStop := !ad.CanSkipTargetStop && sameStopRoad && f.remaining < math.Max(1850, f.speedAbs*4.2+f.bus.OverallLength()+420)
 			for _, lane := range candidates {
+				if noOutwardBeforeBRTStop && lane > desiredLane {
+					continue
+				}
 				score := ad.busLaneTrafficScore(f, forward, right, lane, approach.isApproachingIntersection)
-				if lane == road.BusLaneIndex() {
+				if ad.FleetBus && lane == road.BusLaneIndex() {
 					if best == 0 || (best >= 6.0 && score+1.0 < best) {
 						best = score
 						desiredLane = lane
 					}
 					continue
 				}
+				// Berserk players require a real improvement for every lane,
+				// including the bus lane. Equal empty lanes do not justify a return.
 				if score+1.0 < best {
 					best = score
 					desiredLane = lane
@@ -201,16 +267,61 @@ func (ad *AutopilotDriver) updateBusLane(f autopilotFrame, dt float64) bool {
 	}
 	desired := (float64(desiredLane)+.5)*f.laneWidth - base
 	// A path taper is part of a turn/stop, not another cruising lane to score.
-	if math.Abs(base-(float64(road.BusLaneIndex())+.5)*f.laneWidth) > f.laneWidth*.2 {
+	onTaper := math.Abs(base-busLane) > f.laneWidth*.2
+	if onTaper {
 		desired = 0
 	}
 
 	// A frozen fractional offset is not a completed lane return.
-	if math.Abs(desired-ad.TargetLaneOffset) > 1 && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
+	targetLat := base + desired
+	dividerBlocked := false
+	if road.HasMedianBusLane() {
+		if physLat < f.laneWidth && targetLat > f.laneWidth {
+			dividerBlocked = brtPlatformBlocksDividerCross(f.world, f.bus, heading, f.laneWidth, physLat, targetLat)
+		} else if physLat > f.laneWidth-4 && targetLat < f.laneWidth {
+			dividerBlocked = brtPlatformBlocksInwardReturn(f.world, f.bus, heading, f.laneWidth, physLat, targetLat)
+		}
+	}
+	minSectionLat := physLat
+	if f.bus.IsArticulated() {
+		minSectionLat = math.Min(minSectionLat, f.bus.TrailerBody().Center.Sub(origin).Dot(right))
+	}
+	if road.HasMedianBusLane() && physLat > f.laneWidth+6 && base+ad.TargetLaneOffset < f.laneWidth &&
+		brtPlatformAlongsideOrImminent(f.world, f.bus, heading, f.laneWidth) {
+		lane := max(1, min(3, int(math.Round(physLat/f.laneWidth-.5))))
+		held := (float64(lane)+.5)*f.laneWidth - base
+		ad.TargetLaneOffset = held
+		ad.LaneOffset = math.Max(ad.LaneOffset, held)
+		ad.OvertakeState = OvertakePassing
+	} else if road.HasMedianBusLane() && physLat < sim.BRTPlatformOffset(f.laneWidth) && minSectionLat < f.laneWidth+6 && base+ad.TargetLaneOffset > f.laneWidth &&
+		brtPlatformBlocksDividerCross(f.world, f.bus, heading, f.laneWidth, minSectionLat, base+ad.TargetLaneOffset) {
+		held := .5*f.laneWidth - base
+		ad.TargetLaneOffset = held
+		ad.LaneOffset = math.Min(ad.LaneOffset, held)
+		ad.OvertakeState = OvertakeReturning
+	} else if math.Abs(desired-ad.TargetLaneOffset) > 1 && !dividerBlocked && isLaneClearToChange(f.bus, f.obstacles, forward.X, forward.Y, ad.LaneOffset, desired, f.laneWidth) {
 		ad.TargetLaneOffset = desired
+		ad.OvertakeTimer = 0
 		if desired < ad.LaneOffset {
 			ad.OvertakeState = OvertakeChangingLane
 		} else {
+			ad.OvertakeState = OvertakeReturning
+		}
+	} else if onTaper && ad.TargetLaneOffset < -1 {
+		// While the base path tapers leftward across lanes and the return is
+		// blocked, hold the physical road lane rather than carrying a fixed
+		// negative offset into oncoming traffic across the median.
+		physLat := f.bus.Pos.Sub(origin).Dot(right)
+		halfLanes := road.LaneCount() / 2
+		lane := max(0, min(halfLanes-1, int(math.Round(physLat/f.laneWidth-.5))))
+		held := math.Min(0, (float64(lane)+.5)*f.laneWidth-base)
+		minLegal := math.Min(0, 0.5*f.laneWidth-base)
+		if held < minLegal {
+			held = minLegal
+		}
+		if held > ad.TargetLaneOffset {
+			ad.TargetLaneOffset = held
+			ad.LaneOffset = math.Max(ad.LaneOffset, held)
 			ad.OvertakeState = OvertakeReturning
 		}
 	}
@@ -290,6 +401,9 @@ func brtPlatformBlocksDividerCross(w *sim.World, bus *sim.Bus, heading, lw, curr
 		return false
 	}
 	halfBus := bus.OverallLength() * 0.5
+	// Reserve the actual lane-change runway for both cab and trailer to clear
+	// the flared BRT island before its nose reaches the platform shelter.
+	approachRunway := math.Max(180, math.Abs(bus.Speed)*1.6+bus.OverallLength()*1.15)
 	for _, st := range w.Stops {
 		if st == nil || !st.CenterBRT || math.Cos(st.Heading-heading) < 0.95 {
 			continue
@@ -301,7 +415,58 @@ func brtPlatformBlocksDividerCross(w *sim.World, bus *sim.Bus, heading, lw, curr
 		}
 		dLong := bus.Pos.Sub(st.Pos).Dot(u)
 		rear := bus.OverallLength() - bus.Length/2
-		if dLong >= -(sim.BRTPlatformHalfLength+halfBus+80) && dLong <= sim.BRTPlatformHalfLength+rear+24 {
+		if dLong >= -(sim.BRTPlatformHalfLength+halfBus+approachRunway) && dLong <= sim.BRTPlatformHalfLength+rear+24 {
+			return true
+		}
+	}
+	return false
+}
+
+func brtInwardReturnMinClear(bus *sim.Bus, lw, currentLat float64) float64 {
+	latToCross := math.Max(0, currentLat-0.5*lw)
+	return sim.BRTPlatformHalfLength + latToCross*1.8 + bus.OverallLength()*0.55 + math.Abs(bus.Speed)*0.35
+}
+
+func brtPlatformBlocksInwardReturn(w *sim.World, bus *sim.Bus, heading, lw, currentLat, desiredLat float64) bool {
+	if w == nil || !w.CenterBRT || bus == nil || currentLat <= lw-4 || desiredLat >= lw {
+		return false
+	}
+	minClear := brtInwardReturnMinClear(bus, lw, currentLat)
+	rear := bus.OverallLength() - bus.Length/2
+	for _, st := range w.Stops {
+		if st == nil || !st.CenterBRT || math.Cos(st.Heading-heading) < 0.95 {
+			continue
+		}
+		u := sim.UnitFromAngle(st.Heading)
+		r := sim.Vec2{X: -u.Y, Y: u.X}
+		if math.Abs(bus.Pos.Sub(st.RoadCenter).Dot(r)) > 4.5*lw {
+			continue
+		}
+		dLong := bus.Pos.Sub(st.Pos).Dot(u)
+		if dLong >= -minClear && dLong <= sim.BRTPlatformHalfLength+rear+28 {
+			return true
+		}
+	}
+	return false
+}
+
+func brtPlatformAlongsideOrImminent(w *sim.World, bus *sim.Bus, heading, lw float64) bool {
+	if w == nil || !w.CenterBRT || bus == nil {
+		return false
+	}
+	imminent := sim.BRTPlatformHalfLength + bus.OverallLength()*0.45 + 18
+	rear := bus.OverallLength() - bus.Length/2
+	for _, st := range w.Stops {
+		if st == nil || !st.CenterBRT || math.Cos(st.Heading-heading) < 0.95 {
+			continue
+		}
+		u := sim.UnitFromAngle(st.Heading)
+		r := sim.Vec2{X: -u.Y, Y: u.X}
+		if math.Abs(bus.Pos.Sub(st.RoadCenter).Dot(r)) > 4.5*lw {
+			continue
+		}
+		dLong := bus.Pos.Sub(st.Pos).Dot(u)
+		if dLong >= -imminent && dLong <= sim.BRTPlatformHalfLength+rear+28 {
 			return true
 		}
 	}
@@ -311,7 +476,7 @@ func brtPlatformBlocksDividerCross(w *sim.World, bus *sim.Bus, heading, lw, curr
 // A bus borrowing a general lane follows the same outward station taper as
 // civilian traffic. Blend it in while crossing from the median bus lane.
 func (ad *AutopilotDriver) medianGeneralLaneFlare(w *sim.World, pos, base sim.Vec2, heading, lw, offset float64) float64 {
-	if !ad.DisallowOncomingOvertake || w == nil || !w.CenterBRT || offset <= 0 {
+	if w == nil || !w.CenterBRT || offset <= 0 {
 		return 0
 	}
 	flare := w.BRTStationFlareAt(pos, lw)

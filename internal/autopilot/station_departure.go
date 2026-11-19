@@ -69,6 +69,12 @@ func (ad *AutopilotDriver) connectDockDeparture(bus *sim.Bus, stop *sim.BusStop)
 		}
 		// The shelter is 68px long; leave additional room beyond its end.
 		runIn = math.Min(goal.Sub(bus.Pos).Dot(forward)*.5, math.Max(runIn, 50-rear))
+		if ad.BerserkMode && bus.Pos.Sub(stop.Pos).Dot(forward) < 0 && goal.Sub(bus.Pos).Dot(forward) >= 400 {
+			// From a rear berth, waiting until the tail passes the shelter
+			// leaves too little runway and forces a sharp hitch swing beside
+			// its roof. Start the long, gentle merge while still behind it.
+			runIn = math.Min(runIn, 80)
+		}
 	}
 	alignedBus := *bus
 	alignedBus.Pos = bus.Pos.Add(forward.Mul(runIn))
@@ -104,7 +110,9 @@ func gentleDockDeparture(origin, start, goal, forward sim.Vec2) []sim.Vec2 {
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	along := goal.Sub(start).Dot(forward)
 	lateral := goal.Sub(start).Dot(right)
-	points := []sim.Vec2{origin, start}
+	points := make([]sim.Vec2, 2, 66)
+	points[0] = origin
+	points[1] = start
 	for i := 1; i <= 64; i++ {
 		t := float64(i) / 64
 		blend := t * t * t * (10 + t*(-15+6*t))
@@ -114,6 +122,13 @@ func gentleDockDeparture(origin, start, goal, forward sim.Vec2) []sim.Vec2 {
 }
 
 func (ad *AutopilotDriver) dockDepartureSpeed(f autopilotFrame) float64 {
+	if f.fromStop != nil && f.fromStop.RoadLanes == 2 {
+		yaw := sim.NormalizeAngle(f.bus.Heading - f.fromStop.Heading)
+		if (!f.bus.IsArticulated() && math.Abs(yaw) > .16) || (ad.FleetBus && yaw < -.16) {
+			// Leave time for the wheels to unwind on a narrow station exit.
+			return 40
+		}
+	}
 	if !ad.BerserkMode || !f.bus.IsArticulated() || !ad.smoothDockDeparture || ad.dockDepartureRun < 400 {
 		return 80
 	}

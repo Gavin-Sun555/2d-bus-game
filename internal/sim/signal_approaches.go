@@ -112,7 +112,7 @@ func (inter *TrafficIntersection) GetApproachDimensions(laneWidth float64) (ewSt
 // GetStopLineDistForHeading returns the appropriate stop line distance for a vehicle heading towards the intersection
 func (inter *TrafficIntersection) GetStopLineDistForHeading(heading float64, laneWidth float64) float64 {
 	ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
-	sinH, cosH := math.Sincos(heading)
+	sinH, cosH := Sincos(heading)
 	if math.Abs(cosH) >= math.Abs(sinH) {
 		return ewStop
 	}
@@ -231,7 +231,7 @@ func (inter *TrafficIntersection) ApproachHasDedicatedLanesForHeading(heading fl
 			return inter.ApproachIs4Lane[idx]
 		}
 	}
-	cosH := math.Abs(math.Cos(heading))
+	cosH := math.Abs(Cos(heading))
 	sinH := math.Abs(math.Sin(heading))
 	return inter.ApproachHasDedicatedLanes(cosH > sinH)
 }

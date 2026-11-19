@@ -89,8 +89,9 @@ func (g *Game) SetTransitLineCount(n int) {
 	}
 }
 
-// Selecting a service is an explicit dispatch at its terminus. Other buses keep
-// their current journeys, passengers and lifetime statistics.
+// Selecting a service is an explicit dispatch at its terminus. The player's
+// vehicle statistics restart; other buses keep their journeys, passengers and
+// lifetime statistics.
 func (g *Game) SelectPlayerLine(index int) bool {
 	if index < 0 || index >= g.LineCount || index >= len(g.Lines) {
 		return false
@@ -129,8 +130,12 @@ func (g *Game) SelectPlayerLine(index int) bool {
 	g.Camera.Pos = g.Bus.Pos
 	g.Camera.TargetPos = g.Bus.Pos
 	if operations != nil {
-		operations.InterruptJourney(0)
+		// The player's service statistics restart from zero on the new line.
+		operations.ResetVehicle(0)
 		operations.Distances = operations.DistancesFor(g.Route)
+		if p := g.OperationsPanel; p != nil && p.SelectedVehicle == 0 {
+			p.SelectedVehicle = -1
+		}
 	}
 	g.operationsRoute = append([]int(nil), g.Route.StopIDs...)
 	g.AIBusMgr.Operations = g.Operations

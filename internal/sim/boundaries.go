@@ -275,11 +275,12 @@ func DistToSegment(p, a, b Vec2) (float64, Vec2) {
 	ab := b.Sub(a)
 	l2 := ab.X*ab.X + ab.Y*ab.Y
 	if l2 == 0 {
-		d := p.Distance(a)
+		dx, dy := a.X-p.X, a.Y-p.Y
+		d := euclideanDist(dx, dy)
 		if d == 0 {
 			return 0, Vec2{X: 0, Y: 0}
 		}
-		return d, a.Sub(p).Mul(1.0 / d)
+		return d, Vec2{X: dx / d, Y: dy / d}
 	}
 	t := (p.Sub(a)).Dot(ab) / l2
 	if t < 0 {
@@ -288,10 +289,17 @@ func DistToSegment(p, a, b Vec2) (float64, Vec2) {
 		t = 1
 	}
 	proj := a.Add(ab.Mul(t))
-	d := p.Distance(proj)
+	dx, dy := proj.X-p.X, proj.Y-p.Y
+	d := euclideanDist(dx, dy)
 	if d == 0 {
 		return 0, Vec2{X: 0, Y: 0}
 	}
-	push := proj.Sub(p).Mul(1.0 / d)
-	return d, push
+	return d, Vec2{X: dx / d, Y: dy / d}
+}
+
+func euclideanDist(dx, dy float64) float64 {
+	if math.Abs(dx) < 1e150 && math.Abs(dy) < 1e150 {
+		return math.Sqrt(dx*dx + dy*dy)
+	}
+	return math.Hypot(dx, dy)
 }

@@ -30,6 +30,28 @@ func forcedLeftWorld(lanes int, heading float64) (*sim.World, *sim.TrafficLightS
 	return w, tls
 }
 
+func TestForcedLeftQueueLeavesRoomForWaitingCar(t *testing.T) {
+	w, lights := forcedLeftWorld(4, 0)
+	waiting := &sim.TrafficCar{Pos: sim.Vec2{X: -440, Y: 78}, Length: 46, Width: 22, IsEW: true, LaneIndex: 1}
+	yielding := &sim.TrafficCar{Pos: sim.Vec2{X: -530, Y: 26}, Length: 46, Width: 22, IsEW: true}
+	alreadyAlongside := &sim.TrafficCar{Pos: sim.Vec2{X: -425, Y: 26}, Length: 46, Width: 22, IsEW: true}
+	tm := &TrafficManager{Cars: []*sim.TrafficCar{yielding, alreadyAlongside, waiting}}
+	frame := carFrame{world: w, tls: lights, laneWidth: 52, car: yielding}
+	if got := tm.prepareForcedLeftApproach(frame); got != 0 {
+		t.Fatalf("inner-lane follower should leave the merge gap open, got %.2f", got)
+	}
+	frame.car = alreadyAlongside
+	if got := tm.prepareForcedLeftApproach(frame); !math.IsInf(got, 1) {
+		t.Fatalf("car already alongside should clear first, got %.2f", got)
+	}
+	alreadyAlongside.Pos.X += 160
+	frame.car = waiting
+	tm.prepareForcedLeftApproach(frame)
+	if waiting.JunctionTurn == nil || !waiting.JunctionTurn.LaneChange || waiting.JunctionTurn.ExitLane != 0 {
+		t.Fatal("waiting car did not commit to the gap in the left-turn lane")
+	}
+}
+
 func TestThroughLaneCannotForceLeftAtRoadEnd(t *testing.T) {
 	for _, lw := range []float64{42, 52, 78} {
 		for _, lanes := range []int{4, 6, 8} {

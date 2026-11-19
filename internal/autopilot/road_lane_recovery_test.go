@@ -94,3 +94,43 @@ func TestRoadRecoveryRejectsOncomingBodyInSweep(t *testing.T) {
 		t.Fatal("recovery ignored oncoming vehicle in swept body")
 	}
 }
+
+func TestRoadRecoveryPredictsMovingObstacleDistance(t *testing.T) {
+	w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 4}}}
+	bus := sim.NewBus(0, 26, .23)
+	ad := NewAutopilotDriver()
+	f := autopilotFrame{bus: bus, world: w, laneWidth: 52, obstacles: []VehicleObstacle{{Pos: sim.Vec2{X: 170, Y: 26}, Heading: math.Pi, Length: 48, Width: 22}}}
+	if _, ok := ad.roadLaneRecovery(f, -.1, 0, 0, true); !ok {
+		t.Fatal("distant parked obstacle incorrectly blocks recovery")
+	}
+	f.obstacles[0].Speed = 250
+	if _, ok := ad.roadLaneRecovery(f, -.1, 0, 0, true); ok {
+		t.Fatal("recovery treated elapsed seconds as obstacle travel distance")
+	}
+}
+
+func TestMedianStraddleRecoveryRetainsObstacleAndSpeedGuards(t *testing.T) {
+	for _, scenario := range []string{"clear", "oncoming", "moving too fast", "fully opposing"} {
+		t.Run(scenario, func(t *testing.T) {
+			w := &sim.World{Roads: []sim.RoadSegment{{P1: sim.Vec2{X: -3000}, P2: sim.Vec2{X: 3000}, Lanes: 6}}}
+			b := sim.NewBus(0, -.01329553325, -.0126403704)
+			b.SetModel(sim.BusArticulated)
+			b.TrailerHeading, b.TrailerInitialized = -.2553842417, true
+			b.SteeringAngle = .05685160006
+			f := autopilotFrame{bus: b, world: w, laneWidth: 52}
+			switch scenario {
+			case "oncoming":
+				f.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: 75, Y: -10}, Heading: math.Pi, Speed: 40, Length: 46, Width: 22}}
+			case "moving too fast":
+				f.speedAbs = 26
+			case "fully opposing":
+				b.Pos.Y = -b.Width
+			}
+			ad := NewAutopilotDriver()
+			_, recover := ad.roadLaneRecovery(f, .65, 0, 0, true)
+			if recover != (scenario == "clear") {
+				t.Fatalf("unexpected recovery permission for %s: %v", scenario, recover)
+			}
+		})
+	}
+}

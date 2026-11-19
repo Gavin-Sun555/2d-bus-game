@@ -23,14 +23,19 @@ func CurbBusLeftTurnPath(center, in, out Vec2, inOffset, outOffset float64, geom
 	return leftTurnWithHandle(center, in, out, inOffset, outOffset, geometry, busHandle)
 }
 
+// LeftTurnPathWithHandle builds a cubic left-turn curve with an explicit handle scale.
+func LeftTurnPathWithHandle(center, in, out Vec2, inOffset, outOffset float64, geometry JunctionGeometry, handleScale float64) []Vec2 {
+	return leftTurnWithHandle(center, in, out, inOffset, outOffset, geometry, handleScale)
+}
+
 // Pair the two curves. Wider tangent handles reduce peak curvature, but the
 // inner path still needs room beside the bus and the opposing approaches.
 func parallelLeftHandles(incoming, outgoing int) (bus, car float64) {
 	switch {
 	case incoming == 4 && outgoing == 8:
-		return .82, .56
+		return 1.18, .66
 	case incoming == 8 && outgoing == 4:
-		return 1.10, .52
+		return 1.22, .64
 	case incoming == 4 && outgoing == 4:
 		return .96, .50
 	case min(incoming, outgoing) == 4 && max(incoming, outgoing) == 6:
@@ -60,7 +65,7 @@ func leftTurnWithHandle(center, in, out Vec2, inOffset, outOffset float64, geome
 	p1 := p0.Add(in.Mul(handle))
 	p2 := p3.Sub(out.Mul(handle))
 	const steps = 40
-	points := make([]Vec2, 0, steps+1)
+	points := make([]Vec2, 0, steps+2)
 	for i := 0; i <= steps; i++ {
 		u := float64(i) / steps
 		v := 1 - u

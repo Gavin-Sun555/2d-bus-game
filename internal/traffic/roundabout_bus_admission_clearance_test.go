@@ -2,9 +2,10 @@ package traffic
 
 import (
 	"fmt"
-	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 	"math"
 	"testing"
+
+	"github.com/Gavin-Sun555/2d-bus-game/internal/sim"
 )
 
 func TestShortBusCanJoinAwayFromReservedOwner(t *testing.T) {
@@ -21,26 +22,34 @@ func TestShortBusCanJoinAwayFromReservedOwner(t *testing.T) {
 					waiting := sim.NewBus(start.X, start.Y, heading)
 					waiting.SetModel(model)
 					waiting.RoundaboutEntry = &sim.BusRoundaboutEntry{Center: rb.Center, Forward: u, Remaining: .3}
-					pos := rb.Center.Add(u.Mul(215)).Add(r.Mul(50))
-					owner := sim.NewBus(pos.X, pos.Y, heading)
+					// Articulated owner entered from a different approach and already circulates far away.
+					otherApproach := sim.Vec2{X: -u.Y, Y: u.X}
+					pos := rb.Center.Add(otherApproach.Mul(215)).Add(r.Mul(50))
+					owner := sim.NewBus(pos.X, pos.Y, heading+math.Pi/2)
 					owner.SetModel(sim.BusArticulated)
 					owner.Speed = 90
-					owner.TrailerHeading = heading
-					owner.TrailerInitialized = true
-					tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{ID: 14, Bus: waiting}}}, roundaboutReservations: []roundaboutReservation{{center: rb.Center, owner: owner, entered: true}}}
+					tm := &TrafficManager{
+						AIBusMgr: &AIBusManager{Buses: []*AIBus{{ID: 14, Bus: waiting}}},
+						roundaboutReservations: []roundaboutReservation{{
+							center: rb.Center,
+							approaches: [4]roundaboutApproachSlot{{
+								forward: otherApproach,
+								owner:   owner,
+								entered: true,
+							}},
+						}},
+					}
 					tm.updateRoundaboutReservations(owner, &sim.World{Roundabouts: []sim.Roundabout{rb}}, 0, lw)
 					if waiting.RoundaboutAdmissionHold != nil {
-						t.Fatal("remote reserved owner blocked clear entrance")
-					}
-					if !tm.roundaboutReserved(rb.Center) {
-						t.Fatal("car/long bus reservation was removed")
+						t.Fatal("other-approach reserved owner blocked clear entrance")
 					}
 				})
 			}
 		}
 	}
 }
-func TestReservedEntryRetainsTailAndUnknownGeometry(t *testing.T) {
+
+func TestSameApproachTailStillProtectsEnteringBus(t *testing.T) {
 	rb := sim.Roundabout{Radius: 240, InnerRadius: 120}
 	u := sim.Vec2{X: 1}
 	lw := 52.
@@ -49,64 +58,50 @@ func TestReservedEntryRetainsTailAndUnknownGeometry(t *testing.T) {
 	p, _ := sim.RoundaboutEntryPoint(curve, 0)
 	waiting := sim.NewBus(p.X, p.Y, 0)
 	waiting.RoundaboutEntry = &sim.BusRoundaboutEntry{Forward: u, Remaining: .3}
-	// Front section is past the local join; only the trailing section remains
-	// beside the incoming curve. A front-only test would incorrectly release.
-	owner := sim.NewBus(-90, 305, math.Pi/2)
-	owner.Speed = 90
-	if !shortBusClearsReservedEntry(waiting, owner, rb, u, lw) {
-		t.Fatal("fixture front section has not actually cleared")
-	}
+
+	// Articulated owner entered West approach but its trailer still straddles the West mouth.
+	owner := sim.NewBus(-170, 78, 0.25)
 	owner.SetModel(sim.BusArticulated)
-	owner.TrailerHeading = math.Pi / 2
-	owner.TrailerInitialized = true
-	if !reservedOwnerLeaving(owner, rb) {
-		t.Fatal("fixture owner is not departing")
+	owner.Speed = 90
+	owner.ResetArticulation()
+	if !ownerStillAtMouth(owner, rb, u, lw) {
+		t.Fatal("fixture owner trailer is not at West entrance mouth")
 	}
-	if shortBusClearsReservedEntry(waiting, owner, rb, u, lw) {
-		t.Fatal("owner's trailing section ignored")
+	tm := &TrafficManager{
+		AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: waiting}}},
+		roundaboutReservations: []roundaboutReservation{{
+			approaches: [4]roundaboutApproachSlot{{
+				forward: u,
+				owner:   owner,
+				entered: true,
+			}},
+		}},
 	}
-	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: waiting}}}, roundaboutReservations: []roundaboutReservation{{owner: owner, entered: true}}}
 	tm.updateRoundaboutReservations(owner, &sim.World{Roundabouts: []sim.Roundabout{rb}}, 0, lw)
 	if waiting.RoundaboutAdmissionHold == nil {
-		t.Fatal("owner tail across mouth lost admission hold")
+		t.Fatal("same-approach follower lost admission hold while owner trailer still crosses mouth")
 	}
-	// A short owner also retains local body protection.
-	owner.SetModel(sim.BusStandard)
-	p, tangent := sim.RoundaboutEntryPoint(curve, .2)
-	owner.Pos = p
-	owner.Heading = math.Atan2(tangent.Y, tangent.X)
-	if shortBusClearsReservedEntry(waiting, owner, rb, u, lw) {
-		t.Fatal("occupied entrance released")
-	}
-	owner.Pos = sim.Vec2{X: 215, Y: 50}
-	waiting.SetModel(sim.BusArticulated)
-	if shortBusClearsReservedEntry(waiting, owner, rb, u, lw) {
-		t.Fatal("second long entrant received exception")
-	}
-	waiting.SetModel(sim.BusStandard)
-	waiting.Heading = math.Pi / 2
-	if shortBusClearsReservedEntry(waiting, owner, rb, u, lw) {
-		t.Fatal("cross-lane entrant received exception")
+
+	// Once the owner trailer moves past the mouth into the ring, release immediately.
+	owner.Pos = sim.Vec2{X: 20, Y: 195}
+	owner.Heading = 0
+	owner.ResetArticulation()
+	tm.updateRoundaboutReservations(owner, &sim.World{Roundabouts: []sim.Roundabout{rb}}, 0, lw)
+	if waiting.RoundaboutAdmissionHold != nil {
+		t.Fatal("same-approach follower still held after owner trailer cleared the mouth")
 	}
 }
-// While the reserving long bus is still approaching, a short bus at another
-// entrance uses the ring like a car. Once the owner reaches its yield line the
-// ring drains for it, and the short bus waits until the owner is admitted.
-func TestShortBusWaitsWhileReservationDrains(t *testing.T) {
+
+func TestOtherApproachShortBusNeverHeldByWaitingLongBus(t *testing.T) {
 	rb := sim.Roundabout{Radius: 240, InnerRadius: 120}
-	owner := reservationBus(-500, sim.BusArticulated)
-	waiting := sim.NewBus(335, -78, math.Pi)
-	waiting.RoundaboutEntry = &sim.BusRoundaboutEntry{Forward: sim.Vec2{X: -1}, Remaining: .3}
-	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: waiting}}}, roundaboutReservations: []roundaboutReservation{{owner: owner}}}
+	westOwner := reservationBus(-340, sim.BusArticulated)
+	eastWaiting := sim.NewBus(335, -78, math.Pi)
+	eastWaiting.RoundaboutEntry = &sim.BusRoundaboutEntry{Forward: sim.Vec2{X: -1}, Remaining: .3}
+	tm := &TrafficManager{AIBusMgr: &AIBusManager{Buses: []*AIBus{{Bus: eastWaiting}}}}
 	w := &sim.World{Roundabouts: []sim.Roundabout{rb}}
-	tm.updateRoundaboutReservations(owner, w, 0, 52)
-	if waiting.RoundaboutAdmissionHold != nil {
-		t.Fatal("entrances closed while the owner is still far from its yield line")
-	}
-	owner.Pos.X = -(rb.YieldLineDistance() + owner.Length/2 + 8 + 30)
-	tm.updateRoundaboutReservations(owner, w, 0, 52)
-	if waiting.RoundaboutAdmissionHold == nil {
-		t.Fatal("reservation released before owner admission")
+	tm.updateRoundaboutReservations(westOwner, w, 0, 52)
+	if eastWaiting.RoundaboutAdmissionHold != nil {
+		t.Fatal("east entrance must not be held by west articulated bus")
 	}
 }
 

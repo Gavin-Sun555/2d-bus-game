@@ -127,3 +127,24 @@ func TestJunctionPoseStorageGrowsGeometrically(t *testing.T) {
 		t.Fatalf("accelerating scan reallocated %d times", moves)
 	}
 }
+
+func TestJunctionSweepConvergingThresholdAndSign(t *testing.T) {
+	// Within 1 lane width (|lat0| <= lw), the sweep projects parallel instead of converging back to path.
+	ad, f := highSpeedSweepFrame(80)
+	f.bus.Pos = sim.Vec2{X: 0, Y: 182 + f.laneWidth*0.7} // lat0 = +36.4 <= 52
+	f.bus.PreparePosePredictions()
+	f.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: 140, Y: 182 + f.laneWidth*0.7}, Length: 46, Width: 22}}
+	if got := ad.junctionSweptSpeed(f); math.IsInf(got, 1) {
+		t.Fatalf("expected obstacle along parallel 0.7*lw offset to cap speed, got Inf")
+	}
+
+	// Beyond 1 lane width (|lat0| > lw) with positive lat0, converging bends back toward Y=182 (negative Y direction).
+	ad2, f2 := highSpeedSweepFrame(80)
+	f2.bus.Pos = sim.Vec2{X: 0, Y: 182 + f2.laneWidth*1.25} // lat0 = +65 > 52
+	f2.bus.PreparePosePredictions()
+	// An obstacle farther outward (higher Y) than the bus is cleared by the inward converging curve.
+	f2.obstacles = []VehicleObstacle{{Pos: sim.Vec2{X: 160, Y: 182 + f2.laneWidth*1.25 + 22}, Length: 46, Width: 22}}
+	if got := ad2.junctionSweptSpeed(f2); !math.IsInf(got, 1) {
+		t.Fatalf("expected outward obstacle to clear when lat0 > lw converges inward, got %.2f", got)
+	}
+}

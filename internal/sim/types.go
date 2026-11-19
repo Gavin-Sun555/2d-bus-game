@@ -3,6 +3,7 @@ package sim
 import (
 	"image/color"
 	"math"
+	"sync/atomic"
 )
 
 type Rect struct {
@@ -34,8 +35,15 @@ func (v Vec2) Mul(s float64) Vec2 {
 	return Vec2{X: v.X * s, Y: v.Y * s}
 }
 
+func euclideanNorm(x, y float64) float64 {
+	if math.Abs(x) <= 1e150 && math.Abs(y) <= 1e150 {
+		return math.Sqrt(x*x + y*y)
+	}
+	return math.Hypot(x, y)
+}
+
 func (v Vec2) Length() float64 {
-	return math.Hypot(v.X, v.Y)
+	return euclideanNorm(v.X, v.Y)
 }
 
 func (v Vec2) Normalize() Vec2 {
@@ -47,7 +55,7 @@ func (v Vec2) Normalize() Vec2 {
 }
 
 func (v Vec2) Distance(o Vec2) float64 {
-	return math.Hypot(v.X-o.X, v.Y-o.Y)
+	return euclideanNorm(v.X-o.X, v.Y-o.Y)
 }
 
 func (v Vec2) Dot(o Vec2) float64 {
@@ -120,9 +128,28 @@ type OBB struct {
 // CheckOBBCollision checks intersection between two OBBs using Separating Axis Theorem (SAT).
 // Returns (collides, normal, depth) where normal points from B to A.
 func CheckOBBCollision(a, b OBB) (bool, Vec2, float64) {
+	if a.HalfLen >= 0 && a.HalfWid >= 0 && b.HalfLen >= 0 && b.HalfWid >= 0 {
+		r := a.HalfLen + a.HalfWid + b.HalfLen + b.HalfWid
+		if r < 1e100 {
+			dx := a.Center.X - b.Center.X
+			dy := a.Center.Y - b.Center.Y
+			if math.Abs(dx) > r || math.Abs(dy) > r {
+				return false, Vec2{}, 0
+			}
+			d2 := dx*dx + dy*dy
+			sum2 := a.HalfLen*a.HalfLen + a.HalfWid*a.HalfWid + b.HalfLen*b.HalfLen + b.HalfWid*b.HalfWid
+			if d2 > 2*sum2*(1+1e-12) {
+				return false, Vec2{}, 0
+			}
+		}
+	}
+	return checkOBBCollisionNarrow(a, b)
+}
+
+func checkOBBCollisionNarrow(a, b OBB) (bool, Vec2, float64) {
 	// Broadphase circle check
-	maxRadiusA := math.Hypot(a.HalfLen, a.HalfWid)
-	maxRadiusB := math.Hypot(b.HalfLen, b.HalfWid)
+	maxRadiusA := euclideanNorm(a.HalfLen, a.HalfWid)
+	maxRadiusB := euclideanNorm(b.HalfLen, b.HalfWid)
 	distCenters := a.Center.Distance(b.Center)
 	if distCenters > maxRadiusA+maxRadiusB {
 		return false, Vec2{}, 0
@@ -378,6 +405,36 @@ func ResolveCarCarSeparation(carA, carB *TrafficCar) bool {
 // UnitFromAngle returns {cos a, sin a}. math.Sincos is bit-identical to
 // separate Sin/Cos calls but shares the argument reduction.
 func UnitFromAngle(a float64) Vec2 {
+	key := math.Float64bits(a)
+	e := &unitCache[(key*0x9e3779b97f4a7c15)>>(64-unitCacheBits)]
+	x, y := e.x.Load(), e.y.Load()
+	// The check word rejects an entry torn by a concurrent writer, so a hit
+	// always returns the exact Sincos result for this bit pattern.
+	if e.key.Load() == key && e.check.Load() == key^x^y+1 {
+		return Vec2{X: math.Float64frombits(x), Y: math.Float64frombits(y)}
+	}
 	s, c := math.Sincos(a)
+	x, y = math.Float64bits(c), math.Float64bits(s)
+	e.check.Store(0)
+	e.key.Store(key)
+	e.x.Store(x)
+	e.y.Store(y)
+	e.check.Store(key ^ x ^ y + 1)
 	return Vec2{X: c, Y: s}
 }
+
+// Cos and Sincos are the memoized, bit-identical forms of math.Cos and
+// math.Sincos for angles that repeat within a tick (headings and their
+// differences). Use the math package directly for one-off angles.
+func Cos(a float64) float64 { return UnitFromAngle(a).X }
+func Sincos(a float64) (sin, cos float64) {
+	u := UnitFromAngle(a)
+	return u.Y, u.X
+}
+
+// Vehicle headings repeat many times within a tick (lane-aligned traffic,
+// one body tested against many others), so a small direct-mapped memo of
+// exact results removes most of the trigonometry from the simulation.
+const unitCacheBits = 10
+
+var unitCache [1 << unitCacheBits]struct{ key, x, y, check atomic.Uint64 }

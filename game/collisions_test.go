@@ -47,14 +47,15 @@ func TestRoundaboutCarsYieldToCirculatingBusAndAutopilotNoFines(t *testing.T) {
 	w := g.World
 	rb := w.Roundabouts[0]
 
-	// Bus circulating inside roundabout at radius 214px
-	g.Bus.Pos = sim.Vec2{X: rb.Center.X + 214.0, Y: rb.Center.Y - 20.0}
+	// Bus circulating inside roundabout along the outer lane radius
+	outerR := (rb.InnerRadius + 16.0 + 3.0*rb.Radius) * 0.25
+	g.Bus.Pos = sim.Vec2{X: rb.Center.X + outerR, Y: rb.Center.Y - 20.0}
 	g.Bus.Heading = -math.Pi / 2
 	g.Bus.Speed = 40.0
 
-	// Civilian car approaching from East road
+	// Civilian car approaching from East road outside the yield line
 	car := &sim.TrafficCar{
-		Pos:         sim.Vec2{X: rb.Center.X + 300.0, Y: rb.Center.Y - 100.8},
+		Pos:         sim.Vec2{X: rb.Center.X + rb.Radius + 60.0, Y: rb.Center.Y - 100.8},
 		Heading:     math.Pi, // Westbound
 		Speed:       80.0,
 		TargetSpeed: 80.0,

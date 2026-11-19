@@ -254,3 +254,73 @@ func TestStationDockCurveStillYieldsToMovingConflict(t *testing.T) {
 		}
 	}
 }
+
+// A compact bus in Berserk mode can exhaust the longitudinal distance of an
+// outer-lane docking curve while still laterally offset (>10px) and yawed
+// (>0.2 rad). It must still complete service in place (matching driver.go's
+// outer-lane rule) and depart rather than braking forever at 0 speed.
+func TestBerserkCompactOuterLaneStallCompletesDocking(t *testing.T) {
+	for _, lw := range []float64{42, 52, 78} {
+		for _, h := range []float64{0, math.Pi / 2, math.Pi, -math.Pi / 2} {
+			for _, cachedPlan := range []bool{true, false} {
+				t.Run(fmt.Sprintf("lw%.0f/h%.2f/cached%v", lw, h, cachedPlan), func(t *testing.T) {
+					forward := sim.UnitFromAngle(h)
+					right := sim.Vec2{X: -forward.Y, Y: forward.X}
+					w := &sim.World{Roads: []sim.RoadSegment{{P1: forward.Mul(-2000), P2: forward.Mul(2500), Lanes: 8, Type: sim.RoadBusBoulevard8Lane}}}
+					w.RebuildIntersections()
+					for i, x := range []float64{-1200, 0, 1500} {
+						w.Stops = append(w.Stops, sim.NewBusStop(i, "test", forward.Mul(x), h, 8, sim.RGBA(0, 0, 0, 255), lw))
+					}
+					stop := w.Stops[1]
+					frontAlong := stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward)
+					laneCenter := stop.RoadCenter.Add(right.Mul(2.5 * lw))
+					planTarget := laneCenter.Add(forward.Mul(frontAlong))
+					latOffset := math.Min(19.63, lw*0.38)
+					p := planTarget.Sub(forward.Mul(2.39)).Add(right.Mul(latOffset))
+
+					bus := sim.NewBus(p.X, p.Y, h-0.3275)
+					bus.SetModel(sim.BusDoubleDecker)
+					bus.Speed = 0
+
+					ad := NewAutopilotDriver()
+					ad.BerserkMode = true
+					ad.LaneOffset, ad.TargetLaneOffset = -lw, -lw
+					if cachedPlan {
+						ad.stationDock = &stationDockPlan{
+							stopID: stop.ID,
+							rank:   1,
+							target: planTarget,
+							points: []sim.Vec2{p.Sub(forward.Mul(140)), planTarget},
+						}
+					}
+					route := &sim.Route{StopIDs: []int{0, 1, 2}, CurrentIndex: 1}
+					opened, closed, advanced := false, false, false
+					for tick := 0; tick < 600; tick++ {
+						th, br, st, hb, doors, dock := ad.ComputeControls(bus, route, w, nil, nil, lw, 1./60)
+						bus.Update(1./60, th, br, st, hb, doors)
+						if tick == 0 {
+							if !dock || !bus.DoorsOpen || bus.Pos.Distance(p) > 1e-9 {
+								t.Fatalf("outer-lane stall did not immediately dock: dock=%v doors=%v pos=%v", dock, bus.DoorsOpen, bus.Pos)
+							}
+							restored, err := ad.Snapshot().Restore(w)
+							if err != nil {
+								t.Fatal(err)
+							}
+							ad = restored
+						}
+						opened = opened || bus.DoorsOpen
+						closed = closed || (opened && !bus.DoorsOpen && bus.DoorProgress <= .05)
+						advanced = advanced || route.GetCurrentTargetStopID() == 2
+						if res := bus.CheckBoundaries(w, lw); res.Zone == sim.ZoneHardBarrier {
+							t.Fatalf("hard barrier at tick %d: %s", tick, res.ObstacleName)
+						}
+						if closed && advanced && bus.Pos.Sub(p).Dot(forward) > 250 {
+							return
+						}
+					}
+					t.Fatalf("did not complete docking/departure: opened=%v closed=%v adv=%v pos=%v spd=%.2f", opened, closed, advanced, bus.Pos, bus.Speed)
+				})
+			}
+		}
+	}
+}

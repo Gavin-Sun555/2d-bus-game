@@ -37,11 +37,12 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	if f.bus.IsArticulated() && f.speedAbs > 130 {
 		return stationDockInputs{}, false
 	}
-	// Berserk long buses already alongside the boarding platform need not
+	// Long buses allowed to board beside the platform (Berserk, or a route
+	// bus whose bay is unreachable; see updateOuterLaneDock) need not
 	// merge into an occupied bay or chase its forward marker. Serve from the
 	// actual stationary pose only when both sections fit and remain separated.
 	capacityAvailable := ad.stationBoardingCapacity(f.bus, stop, f.obstacles)
-	if ad.BerserkMode && f.bus.IsArticulated() && f.speedAbs < 8 && stop.ContainsBusInOuterLane(f.bus, f.laneWidth) {
+	if ad.outerDockAllowed && f.bus.IsArticulated() && f.speedAbs < 8 && stop.ContainsBusInOuterLane(f.bus, f.laneWidth) {
 		clear := stationBoardingPoseClear(f)
 		for _, ob := range f.obstacles {
 			if ob.Pos.Distance(f.bus.Pos) > f.bus.OverallLength()+ob.Length+10 {
@@ -66,7 +67,7 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	// exact front marker is now behind the nose. Do not chase it backwards or
 	// wait forever for a closed-door rear follower to release a reservation.
 	frontDistance := stop.FrontBerthPosition().Sub(f.bus.Pos).Dot(sim.UnitFromAngle(stop.Heading))
-	if capacityAvailable && f.speedAbs < 8 && (ad.stationDock == nil || !ad.stationDock.waiting) && frontDistance >= -32 && frontDistance <= f.bus.Length/2+10 && stop.ContainsBus(f.bus) && stationFrontArrivalClear(f) {
+	if capacityAvailable && f.speedAbs < 8 && !ad.unfinishedArticulatedBayEntry(f) && (ad.stationDock == nil || !ad.stationDock.waiting) && frontDistance >= -32 && frontDistance <= f.bus.Length/2+10 && stop.ContainsBus(f.bus) && stationFrontArrivalClear(f) {
 		ad.stationDock = &stationDockPlan{stopID: stop.ID, target: f.bus.Pos}
 		ad.beginDocking(stop)
 		return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
@@ -98,11 +99,16 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	// Complete an already-safe arrival before trying to generate another local
 	// curve. A few pixels of residual lateral error can make a tiny cubic turn
 	// its tangent sharply enough to fail the trailer constraint while stopped.
-	if f.speedAbs < 12 {
+	if f.speedAbs < 12 && !ad.preferForwardArticulatedBay(f) {
 		for _, berth := range ad.availableStationBerths(f.bus, stop, f.obstacles) {
 			u := sim.UnitFromAngle(stop.Heading)
+			if ad.stationDock != nil && ad.stationDock.alignmentRecovery &&
+				stop.FrontBerthPosition().Sub(ad.stationDock.target).Dot(u) > 60 &&
+				math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) >= .075 {
+				continue // Finish the short rear-berth straightening arc first.
+			}
 			partialRear := stop.FrontBerthPosition().Sub(berth).Dot(u) > 60 && math.Abs(berth.Sub(f.bus.Pos).Dot(u)) < 10 && stop.ContainsBus(f.bus) && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < .2
-			if (atSelectedStationBerth(f.bus, berth, stop.Heading) || partialRear) && stationBoardingPoseClear(f) {
+			if (atSelectedStationBerth(f.bus, berth, stop.Heading) || partialRear) && stop.ContainsBus(f.bus) && stationBoardingPoseClear(f) {
 				recovery := false
 				if ad.stationDock != nil && ad.stationDock.alignmentRecovery {
 					recovery = true
@@ -124,7 +130,10 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	// Long vehicles need the local alignment maneuver even on a free bay:
 	// pursuit of the route taper can unwind too late, then accelerate while
 	// the front corner is still sweeping toward the shelter.
-	if !f.bus.IsArticulated() && ad.stationDock == nil && math.Abs(ad.LaneOffset) < 1 && !nearbyTraffic && !ad.ordinaryBusLeft && cachedFrontApproach {
+	right := sim.Vec2{X: -math.Sin(stop.Heading), Y: math.Cos(stop.Heading)}
+	steepStationaryYaw := ad.directRoundaboutExit == nil && ((f.speedAbs < 15 && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .30) ||
+		(!stop.CenterBRT && f.speedAbs < 5 && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .15 && f.bus.Pos.Sub(stop.Pos).Dot(right) > 4))
+	if !f.bus.IsArticulated() && ad.stationDock == nil && math.Abs(ad.LaneOffset) < 1 && !steepStationaryYaw && !nearbyTraffic && !ad.ordinaryBusLeft && cachedFrontApproach {
 		return stationDockInputs{}, false
 	}
 	forward := sim.UnitFromAngle(stop.Heading)
@@ -136,8 +145,20 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	if (ad.stationDock == nil || ad.stationDock.stopID != stop.ID) && (f.remaining > math.Max(400, approachDistance) || distance > approachDistance || distance < -20 || math.Cos(f.bus.Heading-stop.Heading) < 0.85) {
 		return stationDockInputs{}, false
 	}
-	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	if stop.CenterBRT && f.bus.Pos.Sub(stop.RoadCenter).Dot(right) > f.laneWidth+4 &&
+		f.bus.Pos.Sub(stop.Pos).Dot(forward) > -(sim.BRTPlatformHalfLength+f.bus.OverallLength()*0.65+48) {
+		ad.stationDock = nil
+		return stationDockInputs{}, false
+	}
 	plan := ad.stationDock
+	// A rear curve may have been the only steerable choice while entering.
+	// Once it has brought the leader inside, use the now-straight forward
+	// berth instead of occupying the rear marker in front of its follower.
+	if plan != nil && !plan.waiting && plan.rank == 0 && f.speedAbs < 12 &&
+		stop.FrontBerthPosition().Sub(plan.target).Dot(forward) > 60 &&
+		plan.target.Sub(f.bus.Pos).Dot(forward) < 25 && ad.preferForwardArticulatedBay(f) {
+		plan = nil
+	}
 	// A cached rear berth can run out of forward distance before a short
 	// bus has turned off the road. Replan from its actual pose.
 	exhaustedOffBay := plan != nil && !plan.waiting && f.speedAbs < 8 &&
@@ -151,7 +172,8 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	// neither open its doors nor finish the arc. Replan toward an available
 	// forward berth instead of retaining this exhausted non-boarding endpoint.
 	// The ordinary planner below still validates the full maneuver and bodies.
-	if plan != nil && plan.alignmentRecovery && f.speedAbs < 8 && plan.target.Sub(f.bus.Pos).Dot(forward) < 5 && !stop.ContainsBus(f.bus) {
+	if plan != nil && plan.alignmentRecovery && f.speedAbs < 8 && plan.target.Sub(f.bus.Pos).Dot(forward) < 5 &&
+		(!stop.ContainsBus(f.bus) || math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) >= 0.25) {
 		for _, berth := range ad.availableStationBerths(f.bus, stop, f.obstacles) {
 			if berth.Sub(plan.target).Dot(forward) > 10 && berth.Sub(f.bus.Pos).Dot(forward) > 10 {
 				plan = nil
@@ -164,7 +186,8 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 	// midway through a lane change can strand the trailer.
 	if plan != nil && plan.waiting {
 		target, occupied := ad.stationQueueTarget(f.bus, stop, f.obstacles)
-		finishingEntry := f.bus.IsArticulated() && (math.Abs(plan.target.Sub(f.bus.Pos).Dot(right)) > 10 || math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .15)
+		remaining := plan.target.Sub(f.bus.Pos).Dot(forward)
+		finishingEntry := f.bus.IsArticulated() && !(f.speedAbs < 2 && remaining < 10) && (math.Abs(plan.target.Sub(f.bus.Pos).Dot(right)) > 10 || math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .15)
 		if !finishingEntry && (!occupied || math.Abs(target.Sub(plan.target).Dot(forward)) > 8 || len(ad.availableStationBerths(f.bus, stop, f.obstacles)) > 0) {
 			plan = nil
 		}
@@ -179,7 +202,8 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 				continue
 			}
 			curve := stationAlignmentCurve(f.bus, berth, forward)
-			if berth.Sub(plan.target).Dot(forward) > 10 && len(curve) >= 2 && stationCurveCanSteer(f.bus, curve) && stationDockCurveClear(f.bus, curve, f.obstacles) {
+			if berth.Sub(plan.target).Dot(forward) > 10 && len(curve) >= 2 && stationCurveCanSteer(f.bus, curve) &&
+				stationDockCurveBarrierClear(f.bus, curve, f.world, f.laneWidth) && stationDockCurveClear(f.bus, curve, f.obstacles) {
 				plan = nil
 				break
 			}
@@ -187,6 +211,12 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 				plan = &stationDockPlan{stopID: stop.ID, target: target, points: points, alignmentRecovery: true}
 				break
 			}
+		}
+		if plan != nil && !plan.waiting && !plan.alignmentRecovery && !f.bus.IsArticulated() &&
+			f.speedAbs < 8 && plan.target.Sub(f.bus.Pos).Dot(forward) < 8 && !stop.ContainsBus(f.bus) &&
+			math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) >= .35 {
+			plan = nil
+			exhaustedOffBay = true
 		}
 	}
 
@@ -208,7 +238,9 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 			count = 1
 		}
 		outerReady := !waiting || (f.world != nil && distance <= 360 && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < .15)
-		if ad.BerserkMode && outerReady && !stop.CenterBRT {
+		// Travel lanes beside the platform are berths only when outer-lane
+		// boarding is allowed: always in Berserk, a last resort for route buses.
+		if ad.outerDockAllowed && outerReady && !stop.CenterBRT {
 			front := stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward)
 			currentDistToCenter := f.bus.Pos.Sub(stop.RoadCenter).Dot(right)
 			type laneCandidate struct {
@@ -238,14 +270,14 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 				candidates = append(candidates, lc.pos)
 			}
 		}
-		if ad.BerserkMode && !waiting && stop.RoadLanes <= 2 {
+		if ad.BerserkMode && !ad.FleetBus && !waiting && stop.RoadLanes <= 2 {
 			candidates = append(candidates, stop.RoadCenter.Add(forward.Mul(stop.FrontBerthPosition().Sub(stop.Pos).Dot(forward))).Sub(right.Mul(f.laneWidth/2)))
 		}
 		best, fallback := (*stationDockPlan)(nil), (*stationDockPlan)(nil)
 		for rank, target := range candidates {
 			// Preserve the existing quick roadside option while approaching in
 			// traffic. A bus already in the bay may use its partial rear berth.
-			if ad.BerserkMode && f.bus.IsArticulated() && !stop.ContainsBus(f.bus) && rank < bayCount && len(candidates) > bayCount && stop.FrontBerthPosition().Sub(target).Dot(forward) > 60 {
+			if ad.outerDockAllowed && f.bus.IsArticulated() && !stop.ContainsBus(f.bus) && rank < bayCount && len(candidates) > bayCount && stop.FrontBerthPosition().Sub(target).Dot(forward) > 60 {
 				continue
 			}
 			laneRank := 0
@@ -272,6 +304,11 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 			actualTarget := target
 			alignmentRecovery := false
 			points := stationDockCurve(f.bus, target, forward)
+			if !ad.BerserkMode && f.bus.IsArticulated() && laneRank == 0 && !waiting && f.world != nil {
+				if improved, changed := articulatedBayEntryCurve(f, target, points); changed {
+					points, alignmentRecovery = improved, true
+				}
+			}
 			if f.bus.IsArticulated() && waiting {
 				// Use all of the available runway for the side-step; the
 				// short arrival curve turns too sharply beside the shelter.
@@ -288,12 +325,17 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 				stop.FrontBerthPosition().Sub(target).Dot(forward) > 60 && alongToTarget < 100 &&
 				(lateral > 5 || math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .15)
 			// Compact buses only need the steerability check while recovering
-			// from an exhausted off-bay plan; elsewhere their short tapers are
-			// valid lane changes into a free berth.
-			wideMerge := lateral > f.bus.Width && (f.bus.IsArticulated() || exhaustedOffBay)
-			if (shortRearEntry || wideMerge || (f.bus.IsArticulated() && ((waiting && lateral > 10) || queueAlignment))) && !stationCurveCanSteer(f.bus, points) {
+			// from an exhausted off-bay plan or steep yaw; elsewhere their short
+			// tapers are valid lane changes into a free berth.
+			steepYaw := (ad.DisallowOncomingOvertake || f.speedAbs < 10) && math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .25
+			curbBayCheck := !stop.CenterBRT && !f.bus.IsArticulated() && (math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) > .12 || f.bus.Pos.Sub(stop.Pos).Dot(right) > -f.bus.Width/2)
+			centerBRTCheck := stop.CenterBRT && math.Abs(f.bus.Pos.Sub(stop.Pos).Dot(right)) > f.laneWidth*.35
+			needBarrierCheck := steepYaw || curbBayCheck || centerBRTCheck
+			wideMerge := (lateral > f.bus.Width && (f.bus.IsArticulated() || exhaustedOffBay)) || steepYaw
+			if (shortRearEntry || wideMerge || (f.bus.IsArticulated() && ((waiting && lateral > 10) || queueAlignment))) &&
+				(!stationCurveCanSteer(f.bus, points) || (needBarrierCheck && !stationDockCurveBarrierClear(f.bus, points, f.world, f.laneWidth))) {
 				alignment := stationAlignmentCurve(f.bus, target, forward)
-				if len(alignment) >= 2 && stationCurveCanSteer(f.bus, alignment) {
+				if len(alignment) >= 2 && stationCurveCanSteer(f.bus, alignment) && (!needBarrierCheck || stationDockCurveBarrierClear(f.bus, alignment, f.world, f.laneWidth)) {
 					points = alignment
 				} else if exhaustedOffBay && !f.bus.IsArticulated() && !stop.CenterBRT && !waiting &&
 					laneRank == 0 && target.Distance(stop.FrontBerthPosition()) < 1 {
@@ -308,14 +350,29 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 					} else {
 						continue
 					}
+				} else if laneRank == 0 && (f.bus.IsArticulated() || (shortRearEntry && ad.DisallowOncomingOvertake)) && f.speedAbs < 8 {
+					// A late follower may have a free rear berth but too little
+					// runway for a curve through its exact center. Try the real
+					// steering arc before falling back to road following.
+					var clear bool
+					points, actualTarget, clear = stationActuatorAlignment(f, target)
+					if !clear {
+						continue
+					}
+					alignmentRecovery = true
 				} else {
 					// Prefer another berth, but never leave a stopped compact
-					// bus with no plan beside a free rear berth.
-					if shortRearEntry && fallback == nil && stationDockCurveClear(f.bus, points, f.obstacles) {
+					// bus with no plan beside a free rear berth when it is
+					// already close enough laterally to enter without a steep dive.
+					if shortRearEntry && fallback == nil && lateral <= f.bus.Width*1.25 &&
+						(!needBarrierCheck || stationDockCurveBarrierClear(f.bus, points, f.world, f.laneWidth)) && stationDockCurveClear(f.bus, points, f.obstacles) {
 						fallback = &stationDockPlan{stopID: stop.ID, target: target, points: points}
 					}
 					continue
 				}
+			}
+			if needBarrierCheck && !stationDockCurveBarrierClear(f.bus, points, f.world, f.laneWidth) {
+				continue
 			}
 			if !stationDockCurveClear(f.bus, points, f.obstacles) {
 				if waiting && rank == 0 && f.bus.IsArticulated() {
@@ -337,7 +394,7 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 		plan = best
 		ad.stationDock = plan
 	}
-	if capacityAvailable && plan == nil && f.speedAbs < 8 && distance >= -32 && distance <= f.bus.Length/2+10 && stop.ContainsBus(f.bus) && (len(ad.availableStationBerths(f.bus, stop, f.obstacles)) > 0 || stationFrontArrivalClear(f)) {
+	if capacityAvailable && plan == nil && f.speedAbs < 8 && !ad.unfinishedArticulatedBayEntry(f) && distance >= -32 && distance <= f.bus.Length/2+10 && stop.ContainsBus(f.bus) && (len(ad.availableStationBerths(f.bus, stop, f.obstacles)) > 0 || stationFrontArrivalClear(f)) {
 		// A late arrival can already occupy a valid bay pose even though the
 		// remaining curve to the exact front marker is too short for its tail.
 		// Serve only inside the real platform with a free berth and clear bodies.
@@ -358,7 +415,16 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 			return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
 		}
 	}
+	if capacityAvailable && plan == nil && ad.outerDockAllowed && !stop.CenterBRT && f.speedAbs < 1 &&
+		stop.ContainsBusInOuterLane(f.bus, f.laneWidth) && stationBoardingPoseClear(f) {
+		ad.stationDock = &stationDockPlan{stopID: stop.ID, rank: 1, target: f.bus.Pos}
+		ad.beginDocking(stop)
+		return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
+	}
 	if plan == nil {
+		if inputs, ok := ad.trySteepStationBerthRetreat(f); ok {
+			return inputs, true
+		}
 		// An unreachable queue curve in the extended early-approach region
 		// must not freeze an unfinished road turn. Inside the normal 360px
 		// approach, a full platform still holds a late long bus until the lead
@@ -371,7 +437,14 @@ func (ad *AutopilotDriver) stationDockControls(f autopilotFrame) (stationDockInp
 		// With nobody in the bay there is no lead bus to create runway: a
 		// stopped bus beside the platform with no berth curve can never dock.
 		ad.stationDockUnreachable = f.speedAbs < .5 && !stationHasBayBus(stop, f.obstacles)
-		return stationDockInputs{brake: 1}, true
+		if ad.stationDockUnreachable && stop.RoadLanes >= 4 && math.Abs(ad.LaneOffset) >= f.laneWidth*0.8 && !stop.ContainsBusInOuterLane(f.bus, f.laneWidth) {
+			return stationDockInputs{}, false
+		}
+		holdSteer := 0.0
+		if f.speedAbs > 2 {
+			holdSteer = sim.Clamp(sim.NormalizeAngle(stop.Heading-f.bus.Heading)/f.bus.MaxSteerAngle, -1, 1)
+		}
+		return stationDockInputs{brake: 1, steer: holdSteer}, true
 	}
 	return ad.followStationDockPlan(f, plan, capacityAvailable, true)
 }
@@ -398,12 +471,27 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 	ad.LaneOffsetProgress = 1
 	remaining := math.Max(0, plan.target.Sub(f.bus.Pos).Dot(forward))
 	lateral := math.Abs(plan.target.Sub(f.bus.Pos).Dot(right))
-	aligned := math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < 0.2
+	finishedCompact := !f.bus.IsArticulated() && remaining < 2 && lateral < 6 && stop.ContainsBus(f.bus)
+	maxAlignedYaw := 0.2
+	if plan.alignmentRecovery && finishedCompact {
+		maxAlignedYaw = 0.25
+	}
+	aligned := math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < maxAlignedYaw
 	if plan.alignmentRecovery {
 		aligned = aligned && stop.ContainsBus(f.bus)
+		if stop.FrontBerthPosition().Sub(plan.target).Dot(forward) > 60 {
+			// A compact bus that has finished the checked alignment arc may
+			// board under the compact bay tolerance. The stricter
+			// trailer-alignment limit must not strand it at a zero-speed endpoint.
+			aligned = aligned && (finishedCompact || math.Abs(sim.NormalizeAngle(f.bus.Heading-stop.Heading)) < .075)
+		}
 	}
-	capacityOk := capacityAvailable || plan.rank > 0 || (ad.BerserkMode && stop.ContainsBusInOuterLane(f.bus, f.laneWidth))
+	capacityOk := capacityAvailable || plan.rank > 0 || (ad.outerDockAllowed && stop.ContainsBusInOuterLane(f.bus, f.laneWidth))
 	atBerth := (remaining < 10 && lateral < 10) || (stop.ContainsBus(f.bus) && remaining < 25 && lateral < 20)
+	atBerth = atBerth && (stop.ContainsBus(f.bus) || (ad.outerDockAllowed && stop.ContainsBusInOuterLane(f.bus, f.laneWidth)))
+	if ad.unfinishedArticulatedBayEntry(f) {
+		atBerth = false
+	}
 	if capacityOk && !plan.waiting && atBerth && aligned && f.speedAbs < 12 && stationBoardingPoseClear(f) {
 		ad.beginDocking(stop)
 		return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= 0.05, isDocked: true}, true
@@ -425,7 +513,13 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 	delta := target.Sub(f.bus.Pos)
 	alpha := sim.NormalizeAngle(math.Atan2(delta.Y, delta.X) - f.bus.Heading)
 	steer := sim.Clamp(math.Atan2(2*f.bus.WheelBase*math.Sin(alpha), math.Max(20, delta.Length()))/f.bus.MaxSteerAngle, -1, 1)
-	speed := math.Min(115, math.Sqrt(2*165*math.Max(0, remaining-3)))
+	brakingMargin := 3.
+	if plan.alignmentRecovery && stop.FrontBerthPosition().Sub(plan.target).Dot(forward) > 60 {
+		// This short arc needs its last few pixels to finish straightening.
+		// The target already includes the normal gap behind the lead's tail.
+		brakingMargin = .5
+	}
+	speed := math.Min(115, math.Sqrt(2*165*math.Max(0, remaining-brakingMargin)))
 	if plan.alignmentRecovery {
 		speed = math.Min(speed, 25)
 	}
@@ -445,7 +539,7 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 			speed = 0
 		}
 	}
-	speed = ad.trafficLightSpeed(f, speed)
+	speed = math.Min(speed, ad.trafficLightSpeed(f, speed))
 	// Recheck the swept path when traffic changes after selecting a lane.
 	if !stationDockCurveClear(f.bus, remainingStationCurve(plan.points, s), f.obstacles) {
 		speed = 0
@@ -453,16 +547,30 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 	// If the platform already safely fits the stopped bus, a geometrically
 	// blocked continuation to the marker should not prevent boarding.
 	if speed <= .5 && f.speedAbs < 1 && f.bus.IsArticulated() && capacityAvailable &&
-		!plan.waiting && plan.rank == 0 && aligned && stop.ContainsBus(f.bus) &&
+		!plan.waiting && plan.rank == 0 && !ad.preferForwardArticulatedBay(f) && aligned && stop.ContainsBus(f.bus) &&
 		math.Abs(sim.NormalizeAngle(f.bus.TailHeading()-stop.Heading)) < .25 &&
 		stationFrontArrivalClear(f) {
 		empty := f
 		empty.obstacles = nil
-		if ad.articulatedSweptSpeed(empty, steer, true) <= .5 {
+		if ad.articulatedSweptSpeed(empty, steer, true) <= .5 || (stationBoardingPoseClear(f) && !ad.unfinishedArticulatedBayEntry(f)) {
 			ad.stationDock = &stationDockPlan{stopID: stop.ID, target: f.bus.Pos}
 			ad.beginDocking(stop)
 			return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
 		}
+	}
+	// A berserk bus stopped at the end of a non-waiting dock plan while
+	// safely inside an outer lane should board in place (matching driver.go's
+	// outer-lane rule) rather than freezing on strict bay center/heading tolerances.
+	if ad.outerDockAllowed && !plan.waiting && !stop.CenterBRT && capacityOk &&
+		f.speedAbs < 8 && (speed <= .5 || (plan.rank > 0 && remaining < 10)) &&
+		stop.ContainsBusInOuterLane(f.bus, f.laneWidth) && stationBoardingPoseClear(f) {
+		rank := 1
+		if stop.ContainsBus(f.bus) {
+			rank = 0
+		}
+		ad.stationDock = &stationDockPlan{stopID: stop.ID, rank: rank, target: f.bus.Pos}
+		ad.beginDocking(stop)
+		return stationDockInputs{brake: 1, toggleDoors: !f.bus.DoorsOpen && f.bus.DoorProgress <= .05, isDocked: true}, true
 	}
 	// A cached taper can point the nose toward a curb even while its
 	// centerline curve is technically steerable. At a stopped arrival,
@@ -478,17 +586,20 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 	// Back away briefly if the rear marker is exhausted with the nose
 	// pointing into the shelter. Rebuild the approach after coming to rest.
 	if speed <= .5 && f.speedAbs < 1 && !f.bus.IsArticulated() && !plan.waiting &&
-		plan.rank == 0 && remaining < 8 && !stop.CenterBRT && f.world != nil && stop.ContainsBus(f.bus) &&
+		plan.rank == 0 && remaining < 8 && !stop.CenterBRT && f.world != nil &&
 		!f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.Length/2) {
 		yaw := sim.NormalizeAngle(f.bus.Heading - stop.Heading)
-		if yaw > .35 && yaw < .7 && f.bus.Pos.Sub(stop.Pos).Dot(right) > 12 {
+		if stop.ContainsBus(f.bus) && yaw > .35 && yaw < .7 && f.bus.Pos.Sub(stop.Pos).Dot(right) > 12 {
 			const retreat = 15.
 			if ad.laneRetreatReverseClear(f, retreat, 1) {
 				ad.stationDock = nil
-				ad.headonRecovery = &HeadonDeadlockRecovery{StartPos: f.bus.Pos, TargetDistance: retreat, StationRetreat: true}
+				ad.headonRecovery = &HeadonDeadlockRecovery{StartPos: f.bus.Pos, TargetDistance: retreat, StationRetreat: true, RetreatSteer: 1}
 				th, br, st, _ := ad.headonRecoveryControls(f, 0)
 				return stationDockInputs{throttle: th, brake: br, steer: st}, true
 			}
+		}
+		if inputs, ok := ad.trySteepStationBerthRetreat(f); ok {
+			return inputs, true
 		}
 	}
 	throttle, brake := ad.longitudinalControls(f.bus.Speed, speed)
@@ -496,6 +607,113 @@ func (ad *AutopilotDriver) followStationDockPlan(f autopilotFrame, plan *station
 	ad.LastTargetSpeed = speed
 	ad.LastPursuitPt = target
 	return stationDockInputs{throttle: throttle, brake: brake, steer: steer}, true
+}
+
+func stationDockCurveBarrierClear(bus *sim.Bus, points []sim.Vec2, world *sim.World, laneWidth float64) bool {
+	if world == nil {
+		return true
+	}
+	predicted := *bus
+	for i := 0; i < len(points); i++ {
+		delta := sim.UnitFromAngle(bus.Heading)
+		if i+1 < len(points) {
+			delta = points[i+1].Sub(points[i])
+		} else if i > 0 {
+			delta = points[i].Sub(points[i-1])
+		}
+		heading := math.Atan2(delta.Y, delta.X)
+		if delta.Length() < 0.01 {
+			heading = bus.Heading
+		}
+		predicted = predicted.AtPose(points[i], heading)
+		if predicted.CheckBoundaries(world, laneWidth).Zone == sim.ZoneHardBarrier {
+			return false
+		}
+	}
+	return true
+}
+
+// A steep unsteerable rear-berth entry can leave a compact bus stopped half in
+// the adjacent lane with its nose aimed >35 deg at the shelter, where no pure
+// forward arc can unwind without clipping the shelter. Prove a settled-wheel
+// reverse that unlocks a steerable, barrier-clear forward docking curve.
+func (ad *AutopilotDriver) trySteepStationBerthRetreat(f autopilotFrame) (stationDockInputs, bool) {
+	stop := f.targetStop
+	if stop == nil || stop.CenterBRT || f.world == nil || f.bus == nil || f.bus.IsArticulated() ||
+		f.speedAbs >= 1 || f.bus.DoorsOpen || f.bus.DoorProgress > .05 || f.bus.PassengerServiceRemaining() > 0 ||
+		ad.headonRecovery != nil || ad.CanSkipTargetStop || ad.State == AutopilotStateDocked || ad.State == AutopilotStateDeparting ||
+		f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.Length/2) || busOverlapsLevelCrossing(f.bus, f.world) ||
+		ad.trafficLightSpeed(f, 20) <= .5 {
+		return stationDockInputs{}, false
+	}
+	forward := sim.UnitFromAngle(stop.Heading)
+	right := sim.Vec2{X: -forward.Y, Y: forward.X}
+	yaw := sim.NormalizeAngle(f.bus.Heading - stop.Heading)
+	frontDist := stop.FrontBerthPosition().Sub(f.bus.Pos).Dot(forward)
+	across := f.bus.Pos.Sub(stop.Pos).Dot(right)
+	empty := f
+	empty.obstacles = nil
+	pinnedAgainstShelter := yaw > .15 && across > 4 && ad.controlSweptSpeed(empty, -1) <= .5
+	if (!pinnedAgainstShelter && yaw <= .35) || yaw >= 1.35 || frontDist <= 0 || frontDist >= stop.Length || across < -f.laneWidth-16 || across > stop.Width/2+24 {
+		return stationDockInputs{}, false
+	}
+	if f.bus.CheckBoundaries(f.world, f.laneWidth).Zone == sim.ZoneHardBarrier || busOverlapsLevelCrossing(f.bus, f.world) {
+		return stationDockInputs{}, false
+	}
+	for _, revSteer := range []float64{1, .5, 0, -.35} {
+		settled := *f.bus
+		settled.SteeringAngle = revSteer * settled.MaxSteerAngle
+		settledFrame := f
+		settledFrame.bus = &settled
+		settledFrame.speedAbs = 0
+		for _, retreat := range []float64{15, 24, 36, 48, 60} {
+			revBus, ok := ad.simulateReversePose(settledFrame, retreat, revSteer)
+			if !ok || busOverlapsLevelCrossing(revBus, f.world) || math.Cos(revBus.Heading-stop.Heading) < .86 {
+				continue
+			}
+			revBus.Gear = sim.GearDrive
+			revBus.Speed = 0
+			revBus.SteeringAngle = -revBus.MaxSteerAngle
+			canDock := false
+			for _, berth := range ad.availableStationBerths(revBus, stop, f.obstacles) {
+				if berth.Sub(revBus.Pos).Dot(forward) < 25 {
+					continue
+				}
+				for _, curve := range [][]sim.Vec2{stationDockCurve(revBus, berth, forward), stationAlignmentCurve(revBus, berth, forward)} {
+					if len(curve) < 2 || !stationCurveCanSteer(revBus, curve) || !stationDockCurveBarrierClear(revBus, curve, f.world, f.laneWidth) || !stationDockCurveClear(revBus, curve, f.obstacles) {
+						continue
+					}
+					endDelta := curve[len(curve)-1].Sub(curve[len(curve)-2])
+					endHdg := revBus.Heading
+					if endDelta.Length() >= .01 {
+						endHdg = math.Atan2(endDelta.Y, endDelta.X)
+					}
+					endPose := revBus.AtPose(curve[len(curve)-1], endHdg)
+					if stop.ContainsBus(&endPose) {
+						canDock = true
+						break
+					}
+				}
+				if canDock {
+					break
+				}
+			}
+			if !canDock {
+				continue
+			}
+			ad.stationDock = nil
+			ad.headonRecovery = &HeadonDeadlockRecovery{
+				StartPos:         f.bus.Pos,
+				TargetDistance:   retreat,
+				StationRetreat:   true,
+				RetreatSteer:     revSteer,
+				SettleSteerFirst: true,
+			}
+			th, br, st, _ := ad.headonRecoveryControls(f, 0)
+			return stationDockInputs{throttle: th, brake: br, steer: st}, true
+		}
+	}
+	return stationDockInputs{}, false
 }
 
 // Restrict the short-curve recovery to actual station queues (or a stopped
@@ -517,7 +735,11 @@ func stationDockCurve(bus *sim.Bus, target, forward sim.Vec2) []sim.Vec2 {
 	handle := math.Min(100, distance*0.35)
 	heading := sim.UnitFromAngle(bus.Heading)
 	a, b := bus.Pos.Add(heading.Mul(handle)), end.Sub(forward.Mul(handle))
-	points := make([]sim.Vec2, 0, 34)
+	extra := 0
+	if straight > 5 {
+		extra = int((straight-5)/5) + 1
+	}
+	points := make([]sim.Vec2, 0, 34+extra)
 	for i := 0; i <= 32; i++ {
 		t := float64(i) / 32
 		u := 1 - t
@@ -563,25 +785,32 @@ func stationDockCurveClear(bus *sim.Bus, points []sim.Vec2, obstacles []VehicleO
 			if offset.Dot(offset) > reach*reach {
 				continue
 			}
-			other := sim.OBB{Center: ob.Pos, Heading: ob.Heading, HalfLen: ob.Length/2 + 4, HalfWid: ob.Width/2 + 2}
-			// Compare vehicles at the same future instant. Testing every curve
-			// point against a moving car's current position freezes its old
-			// footprint across the entire approach and creates a false stop.
-			other.Center = other.Center.Add(sim.UnitFromAngle(ob.Heading).Mul(ob.Speed * time))
-			paddingLen, paddingWidth := 5., 2.
-			if stationRearBodyClear(bus, ob) || stationAlongsideBodyClear(bus, ob) {
-				paddingLen, paddingWidth = .5, .5
-				other.HalfLen = ob.Length/2 + .5
-				other.HalfWid = ob.Width/2 + .5
-			}
+			center := ob.Pos.Add(sim.UnitFromAngle(ob.Heading).Mul(ob.Speed * time))
+			other := sim.OBB{Center: center, Heading: ob.Heading, HalfLen: ob.Length/2 + 4, HalfWid: ob.Width/2 + 2}
+			tightChecked := false
+			tightAllowed := false
 			for _, part := range parts {
 				if part.HalfLen <= 0 {
 					continue
 				}
-				part.HalfLen += paddingLen
-				part.HalfWid += paddingWidth
-				if hit, _, _ := sim.CheckOBBCollision(part, other); hit {
-					return false
+				padded := part
+				padded.HalfLen += 5.
+				padded.HalfWid += 2.
+				if hit, _, _ := sim.CheckOBBCollision(padded, other); hit {
+					if !tightChecked {
+						tightAllowed = stationRearBodyClear(bus, ob) || stationAlongsideBodyClear(bus, ob)
+						tightChecked = true
+					}
+					if !tightAllowed {
+						return false
+					}
+					tightPart := part
+					tightPart.HalfLen += .5
+					tightPart.HalfWid += .5
+					tightOther := sim.OBB{Center: center, Heading: ob.Heading, HalfLen: ob.Length/2 + .5, HalfWid: ob.Width/2 + .5}
+					if hitTight, _, _ := sim.CheckOBBCollision(tightPart, tightOther); hitTight {
+						return false
+					}
 				}
 			}
 		}
@@ -599,15 +828,14 @@ func (ad *AutopilotDriver) beginDocking(stop *sim.BusStop) {
 }
 
 func remainingStationCurve(points []sim.Vec2, s float64) []sim.Vec2 {
-	remaining := []sim.Vec2{}
 	total := 0.0
 	for i := 1; i < len(points); i++ {
 		total += points[i].Distance(points[i-1])
 		if total > s+2 {
-			remaining = append(remaining, points[i])
+			return points[i:]
 		}
 	}
-	return remaining
+	return nil
 }
 
 // Only a stationary, parallel follower whose actual body is currently clear can
@@ -673,6 +901,10 @@ func stationCurveCanSteer(bus *sim.Bus, points []sim.Vec2) bool {
 // Use the full remaining runway instead of completing the lateral move in its
 // first half. Quintic Hermite tangents match the actual nose and finish parallel.
 func stationAlignmentCurve(bus *sim.Bus, target, forward sim.Vec2) []sim.Vec2 {
+	return stationAlignmentCurveInto(nil, bus, target, forward)
+}
+
+func stationAlignmentCurveInto(dst []sim.Vec2, bus *sim.Bus, target, forward sim.Vec2) []sim.Vec2 {
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	delta := target.Sub(bus.Pos)
 	along, lateral := delta.Dot(forward), delta.Dot(right)
@@ -681,7 +913,12 @@ func stationAlignmentCurve(bus *sim.Bus, target, forward sim.Vec2) []sim.Vec2 {
 		return nil
 	}
 	slope := heading.Dot(right) / heading.Dot(forward)
-	points := make([]sim.Vec2, 0, 65)
+	points := dst
+	if cap(points) < 65 {
+		points = make([]sim.Vec2, 0, 65)
+	} else {
+		points = points[:0]
+	}
 	for i := 0; i <= 64; i++ {
 		t := float64(i) / 64
 		smooth := t * t * t * (10 + t*(-15+6*t))
@@ -701,12 +938,13 @@ func stationQueueEntryCurve(bus *sim.Bus, target, frontBerth, forward sim.Vec2, 
 		return nil, sim.Vec2{}, false
 	}
 	maxExtra := math.Max(0, frontBerth.Sub(target).Dot(forward))
+	var fullBuf, clippedBuf [65]sim.Vec2
 	for extra := 20.0; extra <= maxExtra; extra += 20.0 {
-		full := stationAlignmentCurve(bus, target.Add(forward.Mul(extra)), forward)
+		full := stationAlignmentCurveInto(fullBuf[:0], bus, target.Add(forward.Mul(extra)), forward)
 		if len(full) < 2 || !stationCurveCanSteer(bus, full) {
 			continue
 		}
-		clipped := clipStationCurveAtAlong(full, bus.Pos, forward, along)
+		clipped := clipStationCurveAtAlongInto(clippedBuf[:0], full, bus.Pos, forward, along)
 		if len(clipped) < 2 || !stationCurveCanSteer(bus, clipped) || !stationDockCurveClear(bus, clipped, obstacles) {
 			continue
 		}
@@ -722,13 +960,24 @@ func stationQueueEntryCurve(bus *sim.Bus, target, frontBerth, forward sim.Vec2, 
 				continue
 			}
 		}
-		return clipped, end, true
+		out := make([]sim.Vec2, len(clipped))
+		copy(out, clipped)
+		return out, end, true
 	}
 	return nil, sim.Vec2{}, false
 }
 
 func clipStationCurveAtAlong(points []sim.Vec2, start, forward sim.Vec2, maxAlong float64) []sim.Vec2 {
-	out := make([]sim.Vec2, 0, len(points))
+	return clipStationCurveAtAlongInto(nil, points, start, forward, maxAlong)
+}
+
+func clipStationCurveAtAlongInto(dst, points []sim.Vec2, start, forward sim.Vec2, maxAlong float64) []sim.Vec2 {
+	out := dst
+	if cap(out) < len(points) {
+		out = make([]sim.Vec2, 0, len(points))
+	} else {
+		out = out[:0]
+	}
 	for i, pt := range points {
 		d := pt.Sub(start).Dot(forward)
 		if d <= maxAlong {

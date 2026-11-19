@@ -44,7 +44,21 @@ func separateCirculatingBodies(car *sim.TrafficCar, pos sim.Vec2, heading, lengt
 }
 
 func parallelRoundaboutBus(f carFrame, rb sim.Roundabout, bus *sim.Bus) bool {
-	return bus != nil && bus.RoundaboutEntry != nil && bus.RoundaboutEntry.Remaining > 0 && bus.RoundaboutEntry.Center == rb.Center && parallelRoundaboutEntry(f, rb, bus.Pos, bus.Heading, bus.Length, bus.Width, true)
+	if bus == nil || bus.RoundaboutEntry == nil || bus.RoundaboutEntry.Remaining <= 0 || bus.RoundaboutEntry.Center != rb.Center {
+		return false
+	}
+	if !bus.IsArticulated() {
+		return parallelRoundaboutEntry(f, rb, bus.Pos, bus.Heading, bus.Length, bus.Width, true)
+	}
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		if !parallelRoundaboutEntry(f, rb, part.Center, part.Heading, part.HalfLen*2, part.HalfWid*2, true) {
+			return false
+		}
+	}
+	return true
 }
 
 // Follow the actual curve, including its exit. Fixed center-distance tests

@@ -154,7 +154,27 @@ func moveCarRoundabout(car *sim.TrafficCar, dt float64) {
 // the next prediction continuous from that actual position, rather than jumping
 // back across a neighboring bus to the previously stored circular coordinates.
 func localizeRoundaboutCar(car *sim.TrafficCar) {
-	if !car.InRoundabout || car.RoundaboutCurve != nil {
+	if !car.InRoundabout {
+		return
+	}
+	if c := car.RoundaboutCurve; c != nil {
+		index := sort.Search(len(c.ArcLengths), func(i int) bool { return c.ArcLengths[i] >= c.Distance })
+		index = int(sim.Clamp(float64(index), 1, 64))
+		fraction := (c.Distance - c.ArcLengths[index-1]) / math.Max(1e-9, c.ArcLengths[index]-c.ArcLengths[index-1])
+		expected, _ := roundaboutCurveAt(c, (float64(index-1)+fraction)/64)
+		if expected.Distance(car.Pos) <= .1 {
+			return
+		}
+		radial := car.Pos.Sub(car.RoundaboutCenter)
+		if radius := radial.Length(); radius > 1 {
+			car.RoundaboutRadius = radius
+			car.RoundaboutAngle = math.Atan2(radial.Y, radial.X)
+		}
+		if c.Exiting {
+			beginRoundaboutExit(car)
+		} else {
+			beginLegacyRoundaboutEntry(car)
+		}
 		return
 	}
 	expected := car.RoundaboutCenter.Add(sim.UnitFromAngle(car.RoundaboutAngle).Mul(car.RoundaboutRadius))

@@ -414,6 +414,8 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 	}
 
 	sinH, cosH := math.Sincos(heading)
+	absCosH, absSinH := math.Abs(cosH), math.Abs(sinH)
+	maxBound := laneWidth*8 + 200
 
 	type candidate struct {
 		inter      *TrafficIntersection
@@ -422,10 +424,20 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 	var candidateStorage [8]candidate
 	candidates := candidateStorage[:0]
 	for _, inter := range tls.Intersections {
-		stopLineDist := inter.GetStopLineDistForHeading(heading, laneWidth)
 		toInter := inter.Center.Sub(pos)
 		forwardDist := toInter.X*cosH + toInter.Y*sinH
+		if forwardDist <= -maxBound || forwardDist >= lookAhead+maxBound+60 {
+			continue
+		}
 		lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
+		if lateralDist >= maxBound {
+			continue
+		}
+		ewStop, _, nsStop, _ := inter.GetApproachDimensions(laneWidth)
+		stopLineDist := nsStop
+		if absCosH >= absSinH {
+			stopLineDist = ewStop
+		}
 
 		// Must be on the approaching corridor heading towards the intersection (accommodates 2, 4, and 6 lane approaches)
 		if forwardDist > -stopLineDist && forwardDist < stopLineDist+lookAhead+60 && lateralDist < math.Max(laneWidth*3.6, inter.ApproachRoadHalfWidth(heading, laneWidth)) {
@@ -483,10 +495,14 @@ func (tls *TrafficLightSystem) checkStop(pos Vec2, heading, lookAhead, laneWidth
 		effectiveWantLeft := (nearest && wantLeft) || (!routeKnown && hasDedicatedLanes && inLeftTurnLane)
 		effectiveWantRight := nearest && wantRight && !effectiveWantLeft && !inLeftTurnLane
 
-		// Vehicles making a lawful right turn (from outer lane) may legally turn on red (红灯允许右转)
+		// Vehicles making a lawful right turn from the outer curb lane may turn on red (红灯允许右转).
+		// A fallback right turn from an inner/middle lane must wait for the through signal.
+		appIdx := inter.GetApproachIndexForHeading(heading)
 		lateral := math.Abs(pos.Sub(inter.Center).Dot(Vec2{X: -sinH, Y: cosH}))
-		medianRight := effectiveWantRight && inter.ApproachMedianBusLane[inter.GetApproachIndexForHeading(heading)] && lateral < laneWidth
-		if effectiveWantRight && !medianRight {
+		approachLanes := inter.ApproachLanes[appIdx]
+		inCurbRightLane := approachLanes <= 2 || lateral >= (float64(approachLanes)/2-1)*laneWidth-4
+		medianRight := effectiveWantRight && inter.ApproachMedianBusLane[appIdx] && lateral < laneWidth
+		if effectiveWantRight && !medianRight && (inCurbRightLane || !routeKnown) {
 			return false, 999.0
 		}
 

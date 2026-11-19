@@ -9,9 +9,13 @@ const maxTemporaryObstacles = 2048
 // vehicle corridor. Large custom inputs retain the original allocating fallback.
 type temporaryGeometry struct {
 	sidecarTraffic          [][2]sim.OBB
+	forwardTraffic          [][2]sim.OBB
+	forwardTrafficReady     []bool
+	forwardScan             *forwardEscapeScan
 	forwardEscapeBoundaries *forwardEscapeBoundaries
 	junctionCandidates      []int
 	junctionActual          []sweepSample
+	junctionCache           *sweepPoseCache
 	admission               []sim.OBB
 	ringBodies              []sim.OBB
 	ringIndices             []int

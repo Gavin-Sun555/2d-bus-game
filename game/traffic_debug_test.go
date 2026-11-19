@@ -14,6 +14,7 @@ import (
 
 func debugFiles(t *testing.T, g *Game) []string {
 	t.Helper()
+	g.trafficDebug.finishDebugWrites(true)
 	paths, err := filepath.Glob(filepath.Join(g.trafficDebug.dir, "congestion-*.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +205,7 @@ func TestTrafficDebugRetriesFailedWrite(t *testing.T) {
 	g.trafficDebug.dir = bad
 	timeout := g.TrafficLights.DeadlockTimeoutAt(g.TrafficMgr.Cars[0].Pos)
 	g.updateTrafficDebug(timeout + .1)
+	g.trafficDebug.finishDebugWrites(true)
 	if g.trafficDebug.retryAt <= g.trafficDebug.seconds {
 		t.Fatal("write failure was not throttled for retry")
 	}

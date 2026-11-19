@@ -71,6 +71,16 @@ func withinRightTurnTrackingArea(f autopilotFrame, center sim.Vec2) bool {
 func (ad *AutopilotDriver) trackRightTurnWithoutPassingOffset(f autopilotFrame) {
 	ad.rightTurnWaiting = false
 	heading := ad.rightTurnHeading
+	if c := f.bus.JunctionCorridor; c != nil && c.Entered && c.Remaining > 0 && ad.rightTurnJunction != nil &&
+		c.Center.Distance(*ad.rightTurnJunction) < 1 && math.Abs(sim.NormalizeAngle(f.bus.Heading-heading)) > .3 {
+		// After admission the bus is following the turn arc. Its old incoming
+		// lane offset is no longer a pending merge, including after a checked
+		// retreat for a crossing car. Keep the turn's swept checks authoritative.
+		ad.holdLaneOffset(0)
+		ad.OvertakeState = OvertakeNone
+		ad.busTurnHoldDistance = 0
+		return
+	}
 	withinLane := true
 	right := sim.Vec2{X: -math.Sin(heading), Y: math.Cos(heading)}
 	base := ad.pointAt(f.s)

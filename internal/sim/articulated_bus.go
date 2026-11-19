@@ -139,7 +139,9 @@ func integrateTrailer(oldPos, pos Vec2, oldHeading, heading, tail, length float6
 		h := oldHeading + turn*t
 		direction := fixedDirection
 		if turn != 0 {
-			direction = UnitFromAngle(h)
+			// Every substep has a new angle; skip the memo.
+			hs, hc := math.Sincos(h)
+			direction = Vec2{X: hc, Y: hs}
 		}
 		hitch := oldPos.Add(delta.Mul(t)).Sub(direction.Mul(length / 2))
 		d := hitch.Sub(oldHitch)

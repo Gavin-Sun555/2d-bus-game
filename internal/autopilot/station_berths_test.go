@@ -81,3 +81,35 @@ func TestLongBerthManeuverKeepsBoundaryBraking(t *testing.T) {
 		t.Fatalf("berth controller skipped boundary braking: %+v active%v target%.1f", inputs, active, ad.LastTargetSpeed)
 	}
 }
+
+func TestStationaryBoardingPoseClearWithAdjacentStoppedCar(t *testing.T) {
+	b := sim.NewBus(-108.66261425537517, -936.3812606794801, 1.5426619823700037)
+	b.SetModel(sim.BusArticulated)
+	b.TrailerHeading, b.TrailerInitialized = 1.566, true
+	ob := VehicleObstacle{
+		Pos:     sim.Vec2{X: -78, Y: -1020.7852968274712},
+		Heading: math.Pi / 2,
+		Speed:   0,
+		Length:  46,
+		Width:   22,
+	}
+	stop := sim.NewBusStop(3, "stop", sim.Vec2{X: 0, Y: -900}, math.Pi/2, 4, sim.RGBA(0, 0, 0, 255), 52)
+	w := &sim.World{
+		Roads: []sim.RoadSegment{{P1: sim.Vec2{Y: -2000}, P2: sim.Vec2{Y: 0}, Lanes: 4}},
+		Stops: []*sim.BusStop{stop},
+	}
+	f := autopilotFrame{
+		bus:        b,
+		world:      w,
+		targetStop: stop,
+		laneWidth:  52,
+		speedAbs:   0,
+		obstacles:  []VehicleObstacle{ob},
+	}
+	if !stationBoardingPoseClear(f) {
+		t.Fatalf("stationary articulated bus should be clear: stopPos=%v contains=%v bound=%+v", stop.Pos, stop.ContainsBus(b), b.CheckBoundaries(w, 52))
+	}
+	if !stationFrontArrivalClear(f) {
+		t.Fatal("stationFrontArrivalClear should allow non-overlapping stationary obstacle")
+	}
+}

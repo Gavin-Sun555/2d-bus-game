@@ -34,7 +34,13 @@ func (ad *AutopilotDriver) clearPassedBusLaneJunction(f autopilotFrame) {
 	u := sim.UnitFromAngle(approachRoadHeading(f.bus.Heading))
 	// Retain the local exit/merge settling region. Releasing this latch just
 	// outside the box changes lane selection while nearby queues still merge.
-	if center.Sub(f.bus.Pos).Dot(u) >= -2*reach {
+	clearance := 2 * reach
+	if exit := ad.exitCruise; exit != nil && exit.Junction.Distance(center) < 1 && !exit.Joined {
+		// The outgoing road is already known, but yaw can keep exit-cruise
+		// acquisition pending. Do not apply the old incoming merge there.
+		clearance = reach
+	}
+	if center.Sub(f.bus.Pos).Dot(u) >= -clearance {
 		return
 	}
 	start := max(1, ad.WaypointIdx+1)

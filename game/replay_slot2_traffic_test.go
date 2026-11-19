@@ -85,6 +85,7 @@ func TestSavedSlot2HeadonDeadlockDissolves(t *testing.T) {
 	if savePath == "" {
 		t.Skip("save file not found for slot2 headon deadlock")
 	}
+	sim.SeedSimulation(1)
 	g := loadSaveForTest(t, savePath, 1280, 720)
 
 	var b17, b47 *sim.Bus
@@ -326,6 +327,7 @@ func TestSlot2CarBusMergeDeadlockResolution(t *testing.T) {
 	if savePath == "" {
 		t.Skip("slot2 snapshot not found; skipping")
 	}
+	sim.SeedSimulation(1)
 	g := loadSaveForTest(t, savePath, 1440, 900)
 
 	var car31566 *sim.TrafficCar

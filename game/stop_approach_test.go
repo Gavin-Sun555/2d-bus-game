@@ -563,55 +563,65 @@ func TestAIMissedStopStoppedOutsideBayResumesDriving(t *testing.T) {
 // TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast verifies that an AI bus stopped in the
 // outer lane just past the forward berth does not stall there: it serves from the outer lane and departs.
 func TestAIMissedStopFrontOvershotStalledInOuterLaneFliesPast(t *testing.T) {
-	g := NewGame(1280, 720)
-	g.State = StatePlaying
+	for _, berserk := range []bool{false, true} {
+		g := NewGame(1280, 720)
+		g.State = StatePlaying
 
-	targetStopID := g.Route.GetCurrentTargetStopID()
-	targetStop := g.World.Stops[targetStopID]
+		targetStopID := g.Route.GetCurrentTargetStopID()
+		targetStop := g.World.Stops[targetStopID]
 
-	// Mandatory stop: waiting passengers and alighting passengers
-	targetStop.WaitingPassengers = 2
-	g.stopBellRung = true
-	g.passengersAlighting = 2
-	g.Bus.Passengers = append(g.Bus.Passengers, sim.Passenger{TargetStopID: targetStopID})
-	g.Cash = 100
-	g.Settings.TrafficFinesEnabled = true
-	g.Settings.AutopilotEnabled = true
-	g.AutopilotDriver.BerserkMode = true
+		// Mandatory stop: waiting passengers and alighting passengers
+		targetStop.WaitingPassengers = 2
+		g.stopBellRung = true
+		g.passengersAlighting = 2
+		g.Bus.Passengers = append(g.Bus.Passengers, sim.Passenger{TargetStopID: targetStopID})
+		g.Cash = 100
+		g.Settings.TrafficFinesEnabled = true
+		g.Settings.AutopilotEnabled = true
+		g.Settings.AutopilotBerserk = berserk
+		g.AutopilotDriver.BerserkMode = true
 
-	cosH := math.Cos(targetStop.Heading)
-	sinH := math.Sin(targetStop.Heading)
-	laneW := g.Settings.GetLaneWidth()
+		cosH := math.Cos(targetStop.Heading)
+		sinH := math.Sin(targetStop.Heading)
+		laneW := g.Settings.GetLaneWidth()
 
-	toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
-	toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
+		toRoad := targetStop.RoadCenter.Sub(targetStop.Pos)
+		toRoadDir := toRoad.Mul(1.0 / toRoad.Length())
 
-	// Bus is in outer/passing lane, 30px beyond the forward berth marker.
-	g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 30.0, Y: sinH * 30.0}).Add(toRoadDir.Mul(laneW * 2.0))
-	g.Bus.Heading = targetStop.Heading
-	g.Bus.Speed = 0.0
-	g.Bus.IsBraking = true
-	g.AutopilotDriver.LaneOffset = -laneW
+		// Bus is in outer/passing lane, 30px beyond the forward berth marker.
+		g.Bus.Pos = targetStop.FrontBerthPosition().Add(sim.Vec2{X: cosH * 30.0, Y: sinH * 30.0}).Add(toRoadDir.Mul(laneW * 2.0))
+		g.Bus.Heading = targetStop.Heading
+		g.Bus.Speed = 0.0
+		g.Bus.IsBraking = true
+		g.AutopilotDriver.LaneOffset = -laneW
 
-	// 1. Like a fleet bus with overtaking enabled, the autopilot serves the
-	// stop from the outer lane instead of stalling or being fined for a miss.
-	_ = g.Update()
-
-	if g.Cash != 100 {
-		t.Fatalf("Outer-lane service must not be fined, got cash: %d", g.Cash)
-	}
-	if g.AutopilotDriver.State != autopilot.AutopilotStateDocked || !g.Bus.DoorsOpen {
-		t.Fatalf("Expected outer-lane service, got state %v doors %v", g.AutopilotDriver.State, g.Bus.DoorsOpen)
-	}
-
-	// 2. After service the bus must not stay locked at 0 km/h.
-	for frame := 0; frame < 1800; frame++ {
+		// 1. Berserk boards from the outer lane at once. Standard autopilot,
+		// like a route bus, first tries for the bay and boards beside it only
+		// as a last resort. Either way the stop is served, not fined.
 		_ = g.Update()
-		if !g.Bus.DoorsOpen && g.Bus.Speed > 10 {
-			return
+		if docked := g.AutopilotDriver.State == autopilot.AutopilotStateDocked && g.Bus.DoorsOpen; docked != berserk {
+			t.Fatalf("berserk %v: boarded beside the bay on the first tick = %v", berserk, docked)
+		}
+		for frame := 0; frame < 60*20 && !g.Bus.DoorsOpen; frame++ {
+			_ = g.Update()
+		}
+		if g.Cash != 100 {
+			t.Fatalf("berserk %v: outer-lane service must not be fined, got cash: %d", berserk, g.Cash)
+		}
+		if g.AutopilotDriver.State != autopilot.AutopilotStateDocked || !g.Bus.DoorsOpen {
+			t.Fatalf("berserk %v: expected the stop to be served, got state %v doors %v", berserk, g.AutopilotDriver.State, g.Bus.DoorsOpen)
+		}
+
+		// 2. After service the bus must not stay locked at 0 km/h.
+		departed := false
+		for frame := 0; frame < 1800 && !departed; frame++ {
+			_ = g.Update()
+			departed = !g.Bus.DoorsOpen && g.Bus.Speed > 10
+		}
+		if !departed {
+			t.Fatalf("berserk %v: expected bus to depart after outer-lane service, state %v speed %.2f doors %v", berserk, g.AutopilotDriver.State, g.Bus.Speed, g.Bus.DoorsOpen)
 		}
 	}
-	t.Fatalf("Expected bus to depart after outer-lane service, state %v speed %.2f doors %v", g.AutopilotDriver.State, g.Bus.Speed, g.Bus.DoorsOpen)
 }
 
 // A fleet bus waiting in the passing lane beside an occupied bay still

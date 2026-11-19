@@ -101,13 +101,24 @@ func (ad *AutopilotDriver) intersectionApproachWithRunway(f autopilotFrame, isMu
 	// Lane-change yaw must not rotate the approach corridor or its exit.
 	heading := approachRoadHeading(f.bus.Heading)
 	sinH, cosH := math.Sincos(heading)
+	maxLatDist := f.laneWidth * 3.6
+	if is6Lane {
+		maxLatDist = f.laneWidth * 4.8
+	}
+	maxStopOffset := f.laneWidth*8 + 200
 
 	if f.tls != nil {
 		for _, inter := range f.tls.Intersections {
-			stopLineOffset := inter.GetStopLineDistForHeading(heading, f.laneWidth)
 			toInter := inter.Center.Sub(f.bus.Pos)
-			forwardDist := toInter.X*cosH + toInter.Y*sinH
 			lateralDist := math.Abs(-toInter.X*sinH + toInter.Y*cosH)
+			if lateralDist >= maxLatDist {
+				continue
+			}
+			forwardDist := toInter.X*cosH + toInter.Y*sinH
+			if forwardDist <= -maxStopOffset {
+				continue
+			}
+			stopLineOffset := inter.GetStopLineDistForHeading(heading, f.laneWidth)
 
 			lanes := inter.ApproachLanes[inter.GetApproachIndexForHeading(heading)]
 			maxInterDist := requiredApproachDistance(f, lanes)
@@ -116,12 +127,8 @@ func (ad *AutopilotDriver) intersectionApproachWithRunway(f autopilotFrame, isMu
 				rightMergeDist = rightTurnApproachDistance(f, lanes)
 			}
 			maxForwardDist := stopLineOffset + math.Max(maxInterDist, rightMergeDist) + 80.0
-			maxLatDist := f.laneWidth * 3.6
-			if is6Lane {
-				maxLatDist = f.laneWidth * 4.8
-			}
 
-			if forwardDist > -stopLineOffset && forwardDist < maxForwardDist && lateralDist < maxLatDist && forwardDist-stopLineOffset < distToStopLine {
+			if forwardDist > -stopLineOffset && forwardDist < maxForwardDist && forwardDist-stopLineOffset < distToStopLine {
 				approachingInter = inter
 				distToStopLine = forwardDist - stopLineOffset
 				isApproachingIntersection = (distToStopLine > 0 && distToStopLine < maxInterDist)
@@ -212,23 +219,8 @@ func (ad *AutopilotDriver) updateIntersectionLane(f autopilotFrame, approach int
 		if ad.LaneOffset < -f.laneWidth*0.3 || ad.OvertakeState != OvertakeNone {
 			// Bus was overtaking on the left.
 			// The left passing lane aligns directly with the dedicated left-turn lane!
-			// DO NOT return to the outer right lane; seamlessly transition into the left-turn lane.
-			targetLeftOffset := leftTurnLaneOffset(distBaseToCenter, f.laneWidth, is6Lane)
-			if math.Abs(ad.LaneOffset-targetLeftOffset) < 1.5 || distBaseToCenter <= f.laneWidth*1.15 {
-				// In left-turn corridor: synchronize LaneOffset with targetLeftOffset
-				// as drivePath tapers into left-turn lane, so physical lateral position stays rock-solid
-				ad.TargetLaneOffset = targetLeftOffset
-				ad.LaneOffset = targetLeftOffset
-				ad.OvertakeState = OvertakeNone
-				ad.OvertakeTimer = 0.0
-			} else {
-				ad.TargetLaneOffset = targetLeftOffset
-				if ad.OvertakeState == OvertakeChangingLane && math.Abs(ad.LaneOffset-ad.TargetLaneOffset) < 1.0 {
-					ad.LaneOffset = ad.TargetLaneOffset
-					ad.OvertakeState = OvertakeNone
-					ad.OvertakeTimer = 0.0
-				}
-			}
+			// DO NOT return to the outer right lane; transition into the left-turn lane when clear.
+			ad.alignLeftTurnLaneOffset(f.bus, f.obstacles, cosH, sinH, distBaseToCenter, f.laneWidth, is6Lane, true)
 		} else {
 			// Not overtaking: drivePath naturally leads into the dedicated left-turn lane
 			ad.TargetLaneOffset = 0.0
@@ -356,6 +348,42 @@ func (ad *AutopilotDriver) preferredThroughLane(f autopilotFrame, distToStopLine
 // direction, retaining temporary lane-change yaw only for physical steering.
 func approachRoadHeading(heading float64) float64 {
 	return sim.NormalizeAngle(math.Round(heading/(math.Pi/2)) * (math.Pi / 2))
+}
+
+func (ad *AutopilotDriver) currentRoadHeading(f autopilotFrame) float64 {
+	h := approachRoadHeading(f.bus.Heading)
+	if f.world == nil || f.bus == nil {
+		return h
+	}
+	if f.world.InsideJunction(f.bus.Pos, f.laneWidth, f.bus.Length/2) || math.Abs(sim.NormalizeAngle(f.bus.Heading-h)) <= .40 {
+		return h
+	}
+	center, ew, multi, six := sim.CurrentRoadInfo(f.world, f.bus.Pos, f.bus.Heading, f.laneWidth)
+	if !multi && !six {
+		return h
+	}
+	if (ew && math.Abs(math.Cos(h)) > .5) || (!ew && math.Abs(math.Sin(h)) > .5) {
+		return h
+	}
+	ref := f.bus.Heading
+	if ad != nil && len(ad.drivePath) >= 2 && ad.uTurn == nil && ad.rightTurnJunction == nil && ad.fallbackJunction == nil {
+		if th, ok := ad.localPathHeading(f); ok {
+			ref = th
+		}
+	} else if f.bus.IsArticulated() {
+		ref = f.bus.TailHeading()
+	}
+	_ = center
+	if ew {
+		if math.Cos(ref) < 0 {
+			return math.Pi
+		}
+		return 0
+	}
+	if math.Sin(ref) < 0 {
+		return -math.Pi / 2
+	}
+	return math.Pi / 2
 }
 
 // Reserve braking, a full lane transition per crossed lane, and a settled

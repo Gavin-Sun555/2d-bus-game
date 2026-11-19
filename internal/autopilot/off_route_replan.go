@@ -18,6 +18,7 @@ const (
 // re-plan the leg from the road the bus is actually on to its next stop.
 func (ad *AutopilotDriver) replanOffRoute(bus *sim.Bus, w *sim.World, to *sim.BusStop, lw, dt float64) bool {
 	ad.offRoadNetwork = false
+	ad.hardBarrierTimer = math.Max(0, ad.hardBarrierTimer-math.Max(0, dt))
 	if !ad.FleetBus || w == nil || to == nil || len(ad.drivePath) < 2 || ad.State == AutopilotStateDocked ||
 		bus.DoorsOpen || bus.DoorProgress > .05 || bus.PassengerServiceRemaining() > 0 || bus.TerminalReplacementHold ||
 		ad.headonRecovery != nil || ad.roundaboutEdgeRecovery != nil || ad.roadReverseActive || ad.pathOffRouteDistance(bus) <= offRouteLanes*lw {
@@ -41,13 +42,16 @@ func (ad *AutopilotDriver) replanOffRoute(bus *sim.Bus, w *sim.World, to *sim.Bu
 		// Beyond the end of every road, such as past an edge road in an
 		// older save: no leg can start here. The fleet resets the bus. A
 		// moving bus, or one turned across a road (in a junction or after a
-		// collision), is not stranded.
+		// collision), is not stranded unless it is stopped pinned against a
+		// dead-end barrier.
 		_, _, crossRoad := roadAbeam(w, bus.Pos, heading+math.Pi/2, lw)
-		ad.offRoadNetwork = math.Abs(bus.Speed) < 1 && !crossRoad
+		nose := bus.Pos.Add(sim.UnitFromAngle(bus.Heading).Mul(bus.Length/2 + 8))
+		barrierPinned := bus.HitsHardBarrier(w, lw) || w.CheckBoundaries(nose, bus.Width/2, lw).Zone == sim.ZoneHardBarrier || ad.hardBarrierTimer > 0
+		ad.offRoadNetwork = (math.Abs(bus.Speed) < 1 && !crossRoad) || barrierPinned
 		return false
 	}
 	from := &sim.BusStop{ID: -1, RoadCenter: center, Heading: heading, RoadLanes: road.LaneCount(), Pos: bus.Pos}
-	path := buildAutopilotDrivePath(w, from, to, lw, true, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: false, LongVehicle: ad.articulatedPath})
+	path := ad.buildLegDrivePath(w, from, to, lw, true, ad.CanSkipTargetStop, sim.RoadPathOptions{OrdinaryBusLaneLeft: false, LongVehicle: ad.articulatedPath})
 	if len(path) < 2 {
 		return false
 	}
@@ -55,6 +59,7 @@ func (ad *AutopilotDriver) replanOffRoute(bus *sim.Bus, w *sim.World, to *sim.Bu
 		ad.BeforeRecovery()
 	}
 	ad.resetLegManeuvers()
+	ad.offRouteOrigin = from
 	// Keep PrepareLeg's cache key, or it would rebuild the stale leg.
 	ad.pathOrdinaryBusLeft = ad.ordinaryBusLeft
 	ad.pathSkipTarget = ad.CanSkipTargetStop
@@ -83,13 +88,16 @@ func (ad *AutopilotDriver) replanOffRoute(bus *sim.Bus, w *sim.World, to *sim.Bu
 // its path, ignoring any lane offset: a stale offset is itself the symptom.
 func (ad *AutopilotDriver) pathOffRouteDistance(bus *sim.Bus) float64 {
 	best := math.Inf(1)
-	for _, part := range bus.BodyParts() {
+	for idx, part := range bus.BodyParts() {
 		if part.HalfLen <= 0 {
 			continue
 		}
 		for i := 1; i < len(ad.drivePath); i++ {
 			_, d := projectToSegment(part.Center, ad.drivePath[i-1], ad.drivePath[i])
 			best = math.Min(best, d-part.HalfWid)
+		}
+		if idx == 0 && math.Abs(bus.Speed) < 1 {
+			break
 		}
 	}
 	return best
@@ -111,6 +119,7 @@ func (ad *AutopilotDriver) OffRoadNetwork() bool {
 // beside (a stop bay or shoulder), and the point on its axis abeam of pos.
 func roadAbeam(w *sim.World, pos sim.Vec2, heading, lw float64) (sim.RoadSegment, sim.Vec2, bool) {
 	u := sim.UnitFromAngle(heading)
+	right := sim.Vec2{X: -u.Y, Y: u.X}
 	best, bestLateral := sim.RoadSegment{}, math.Inf(1)
 	var bestCenter sim.Vec2
 	for _, r := range w.Roads {
@@ -124,10 +133,48 @@ func roadAbeam(w *sim.World, pos sim.Vec2, heading, lw float64) (sim.RoadSegment
 			continue
 		}
 		center := r.P1.Add(axis.Mul(t))
-		lateral := pos.Distance(center)
-		if lateral <= float64(r.LaneCount())/2*lw+2.5*lw && lateral < bestLateral {
+		side := pos.Sub(center).Dot(right)
+		half := float64(r.LaneCount()) / 2 * lw
+		lateral := math.Abs(side)
+		if side >= -half && side <= half+2.5*lw && lateral < bestLateral {
 			best, bestLateral, bestCenter = r, lateral, center
 		}
 	}
 	return best, bestCenter, !math.IsInf(bestLateral, 1)
+}
+
+// NoteHardBarrierImpact records a hard-barrier pushback so an off-network bus
+// oscillating between a dead-end wall and pushback recovery is still detected.
+func (ad *AutopilotDriver) NoteHardBarrierImpact() {
+	if ad != nil {
+		ad.hardBarrierTimer = 3.0
+	}
+}
+
+// Older saves kept the recovered path but omitted its virtual road origin.
+// Recognize a straight road prefix far from the scheduled departure stop so
+// later turn-lane choices rebuild from that prefix instead of the old station.
+func (ad *AutopilotDriver) inferSavedOffRouteOrigin(w *sim.World) {
+	if ad.offRouteOrigin != nil || len(ad.drivePath) < 2 || ad.pathFromID < 0 || ad.pathFromID >= len(w.Stops) || ad.skippedDeparture != nil || ad.dockDepartureRun > 0 || ad.fallbackJunction != nil {
+		return
+	}
+	start := ad.drivePath[0]
+	from := w.Stops[ad.pathFromID]
+	if start.Distance(from.Pos) < math.Max(600, from.Length+200) {
+		return
+	}
+	d := ad.drivePath[1].Sub(start)
+	if d.Length() < 5 {
+		return
+	}
+	h := math.Atan2(d.Y, d.X)
+	heading := approachRoadHeading(h)
+	if math.Cos(h-heading) < .999 {
+		return
+	}
+	road, center, ok := roadAbeam(w, start, heading, ad.pathLane)
+	if !ok {
+		return
+	}
+	ad.offRouteOrigin = &sim.BusStop{ID: -1, Pos: start, RoadCenter: center, Heading: heading, RoadLanes: road.LaneCount()}
 }

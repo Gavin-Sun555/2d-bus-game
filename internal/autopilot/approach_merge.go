@@ -89,6 +89,10 @@ func (ad *AutopilotDriver) updateRequiredApproachMerge(f autopilotFrame, dt floa
 	}
 
 	target := origin.Add(right.Mul(targetLateral))
+	if road, ok := f.world.RoadAt(center, ew, f.bus.Pos); ok && road.HasMedianBusLane() &&
+		brtPlatformBlocksDividerCross(f.world, f.bus, heading, f.laneWidth, lateral, targetLateral) {
+		return false
+	}
 	// Use an early gap when it is open. A curb queue well before the turn
 	// must not become an obstacle in our still-clear current lane; continue
 	// alongside it and retry within the normal mandatory merge zone.
@@ -131,7 +135,7 @@ func (ad *AutopilotDriver) hasStraightMergeExit(f autopilotFrame, inter *sim.Tra
 		}
 		t := (exit - fa) / (fb - fa)
 		lateral := a.Add(b.Sub(a).Mul(t)).Dot(right)
-		return b.Sub(a).Normalize().Dot(forward) > .98 && math.Abs(lateral) < inter.ApproachRoadHalfWidth(heading, f.laneWidth)
+		return b.Sub(a).Normalize().Dot(forward) > .98 && lateral >= f.laneWidth && math.Abs(lateral) < inter.ApproachRoadHalfWidth(heading, f.laneWidth)
 	}
 	return false
 }
@@ -240,6 +244,23 @@ func (ad *AutopilotDriver) advanceApproachMerge(f autopilotFrame, dt float64) bo
 	base := ad.pointAt(f.s)
 	actual := f.bus.Pos.Sub(base).Dot(right)
 	desired := target.Sub(base).Dot(right)
+	if earlyMedianMerge && !ad.approachMergeJoined {
+		coord, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)
+		origin := sim.Vec2{Y: coord}
+		if !ew {
+			origin = sim.Vec2{X: coord}
+		}
+		originLat := f.bus.Pos.Sub(origin).Dot(right)
+		targetLat := target.Sub(origin).Dot(right)
+		if originLat < f.laneWidth-2 && brtPlatformBlocksDividerCross(f.world, f.bus, heading, f.laneWidth, originLat, targetLat) {
+			f.bus.LaneMergeRequest = nil
+			medianOffset := origin.Add(right.Mul(0.5 * f.laneWidth)).Sub(base).Dot(right)
+			ad.TargetLaneOffset = medianOffset
+			ad.OvertakeState = OvertakeReturning
+			ad.progressLaneOffset(dt, f.speedAbs)
+			return true
+		}
+	}
 	if ad.approachMergeJoined || requiredMergeLaneClear(f, heading, actual, desired) {
 		ad.blockedLeftMerge = nil
 		if math.Abs(ad.LaneOffset-actual) > f.laneWidth*2 {
@@ -261,9 +282,41 @@ func (ad *AutopilotDriver) advanceApproachMerge(f autopilotFrame, dt float64) bo
 		}
 		ad.busTurnHoldDistance = math.Max(.01, approachMergeStopDistance(f, request)-25)
 		ad.holdLaneOffset(actual)
+		if ad.busTurnHoldDistance <= 8 && f.speedAbs < 1 {
+			ad.relayBlockedMergeToRear(f, heading, actual, desired)
+		}
 		ad.retreatBlockedStraightMerge(f, request, actual, desired, dt)
 	}
 	return true
+}
+
+func (ad *AutopilotDriver) relayBlockedMergeToRear(f autopilotFrame, heading, current, target float64) {
+	u := sim.UnitFromAngle(heading)
+	r := sim.Vec2{X: -u.Y, Y: u.X}
+	targetPt := f.bus.Pos.Add(r.Mul(target - current))
+	lo := math.Min(0, current-target) - f.laneWidth*.6
+	hi := math.Max(0, current-target) + f.laneWidth*.6
+	for _, ob := range f.obstacles {
+		if math.Abs(ob.Speed) > 1 || math.Cos(ob.Heading-heading) < .82 {
+			continue
+		}
+		lat := ob.Pos.Sub(targetPt).Dot(r)
+		if lat < lo || lat > hi {
+			continue
+		}
+		gap := stoppedFollowerGap(f, ob, heading)
+		if gap < -24 || gap > 25 {
+			continue
+		}
+		if ob.Bus != nil && ob.Bus != f.bus && !ob.Bus.DoorsOpen && ob.Bus.PassengerServiceRemaining() == 0 {
+			ob.Bus.ReverseYieldRequest = .6
+		} else if ob.Car != nil && ob.Car.JunctionTurn == nil {
+			if ob.Car.YieldReverseRequest <= 0 && ob.Car.ReverseRemaining <= 0 && ob.Car.ReverseHold <= 0 {
+				ob.Car.YieldReverseDelay = .6
+			}
+			ob.Car.YieldReverseRequest = .6
+		}
+	}
 }
 
 // Either through lane is legal on an ordinary six-lane approach. Select once

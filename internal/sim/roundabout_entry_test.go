@@ -88,3 +88,18 @@ func TestRoundaboutEntryIntentExpires(t *testing.T) {
 		t.Fatal("stale entry intent retained")
 	}
 }
+
+func TestBuiltinRoundaboutsSupportParallelArticulatedBuses(t *testing.T) {
+	for _, theme := range []MapTheme{MapThemeMetropolis, MapThemeCoastalBay, MapThemeEmeraldLake} {
+		w := NewWorld(52, theme)
+		if len(w.Roundabouts) == 0 {
+			t.Fatalf("theme %v missing roundabout", theme)
+		}
+		for _, rb := range w.Roundabouts {
+			if !rb.SupportsParallelArticulated() {
+				t.Fatalf("theme %v roundabout %q too narrow for parallel articulated buses: R=%.1f IR=%.1f",
+					theme, rb.Name, rb.Radius, rb.InnerRadius)
+			}
+		}
+	}
+}

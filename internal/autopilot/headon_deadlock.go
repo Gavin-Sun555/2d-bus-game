@@ -15,8 +15,15 @@ type HeadonDeadlockRecovery struct {
 	YieldHoldRemaining float64
 	ReversingDone      bool
 	JunctionRetreat    bool
+	YieldForUTurn      bool
+	AlignEntryHeading  bool
+	EntryHeading       float64
 	ParallelRetreat    bool
 	StationRetreat     bool
+	RetreatSteer       float64
+	FollowerRetreat    bool
+	SettleSteerFirst   bool
+	SkipPreSteer       bool
 }
 
 // HeadonDeadlockTimer returns the current accumulated headon deadlock duration.
@@ -58,24 +65,30 @@ func (ad *AutopilotDriver) checkHeadonConflict(f autopilotFrame) (hasConflict bo
 			continue
 		}
 
-		dist := f.bus.Pos.Distance(ob.Pos)
-		obHalfLen := ob.Length / 2
-		obHalfWid := ob.Width / 2
-		if dist > egoHalfLen+obHalfLen+55.0 {
+		obPos, obHeading, obHalfLen, obHalfWid := ob.Pos, ob.Heading, ob.Length/2, ob.Width/2
+		if ob.Bus != nil && f.bus.Pos.Distance(ob.Bus.Pos) < f.bus.Pos.Distance(obPos) {
+			obPos = ob.Bus.Pos
+			obHeading = ob.Bus.Heading
+			obHalfLen = ob.Bus.Length / 2
+			obHalfWid = ob.Bus.Width / 2
+		}
+
+		dist := f.bus.Pos.Distance(obPos)
+		if dist > egoHalfLen+obHalfLen+70.0 {
 			continue
 		}
 
-		delta := ob.Pos.Sub(f.bus.Pos)
+		delta := obPos.Sub(f.bus.Pos)
 		fwdEgo := delta.Dot(uEgo)
 		// Obstacle must be in front of ego within close blocking range
-		if fwdEgo <= 5.0 || fwdEgo > egoHalfLen+obHalfLen+40.0 {
+		if fwdEgo <= 5.0 || fwdEgo > egoHalfLen+obHalfLen+56.0 {
 			continue
 		}
 
-		uOb := sim.UnitFromAngle(ob.Heading)
+		uOb := sim.UnitFromAngle(obHeading)
 		fwdOb := -delta.Dot(uOb)
 		// Ego must be in front of obstacle
-		if fwdOb <= 5.0 || fwdOb > egoHalfLen+obHalfLen+40.0 {
+		if fwdOb <= 5.0 || fwdOb > egoHalfLen+obHalfLen+56.0 {
 			continue
 		}
 
@@ -87,7 +100,7 @@ func (ad *AutopilotDriver) checkHeadonConflict(f autopilotFrame) (hasConflict bo
 
 		// Check lateral offset along ego's heading
 		latEgo := math.Abs(-delta.X*uEgo.Y + delta.Y*uEgo.X)
-		if latEgo > egoHalfWid+obHalfWid+16.0 {
+		if latEgo > egoHalfWid+obHalfWid+22.0 {
 			continue
 		}
 
@@ -95,11 +108,14 @@ func (ad *AutopilotDriver) checkHeadonConflict(f autopilotFrame) (hasConflict bo
 		hasConflict = true
 
 		// Determine right-of-way priority:
-		// Turning vehicles yield to straight vehicles ("转弯让直行").
+		// Turning vehicles yield to straight vehicles ("转弯让直行"), unless the
+		// opposing vehicle is a bent articulated bus that cannot reverse safely.
 		egoIsTurning := ad.isBusTurning(f)
 		obIsTurning := isObstacleTurning(ob)
 
-		if egoIsTurning && !obIsTurning {
+		if ob.Bus != nil && isArticulatedAndBent(ob.Bus) {
+			isEgoYielding = true
+		} else if egoIsTurning && !obIsTurning {
 			isEgoYielding = true
 		} else if !egoIsTurning && obIsTurning {
 			isEgoYielding = false
@@ -147,6 +163,55 @@ func isObstacleTurning(ob VehicleObstacle) bool {
 	return yawDev > 0.15
 }
 
+func obstacleBehindBusParts(egoParts [2]sim.OBB, uRoad sim.Vec2, ob VehicleObstacle) bool {
+	obParts := predictedObstacleBodies(ob, 0)
+	for _, part := range egoParts {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		uPart := sim.UnitFromAngle(part.Heading)
+		for _, obPart := range obParts {
+			if obPart.HalfLen <= 0 {
+				continue
+			}
+			delta := obPart.Center.Sub(part.Center)
+			if delta.Dot(uPart) < -part.HalfLen*0.5 || delta.Dot(uRoad) < -part.HalfLen*0.5 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func rearCollisionImminent(f autopilotFrame, rearMargin, widthMargin, behindRatio float64) bool {
+	if f.bus == nil || rearMargin <= 0 {
+		return false
+	}
+	egoParts := f.bus.BodyParts()
+	for _, ob := range f.obstacles {
+		obParts := predictedObstacleBodies(ob, 0)
+		for _, part := range egoParts {
+			if part.HalfLen <= 0 {
+				continue
+			}
+			uPart := sim.UnitFromAngle(part.Heading)
+			rearProbe := part
+			rearProbe.Center = part.Center.Sub(uPart.Mul(rearMargin / 2))
+			rearProbe.HalfLen += rearMargin / 2
+			rearProbe.HalfWid += widthMargin
+			for _, obPart := range obParts {
+				if obPart.HalfLen <= 0 {
+					continue
+				}
+				if obPart.Center.Sub(part.Center).Dot(uPart) < -part.HalfLen*behindRatio && obbHits(rearProbe, obPart) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // headonRearClear verifies that the corridor behind the bus is not blocked by
 // traffic or hard barriers ("并非拥堵").
 func (ad *AutopilotDriver) headonRearClear(f autopilotFrame, reverseDist float64) bool {
@@ -161,40 +226,56 @@ func (ad *AutopilotDriver) headonRearClear(f autopilotFrame, reverseDist float64
 	uRoad := sim.UnitFromAngle(roadH)
 	rRoad := sim.Vec2{X: -uRoad.Y, Y: uRoad.X}
 
-	egoHalfLen := f.bus.Length / 2
-	egoHalfWid := f.bus.Width / 2
-
-	// 1. Check all obstacles behind the bus
+	// 1. Check all obstacles behind any physical section of the bus (including articulated trailer)
+	egoParts := f.bus.BodyParts()
 	for _, ob := range f.obstacles {
-		delta := ob.Pos.Sub(f.bus.Pos)
-		along := delta.Dot(uEgo)
-		alongRoad := delta.Dot(uRoad)
-		if along < -5.0 || alongRoad < -5.0 {
-			obHalfLen := ob.Length / 2
-			obHalfWid := ob.Width / 2
-			rearGap := -math.Min(along, alongRoad) - (egoHalfLen + obHalfLen)
-
-			// Check lateral offset across the road and vehicle heading
-			latRoad := math.Abs(delta.Dot(rRoad))
-
-			// If obstacle is in an adjacent lane along the road, it does not block our lane
-			if latRoad > egoHalfWid+obHalfWid+2.0 {
+		obParts := predictedObstacleBodies(ob, 0)
+		for _, part := range egoParts {
+			if part.HalfLen <= 0 {
 				continue
 			}
-			if rearGap < reverseDist+4.0 {
-				return false // Rear is blocked by an obstacle in our lane
+			uPart := sim.UnitFromAngle(part.Heading)
+			for _, obPart := range obParts {
+				if obPart.HalfLen <= 0 {
+					continue
+				}
+				delta := obPart.Center.Sub(part.Center)
+				along := delta.Dot(uPart)
+				alongRoad := delta.Dot(uRoad)
+				if along < -5.0 || alongRoad < -5.0 {
+					rearGap := -math.Min(along, alongRoad) - (part.HalfLen + obPart.HalfLen)
+					latRoad := math.Abs(delta.Dot(rRoad))
+
+					// If obstacle is in an adjacent lane along the road, it does not block our lane
+					if latRoad > part.HalfWid+obPart.HalfWid+2.0 {
+						continue
+					}
+					if rearGap < reverseDist+4.0 {
+						return false // Rear is blocked by an obstacle in our lane
+					}
+				}
 			}
 		}
 	}
 
-	// 2. Check world boundaries when reversed
-	for d := 5.0; d <= reverseDist+5.0; d += 5.0 {
+	// 2. Check world boundaries and swept rear obstacle collisions when reversed
+	stepStart := math.Min(2.0, math.Max(0.5, reverseDist))
+	for d := stepStart; d <= reverseDist+5.0; d += 5.0 {
 		revPos := f.bus.Pos.Sub(uEgo.Mul(d))
 		testBus := *f.bus
 		testBus.Pos = revPos
-		bRes := testBus.CheckBoundaries(f.world, f.laneWidth)
-		if bRes.Zone == sim.ZoneHardBarrier {
+		if testBus.HitsHardBarrier(f.world, f.laneWidth) {
 			return false // Hits a hard barrier when reversing
+		}
+		revParts := testBus.BodyParts()
+		elapsed := d / 16.0
+		for _, ob := range f.obstacles {
+			if !obstacleBehindBusParts(egoParts, uRoad, ob) {
+				continue
+			}
+			if sweepBodiesCollision(revParts, ob, math.Max(0, ob.Speed)*elapsed, 1.5, 0.5) {
+				return false
+			}
 		}
 	}
 
@@ -371,7 +452,12 @@ func (ad *AutopilotDriver) checkStationaryBlockConflict(f autopilotFrame) (hasCo
 // checkDeadlockConflict evaluates head-on crossing conflict, merge conflict, or stationary block conflict.
 func (ad *AutopilotDriver) checkDeadlockConflict(f autopilotFrame) (hasConflict bool, isEgoYielding bool, reverseDist float64) {
 	if conflict, yielding := ad.checkHeadonConflict(f); conflict {
-		return true, yielding, 65.0
+		for _, dist := range []float64{70.0, 58.0, 46.0, 36.0} {
+			if ad.headonRearClear(f, dist) {
+				return true, yielding, dist
+			}
+		}
+		return true, yielding, 70.0
 	}
 	if conflict, yielding := ad.checkMergeConflict(f); conflict {
 		if ad.straightLaneRetreatActive() {
@@ -387,20 +473,110 @@ func (ad *AutopilotDriver) checkDeadlockConflict(f autopilotFrame) (hasConflict 
 	return false, false, 0
 }
 
+// roundaboutEntryWedgeRetreat detects an unheld bus wedged side-by-side with
+// another stopped bus at a roundabout entrance where mutual entry-corridor
+// checks block forward motion.
+func (ad *AutopilotDriver) roundaboutEntryWedgeRetreat(f autopilotFrame) (float64, bool) {
+	if !ad.FleetBus || f.bus == nil || f.world == nil || f.speedAbs > 1 || f.bus.DoorsOpen ||
+		f.bus.RoundaboutEntry == nil || f.bus.RoundaboutEntry.Remaining <= 0 || f.bus.RoundaboutAdmissionHold != nil {
+		return 0, false
+	}
+	entry := f.bus.RoundaboutEntry
+	var rb *sim.Roundabout
+	for i := range f.world.Roundabouts {
+		if f.world.Roundabouts[i].Center == entry.Center {
+			rb = &f.world.Roundabouts[i]
+			break
+		}
+	}
+	if rb == nil || ad.roundaboutEntryDriveSpeed(f) > 0.5 {
+		return 0, false
+	}
+	uFwd := entry.Forward
+	rFwd := sim.Vec2{X: -uFwd.Y, Y: uFwd.X}
+	entryHeading := math.Atan2(uFwd.Y, uFwd.X)
+	egoYaw := math.Abs(sim.NormalizeAngle(f.bus.Heading - entryHeading))
+	for _, ob := range f.obstacles {
+		if ob.Bus == nil || ob.Bus == f.bus || ob.Bus.DoorsOpen || math.Abs(ob.Speed) > 2.0 {
+			continue
+		}
+		if ob.Pos.Distance(rb.Center) <= rb.Radius+math.Max(ob.Length, ob.Width)/2+12 {
+			continue
+		}
+		if uFwd.Dot(sim.UnitFromAngle(ob.Heading)) < 0.80 {
+			continue
+		}
+		delta := ob.Pos.Sub(f.bus.Pos)
+		fwd := delta.Dot(uFwd)
+		lat := math.Abs(delta.Dot(rFwd))
+		if lat < (f.bus.Width+ob.Width)/2-4 || lat > 2.0*f.laneWidth {
+			continue
+		}
+		if fwd < -(f.bus.Length+ob.Length)/2-10 || fwd > (f.bus.Length+ob.Length)/2+30 {
+			continue
+		}
+		obYaw := math.Abs(sim.NormalizeAngle(ob.Heading - entryHeading))
+		yielding := false
+		if egoYaw > 0.10 && obYaw <= 0.10 {
+			yielding = true
+		} else if egoYaw <= 0.10 && obYaw > 0.10 {
+			yielding = false
+		} else {
+			yielding = delta.Dot(rFwd) < 0
+		}
+		if ad.laneRetreatReverseClear(f, 34, 0) {
+			return 34, yielding
+		}
+		if ad.laneRetreatReverseClear(f, 22, 0) {
+			return 22, yielding
+		}
+		if ad.laneRetreatReverseClear(f, 14, 0) {
+			return 14, yielding
+		}
+	}
+	return 0, false
+}
+
 // tryHeadonDeadlockRecovery evaluates deadlock conditions and initiates reverse recovery
 // when stuck head-to-head or in a merging wedge for over 8-10 seconds with clear space behind.
 func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float64) bool {
-	junctionRetreat := f.speedAbs < 1 && junctionRetreatNeeded(f) && ad.junctionSweptSpeed(f) <= .5
+	yieldUTurn := junctionRetreatNeeded(f)
+	displacedInJunction := f.bus != nil && f.bus.JunctionCorridor != nil && f.bus.JunctionCorridor.Entered &&
+		f.bus.Pos.Distance(ad.pointAt(ad.LastPathS)) > f.laneWidth*1.2
+	curWheelSteer := 0.0
+	if f.bus != nil && f.bus.MaxSteerAngle > 0 {
+		curWheelSteer = sim.Clamp(f.bus.SteeringAngle/f.bus.MaxSteerAngle, -1, 1)
+	}
+	junctionBlocked := ad.junctionSweptSpeed(f) <= .5 ||
+		(displacedInJunction && (ad.controlSweptSpeed(f, curWheelSteer) <= .5 || (f.bus.IsArticulated() && ad.articulatedSweptSpeed(f, curWheelSteer) <= .5)))
+	junctionRetreat := f.speedAbs < 1 && (yieldUTurn || ad.committedCarTurnBlocksBus(f) || displacedInJunction) && junctionBlocked
 	parallelDistance := ad.parallelMergeRetreatDistance(f)
+	followerSteer := 0.
 	if parallelDistance == 0 {
 		parallelDistance = ad.turnFollowerRetreatDistance(f)
+	}
+	if parallelDistance == 0 {
+		parallelDistance, followerSteer = ad.laneChangeFollowerRetreatPlan(f)
+	}
+	if parallelDistance == 0 {
+		parallelDistance, followerSteer = ad.requestedReverseYieldPlan(f)
+	}
+	wedgeDist, wedgeYielding := 0.0, false
+	if parallelDistance == 0 {
+		wedgeDist, wedgeYielding = ad.roundaboutEntryWedgeRetreat(f)
+		if wedgeDist > 0 {
+			parallelDistance = wedgeDist
+		}
 	}
 	hasConflict, isEgoYielding, targetDist := ad.checkDeadlockConflict(f)
 	if parallelDistance > 0 {
 		hasConflict, isEgoYielding, targetDist = true, true, parallelDistance
 	}
 	if junctionRetreat {
-		hasConflict, isEgoYielding, targetDist = true, true, 155
+		hasConflict, isEgoYielding, targetDist = true, true, 185
+		if yieldUTurn {
+			targetDist = 155
+		}
 	}
 	if !hasConflict {
 		ad.headonDeadlockTimer = math.Max(0, ad.headonDeadlockTimer-dt*2)
@@ -410,7 +586,9 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 	ad.headonDeadlockTimer += dt
 
 	threshold := 10.0
-	if junctionRetreat || parallelDistance > 0 {
+	if wedgeDist > 0 && !wedgeYielding {
+		threshold = 2.0
+	} else if junctionRetreat || parallelDistance > 0 {
 		threshold = 2
 	}
 	if !isEgoYielding {
@@ -422,8 +600,19 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 	}
 
 	// Check rear clearance ("并非拥堵")
-	if (junctionRetreat && !junctionReverseClear(f, 60)) || (!junctionRetreat && parallelDistance == 0 && !ad.headonRearClear(f, targetDist)) ||
-		(!junctionRetreat && parallelDistance > 0 && !ad.laneRetreatReverseClear(f, targetDist, 0)) {
+	alignEntry := junctionRetreat && !yieldUTurn && f.bus.JunctionCorridor != nil && f.bus.JunctionCorridor.Entered
+	entryHdg := 0.0
+	if alignEntry {
+		entryHdg = f.bus.JunctionCorridor.EntryHeading
+	}
+	retreatFrame := f
+	presteered := *f.bus
+	if followerSteer != 0 {
+		presteered.SteeringAngle = followerSteer * presteered.MaxSteerAngle
+		retreatFrame.bus = &presteered
+	}
+	if (junctionRetreat && !junctionReverseClear(f, 60, alignEntry, entryHdg)) || (!junctionRetreat && parallelDistance == 0 && !ad.headonRearClear(f, targetDist)) ||
+		(!junctionRetreat && parallelDistance > 0 && !ad.laneRetreatReverseClear(retreatFrame, targetDist, followerSteer)) {
 		return false
 	}
 
@@ -434,7 +623,12 @@ func (ad *AutopilotDriver) tryHeadonDeadlockRecovery(f autopilotFrame, dt float6
 			YieldHoldRemaining: 4.0,
 			ReversingDone:      false,
 			JunctionRetreat:    junctionRetreat,
-			ParallelRetreat:    parallelDistance > 0 && !junctionRetreat,
+			YieldForUTurn:      yieldUTurn,
+			AlignEntryHeading:  alignEntry,
+			EntryHeading:       entryHdg,
+			ParallelRetreat:    parallelDistance > 0 && !junctionRetreat && followerSteer == 0,
+			FollowerRetreat:    followerSteer != 0 && !junctionRetreat,
+			RetreatSteer:       followerSteer,
 		}
 	}
 	return true
@@ -445,6 +639,15 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 	r := ad.headonRecovery
 	if r == nil || f.bus == nil {
 		return 0, 1, 0, true
+	}
+	if (r.ParallelRetreat || r.FollowerRetreat) && f.speedAbs < 1 {
+		left := math.Max(0, r.TargetDistance-f.bus.Pos.Distance(r.StartPos))
+		if left > 1 {
+			trial, requests := rearReverseYieldFrame(f)
+			if !requests.empty() && ad.laneRetreatReverseClear(trial, math.Max(10, left), r.RetreatSteer) {
+				requests.send()
+			}
+		}
 	}
 
 	if f.bus.DoorsOpen {
@@ -459,25 +662,42 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 		remaining := r.TargetDistance - distMoved
 
 		if r.JunctionRetreat {
-			if remaining <= 1 || !junctionReverseClear(f, 30) {
+			if remaining <= 1 || !junctionReverseClear(f, 30, r.AlignEntryHeading, r.EntryHeading) {
 				r.ReversingDone = true
 				f.bus.ShiftTo(sim.GearDrive)
-				return 0, 1, 0, false
+				st := 0.0
+				if !r.YieldForUTurn {
+					st, _, _, _ = ad.pursuitSteering(f)
+				}
+				return 0, 1, st, false
 			}
 			f.bus.ShiftTo(sim.GearReverse)
 			ad.LastTargetSpeed = 16
-			th, br, st := junctionReverseControls(f.bus)
+			th, br, st := junctionReverseControls(f.bus, r.AlignEntryHeading, r.EntryHeading)
 			return th, br, st, false
 		}
 
 		// Safety check: is rear still clear?
 		steering := 0.
-		if r.StationRetreat {
-			steering = 1
+		if r.StationRetreat || r.FollowerRetreat {
+			steering = r.RetreatSteer
 		}
-		sweptRetreat := r.ParallelRetreat || r.StationRetreat
+		if (r.FollowerRetreat || r.SettleSteerFirst) && f.speedAbs < .5 && math.Abs(f.bus.SteeringAngle-steering*f.bus.MaxSteerAngle) > .02 {
+			// The plan was proved from stationary, settled wheels. Reposition
+			// them under the brake before checking and driving that reverse.
+			f.bus.ShiftTo(sim.GearReverse)
+			return 0, 1, steering, false
+		}
+		if (r.ParallelRetreat || (r.StationRetreat && steering == 0)) && math.Abs(f.bus.Speed) < .5 && math.Abs(f.bus.SteeringAngle) > .02 {
+			f.bus.ShiftTo(sim.GearReverse)
+			return 0, 1, 0, false
+		}
+		sweptRetreat := r.ParallelRetreat || r.StationRetreat || r.FollowerRetreat
 		checkDistance := math.Max(10, remaining)
-		if r.StationRetreat {
+		if sweptRetreat {
+			// The trajectory checker already includes 5px of stopping room.
+			// Requiring another minimum 10px after a short retreat has begun
+			// aborts a proved 8px maneuver before it can open the gap.
 			checkDistance = math.Max(0, remaining)
 		}
 		if (sweptRetreat && !ad.laneRetreatReverseClear(f, checkDistance, steering)) ||
@@ -489,20 +709,16 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 			return 0, 1, 0, false
 		}
 
-		// Immediate physical collision guard with rear obstacles:
-		uEgo := sim.UnitFromAngle(f.bus.Heading)
-		for _, ob := range f.obstacles {
-			delta := ob.Pos.Sub(f.bus.Pos)
-			along := delta.Dot(uEgo)
-			if along < -5.0 {
-				lat := math.Abs(-delta.X*uEgo.Y + delta.Y*uEgo.X)
-				if lat < (f.bus.Width+ob.Width)/2+2.0 && -along < (f.bus.Length+ob.Length)/2+8.0 && !ad.straightLaneRetreatActive() && !sweptRetreat {
-					r.ReversingDone = true
-					r.YieldHoldRemaining = 4.0
-					f.bus.ShiftTo(sim.GearDrive)
-					return 0, 1, 0, false
-				}
-			}
+		// Immediate physical collision guard with rear obstacles across all body parts:
+		rearGuardMargin, rearWidthMargin, behindRatio := 8.0, 0.5, 0.5
+		if ad.straightLaneRetreatActive() || sweptRetreat {
+			rearGuardMargin, rearWidthMargin, behindRatio = 2.0, 0.1, 1.0
+		}
+		if rearCollisionImminent(f, rearGuardMargin, rearWidthMargin, behindRatio) {
+			r.ReversingDone = true
+			r.YieldHoldRemaining = 4.0
+			f.bus.ShiftTo(sim.GearDrive)
+			return 0, 1, 0, false
 		}
 
 		if remaining <= 1.0 {
@@ -528,12 +744,29 @@ func (ad *AutopilotDriver) headonRecoveryControls(f autopilotFrame, dt float64) 
 	// Phase 2: Yield hold in GearDrive to let the opposing/crossing traffic pass
 	f.bus.ShiftTo(sim.GearDrive)
 	r.YieldHoldRemaining -= dt
+	if r.JunctionRetreat && !r.YieldForUTurn {
+		preSteer, _, _, _ := ad.pursuitSteering(f)
+		ad.LastTargetSpeed = 0
+		if math.Abs(f.bus.Speed) < 1 {
+			ad.headonRecovery = nil
+			ad.headonDeadlockTimer = 0
+			ad.pathSynced = false
+			return 0, 1, preSteer, true
+		}
+		return 0, 1, preSteer, false
+	}
 	if r.StationRetreat {
-		if math.Abs(f.bus.Speed) >= 1 || f.bus.SteeringAngle > -f.bus.MaxSteerAngle+.03 {
-			return 0, 1, -1, false
+		if math.Abs(f.bus.Speed) >= 1 || (!r.SkipPreSteer && f.bus.SteeringAngle > -f.bus.MaxSteerAngle+.03) {
+			preSteer := 0.
+			if !r.SkipPreSteer {
+				preSteer = -1
+			}
+			return 0, 1, preSteer, false
 		}
 		ad.headonRecovery = nil
 		ad.headonDeadlockTimer = 0
+		ad.WaypointIdx = 0
+		ad.pathSynced = false
 		return 0, 1, 0, true
 	}
 	ad.LastTargetSpeed = 0

@@ -18,7 +18,15 @@ func stationActuatorAlignment(f autopilotFrame, target sim.Vec2) ([]sim.Vec2, si
 	right := sim.Vec2{X: -forward.Y, Y: forward.X}
 	b := *f.bus
 	yaw := sim.NormalizeAngle(stop.Heading - b.Heading)
-	if math.Abs(yaw) < .15 || math.Abs(yaw) > .9 || math.Abs(b.Pos.Sub(stop.Pos).Dot(right)) > stop.Width/2+4 || target.Sub(b.Pos).Dot(forward) < 25 {
+	minimumRun, finalYaw := 25., .025
+	// The lead trailer can leave less than 25px to the rear berth. Its
+	// center marker need not be hit laterally: a checked arc may finish
+	// parallel within the actual bay, without moving closer to the lead.
+	shortRear := stop.HasTwoBerths() && stop.FrontBerthPosition().Sub(target).Dot(forward) > 60 && stationHasBayBus(stop, f.obstacles)
+	if shortRear {
+		minimumRun, finalYaw = 15, .075
+	}
+	if math.Abs(yaw) < .15 || math.Abs(yaw) > .9 || math.Abs(b.Pos.Sub(stop.Pos).Dot(right)) > stop.Width/2+4 || target.Sub(b.Pos).Dot(forward) < minimumRun {
 		return nil, sim.Vec2{}, false
 	}
 	points := []sim.Vec2{b.Pos}
@@ -35,7 +43,7 @@ func stationActuatorAlignment(f autopilotFrame, target sim.Vec2) ([]sim.Vec2, si
 		}
 		points = append(points, b.Pos)
 	}
-	if target.Sub(b.Pos).Dot(forward) > 1 || math.Abs(sim.NormalizeAngle(b.Heading-stop.Heading)) > .025 || !stop.ContainsBus(&b) || !stationCurveCanSteer(f.bus, points) || !stationDockCurveClear(f.bus, points, f.obstacles) {
+	if target.Sub(b.Pos).Dot(forward) > 1 || math.Abs(sim.NormalizeAngle(b.Heading-stop.Heading)) > finalYaw || !stop.ContainsBus(&b) || !stationCurveCanSteer(f.bus, points) || !stationDockCurveClear(f.bus, points, f.obstacles) {
 		return nil, sim.Vec2{}, false
 	}
 	return points, b.Pos, true

@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/Gavin-Sun555/2d-bus-game/internal/autopilot"
 	"github.com/Gavin-Sun555/2d-bus-game/internal/locale"
@@ -26,10 +27,19 @@ func (g *Game) autopilotControls(dt, currentLaneW float64) (throttle, brake, ste
 	activeCars := g.TrafficMgr.GetActiveCars(g.Settings.TrafficDensity)
 	obs := g.obstacles[:0]
 	if g.AIBusMgr != nil && len(activeCars) > 0 {
-		obs = g.AIBusMgr.GetLocalObstacles(g.Bus.Pos, g.Bus.Speed, obs)
+		sight := 0.
+		if g.Settings.AutopilotBerserk {
+			_, _, multi, six := sim.CurrentRoadInfo(g.World, g.Bus.Pos, g.Bus.Heading, currentLaneW)
+			if !multi && !six {
+				// Include the same runway the two-lane passing decision uses.
+				sight = autopilot.OncomingPassSightDistance(math.Abs(g.Bus.Speed), g.Settings.GetBerserkCruiseSpeed(), sim.SpeedKPH(sim.TrafficMaxSpeedKPH)) + currentLaneW
+			}
+		}
+		obs = g.AIBusMgr.GetLocalObstacles(g.Bus.Pos, g.Bus.Speed, obs, sight)
 	} else {
 		for _, c := range activeCars {
 			obs = append(obs, autopilot.VehicleObstacle{
+				Car:              c,
 				Pos:              c.Pos,
 				YieldingTo:       c.YieldingToBus,
 				JunctionTurn:     c.JunctionTurn,
@@ -347,8 +357,9 @@ func (g *Game) updateDriverHUD() bool {
 }
 
 // outerLaneDockAllowed reports whether the player bus may serve a stop from
-// the lane beside the bay, as fleet buses with overtaking enabled do.
+// the lane beside the bay: always in Berserk, and in standard autopilot only
+// when the driver has fallen back to it as a route bus would.
 func (g *Game) outerLaneDockAllowed() bool {
 	return g.Settings.AutopilotBerserk ||
-		(g.Settings.AutopilotEnabled && g.AutopilotDriver != nil && g.AutopilotDriver.BerserkMode)
+		(g.Settings.AutopilotEnabled && g.AutopilotDriver.OuterLaneDockAllowed())
 }

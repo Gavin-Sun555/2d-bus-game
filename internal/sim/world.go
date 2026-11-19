@@ -219,17 +219,17 @@ func (r Roundabout) OuterRadius() float64 {
 
 // IsAtRoundabout checks if a given coordinate is at or inside any traffic roundabout
 func (w *World) IsAtRoundabout(pt Vec2) bool {
-	if w.geometryCache != nil {
-		if e, ok := w.geometryCache.entries[pt]; ok {
-			return e.roundabout
-		}
+	if len(w.Roundabouts) == 0 {
+		return false
 	}
 	return w.uncachedIsAtRoundabout(pt)
 }
 
 func (w *World) uncachedIsAtRoundabout(pt Vec2) bool {
 	for _, rb := range w.Roundabouts {
-		if pt.Distance(rb.Center) <= rb.Radius+40.0 {
+		d := pt.Sub(rb.Center)
+		r := rb.Radius + 40.0
+		if d.Dot(d) <= r*r {
 			return true
 		}
 	}
@@ -518,7 +518,7 @@ func (w *World) IsOverpassAt(pt Vec2) bool {
 
 func (w *World) GetIntersectionRoadDimensions(c Vec2, laneWidth float64) (ewHalf, nsHalf float64) {
 	if cache := w.geometryCache; cache != nil && cache.width == laneWidth {
-		if e, ok := cache.entries[c]; ok {
+		if e, ok := cache.lookup(c); ok {
 			return e.ew, e.ns
 		}
 	}

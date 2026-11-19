@@ -16,7 +16,7 @@ func (ad *AutopilotDriver) requestFourLaneLeftMerge(f autopilotFrame) {
 		return
 	}
 	heading := approachRoadHeading(f.bus.Heading)
-	if math.Abs(sim.NormalizeAngle(f.bus.Heading-heading)) > .2 {
+	if math.Abs(sim.NormalizeAngle(f.bus.Heading-heading)) > .42 {
 		return
 	}
 	center, ew, _, _ := sim.CurrentRoadInfo(f.world, f.bus.Pos, heading, f.laneWidth)

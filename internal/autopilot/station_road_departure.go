@@ -34,6 +34,11 @@ func (ad *AutopilotDriver) prepareServedStationMerge(f autopilotFrame) {
 	if passage == nil || !passage.served || !ad.BerserkMode || !f.bus.IsArticulated() || ad.midLaneRecovery != nil || ad.State != AutopilotStateCruising || f.world == nil || f.speedAbs > 5 || f.bus.DoorsOpen || f.bus.Pos.Distance(passage.stop.Pos) > passage.stop.Length+f.bus.OverallLength() {
 		return
 	}
+	if ad.approachMerge != nil && ad.approachMerge.RightTurn {
+		// Passing the station queue to the left would undo the required
+		// curb-lane approach and leave no room to turn back at the junction.
+		return
+	}
 	h := passage.stop.Heading
 	if math.Cos(f.bus.Heading-h) < .98 || f.world.InsideJunction(f.bus.Pos, f.laneWidth, 0) {
 		return

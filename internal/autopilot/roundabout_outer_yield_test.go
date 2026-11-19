@@ -17,7 +17,7 @@ func TestOuterEntryYieldsToCirculatingBus(t *testing.T) {
 				in := sim.Vec2{X: math.Cos(h), Y: math.Sin(h)}
 				right := sim.Vec2{X: -in.Y, Y: in.X}
 				w.Stops = []*sim.BusStop{sim.NewBusStop(0, "from", in.Mul(-800), h, 4, sim.RGBA(0, 0, 0, 255), lw), sim.NewBusStop(1, "to", in.Mul(800), h, 4, sim.RGBA(0, 0, 0, 255), lw)}
-				p := in.Mul(-350).Add(right.Mul(1.5 * lw))
+				p := in.Mul(-(rb.Radius + 110)).Add(right.Mul(1.5 * lw))
 				b := sim.NewBus(p.X, p.Y, h)
 				b.Speed = 90
 				ad := NewAutopilotDriver()

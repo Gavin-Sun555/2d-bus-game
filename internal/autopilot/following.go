@@ -31,16 +31,27 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 			continue
 		}
 		angle := obs.Heading - f.bus.Heading
+		obsPos, obsHeading, obsLen, obsWid := obs.Pos, obs.Heading, obs.Length, obs.Width
 		if math.Cos(angle) < .85 {
-			continue
+			if obs.Bus != nil && obs.Bus.IsArticulated() {
+				trl := obs.Bus.TrailerBody()
+				if trl.HalfLen > 0 && math.Cos(trl.Heading-f.bus.Heading) >= .85 {
+					obsPos, obsHeading, obsLen, obsWid = trl.Center, trl.Heading, trl.HalfLen*2, trl.HalfWid*2
+					angle = obsHeading - f.bus.Heading
+				} else {
+					continue
+				}
+			} else {
+				continue
+			}
 		}
-		delta := obs.Pos.Sub(f.bus.Pos)
+		delta := obsPos.Sub(f.bus.Pos)
 		along := delta.Dot(forward)
 		if along <= 0 {
 			continue
 		}
-		halfLength := math.Abs(math.Cos(angle))*obs.Length/2 + math.Abs(math.Sin(angle))*obs.Width/2
-		halfWidth := math.Abs(math.Sin(angle))*obs.Length/2 + math.Abs(math.Cos(angle))*obs.Width/2
+		halfLength := math.Abs(math.Cos(angle))*obsLen/2 + math.Abs(math.Sin(angle))*obsWid/2
+		halfWidth := math.Abs(math.Sin(angle))*obsLen/2 + math.Abs(math.Cos(angle))*obsWid/2
 		if math.Abs(delta.Dot(right)) >= f.bus.Width/2+halfWidth+3 {
 			continue
 		}
@@ -50,7 +61,7 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 			axis := approachRoadHeading(f.bus.Heading)
 			normal := sim.Vec2{X: -math.Sin(axis), Y: math.Cos(axis)}
 			busExtent := math.Abs(math.Sin(f.bus.Heading-axis))*f.bus.Length/2 + math.Abs(math.Cos(f.bus.Heading-axis))*f.bus.Width/2
-			leadExtent := math.Abs(math.Sin(obs.Heading-axis))*obs.Length/2 + math.Abs(math.Cos(obs.Heading-axis))*obs.Width/2
+			leadExtent := math.Abs(math.Sin(obsHeading-axis))*obsLen/2 + math.Abs(math.Cos(obsHeading-axis))*obsWid/2
 			if math.Abs(delta.Dot(normal)) > busExtent+leadExtent+3 {
 				continue
 			}
@@ -60,8 +71,8 @@ func (ad *AutopilotDriver) followingSpeed(f autopilotFrame) float64 {
 		}
 		gap := along - f.bus.Length/2 - halfLength
 		if gap > 80 && len(ad.drivePath) >= 2 {
-			tracked := ad.basePathPosition(obs.Pos, f.world, f.bus.Heading, f.laneWidth)
-			if minDistanceToPath(tracked, ad.drivePath, ad.WaypointIdx) > f.bus.Width/2+obs.Width/2+10 {
+			tracked := ad.basePathPosition(obsPos, f.world, f.bus.Heading, f.laneWidth)
+			if minDistanceToPath(tracked, ad.drivePath, ad.WaypointIdx) > f.bus.Width/2+obsWid/2+10 {
 				continue
 			}
 		}

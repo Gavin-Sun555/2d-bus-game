@@ -186,8 +186,20 @@ func TestAutopilotBerserkStationApproachOvertakesIfRunwayPermits(t *testing.T) {
 	driver.BerserkMode = true
 	driver.PrepareLeg(w, fromStop, toStop, lw)
 
-	// Pick a straight section with plenty of runway before the stop (~650px)
-	startWp := 55 // Waypoint on the long straight Southbound approach to Stop 2 (~685px runway)
+	// Pick a straight section with plenty of runway before the stop (~685px)
+	targetWp := len(driver.drivePath) - 1
+	startWp := -1
+	totalPathLen := driver.cumLen[targetWp]
+	for i := 0; i < targetWp; i++ {
+		rem := totalPathLen - driver.cumLen[i]
+		if rem <= 685.0 {
+			startWp = i
+			break
+		}
+	}
+	if startWp < 0 {
+		t.Fatalf("Could not find start waypoint with ~685px runway")
+	}
 
 	startPt := driver.drivePath[startWp]
 	nextPt := driver.drivePath[startWp+1]

@@ -274,3 +274,63 @@ func TestNarrowStationExitReservesEveryCrossedLane(t *testing.T) {
 		}
 	}
 }
+
+func TestStationQueuePassPreservesRequiredRightTurn(t *testing.T) {
+	w, u, r := serviceTestWorld(0, 52)
+	stop := w.Stops[1]
+	pos := stop.RoadCenter.Add(r.Mul(3.5 * 52))
+	bus := sim.NewBus(pos.X, pos.Y, 0)
+	bus.SetModel(sim.BusArticulated)
+	ad := NewAutopilotDriver()
+	ad.BerserkMode = true
+	ad.PrepareLeg(w, stop, w.Stops[2], 52)
+	ad.skippedDeparture = &skippedStopDeparture{stop: stop, position: pos, served: true}
+	lead := pos.Add(u.Mul(180))
+	f := autopilotFrame{
+		bus: bus, world: w, laneWidth: 52,
+		obstacles: []VehicleObstacle{ObserveBus(sim.NewBus(lead.X, lead.Y, 0))},
+	}
+	ad.approachMerge = &sim.BusLaneMergeRequest{RightTurn: true, Target: pos, Remaining: .3}
+	ad.prepareServedStationMerge(f)
+	if ad.midLaneRecovery != nil {
+		t.Fatal("queued station departure abandoned the required right-turn lane")
+	}
+	ad.approachMerge = nil
+	ad.prepareServedStationMerge(f)
+	if ad.midLaneRecovery == nil {
+		t.Fatal("clear adjacent lane should remain available without a required right turn")
+	}
+}
+
+func TestCompactTwoLaneStationDepartureKeepsItsSide(t *testing.T) {
+	const laneWidth = 52.
+	world := &sim.World{CenterBRT: true}
+	world.BuildMap(sim.MapThemeRiverValley, laneWidth)
+	stop, next := world.Stops[41], world.Stops[9]
+	bus := sim.NewBus(-74.24, -6205, stop.Heading)
+	bus.SetModel(sim.BusDoubleDecker)
+	ad := NewAutopilotDriver()
+	ad.BerserkMode, ad.DisallowOncomingOvertake = true, true
+	ad.PrepareLeg(world, stop, next, laneWidth)
+	ad.connectDockDeparture(bus, stop)
+	// Resume the merge with the steering still wound toward the centerline
+	// after yielding to traffic beside the berth.
+	bus.Pos = sim.Vec2{X: -39, Y: -6090}
+	bus.Heading = stop.Heading - .28
+	bus.SteeringAngle = -.46
+	bus.Speed = 65
+	route := &sim.Route{StopIDs: []int{41, 9}, CurrentIndex: 1}
+	for tick := 0; tick < 8*60; tick++ {
+		th, br, st, hb, doors, _ := ad.ComputeControls(bus, route, world, nil, nil, laneWidth, 1./60)
+		bus.Update(1./60, th, br, st, hb, doors)
+		if bus.Pos.Y > -5800 {
+			return
+		}
+		for _, corner := range sim.BodyCorners(bus.BodyParts()[0]) {
+			if corner.X > stop.RoadCenter.X+.1 {
+				t.Fatalf("station departure crossed centerline at tick %d, bus=%+v heading %.3f", tick, bus.Pos, bus.Heading)
+			}
+		}
+	}
+	t.Fatalf("bus never cleared its departure lane at %v", bus.Pos)
+}

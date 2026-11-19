@@ -88,6 +88,10 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 			}
 		}
 
+		if tooCloseToForcedLeftBend(w, testPos, heading, roadCoord, isEW, lane-r.FirstGeneralTrafficLane(), laneWidth) {
+			continue
+		}
+
 		// Ensure clear of intersections
 		nearInter := false
 		for _, ipt := range w.Intersections {
@@ -148,6 +152,10 @@ func (tm *TrafficManager) DespawnAndResetCar(index int, w *sim.World, laneWidth 
 		car.DeadlockTimer = 0
 		car.DeadlockTracker = sim.StationaryTracker{}
 		car.IsBraking = false
+		car.PassRetreatActive = false
+		car.JunctionReverseActive = false
+		car.JunctionReverseYieldBus = false
+		car.JunctionReverseYieldID = 0
 		car.JunctionTurn = nil
 		car.Passing = false
 		car.PassingLeadBus = nil
@@ -199,6 +207,10 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 
 		// 1. Moving vehicles and cars whose controls just released the brake
 		// are not deadlocked. Clear a saved timeout on the first acceleration tick.
+		if car.ReverseRemaining > 0 || car.ReverseHold > 0 {
+			car.DeadlockTimer = 0
+			continue
+		}
 		if math.Abs(car.Speed) >= 3.0 || (!car.IsBraking && car.Speed > .5) {
 			car.DeadlockTimer = 0
 			continue
@@ -225,9 +237,20 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 
 		// 2. Check relation to player bus
 		if bus != nil && math.Abs(bus.Speed) < 8.0 {
-			distToBus := car.Pos.Distance(bus.Pos)
+			// The player has the same articulated geometry as a fleet bus.
+			// A car beside its trailer can be far from the powered section;
+			// measuring only the cab prevents its checked reverse from starting.
+			section := bus.Pos
+			distToBus := car.Pos.Distance(section)
+			for _, part := range bus.BodyParts() {
+				if part.HalfLen > 0 {
+					if distance := car.Pos.Distance(part.Center); distance < distToBus {
+						section, distToBus = part.Center, distance
+					}
+				}
+			}
 			if distToBus < 180.0 {
-				toBus := bus.Pos.Sub(car.Pos)
+				toBus := section.Sub(car.Pos)
 				sinH, cosH := math.Sincos(car.Heading)
 				fwdBus := toBus.X*cosH + toBus.Y*sinH
 				latBus := math.Abs(-toBus.X*sinH + toBus.Y*cosH)
@@ -235,13 +258,18 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				// Protect aligned queues on open roads. A diagonal merging bus can
 				// be mutually blocked with this car; exempting a 60-degree cone
 				// resets its timer forever (also after loading a saved jam).
-				if !isNearIntersection && headDiff > 0.98 && fwdBus > 10.0 && latBus < laneWidth*1.5 {
+				queueCos := 0.992
+				if bus.DoorsOpen || bus.PassengerServiceRemaining() > 0 {
+					queueCos = 0.98
+				}
+				if !isNearIntersection && headDiff > queueCos && fwdBus > 10.0 && latBus < laneWidth*1.5 &&
+					(!bus.IsArticulated() || (math.Abs(sim.NormalizeAngle(bus.Heading-bus.TailHeading())) <= 0.12 && math.Cos(car.Heading-bus.TailHeading()) > queueCos)) {
 					car.DeadlockTimer = 0
 					continue
 				}
 				// If car is jammed against player bus (crosswise, oncoming, turning, or trapped against front bumper):
 				maxJamDist := (car.Length+bus.Length)*0.5 + 40.0
-				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) {
+				if distToBus < maxJamDist && (fwdBus > -15.0 || distToBus < (car.Length+bus.Length)*0.5+15.0) && carBusDeadlockCorridor(car, bus) {
 					isJammed = true
 				}
 			}
@@ -286,17 +314,27 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 				if ab.Bus == nil || math.Abs(ab.Bus.Speed) >= 3.0 {
 					continue
 				}
+				maxJamDist := (car.Length+ab.Bus.Length)*0.5 + 40.0
+				broadLimit := maxJamDist + ab.Bus.OverallLength()
+				d0 := ab.Bus.Pos.Sub(car.Pos)
+				if d0.Dot(d0) >= broadLimit*broadLimit {
+					continue
+				}
 				// A trailer blocks a lane as solidly as the powered section:
 				// measure from the nearest body section.
 				section := ab.Bus.Pos
+				bestDistSq := d0.Dot(d0)
 				for _, part := range ab.Bus.BodyParts() {
-					if part.HalfLen > 0 && part.Center.Distance(car.Pos) < section.Distance(car.Pos) {
-						section = part.Center
+					if part.HalfLen > 0 {
+						dp := part.Center.Sub(car.Pos)
+						if dSq := dp.Dot(dp); dSq < bestDistSq {
+							section = part.Center
+							bestDistSq = dSq
+						}
 					}
 				}
-				dist := car.Pos.Distance(section)
-				maxJamDist := (car.Length+ab.Bus.Length)*0.5 + 40.0
-				if dist < maxJamDist {
+				if bestDistSq < maxJamDist*maxJamDist {
+					dist := math.Sqrt(bestDistSq)
 					toOther := section.Sub(car.Pos)
 					sinH, cosH := math.Sincos(car.Heading)
 					fwd := toOther.X*cosH + toOther.Y*sinH
@@ -304,10 +342,15 @@ func (tm *TrafficManager) resolveDeadlocks(dt float64, bus *sim.Bus, activeCount
 					headDiff := math.Cos(car.Heading - ab.Bus.Heading)
 					// Match the player-bus queue rule: crossing a lane is not
 					// an aligned queue behind a stopped bus.
-					if !isNearIntersection && headDiff > 0.98 && fwd > 10.0 && lat < laneWidth*1.5 {
+					queueCos := 0.992
+					if ab.Bus.DoorsOpen || ab.Bus.PassengerServiceRemaining() > 0 {
+						queueCos = 0.98
+					}
+					if !isNearIntersection && headDiff > queueCos && fwd > 10.0 && lat < laneWidth*1.5 &&
+						(!ab.Bus.IsArticulated() || (math.Abs(sim.NormalizeAngle(ab.Bus.Heading-ab.Bus.TailHeading())) <= 0.12 && math.Cos(car.Heading-ab.Bus.TailHeading()) > queueCos)) {
 						continue
 					}
-					if fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0 {
+					if (fwd > -15.0 || dist < (car.Length+ab.Bus.Length)*0.5+15.0) && carBusDeadlockCorridor(car, ab.Bus) {
 						isJammed = true
 						break
 					}
@@ -344,11 +387,62 @@ func carDeadlockCorridor(car, other *sim.TrafficCar) bool {
 	// Apply this symmetrically: a close but non-overlapping rear follower must
 	// not make the leading car look wedged either.
 	otherHalfLength := other.Length/2*math.Abs(math.Cos(yaw)) + other.Width/2*math.Abs(math.Sin(yaw))
-	if math.Cos(yaw) > .98 && math.Abs(d.Dot(u)) > car.Length/2+otherHalfLength+.5 {
+	queueCos := .88
+	if car.JunctionTurn != nil {
+		queueCos = .60
+	}
+	if math.Cos(yaw) > queueCos && math.Abs(d.Dot(u)) > car.Length/2+otherHalfLength+.5 {
 		return false
 	}
-	otherHalfWidth := other.Length/2*math.Abs(math.Sin(yaw)) + other.Width/2*math.Abs(math.Cos(yaw))
-	return math.Abs(d.X*u.Y-d.Y*u.X) <= car.Width/2+otherHalfWidth+8
+	return obbInCarDeadlockCorridor(car, sim.OBB{Center: other.Pos, Heading: other.Heading, HalfLen: other.Length / 2, HalfWid: other.Width / 2})
+}
+
+// carBusDeadlockCorridor prevents a stopped car from counting an opposing or
+// laterally separated bus across another lane—or a same-direction bus queued
+// cleanly ahead of or behind the car—as deadlocking it.
+func carBusDeadlockCorridor(car *sim.TrafficCar, bus *sim.Bus) bool {
+	u := sim.UnitFromAngle(car.Heading)
+	allAhead := true
+	anyAligned := false
+	for _, part := range bus.BodyParts() {
+		if part.HalfLen <= 0 {
+			continue
+		}
+		d := part.Center.Sub(car.Pos)
+		yaw := part.Heading - car.Heading
+		partHalfLength := part.HalfLen*math.Abs(math.Cos(yaw)) + part.HalfWid*math.Abs(math.Sin(yaw))
+		if math.Cos(yaw) > .85 && d.Dot(u) < -(car.Length/2+partHalfLength+.5) {
+			allAhead = false
+			continue
+		}
+		sinY, cosY := math.Sincos(yaw)
+		partHalfWidth := part.HalfLen*math.Abs(sinY) + part.HalfWid*math.Abs(cosY)
+		if cosY > .95 && math.Abs(d.X*u.Y-d.Y*u.X) > car.Width/2+partHalfWidth+0.5 {
+			allAhead = false
+			continue
+		}
+		if cosY > .95 && d.Dot(u) > car.Length/2+partHalfLength+.5 {
+			anyAligned = true
+			continue
+		}
+		allAhead = false
+		if math.Abs(d.Dot(u)) <= car.Length/2+partHalfLength+40 && obbInCarDeadlockCorridor(car, part) {
+			return true
+		}
+	}
+	if allAhead && anyAligned {
+		return false
+	}
+	return false
+}
+
+func obbInCarDeadlockCorridor(car *sim.TrafficCar, part sim.OBB) bool {
+	u := sim.UnitFromAngle(car.Heading)
+	d := part.Center.Sub(car.Pos)
+	yaw := part.Heading - car.Heading
+	sinY, cosY := math.Sincos(yaw)
+	partHalfWidth := part.HalfLen*math.Abs(sinY) + part.HalfWid*math.Abs(cosY)
+	return math.Abs(d.X*u.Y-d.Y*u.X) <= car.Width/2+partHalfWidth+8
 }
 
 func roundaboutCarDisplaced(car *sim.TrafficCar) bool {

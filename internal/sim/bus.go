@@ -89,7 +89,8 @@ type Bus struct {
 	PendingModel            *BusModel
 	StationMergeRequest     *BusStationMergeRequest
 	LaneMergeRequest        *BusLaneMergeRequest
-	YieldingToBus           *Bus // Acknowledged priority for a bus returning ahead of this route bus.
+	YieldingToBus           *Bus    // Acknowledged priority for a bus returning ahead of this route bus.
+	ReverseYieldRequest     float64 `json:"-"` // Transient request to open a checked retreat gap for the bus ahead.
 	RoundaboutEntry         *BusRoundaboutEntry
 	JunctionCorridor        *JunctionCorridor
 	Pos                     Vec2    // Center position in world coordinates

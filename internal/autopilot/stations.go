@@ -95,6 +95,26 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 		}
 	}
 	stopSpd := math.Sqrt(2 * stopDecel * math.Max(0, stopRemaining-2.0))
+	if f.world != nil && f.targetStop != nil && f.targetStop.CenterBRT {
+		forward := sim.UnitFromAngle(f.targetStop.Heading)
+		right := sim.Vec2{X: -forward.Y, Y: forward.X}
+		physLat := f.bus.Pos.Sub(f.targetStop.RoadCenter).Dot(right)
+		maxRoadLat := float64(max(2, f.targetStop.RoadLanes)/2)*f.laneWidth + f.world.BRTStationFlareAt(f.bus.Pos, f.laneWidth) + 24
+		approachWin := math.Max(1350, f.speedAbs*3.5+f.bus.OverallLength()+320)
+		if math.Cos(f.bus.Heading-f.targetStop.Heading) > 0.85 && physLat > f.laneWidth+4 && physLat <= maxRoadLat && f.remaining < approachWin {
+			dLong := f.bus.Pos.Sub(f.targetStop.Pos).Dot(forward)
+			islandCutoff := -brtInwardReturnMinClear(f.bus, f.laneWidth, physLat)
+			if dLong <= islandCutoff {
+				if ad.TargetLaneOffset <= 1 {
+					return math.Min(targetSpd, math.Max(45.0, math.Min(95.0, stopSpd)))
+				}
+				distToCutoff := (islandCutoff - 80) - dLong
+				cutoffSpd := math.Sqrt(2 * stopDecel * math.Max(0, distToCutoff))
+				return math.Min(targetSpd, cutoffSpd)
+			}
+			return math.Min(targetSpd, math.Max(stopSpd, 36.0))
+		}
+	}
 	isBerserkOuterDock := ad.BerserkMode && f.targetStop.ContainsBusInOuterLane(f.bus, f.laneWidth)
 	isStuckInOuterLane := !isBerserkOuterDock && f.remaining < 60.0 && f.distToStop < 250.0 && ((f.distToStop > 45.0 && !f.targetStop.ContainsBus(f.bus)) || math.Abs(ad.LaneOffset) > 15.0 || math.Abs(ad.TargetLaneOffset) > 15.0)
 	if f.remaining > 2.0 || isStuckInOuterLane {
@@ -131,7 +151,7 @@ func (ad *AutopilotDriver) stationSpeed(f autopilotFrame, targetSpd float64) flo
 				dObs := leadObs.Pos.Sub(f.bus.Pos)
 				fwdObs := dObs.X*cosH + dObs.Y*sinH
 				leadSpd := math.Max(0.0, leadObs.Speed)
-				if fwdObs < 35.0 {
+				if fwdObs > -25.0 && fwdObs < 35.0 {
 					targetSpd = math.Min(targetSpd, leadSpd)
 				}
 				if leadSpd < 5.0 && fwdObs > -25.0 {
@@ -182,6 +202,39 @@ func (ad *AutopilotDriver) updateStationApproachLane(bus *sim.Bus, targetStop *s
 
 	// Case B: Bus is in the adjacent/passing lane
 	if ad.LaneOffset != 0 || ad.OvertakeState != OvertakeNone {
+		if !isMultiLane && !is6Lane {
+			// On 2-lane roads, return from the oncoming lane whenever an oncoming
+			// vehicle is approaching and the physical base lane beside the bus is clear.
+			oncomingThreat := false
+			for i := range obstacles {
+				if math.Cos(obstacles[i].Heading-bus.Heading) < -0.2 {
+					d := obstacles[i].Pos.Sub(bus.Pos)
+					fwd := d.X*cosH + d.Y*sinH
+					lat := math.Abs(-d.X*sinH + d.Y*cosH + ad.LaneOffset + laneWidth)
+					if fwd > 0 && fwd < math.Max(950.0, speedAbs*2.6+250.0) && lat < bus.Width/2+obstacles[i].Width/2+14.0 {
+						oncomingThreat = true
+						break
+					}
+				}
+			}
+			if oncomingThreat {
+				if isBaseLaneClearToReturn(bus, obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, nil) {
+					ad.TargetLaneOffset = 0.0
+					ad.OvertakeState = OvertakeReturning
+				} else {
+					ad.TargetLaneOffset = ad.LaneOffset
+					ad.OvertakeState = OvertakePassing
+				}
+				if ad.OvertakeState == OvertakeReturning && math.Abs(ad.LaneOffset) < 1.0 {
+					ad.LaneOffset = 0.0
+					ad.TargetLaneOffset = 0.0
+					ad.OvertakeState = OvertakeNone
+					ad.OvertakeTimer = 0.0
+				}
+				ad.progressLaneOffset(dt, speedAbs)
+				return
+			}
+		}
 		baseClear := isBaseLaneClearToReturn(bus, obstacles, cosH, sinH, ad.LaneOffset, ad.drivePath, ad.WaypointIdx, targetStop)
 		isBayOccupied := false
 		if targetStop != nil {
@@ -198,9 +251,13 @@ func (ad *AutopilotDriver) updateStationApproachLane(bus *sim.Bus, targetStop *s
 		}
 
 		canMerge := remaining >= 70.0 || (speedAbs < 25.0 && remaining >= 25.0)
-		if isBayOccupied {
+		if isBayOccupied && !ad.FleetBus {
+			// Berserk stays beside an occupied bay and boards from there.
 			canMerge = hasPassedLead && remaining >= 90.0 && !hasLeadAhead
 		}
+		// A route bus returns to the curb lane as soon as it is clear and
+		// queues behind the buses in the bay; boarding from this lane is
+		// only its last resort.
 		if canMerge && !hasLeadAlongside && baseClear {
 			ad.TargetLaneOffset = 0.0
 			ad.OvertakeState = OvertakeReturning

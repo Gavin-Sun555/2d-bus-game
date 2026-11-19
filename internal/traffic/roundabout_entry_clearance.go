@@ -42,9 +42,9 @@ func canPassWaitingRoundaboutBus(f carFrame, bus *sim.Bus) bool {
 		if rb.Center.Sub(bus.Pos).Dot(forward) <= 0 {
 			continue
 		}
+		// Do not expand both bodies (+4px total); keep the single 2px buffer on
+		// the predicted car so parallel 42px entry queues do not deadlock.
 		body := bus.BodyEnvelope()
-		body.HalfLen += 2
-		body.HalfWid += 2
 		predicted := *car
 		if car.RoundaboutCurve != nil {
 			curve := *car.RoundaboutCurve

@@ -20,6 +20,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 			}
 		}
 		targetSpd = math.Min(targetSpd, roundaboutExitBusSpeed(f, rb))
+		targetSpd = math.Min(targetSpd, tm.roundaboutExitCarSpeed(f))
 		// Recheck the right of way until the full nose reaches the yield line.
 		// InRoundabout also covers the long approach curve outside the ring.
 		targetSpd = math.Min(targetSpd, tm.roundaboutEntryPrioritySpeed(f, rb))
@@ -79,7 +80,7 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 		}
 
 		for _, bus := range f.buses {
-			if bus == nil || bus.Pos.Distance(f.car.RoundaboutCenter) > f.car.RoundaboutOuterRadius+bus.Length/2+25 {
+			if bus == nil || bus.Pos.Distance(f.car.RoundaboutCenter) > f.car.RoundaboutOuterRadius+bus.OverallLength()/2+25 {
 				continue
 			}
 			body := bus.BodyEnvelope()
@@ -126,115 +127,125 @@ func (tm *TrafficManager) roundaboutSpeed(f carFrame, targetSpd float64) float64
 		}
 	} else {
 		// Approaching roundabout check
+		forward := roundaboutApproachDirection(f.car)
 		for _, rb := range f.world.Roundabouts {
-			distToCenter := f.car.Pos.Distance(rb.Center)
-			forward := roundaboutApproachDirection(f.car)
-			fwdProj := rb.Center.Sub(f.car.Pos).Dot(forward)
 			coord := rb.Center.X
 			if f.car.IsEW {
 				coord = rb.Center.Y
 			}
+			if math.Abs(f.car.RoadCenter-coord) >= 25 || f.car.RoundaboutCooldown > 0 {
+				continue
+			}
+			fwdProj := rb.Center.Sub(f.car.Pos).Dot(forward)
+			if fwdProj <= 0 {
+				continue
+			}
+			distToCenter := f.car.Pos.Distance(rb.Center)
 			stopGap := roundaboutYieldGap(f.car, rb)
-			if fwdProj > 0 && math.Abs(f.car.RoadCenter-coord) < 25 && f.car.RoundaboutCooldown <= 0 {
-				if tm.roundaboutReservedForCar(rb, f.car, forward, f.laneWidth) {
-					outer := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
-					join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outer, f.laneWidth)
-					start, _ := sim.RoundaboutEntryPoint(join, 0)
-					gap := start.Sub(f.car.Pos).Dot(forward) - f.car.Length/2 - 8
-					targetSpd = math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, gap)))
-				}
-				outerR := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
-				join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outerR, f.laneWidth)
-				start, _ := sim.RoundaboutEntryPoint(join, 0)
+			reserved := tm.roundaboutReservedForCar(rb, f.car, forward, f.laneWidth)
+			outerR := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
+			join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outerR, f.laneWidth)
+			start, _ := sim.RoundaboutEntryPoint(join, 0)
+			if reserved {
+				gap := start.Sub(f.car.Pos).Dot(forward) - f.car.Length/2 - 8
+				targetSpd = math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, gap)))
+			}
+			{
 				gap := math.Max(0, start.Sub(f.car.Pos).Dot(forward)-20)
 				targetSpd = math.Min(targetSpd, math.Sqrt(sim.RoundaboutSpeedLimit*sim.RoundaboutSpeedLimit+2*220*gap))
 			}
 			lookahead := math.Max(100, f.car.Speed*f.car.Speed/(2*220)+math.Abs(f.car.Speed)*.2+40)
-			if stopGap <= lookahead && math.Abs(f.car.RoadCenter-coord) < 25 && f.car.RoundaboutCooldown <= 0 {
-				if fwdProj > 0 {
+			if stopGap <= lookahead {
+				// 1. Yield check at entry line:
+				// Circulating vehicles coming from the left or traversing across entry mouth have right of way
+				myAngle := math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
+				needYield := reserved
 
-					// 1. Yield check at entry line:
-					// Circulating vehicles coming from the left or traversing across entry mouth have right of way
-					myAngle := math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
-					needYield := tm.roundaboutReservedForCar(rb, f.car, forward, f.laneWidth)
-
-					// Account for long buses whose noses are already at the mouth
-					// while their centers are still outside the circular roadway.
-					for _, bus := range f.buses {
-						if bus == nil || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) || bus.Pos.Distance(rb.Center) > rb.Radius+bus.Length/2+40 {
+				// Account for long buses whose front or trailer section is sweeping
+				// across or upstream of the mouth, while ignoring stationary buses
+				// parked outside another approach's yield line.
+				for _, bus := range f.buses {
+					if bus == nil || parallelRoundaboutBus(f, rb, bus) || roundaboutBusFollowing(f.car, bus) || canPassWaitingRoundaboutBus(f, bus) {
+						continue
+					}
+					for _, part := range bus.BodyParts() {
+						if part.HalfLen <= 0 || part.Center.Distance(rb.Center) > rb.Radius+part.HalfLen+40 {
 							continue
 						}
-						angle := math.Atan2(bus.Pos.Y-rb.Center.Y, bus.Pos.X-rb.Center.X)
+						if math.Abs(bus.Speed) < 5 && part.Center.Distance(rb.Center) > rb.Radius+part.HalfWid+8 && math.Cos(bus.Heading-f.car.Heading) < 0.7 {
+							continue
+						}
+						angle := math.Atan2(part.Center.Y-rb.Center.Y, part.Center.X-rb.Center.X)
 						diff := sim.NormalizeAngle(angle - myAngle)
-						if (diff > -.4 && diff < 1.15) || f.car.Pos.Distance(bus.Pos) < 140 {
+						if (diff > -.45 && diff < 1.15) || f.car.Pos.Distance(part.Center) < 115+part.HalfLen/2 {
 							needYield = true
 							break
 						}
 					}
-
-					// Check if another AI car is circulating approaching this entry
-					if !needYield {
-						for j := 0; j < f.activeCount; j++ {
-							if j == f.index {
-								continue
-							}
-							other := tm.Cars[j]
-							if other.InRoundabout && other.RoundaboutCenter == rb.Center && !parallelRoundaboutEntry(f, rb, other.Pos, other.Heading, other.Length, other.Width, false) {
-								diff := sim.NormalizeAngle(other.RoundaboutAngle - myAngle)
-								if (diff > -0.30 && diff < 1.05) || f.car.Pos.Distance(other.Pos) < 110.0 {
-									needYield = true
-									break
-								}
-							}
-						}
-					}
-
 					if needYield {
-						f.car.IsBraking = true
-						targetSpd = math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, stopGap-6)))
+						break
 					}
+				}
 
-					// 2. Enter roundabout when at/inside the circular roadway and NOT yielding
-					outerR := (rb.InnerRadius + 16 + 3*rb.Radius) / 4
-					join := sim.RoundaboutEntryJoin(rb, forward, (float64(f.car.LaneIndex)+.5)*f.laneWidth, outerR, f.laneWidth)
-					start, _ := sim.RoundaboutEntryPoint(join, 0)
-					canEnter := !needYield && fwdProj <= rb.Center.Sub(start).Dot(forward)
-					if canEnter {
-						incomingHeading := f.car.Heading
-						f.car.InRoundabout = true
-						f.car.RoundaboutCenter = rb.Center
-						f.car.RoundaboutTraveled = 0
-
-						rApron := rb.InnerRadius + 16.0
-						rOuter := rb.Radius
-						rMid := (rApron + rOuter) * 0.5
-						circulatingR := (rMid + rOuter) * 0.5 // Outer lane center
-						if f.car.LaneIndex == 0 {
-							circulatingR = (rApron + rMid) * 0.5 // Inner lane center
+				// Check if another AI car is circulating approaching this entry
+				if !needYield {
+					for j := 0; j < f.activeCount; j++ {
+						if j == f.index {
+							continue
 						}
-						f.car.RoundaboutTargetR = circulatingR
-						f.car.RoundaboutOuterRadius = rb.Radius
-
-						// Smooth continuous entry: initialize radius at current distance to center to eliminate any position snapping
-						f.car.RoundaboutRadius = distToCenter
-						f.car.RoundaboutAngle = math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
-
-						configureRoundaboutExit(f.car, f.world, &rb, f.laneWidth, incomingHeading)
-						legacy := false
-						for _, bus := range f.buses {
-							if bus != nil && bus.RoundaboutEntry == nil && bus.Pos.Distance(f.car.Pos) < 180 && math.Cos(bus.Heading-incomingHeading) > .6 {
-								legacy = true
+						other := tm.Cars[j]
+						if other.InRoundabout && other.RoundaboutCenter == rb.Center && !parallelRoundaboutEntry(f, rb, other.Pos, other.Heading, other.Length, other.Width, false) {
+							diff := sim.NormalizeAngle(other.RoundaboutAngle - myAngle)
+							if (diff > -0.30 && diff < 1.05) || f.car.Pos.Distance(other.Pos) < 110.0 {
+								needYield = true
 								break
 							}
 						}
-						if legacy {
-							beginLegacyRoundaboutEntry(f.car)
-						} else {
-							beginRoundaboutEntry(f.car, rb, f.laneWidth)
-						}
-
-						break
 					}
+				}
+
+				if needYield {
+					f.car.IsBraking = true
+					targetSpd = math.Min(targetSpd, math.Sqrt(2*220*math.Max(0, stopGap-6)))
+				}
+
+				// 2. Enter roundabout when at/inside the circular roadway and NOT yielding
+				canEnter := !needYield && fwdProj <= rb.Center.Sub(start).Dot(forward)
+				if canEnter {
+					incomingHeading := f.car.Heading
+					f.car.InRoundabout = true
+					f.car.RoundaboutCenter = rb.Center
+					f.car.RoundaboutTraveled = 0
+
+					rApron := rb.InnerRadius + 16.0
+					rOuter := rb.Radius
+					rMid := (rApron + rOuter) * 0.5
+					circulatingR := (rMid + rOuter) * 0.5 // Outer lane center
+					if f.car.LaneIndex == 0 {
+						circulatingR = (rApron + rMid) * 0.5 // Inner lane center
+					}
+					f.car.RoundaboutTargetR = circulatingR
+					f.car.RoundaboutOuterRadius = rb.Radius
+
+					// Smooth continuous entry: initialize radius at current distance to center to eliminate any position snapping
+					f.car.RoundaboutRadius = distToCenter
+					f.car.RoundaboutAngle = math.Atan2(f.car.Pos.Y-rb.Center.Y, f.car.Pos.X-rb.Center.X)
+
+					configureRoundaboutExit(f.car, f.world, &rb, f.laneWidth, incomingHeading)
+					legacy := false
+					for _, bus := range f.buses {
+						if bus != nil && bus.RoundaboutEntry == nil && bus.Pos.Distance(f.car.Pos) < 180 && math.Cos(bus.Heading-incomingHeading) > .6 {
+							legacy = true
+							break
+						}
+					}
+					if legacy {
+						beginLegacyRoundaboutEntry(f.car)
+					} else {
+						beginRoundaboutEntry(f.car, rb, f.laneWidth)
+					}
+
+					break
 				}
 			}
 		}

@@ -25,6 +25,25 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 		segPrev := ad.drivePath[k].Sub(ad.drivePath[k-1])
 		segNext := ad.drivePath[k+1].Sub(ad.drivePath[k])
 		turnAngle := math.Abs(sim.NormalizeAngle(math.Atan2(segNext.Y, segNext.X) - math.Atan2(segPrev.Y, segPrev.X)))
+		if turnAngle <= 0.6 && segNext.Length() <= 75.0 {
+			arcLen := 0.0
+			cumTurn := 0.0
+			prevH := math.Atan2(segPrev.Y, segPrev.X)
+			for m := k; m < len(ad.drivePath)-1 && arcLen < 180.0; m++ {
+				seg := ad.drivePath[m+1].Sub(ad.drivePath[m])
+				segLen := seg.Length()
+				if segLen > 75.0 {
+					break
+				}
+				segH := math.Atan2(seg.Y, seg.X)
+				cumTurn += sim.NormalizeAngle(segH - prevH)
+				prevH = segH
+				arcLen += segLen
+				if math.Abs(cumTurn) > turnAngle {
+					turnAngle = math.Abs(cumTurn)
+				}
+			}
+		}
 		if turnAngle > 0.6 {
 			isApproachingSharpTurn = true
 			break
@@ -46,6 +65,7 @@ func (ad *AutopilotDriver) targetSpeed(f autopilotFrame) float64 {
 	}
 	// A. Anticipate corners / roundabout arcs ahead, and slow while circulating
 	targetSpd = math.Min(targetSpd, ad.cornerSpeedLimit(f.s, f.speedAbs))
+	targetSpd = math.Min(targetSpd, ad.routeTaperSpeed(f))
 	targetSpd = math.Min(targetSpd, ad.exitCruiseSpeed(f))
 	if ad.dockDepartureRun > f.s {
 		targetSpd = math.Min(targetSpd, ad.dockDepartureSpeed(f))

@@ -4,6 +4,34 @@ import "math"
 
 const RailGateMargin = 34.
 
+// LevelRailApproach gives the distance from the front bumper to each gate of
+// the nearest level crossing ahead, while the bumper is still outside it.
+func (w *World) LevelRailApproach(bumper Vec2, heading, lookahead float64) (entry, exit float64, found bool) {
+	if w == nil || len(w.railways) == 0 {
+		return 0, 0, false
+	}
+	sinH := math.Sin(heading)
+	if math.Abs(sinH) < .8 {
+		return 0, 0, false
+	}
+	direction := math.Copysign(1, sinH)
+	entry = lookahead
+	for _, r := range w.Railways() {
+		gate := r.HalfWidth + RailGateMargin
+		dist := (r.Y-bumper.Y)*direction - gate
+		if dist < 0 || dist >= entry {
+			continue
+		}
+		for _, c := range r.Crossings {
+			if c.Level && math.Abs(c.Center.X-bumper.X) < c.RoadHalfWidth+ShoulderWidth {
+				entry, exit, found = dist, dist+2*gate, true
+				break
+			}
+		}
+	}
+	return entry, exit, found
+}
+
 func (w *World) RailSpeedLimit(tls *TrafficLightSystem, bumper Vec2, heading, speed, braking float64) float64 {
 	if w == nil || tls == nil {
 		return math.Inf(1)

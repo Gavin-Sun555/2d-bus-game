@@ -174,3 +174,66 @@ func TestThroughMergeLockRequiresParallelFarExit(t *testing.T) {
 		})
 	}
 }
+
+func TestRequiredMergeClearsStoppedYieldingFollowerBehindEnvelope(t *testing.T) {
+	const lw = 52.0
+	leader := sim.NewBus(0, 0, 0)
+	leader.SetModel(sim.BusArticulated)
+
+	follower := sim.NewBus(-240, lw, 0.25)
+	follower.SetModel(sim.BusArticulated)
+	follower.Speed = 0
+	follower.YieldingToBus = leader
+
+	f := autopilotFrame{
+		bus:       leader,
+		laneWidth: lw,
+		obstacles: []VehicleObstacle{ObserveBus(follower)},
+	}
+	if !requiredMergeLaneClear(f, 0, 0, lw) {
+		t.Fatal("expected stopped yielding articulated follower behind rear envelope to clear merge")
+	}
+
+	// Without yielding intent on an already target-lane obstacle, merge stays blocked.
+	follower.YieldingToBus = nil
+	f.obstacles = []VehicleObstacle{ObserveBus(follower)}
+	if requiredMergeLaneClear(f, 0, 0, lw) {
+		t.Fatal("expected non-yielding target-lane follower inside rear merge buffer to block merge")
+	}
+
+	// Even when yielding, an overlapping/too-close follower (<8px behind leader rear envelope) must block.
+	follower.YieldingToBus = leader
+	follower.Pos.X = -200
+	f.obstacles = []VehicleObstacle{ObserveBus(follower)}
+	if requiredMergeLaneClear(f, 0, 0, lw) {
+		t.Fatal("expected yielding follower too close to rear envelope to block merge")
+	}
+}
+
+func TestRequiredMergeClearsStoppedOriginTransitionFollower(t *testing.T) {
+	const lw = 52.0
+	leader := sim.NewBus(0, 0, 0)
+	leader.SetModel(sim.BusArticulated)
+
+	// Origin-side follower shifted 10.6px from leader (> 0.2*lw = 10.4px, <= 0.35*lw = 18.2px)
+	// while still on the origin side of the target lane (-lw).
+	follower := sim.NewBus(-252, 10.6, 0)
+	follower.SetModel(sim.BusArticulated)
+	follower.Speed = 0
+
+	f := autopilotFrame{
+		bus:       leader,
+		laneWidth: lw,
+		obstacles: []VehicleObstacle{ObserveBus(follower)},
+	}
+	if !requiredMergeLaneClear(f, 0, 0, -lw) {
+		t.Fatal("expected stopped origin-transition follower clear of rear envelope to allow left merge")
+	}
+
+	// Stopped follower already inside the destination lane must still block.
+	follower.Pos = sim.Vec2{X: -252, Y: -lw}
+	f.obstacles = []VehicleObstacle{ObserveBus(follower)}
+	if requiredMergeLaneClear(f, 0, 0, -lw) {
+		t.Fatal("expected stopped follower inside target lane to block left merge")
+	}
+}

@@ -10,15 +10,29 @@ import (
 // Permit only a low-speed, same-direction leader to use its actual clearance;
 // never waive a physical intersection or the checks against any other vehicle.
 func controlPaddingRelease(f autopilotFrame, ob VehicleObstacle, steer, speed, horizon float64) bool {
-	if ob.Bus == nil || math.Abs(ob.Speed) > 1 || f.speedAbs > 45 || math.Abs(steer) > .02 || math.Cos(f.bus.Heading-ob.Bus.Heading) < .98 {
+	if math.Abs(ob.Speed) > 1 || f.speedAbs > 45 {
 		return false
 	}
 	forward := sim.UnitFromAngle(f.bus.Heading)
-	delta := ob.Bus.Pos.Sub(f.bus.Pos)
-	behindRear := delta.Dot(forward) < -(f.bus.OverallLength()+ob.Bus.OverallLength())/2 && math.Cos(f.bus.TailHeading()-ob.Bus.Heading) > .98
 	currentBody := sim.OBB{Center: f.bus.Pos, Heading: f.bus.Heading, HalfLen: f.bus.Length / 2, HalfWid: f.bus.Width / 2}
-	if delta.Dot(forward) >= -8 || (!behindRear && math.Abs(delta.X*forward.Y-delta.Y*forward.X) < (f.bus.Width+ob.Bus.Width)*.4) || sweepBodiesCollision(sweepBodies(f.bus, currentBody), ob, 0, 0, 0) {
-		return false
+	behindRear := false
+	if ob.Bus != nil {
+		if math.Abs(steer) > .02 || math.Cos(f.bus.Heading-ob.Bus.Heading) < .98 {
+			return false
+		}
+		delta := ob.Bus.Pos.Sub(f.bus.Pos)
+		behindRear = delta.Dot(forward) < -(f.bus.OverallLength()+ob.Bus.OverallLength())/2 && math.Cos(f.bus.TailHeading()-ob.Bus.Heading) > .98
+		if delta.Dot(forward) >= -8 || (!behindRear && math.Abs(delta.X*forward.Y-delta.Y*forward.X) < (f.bus.Width+ob.Bus.Width)*.4) || sweepBodiesCollision(sweepBodies(f.bus, currentBody), ob, 0, 0, 0) {
+			return false
+		}
+	} else {
+		if f.bus.IsArticulated() || f.speedAbs > 25 || math.Abs(steer) > .12 {
+			return false
+		}
+		delta := ob.Pos.Sub(f.bus.Pos)
+		if delta.Dot(forward) >= f.bus.Length*.25 || sweepBodiesCollision(sweepBodies(f.bus, currentBody), ob, 0, .25, .25) {
+			return false
+		}
 	}
 	// Reproduce the complete actuator sweep with a smaller quarter-pixel skin,
 	// including the articulated tail. This is not an adjacent-lane exemption.
@@ -64,8 +78,11 @@ func laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, spee
 	if !multi && !six {
 		return false
 	}
-	// Same general road direction (allow typical lane change angles up to ~36 degrees):
-	if math.Cos(f.bus.Heading-ob.Heading) < 0.80 {
+	road := approachRoadHeading(ob.Heading)
+	roadAligned := math.Cos(ob.Heading-road) >= 0.80 && math.Cos(f.bus.Heading-road) >= 0.45
+	// Same general road direction (allow typical lane change angles up to ~36 degrees,
+	// or strongly yawed articulated departures/merges moving along a straight multi-lane road):
+	if math.Cos(f.bus.Heading-ob.Heading) < 0.80 && !roadAligned {
 		return false
 	}
 	forward := sim.UnitFromAngle(f.bus.Heading)
@@ -74,9 +91,14 @@ func laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, spee
 	if delta.Dot(forward) >= 0.0 {
 		return false
 	}
+	roadForward := sim.UnitFromAngle(road)
+	if math.Cos(f.bus.Heading-ob.Heading) < 0.80 && delta.Dot(roadForward) >= 0.0 {
+		return false
+	}
 	// Must have lateral separation:
 	latSep := math.Abs(delta.X*forward.Y - delta.Y*forward.X)
-	if latSep < (f.bus.Width+ob.Width)*0.35 {
+	latRoad := math.Abs(delta.X*roadForward.Y - delta.Y*roadForward.X)
+	if latSep < (f.bus.Width+ob.Width)*0.35 && (!roadAligned || latRoad < (f.bus.Width+ob.Width)*0.35) {
 		return false
 	}
 	// No physical collision at rest:
@@ -84,7 +106,9 @@ func laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, spee
 	if sweepBodiesCollision(sweepBodies(f.bus, currentBody), ob, 0, 0, 0) {
 		return false
 	}
-	// Forward actuator sweep simulation with 0.25px margin:
+	// Forward actuator sweep simulation with 0.25px margin (stepping the trailer
+	// sequentially when articulated so bend unwind matches true kinematics):
+	simBus := *f.bus
 	pos, heading, wheel := f.bus.Pos, f.bus.Heading, f.bus.SteeringAngle
 	for elapsed := 0.; elapsed <= horizon; elapsed += .04 {
 		if elapsed > 0 {
@@ -95,9 +119,23 @@ func laneChangeLeaderClearance(f autopilotFrame, ob VehicleObstacle, steer, spee
 			wheel += sim.Clamp(steer*f.bus.MaxSteerAngle-wheel, -rate*.04, rate*.04)
 			heading += speed / f.bus.WheelBase * math.Tan(wheel) * .04
 			pos = pos.Add(sim.UnitFromAngle(heading).Mul(speed * .04))
+			if simBus.IsArticulated() {
+				simBus = simBus.AtPose(pos, heading)
+			}
 		}
-		front := sim.OBB{Center: pos, Heading: heading, HalfLen: f.bus.Length/2 + .25, HalfWid: f.bus.Width/2 + .25}
-		if sweepBodiesCollision(sweepBodies(f.bus, front), ob, math.Max(0, ob.Speed)*elapsed, .25, .25) {
+		var bodies [2]sim.OBB
+		if simBus.IsArticulated() {
+			bodies = simBus.BodyParts()
+			for i := range bodies {
+				if bodies[i].HalfLen > 0 {
+					bodies[i].HalfLen += .25
+					bodies[i].HalfWid += .25
+				}
+			}
+		} else {
+			bodies = [2]sim.OBB{{Center: pos, Heading: heading, HalfLen: f.bus.Length/2 + .25, HalfWid: f.bus.Width/2 + .25}}
+		}
+		if sweepBodiesCollision(bodies, ob, math.Max(0, ob.Speed)*elapsed, 0, 0) {
 			return false
 		}
 	}

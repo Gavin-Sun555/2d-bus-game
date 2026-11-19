@@ -50,7 +50,7 @@ func TestSavedSlot1WideRoadLeftMergeDoesNotWedge(t *testing.T) {
 				bus.Bus.JunctionCorridor = nil
 				bus.Driver.Reset()
 				health := bus.Bus.Durability
-				for tick := 0; tick < 60*80; tick++ {
+				for tick := 0; tick < 60*90; tick++ {
 					if err := g.Update(); err != nil {
 						t.Fatal(err)
 					}

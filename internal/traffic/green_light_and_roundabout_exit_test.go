@@ -8,9 +8,9 @@ import (
 )
 
 // TestGreenLightQueueVehiclesDoNotStopForCrossRedTraffic verifies that:
-// 1. Cars stopping at a red light do not get premature JunctionTurn assignments.
-// 2. Cars queued on a green light (e.g. 4th and 5th cars) do not halt at the stop line
-//    due to cross-street vehicles waiting at a red light.
+//  1. Cars stopping at a red light do not get premature JunctionTurn assignments.
+//  2. Cars queued on a green light (e.g. 4th and 5th cars) do not halt at the stop line
+//     due to cross-street vehicles waiting at a red light.
 func TestGreenLightQueueVehiclesDoNotStopForCrossRedTraffic(t *testing.T) {
 	lw := 52.0
 	w := &sim.World{
@@ -149,14 +149,14 @@ func TestRoundaboutExitDoesNotStopForAdjacentEntranceTraffic(t *testing.T) {
 
 	// Oncoming car in the entrance lane (X = -lw/2 = -26), heading South (+math.Pi/2) towards roundabout
 	oncomingCar := &sim.TrafficCar{
-		ID:          2,
-		Pos:         sim.Vec2{X: -lw / 2, Y: -rb.Radius - 60},
-		Heading:     math.Pi / 2,
-		Speed:       40.0,
-		Length:      48,
-		Width:       22,
-		LaneIndex:   0,
-		RoadCenter:  0,
+		ID:         2,
+		Pos:        sim.Vec2{X: -lw / 2, Y: -rb.Radius - 60},
+		Heading:    math.Pi / 2,
+		Speed:      40.0,
+		Length:     48,
+		Width:      22,
+		LaneIndex:  0,
+		RoadCenter: 0,
 	}
 
 	tm := &TrafficManager{
@@ -177,13 +177,13 @@ func TestRoundaboutExitDoesNotStopForAdjacentEntranceTraffic(t *testing.T) {
 
 	// Now place another car DIRECTLY ahead in the SAME exit lane (X = +lw/2, Y = -rb.Radius - 70)
 	leadCar := &sim.TrafficCar{
-		ID:          3,
-		Pos:         sim.Vec2{X: lw / 2, Y: -rb.Radius - 70},
-		Heading:     -math.Pi / 2,
-		Speed:       30.0,
-		Length:      48,
-		Width:       22,
-		LaneIndex:   0,
+		ID:        3,
+		Pos:       sim.Vec2{X: lw / 2, Y: -rb.Radius - 70},
+		Heading:   -math.Pi / 2,
+		Speed:     30.0,
+		Length:    48,
+		Width:     22,
+		LaneIndex: 0,
 	}
 	tm.Cars = []*sim.TrafficCar{exitingCar, leadCar}
 	f.activeCount = 2

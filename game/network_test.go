@@ -46,15 +46,26 @@ func TestMultiLineDispatchAndPlayerSelection(t *testing.T) {
 	pos := saved.Bus.Pos
 	saved.Bus.PassengerCount = 3
 	g.Operations.Revenue = 42
-	g.Operations.Vehicle(0).Revenue = 12
+	player := g.Operations.Vehicle(0)
+	player.Revenue, player.Boarded, player.KM, player.Seconds = 12, 4, 3.5, 600
+	player.CompletedLaps, player.CompletedKM, player.CompletedSeconds = 1, 3, 500
+	fleetKM := g.Operations.Vehicle(saved.ID).KM + 2
+	g.Operations.Vehicle(saved.ID).KM = fleetKM
 	if !g.SelectPlayerLine(3) || g.Route != g.Lines[3] {
 		t.Fatal("player line not selected")
 	}
 	if g.AIBusMgr.Buses[0] != saved || saved.Bus.Pos != pos || saved.Bus.PassengerCount != 3 {
 		t.Fatal("selection reset another vehicle")
 	}
-	if g.Operations.Vehicle(0).Revenue != 12 {
-		t.Fatal("selection lost player lifetime revenue")
+	// The player's service statistics restart on the new line.
+	if v := g.Operations.Vehicles[0]; v != nil && (v.Revenue != 0 || v.Boarded != 0 || v.KM != 0 || v.Seconds != 0 || v.CompletedLaps != 0) {
+		t.Fatalf("player statistics carried over: %+v", v)
+	}
+	if _, ok := g.Operations.Vehicle(0).AverageKPH(); ok {
+		t.Fatal("player average speed carried over")
+	}
+	if g.Operations.Vehicle(saved.ID).KM != fleetKM {
+		t.Fatal("selection reset a fleet bus's statistics")
 	}
 	if g.Operations.Revenue != 42 {
 		t.Fatal("selection lost revenue")

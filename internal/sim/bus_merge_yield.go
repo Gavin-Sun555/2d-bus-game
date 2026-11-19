@@ -21,7 +21,7 @@ func BusMergeYieldLimit(follower, merging *Bus, laneWidth float64, continuing bo
 	if request == nil {
 		return 0, false
 	}
-	followerAligned := math.Cos(follower.Heading-request.Heading) >= .98 || (math.Abs(follower.Speed) <= 20 && math.Cos(follower.Heading-request.Heading) >= .95)
+	followerAligned := math.Cos(follower.Heading-request.Heading) >= .98 || (math.Abs(follower.Speed) <= 20 && math.Cos(follower.Heading-request.Heading) >= .90)
 	if continuing {
 		// An angled follower that granted the slot must keep it as the leader
 		// pulls away; the gap-based limit below already bounds its speed.

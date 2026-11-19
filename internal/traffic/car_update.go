@@ -27,6 +27,9 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 
 	frame := carFrame{car: car, bus: bus, tls: tls, world: w, index: index, activeCount: activeCount, laneWidth: laneWidth, buses: busesToCheck, parkedBuses: tm.observedParked[:len(busesToCheck)]}
 	frame.mergeBuses, frame.mergeBusesReady = tm.observedMerges, true
+	if original := car.RoundaboutTargetR; tm.holdDisplacedRoundaboutLane(frame) {
+		defer func() { car.RoundaboutTargetR = original }()
+	}
 	frame.scratch = tm.scratchForCar(car, index)
 	tm.localCarsReady = false
 	if tm.spatialActive {
@@ -44,39 +47,43 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 		tm.nearbyJunctionIDs, tm.nearbyJunctions = tls.NearbyJunctions(car.Pos, radius, tm.nearbyJunctionIDs, tm.nearbyJunctions)
 		frame.junctions, frame.indexedJunctions = tm.nearbyJunctions, true
 	}
-	tm.retreatBlockedCarPass(frame)
-	tm.releaseCarBesideBusTail(frame)
-	forcedLeftLimit := tm.prepareForcedLeftApproach(frame)
-	if forcedLeftLimit < targetSpd {
-		car.IsBraking = true
-	}
-	targetSpd = math.Min(targetSpd, forcedLeftLimit)
-	if math.IsInf(forcedLeftLimit, 1) {
-		tm.prepareEightLaneApproach(frame)
-		targetSpd = math.Min(targetSpd, tm.prepareCarPassing(frame))
-	}
-	targetSpd = tm.signalSpeed(frame, targetSpd)
-	targetSpd = tm.junctionQueueSpeed(frame, targetSpd)
-	targetSpd = tm.busMergeYieldSpeed(frame, targetSpd)
-	targetSpd = tm.busFollowingSpeed(frame, targetSpd)
-	targetSpd = tm.carFollowingSpeed(frame, targetSpd)
-	targetSpd = tm.intersectionYieldSpeed(frame, targetSpd)
-	targetSpd = tm.roundaboutSpeed(frame, targetSpd)
-	if turn := car.JunctionTurn; turn != nil && turn.LaneChange && targetSpd > 0 {
-		horizon := math.Max(45, car.Speed*car.Speed/(2*220)+car.Speed*.2+20)
-		clearance := tm.carLaneChangeConflict(frame, horizon, false)
-		if limit := math.Sqrt(2 * 220 * math.Max(0, clearance-12)); limit < targetSpd {
+	if handled, revTarget := tm.stepCarDeadlockReverse(frame, dt); handled {
+		targetSpd = revTarget
+	} else {
+		tm.retreatBlockedCarPass(frame)
+		tm.releaseCarBesideBusTail(frame)
+		forcedLeftLimit := tm.prepareForcedLeftApproach(frame)
+		if forcedLeftLimit < targetSpd {
 			car.IsBraking = true
-			targetSpd = limit
 		}
-	}
+		targetSpd = math.Min(targetSpd, forcedLeftLimit)
+		if math.IsInf(forcedLeftLimit, 1) {
+			tm.prepareEightLaneApproach(frame)
+			targetSpd = math.Min(targetSpd, tm.prepareCarPassing(frame))
+		}
+		targetSpd = tm.signalSpeed(frame, targetSpd)
+		targetSpd = tm.junctionQueueSpeed(frame, targetSpd)
+		targetSpd = tm.busMergeYieldSpeed(frame, targetSpd)
+		targetSpd = tm.busFollowingSpeed(frame, targetSpd)
+		targetSpd = tm.carFollowingSpeed(frame, targetSpd)
+		targetSpd = tm.intersectionYieldSpeed(frame, targetSpd)
+		targetSpd = tm.roundaboutSpeed(frame, targetSpd)
+		if turn := car.JunctionTurn; turn != nil && turn.LaneChange && targetSpd > 0 {
+			horizon := math.Max(45, car.Speed*car.Speed/(2*220)+car.Speed*.2+20)
+			clearance := tm.carLaneChangeConflict(frame, horizon, false)
+			if limit := math.Sqrt(2 * 220 * math.Max(0, clearance-12)); limit < targetSpd {
+				car.IsBraking = true
+				targetSpd = limit
+			}
+		}
 
-	if car.JunctionTurn != nil && !car.JunctionTurn.LaneChange && !car.JunctionTurn.Straight {
-		targetSpd = math.Min(targetSpd, 85)
-	}
+		if car.JunctionTurn != nil && !car.JunctionTurn.LaneChange && !car.JunctionTurn.Straight {
+			targetSpd = math.Min(targetSpd, 85)
+		}
 
-	if car.JunctionTurn != nil && car.JunctionTurn.SpeedLimit > 0 {
-		targetSpd = math.Min(targetSpd, car.JunctionTurn.SpeedLimit)
+		if car.JunctionTurn != nil && car.JunctionTurn.SpeedLimit > 0 {
+			targetSpd = math.Min(targetSpd, car.JunctionTurn.SpeedLimit)
+		}
 	}
 
 	// 2. Acceleration / Braking Physics
@@ -90,6 +97,9 @@ func (tm *TrafficManager) StepCar(dt float64, car *sim.TrafficCar, index int, bu
 	beforeMove := motionStart
 	onStraightRoad := !car.InRoundabout && car.JunctionTurn == nil
 	moveCar(car, dt)
+	if car.ReverseRemaining > 0 && car.Speed < 0 {
+		car.ReverseRemaining = math.Max(0, car.ReverseRemaining-(-car.Speed)*dt)
+	}
 
 	tm.turnCarAtIntersection(frame)
 

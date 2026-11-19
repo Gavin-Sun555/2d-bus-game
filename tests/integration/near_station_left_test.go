@@ -50,6 +50,8 @@ func TestUniversityDepartureLeftTurn(t *testing.T) {
 					}
 				}
 				if !passed {
+					diag := ad.DiagnoseStop(bus, route, w, tls, nil, lw)
+					t.Logf("diagnosis: %+v", diag)
 					t.Fatalf("stalled pos%v heading%.2f target%.1f", bus.Pos, bus.Heading, ad.LastTargetSpeed)
 				}
 			})

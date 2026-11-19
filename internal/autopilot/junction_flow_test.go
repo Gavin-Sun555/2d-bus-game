@@ -141,3 +141,46 @@ func TestUTurnYieldsToOpposingLeftOnSharedGreen(t *testing.T) {
 	}
 
 }
+
+func TestSameDirectionMovingLeaderWithPostJunctionTaper(t *testing.T) {
+	const lw = 52.
+	w := &sim.World{Roads: []sim.RoadSegment{
+		{P1: sim.Vec2{X: 3900, Y: 0}, P2: sim.Vec2{X: 3900, Y: 3600}, Lanes: 4},
+		{P1: sim.Vec2{X: 2000, Y: 1800}, P2: sim.Vec2{X: 5800, Y: 1800}, Lanes: 4},
+	}}
+	w.RebuildIntersections()
+	tls := sim.NewTrafficLightSystem()
+	tls.BuildForWorld(w)
+	bus := sim.NewBus(3808.2, 1257.8, 1.415)
+	corridor := &sim.JunctionCorridor{
+		Center:       sim.Vec2{X: 3900, Y: 1800},
+		EntryHeading: math.Pi / 2,
+		Remaining:    .25,
+		Bodies: []sim.OBB{
+			{Center: bus.Pos, Heading: bus.Heading, HalfLen: 52, HalfWid: 21},
+			{Center: sim.Vec2{X: 3858.2, Y: 2420.6}, Heading: 1.3616, HalfLen: 52, HalfWid: 21},
+		},
+	}
+	corridor.RebuildBounds()
+	bus.JunctionCorridor = corridor
+	carTurn := &sim.CarJunctionTurn{
+		Center:       sim.Vec2{X: 3900, Y: 1800},
+		EntryHeading: math.Pi / 2,
+		ExitHeading:  math.Pi / 2,
+		Straight:     true,
+		Points:       []sim.Vec2{{X: 3763.8, Y: 1300.4}, {X: 3763.8, Y: 2200}},
+	}
+	ob := VehicleObstacle{
+		Pos:          sim.Vec2{X: 3763.8, Y: 1300.4},
+		Heading:      math.Pi / 2,
+		Speed:        81,
+		Length:       46,
+		Width:        22,
+		JunctionTurn: carTurn,
+	}
+	ad := NewAutopilotDriver()
+	f := autopilotFrame{bus: bus, world: w, tls: tls, laneWidth: lw, obstacles: []VehicleObstacle{ob}}
+	if !ad.sameDirectionMovingLeader(corridor, f, math.Pi/2, sim.Vec2{Y: 1}, ob, math.Pi/2, math.Pi/2) {
+		t.Fatal("same-direction adjacent-lane moving car should be recognized as leader despite post-junction lane taper")
+	}
+}

@@ -9,17 +9,22 @@ const RoundaboutSpeedLimit = 90.0
 // must not reserve the ring merely because their noses are close to its curb.
 func HasRoundaboutPriority(rb Roundabout, body OBB) bool {
 	radial := body.Center.Sub(rb.Center)
-	radius := radial.Length()
-	if radius < rb.InnerRadius || radius > rb.Radius+body.HalfWid+6 {
+	d2 := radial.Dot(radial)
+	maxR := rb.Radius + body.HalfWid + 6
+	if d2 < rb.InnerRadius*rb.InnerRadius || d2 > maxR*maxR {
 		return false
 	}
-	tangent := Vec2{X: radial.Y, Y: -radial.X}.Normalize()
+	radius := math.Sqrt(d2)
+	tangent := Vec2{X: radial.Y / radius, Y: -radial.X / radius}
 	return tangent.Dot(UnitFromAngle(body.Heading)) > .7
 }
 
 // PredictRoundaboutBody follows circulating traffic along the ring and other
 // traffic along its heading. Callers supply their own safety margins.
 func PredictRoundaboutBody(rb Roundabout, body OBB, speed, elapsed float64) OBB {
+	if elapsed == 0 || speed == 0 {
+		return body
+	}
 	radial := body.Center.Sub(rb.Center)
 	radius := radial.Length()
 	forward := UnitFromAngle(body.Heading)

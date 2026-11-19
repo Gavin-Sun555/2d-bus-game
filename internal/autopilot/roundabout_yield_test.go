@@ -26,7 +26,7 @@ func TestBerserkEntryYieldsToCirculatingTraffic(t *testing.T) {
 							sim.NewBusStop(1, "to", rb.Center.Add(forward.Mul(800)), heading, 4, sim.RGBA(0, 0, 0, 255), lw),
 						}
 						route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
-						pos := rb.Center.Sub(forward.Mul(350)).Add(right.Mul(lw / 2))
+						pos := rb.Center.Sub(forward.Mul(rb.Radius + 110)).Add(right.Mul(lw / 2))
 						bus := sim.NewBus(pos.X, pos.Y, heading)
 						bus.Speed = 120
 						ad := NewAutopilotDriver()
@@ -87,7 +87,7 @@ func TestBerserkEntryDoesNotYieldToFollowingApproachCar(t *testing.T) {
 		sim.NewBusStop(1, "to", rb.Center.Add(sim.Vec2{X: 800}), 0, 4, sim.RGBA(0, 0, 0, 255), lw),
 	}
 	route := &sim.Route{StopIDs: []int{0, 1}, CurrentIndex: 1}
-	bus := sim.NewBus(rb.Center.X-350, rb.Center.Y+lw/2, 0)
+	bus := sim.NewBus(rb.Center.X-(rb.Radius+110), rb.Center.Y+lw/2, 0)
 	bus.Speed = 120
 	ad := NewAutopilotDriver()
 	ad.BerserkMode = true

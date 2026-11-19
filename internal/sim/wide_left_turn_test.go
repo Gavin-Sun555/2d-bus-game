@@ -81,3 +81,30 @@ func TestWideLeftTurnKeepsParallelLanesSeparate(t *testing.T) {
 		assertWideCorridorsClear(t, a, b)
 	}
 }
+
+func TestParallelLeftTurnSeparatesTwoArticulatedBuses(t *testing.T) {
+	in, out := Vec2{X: 1}, Vec2{Y: -1}
+	for _, lw := range []float64{52, 78} {
+		for _, cfg := range [][2]int{{4, 8}, {8, 4}, {6, 6}, {6, 8}, {8, 6}, {8, 8}} {
+			inc, outc := cfg[0], cfg[1]
+			t.Run(fmt.Sprintf("w%.0f/%dx%d", lw, inc, outc), func(t *testing.T) {
+				g := NewJunctionGeometry(float64(outc)/2*lw+12, float64(inc)/2*lw+12, lw)
+				curbIn := (float64(inc)/2 - .5) * lw
+				curbOut := (float64(outc)/2 - .5) * lw
+				inner := InnerLeftTurnPath(Vec2{}, in, out, .5*lw, .5*lw, g, inc, outc)
+				outer := CurbBusLeftTurnPath(Vec2{}, in, out, curbIn, curbOut, g, inc, outc)
+				oppOuter := CurbBusLeftTurnPath(Vec2{}, in.Mul(-1), out.Mul(-1), curbIn, curbOut, g, inc, outc)
+
+				inBodies := AppendPathBodies(nil, inner, 96+8, 36+6)
+				outBodies := AppendPathBodies(nil, outer, 96+8, 36+6)
+				oppBodies := AppendPathBodies(nil, oppOuter, 96+8, 36+6)
+				if !CorridorsSeparated(inBodies, outBodies) {
+					t.Fatalf("parallel bus corridors overlap on %dx%d", inc, outc)
+				}
+				if !CorridorsSeparated(inBodies, oppBodies) || !CorridorsSeparated(outBodies, oppBodies) {
+					t.Fatalf("bus turn overlaps opposing curb turn on %dx%d", inc, outc)
+				}
+			})
+		}
+	}
+}

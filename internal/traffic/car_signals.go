@@ -12,7 +12,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 	}
 	lookAhead := math.Max(f.laneWidth*1.5+85, f.car.Speed*f.car.Speed/(2*220)+60)
 	halfLen := f.car.Length * 0.5
-	sinH, cosH := math.Sincos(f.car.Heading)
+	sinH, cosH := sim.Sincos(f.car.Heading)
 	bumper := sim.Vec2{X: f.car.Pos.X + cosH*halfLen, Y: f.car.Pos.Y + sinH*halfLen}
 	if limit := f.world.RailSpeedLimit(f.tls, bumper, f.car.Heading, f.car.Speed, 220); limit < targetSpd {
 		f.car.IsBraking = true
@@ -95,7 +95,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 		for _, bus := range f.buses {
 			if bus != nil && (bus.Pos.Distance(inter.Center) < stopLine+20 ||
 				curbLeftBusHasEntryPriority(f, bus, inter, bumper, stopLine, distance) ||
-				waitingUTurnBlocksCar(f, bus, inter)) && !carClearsBusInJunction(f, bus, inter) {
+				waitingUTurnBlocksCar(f, bus, inter)) && !carClearsBusInJunction(f, bus, inter) && !busExitedJunctionBox(f, bus, inter) {
 				occupied = true
 				break
 			}
@@ -120,7 +120,7 @@ func (tm *TrafficManager) signalSpeed(f carFrame, targetSpd float64) float64 {
 func curbLeftBusHasEntryPriority(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection, bumper sim.Vec2, stopLine, gap float64) bool {
 	c := bus.JunctionCorridor
 	if c == nil || !c.CurbLeft || c.Remaining <= 0 || c.Center.Distance(inter.Center) > 1 ||
-		gap <= 0 || math.Cos(f.car.Heading-c.EntryHeading) < .98 ||
+		gap <= 0 || sim.Cos(f.car.Heading-c.EntryHeading) < .98 ||
 		inter.GetSignalForHeading(c.EntryHeading, true) != sim.SignalGreen {
 		return false
 	}
@@ -138,7 +138,7 @@ func curbLeftBusHasEntryPriority(f carFrame, bus *sim.Bus, inter *sim.TrafficInt
 // traffic through the box. Its merge priority must not become a second red light.
 func canFollowCommittedThroughBus(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection) bool {
 	request := bus.LaneMergeRequest
-	if request == nil || request.Remaining <= 0 || !request.Joined || request.RightTurn || bus.Speed <= 15 || request.Junction.Distance(inter.Center) > 1 || math.Cos(f.car.Heading-request.Heading) < .98 {
+	if request == nil || request.Remaining <= 0 || !request.Joined || request.RightTurn || bus.Speed <= 15 || request.Junction.Distance(inter.Center) > 1 || sim.Cos(f.car.Heading-request.Heading) < .98 {
 		return false
 	}
 	forward := sim.UnitFromAngle(request.Heading)
@@ -152,7 +152,7 @@ func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) 
 	if f.tls == nil || f.car.InRoundabout || (f.car.JunctionTurn != nil && !f.car.JunctionTurn.LaneChange) {
 		return targetSpd
 	}
-	sinH, cosH := math.Sincos(f.car.Heading)
+	sinH, cosH := sim.Sincos(f.car.Heading)
 	bumperPos := f.car.Pos.Add(sim.Vec2{X: cosH * f.car.Length * 0.5, Y: sinH * f.car.Length * 0.5})
 	for _, inter := range f.nearbyJunctions() {
 		if !(f.car.Pos.Distance(inter.Center) < 140.0) {
@@ -167,13 +167,13 @@ func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) 
 		}
 		distToLine := forward - stopLineDist
 		for _, bus := range f.buses {
-			if bus == nil || sim.IsBusFacingWrongWay(bus) || carClearsBusInJunction(f, bus, inter) {
+			if bus == nil || sim.IsBusFacingWrongWay(bus) || carClearsBusInJunction(f, bus, inter) || busExitedJunctionBox(f, bus, inter) {
 				continue
 			}
 			if !(inter.Center.Distance(bus.Pos) < stopLineDist+15.0) {
 				continue
 			}
-			headingDiff := math.Cos(bus.Heading - f.car.Heading)
+			headingDiff := sim.Cos(bus.Heading - f.car.Heading)
 			if !(math.Abs(headingDiff) < 0.707 || math.Abs(bus.Speed) < 15.0) {
 				continue
 			}
@@ -203,4 +203,13 @@ func (tm *TrafficManager) intersectionYieldSpeed(f carFrame, targetSpd float64) 
 		}
 	}
 	return targetSpd
+}
+
+func busExitedJunctionBox(f carFrame, bus *sim.Bus, inter *sim.TrafficIntersection) bool {
+	if bus == nil || inter == nil {
+		return false
+	}
+	u := sim.UnitFromAngle(bus.Heading)
+	crossHalf := inter.ApproachRoadHalfWidth(bus.Heading+math.Pi/2, f.laneWidth)
+	return bus.Pos.Sub(inter.Center).Dot(u) > crossHalf+bus.OverallLength()*0.5+10
 }
