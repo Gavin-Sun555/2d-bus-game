@@ -96,10 +96,10 @@ jobs:
           - runner: windows-latest
             os: windows
             arch: amd64
-          - runner: macos-14
+          - runner: macos-latest
             os: darwin
             arch: arm64
-          - runner: macos-14
+          - runner: macos-latest
             os: darwin
             arch: amd64
     runs-on: ${{ matrix.runner }}
