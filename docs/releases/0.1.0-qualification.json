@@ -91,6 +91,18 @@
   },
   "publicationPreparation": {
     "requestedActor": "Gavin-Sun555",
-    "releaseAuthorPolicy": "Maintainer-created draft release reused by release workflow so release author stays Gavin-Sun555."
+    "ciPortabilityFix": {
+      "initialRunURL": "https://github.com/Gavin-Sun555/2d-bus-game/actions/runs/44524908663",
+      "initialCommit": "e656f6193f1df547e6c11d0e4fc25dab4be1b134",
+      "failedTests": [
+        "TestSavedSlot1BusOffRoadNetworkReturnsToLine",
+        "TestSavedSlot1StandardAutopilotQueuesLikeFleetAtStops",
+        "TestSavedSlot2LeftLaneChangeOverCenterlineKeepsDriving",
+        "TestSavedSlot2SideBySideBusWedgeAtStop31Clears"
+      ],
+      "reason": "slot2Fixture returned empty string when optional git-ignored ../dist/ fixtures were absent on CI, causing LoadGame to open default save.json; race (7) hit transient apt-get error.",
+      "fix": "Skip explicitly in slot2Fixture when optional local fixture is absent; add apt-get retry and expand CI race matrix from 8 to 12 shards.",
+      "gameBehaviorChanges": false
+    }
   }
 }

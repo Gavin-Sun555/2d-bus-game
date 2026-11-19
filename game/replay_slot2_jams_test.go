@@ -370,7 +370,11 @@ func slot2Fixture(t *testing.T, path string) string {
 	if testing.Short() {
 		t.Skip("slot 2 replay skipped in -short mode")
 	}
-	return firstFixture(path)
+	found := firstFixture(path)
+	if found == "" {
+		t.Skipf("optional replay fixture not found: %s", path)
+	}
+	return found
 }
 
 // Long buses reserve the whole CBD roundabout. The reservation used to close

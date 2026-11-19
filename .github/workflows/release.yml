@@ -23,7 +23,13 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install graphics and audio build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev xvfb
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y --fix-missing libgl1-mesa-dev xorg-dev libasound2-dev xvfb && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
       - name: Validate release metadata
         shell: bash
         run: |
@@ -49,22 +55,28 @@ jobs:
 
   race:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Install graphics and audio build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libasound2-dev xvfb
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y --fix-missing libgl1-mesa-dev xorg-dev libasound2-dev xvfb && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 5
+          done
       # The unsharded suite exceeded 90 minutes on the hosted runner. Keep
-      # every top-level test and its subtests, partitioned into eight jobs.
+      # every top-level test and its subtests, partitioned into twelve jobs.
       - name: Full-suite race partition
-        run: xvfb-run -a python3 scripts/run_race_shard.py --index ${{ matrix.shard }} --count 8 --output race-results
+        run: xvfb-run -a python3 scripts/run_race_shard.py --index ${{ matrix.shard }} --count 12 --output race-results
       - uses: actions/upload-artifact@v4
         if: always()
         with:
